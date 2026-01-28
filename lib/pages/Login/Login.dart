@@ -28,9 +28,124 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     _loadSavedCredentials();
+    _checkPrivacyAgreement();
     _accountController.addListener(() {
       setState(() {});
     });
+  }
+
+  Future<void> _checkPrivacyAgreement() async {
+    final prefs = await SharedPreferences.getInstance();
+    final bool hasAgreed = prefs.getBool('has_agreed_privacy') ?? false;
+
+    if (!hasAgreed && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showPrivacyDialog();
+      });
+    }
+  }
+
+  void _showPrivacyDialog() {
+    final TextEditingController _confirmController = TextEditingController();
+    final ValueNotifier<bool> _canConfirm = ValueNotifier(false);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return WillPopScope(
+          onWillPop: () async => false,
+          child: AlertDialog(
+            title: Text("使用前须知"),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      "欢迎使用 CQUT Helper！\n为了保障您的权益，请仔细阅读以下内容：",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      "🔒 隐私说明",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      "1. 核心数据本地化：用户的账号、密码（经过加密处理）、课表详情、成绩等核心隐私数据仅存储在本地设备上，绝不会上传至除学校教务系统以外的任何第三方服务器。\n"
+                      "2. 统计分析：为了优化用户体验和修复 Bug，本项目集成了 Firebase Analytics。它仅收集匿名的使用数据（如崩溃日志、功能点击次数），不包含任何个人身份信息。\n"
+                      "3. 网络请求：应用仅在以下情况发起网络请求：\n"
+                      "   - 访问学校教务系统 (用于获取数据)\n"
+                      "   - 检查应用更新 (访问 GitHub Releases)\n"
+                      "   - 浏览开源仓库 (访问 GitHub API)\n"
+                      "   - 匿名统计数据 (发送至 Firebase)\n"
+                      "4. 权限使用：应用仅在必要时请求所需权限，并明确告知使用目的。",
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      "⚠️ 开发说明",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      "本人并不是软工专业学生,因此本项目的绝大部分代码是在 AI 辅助下完成的，主要用于学习和实验目的。代码质量和设计模式可能存在不足，仅供参考。",
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    SizedBox(height: 24),
+                    Text(
+                      "请输入“我已阅读并了解”以继续使用：",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 8),
+                    TextField(
+                      controller: _confirmController,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        hintText: "我已阅读并了解",
+                      ),
+                      onChanged: (value) {
+                        _canConfirm.value = value.trim() == "我已阅读并了解";
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              ValueListenableBuilder<bool>(
+                valueListenable: _canConfirm,
+                builder: (context, canConfirm, child) {
+                  return FilledButton(
+                    onPressed: canConfirm
+                        ? () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setBool('has_agreed_privacy', true);
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                            }
+                          }
+                        : null,
+                    child: Text("确认并继续"),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
