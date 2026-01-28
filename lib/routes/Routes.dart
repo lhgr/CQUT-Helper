@@ -34,8 +34,7 @@ class MyApp extends StatelessWidget {
             }
 
             return MaterialApp(
-              // key: ValueKey(ThemeManager().themeMode), // 注释掉以避免状态丢失
-              title: 'CQUT',
+              title: 'CQUTer Helper',
               initialRoute: "/",
               routes: getRootRoutes(),
               theme: ThemeData(useMaterial3: true, colorScheme: lightScheme),
