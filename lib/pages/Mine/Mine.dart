@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cqut/api/api_service.dart';
 import 'package:cqut/manager/theme_manager.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -461,6 +462,9 @@ class _MineViewState extends State<MineView> {
                   SizedBox(height: 8),
                   InkWell(
                     onTap: () async {
+                      await FirebaseAnalytics.instance.logEvent(
+                        name: 'click_repo_link',
+                      );
                       final Uri url = Uri.parse(
                         'https://github.com/lhgr/CQUT-Helper',
                       );

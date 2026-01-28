@@ -1,6 +1,7 @@
 import 'package:cqut/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut/pages/Data/Data.dart';
 import 'package:cqut/pages/Mine/Mine.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -76,7 +77,11 @@ class _MainPageState extends State<MainPage> {
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        onDestinationSelected: (int index) {
+        onDestinationSelected: (int index) async {
+          await FirebaseAnalytics.instance.logEvent(
+            name: 'tab_switch',
+            parameters: {'tab_name': _tabList[index]['text']},
+          );
           setState(() {
             _currentIndex = index;
           });

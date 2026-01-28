@@ -2,6 +2,7 @@ import 'package:cqut/manager/theme_manager.dart';
 import 'package:cqut/pages/Login/Login.dart';
 import 'package:cqut/pages/Main/Main.dart';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 
 class MyApp extends StatelessWidget {
@@ -37,6 +38,12 @@ class MyApp extends StatelessWidget {
               title: 'CQUTer Helper',
               initialRoute: "/",
               routes: getRootRoutes(),
+              // 添加 Firebase Analytics 监听
+              navigatorObservers: [
+                FirebaseAnalyticsObserver(
+                  analytics: FirebaseAnalytics.instance,
+                ),
+              ],
               theme: ThemeData(useMaterial3: true, colorScheme: lightScheme),
               darkTheme: ThemeData(useMaterial3: true, colorScheme: darkScheme),
               themeMode: ThemeManager().themeMode,

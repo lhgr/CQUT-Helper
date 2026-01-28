@@ -1,5 +1,6 @@
 import 'package:cqut/pages/Data/repo_browser.dart';
 import 'package:cqut/manager/favorites_manager.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -38,6 +39,10 @@ class _DataViewState extends State<DataView> {
   }
 
   void _navigateToRepoBrowser(String path, String title) {
+    FirebaseAnalytics.instance.logEvent(
+      name: 'view_material',
+      parameters: {'path': path, 'title': title},
+    );
     Navigator.push(
       context,
       MaterialPageRoute(

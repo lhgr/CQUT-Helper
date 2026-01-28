@@ -1,4 +1,5 @@
 import 'package:cqut/api/auth/auth_api.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -96,6 +97,8 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       // 登录成功，保存凭证
+      await FirebaseAnalytics.instance.logLogin(loginMethod: 'password');
+
       final prefs = await SharedPreferences.getInstance();
       if (_rememberMe) {
         await prefs.setString('account', account);
@@ -243,6 +246,9 @@ class _LoginPageState extends State<LoginPage> {
                       Spacer(),
                       TextButton(
                         onPressed: () async {
+                          await FirebaseAnalytics.instance.logEvent(
+                            name: 'forgot_password_click',
+                          );
                           const url =
                               'https://uis.cqut.edu.cn/unified_identity_logon/#/uia/forget';
                           if (!await launchUrl(

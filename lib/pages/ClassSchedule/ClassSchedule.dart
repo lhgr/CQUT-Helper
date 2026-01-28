@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cqut/pages/ClassSchedule/schedule_controller.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import '../../model/schedule_model.dart';
 import 'widgets/schedule_header.dart';
@@ -168,6 +169,13 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
   }
 
   void _onPageChanged(int index) {
+    if (_weekList != null && index >= 0 && index < _weekList!.length) {
+      FirebaseAnalytics.instance.logEvent(
+        name: 'view_schedule_week',
+        parameters: {'week_number': _weekList![index]},
+      );
+    }
+
     setState(() {
       _currentWeekIndex = index;
     });
