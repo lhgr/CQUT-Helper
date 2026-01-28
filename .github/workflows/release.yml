@@ -38,6 +38,12 @@ jobs:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
           echo $GOOGLE_SERVICES_JSON_BASE64 | base64 -d > android/app/google-services.json
+      
+      # [调试] 检查文件是否存在
+      - name: Check Files
+        run: |
+          ls -l android/app/google-services.json || echo "google-services.json NOT FOUND"
+          ls -l lib/firebase_options.dart || echo "firebase_options.dart NOT FOUND"
         
       # 1. 构建通用版 (包含所有架构)
       - name: Build Fat APK (Universal)
