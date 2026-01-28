@@ -4,49 +4,85 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:  # 手动触发配置
+  workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name for release (e.g., v1.0.0)'
+        description: 'Release tag name'
         required: true
         default: 'v1.0.0'
-      release_notes:
-        description: 'Release notes'
+      skip_release:
+        description: 'Skip creating GitHub Release?'
         required: false
-        default: 'Release created via manual workflow'
+        default: 'false'
+        type: choice
+        options:
+          - true
+          - false
 
 permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    name: Build and Release APK
+  build:
+    name: Build APK
     runs-on: ubuntu-latest
     
     env:
       TZ: Asia/Shanghai
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      LC_TIME: C.UTF-8
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # 获取所有历史记录，便于创建tag
       
-      - name: Setup Timezone
+      # 全面的时区设置
+      - name: Configure Timezone and Locale
         run: |
-          sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+          echo "=== Setting up timezone and locale ==="
+          
+          # 安装必要的包
+          sudo apt-get update
+          sudo apt-get install -y tzdata locales
+          
+          # 设置时区
           echo "Asia/Shanghai" | sudo tee /etc/timezone
-          date  # 显示当前时间，用于验证
+          sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+          sudo dpkg-reconfigure -f noninteractive tzdata
+          
+          # 设置locale
+          sudo locale-gen en_US.UTF-8 zh_CN.UTF-8
+          sudo update-locale LANG=en_US.UTF-8 LC_TIME=C.UTF-8
+          
+          # 验证设置
+          echo "=== Current settings ==="
+          echo "Timezone: $(cat /etc/timezone)"
+          echo "Localtime: $(ls -l /etc/localtime)"
+          echo "Date: $(date)"
+          echo "Date RFC 1123: $(date -R)"
+          echo "Locale: $(locale)"
+          
+          # 设置环境变量
+          export TZ=Asia/Shanghai
+          export LANG=C.UTF-8
+          export LC_ALL=C.UTF-8
+          export LC_TIME=C.UTF-8
           
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true
-          cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
+          flutter-version: '3.16.0'
           
       - name: Get Dependencies
-        run: flutter pub get
+        env:
+          TZ: Asia/Shanghai
+          LANG: C.UTF-8
+          LC_ALL: C.UTF-8
+        run: |
+          echo "Current time in flutter build: $(date)"
+          flutter pub get
 
       - name: Decode Firebase Options
         env:
@@ -60,49 +96,66 @@ jobs:
         run: |
           echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > android/app/google-services.json
       
-      - name: Check Files
+      - name: Verify Configuration Files
         run: |
-          ls -la android/app/google-services.json || echo "google-services.json NOT FOUND"
-          ls -la lib/firebase_options.dart || echo "firebase_options.dart NOT FOUND"
+          echo "=== Configuration files check ==="
+          ls -la android/app/google-services.json lib/firebase_options.dart || true
+      
+      # 构建前设置环境变量
+      - name: Setup Build Environment
+        run: |
+          echo "=== Build environment ==="
+          echo "TZ: $TZ"
+          echo "LANG: $LANG"
+          echo "LC_ALL: $LC_ALL"
+          echo "Current date: $(date)"
+          echo "Current date in RFC 2822: $(date -R)"
         
       - name: Build Fat APK (Universal)
+        env:
+          TZ: Asia/Shanghai
+          LC_TIME: C.UTF-8
         run: |
+          echo "Building Universal APK..."
+          echo "Build time: $(date)"
           flutter build apk --release
           mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
         
       - name: Build Split APKs
-        run: flutter build apk --release --split-per-abi
-      
-      - name: Create Git Tag (Manual Trigger)
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git tag ${{ github.event.inputs.tag_name }}
-          git push origin ${{ github.event.inputs.tag_name }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TZ: Asia/Shanghai
+          LC_TIME: C.UTF-8
+        run: |
+          echo "Building Split APKs..."
+          echo "Build time: $(date)"
+          flutter build apk --release --split-per-abi
       
-      - name: Create Release
-        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-        uses: softprops/action-gh-release@v1
+      - name: Verify APK Files
+        run: |
+          echo "=== Generated APK files ==="
+          ls -lh build/app/outputs/flutter-apk/*.apk
+      
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }}
-          name: Release ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }}
-          body: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_notes || '' }}
+          name: apk-build-${{ github.run_id }}
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 30
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: ${{ 
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || 
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_release != 'true')
+        }}
+        with:
           files: |
             build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
             build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
             build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-          generate_release_notes: ${{ github.event_name != 'workflow_dispatch' }}
-          prerelease: false
-          draft: false
+          tag_name: ${{ 
+            github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || 
+            github.ref_name 
+          }}
+          generate_release_notes: true
           token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Upload Artifacts (Optional - for debugging)
-        uses: actions/upload-artifact@v4
-        with:
-          name: apk-files
-          path: |
-            build/app/outputs/flutter-apk/*.apk
-          retention-days: 7
