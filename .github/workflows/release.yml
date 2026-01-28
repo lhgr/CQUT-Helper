@@ -1,77 +1,165 @@
-name: Build and Release APK
+name: Flutter Build and Release APK
 
 on:
+  # 自动触发：推送tag时
   push:
     tags:
       - 'v*'
-  workflow_dispatch:  # 手动触发，不添加 inputs
-    # 如果需要 inputs，需要正确的缩进格式
+  # 手动触发
+  workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name to rebuild'
+        description: 'Tag name for release (e.g., v1.0.0)'
         required: true
-        default: 'latest'
+        default: 'v1.0.0'
+      release_notes:
+        description: 'Release notes'
+        required: false
+        default: '📱 手动触发的应用发布'
+      create_tag:
+        description: 'Create git tag automatically'
+        type: boolean
+        required: false
+        default: true
 
+# 设置权限
 permissions:
-  contents: write
+  contents: write  # 用于创建Release
+  actions: read
+  checks: write
 
 jobs:
-  build:
-    name: Build APK
+  build-and-release:
+    name: Build Flutter APK and Create Release
     runs-on: ubuntu-latest
     
     env:
       TZ: Asia/Shanghai
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      FLUTTER_CHANNEL: 'stable'
       
-      - name: Setup Timezone
+    steps:
+      # 1. 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史记录，用于创建tag
+          ref: ${{ github.event.inputs.tag_name && 'main' || github.ref }}
+      
+      # 2. 设置时区（彻底解决时区问题）
+      - name: Configure timezone
         run: |
           sudo timedatectl set-timezone Asia/Shanghai
-          date  # 显示当前时间，用于验证
-          
+          echo "当前系统时间："
+          date
+          echo "当前时区："
+          timedatectl
+      
+      # 3. 设置Flutter环境
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+          cache-key: flutter-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-${{ hashFiles('**/pubspec.lock') }}
           
-      - name: Get Dependencies
+      # 4. 验证Flutter环境
+      - name: Verify Flutter installation
+        run: |
+          flutter --version
+          flutter doctor -v
+      
+      # 5. 获取依赖
+      - name: Get dependencies
         run: flutter pub get
-
-      - name: Decode Firebase Options
+      
+      # 6. 设置Firebase配置（保护敏感信息）
+      - name: Setup Firebase configuration
         env:
           FIREBASE_OPTIONS_BASE64: ${{ secrets.FIREBASE_OPTIONS_BASE64 }}
-        run: |
-          echo $FIREBASE_OPTIONS_BASE64 | base64 -d > lib/firebase_options.dart
-
-      - name: Decode Google Services Json
-        env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
-          echo $GOOGLE_SERVICES_JSON_BASE64 | base64 -d > android/app/google-services.json
+          # 验证密钥是否存在
+          if [ -z "$FIREBASE_OPTIONS_BASE64" ]; then
+            echo "❌ FIREBASE_OPTIONS_BASE64 secret is missing"
+            exit 1
+          fi
+          
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "❌ GOOGLE_SERVICES_JSON_BASE64 secret is missing"
+            exit 1
+          fi
+          
+          # 解码并保存Firebase配置
+          echo "$FIREBASE_OPTIONS_BASE64" | base64 -d > lib/firebase_options.dart
+          echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > android/app/google-services.json
+          
+          echo "✅ Firebase配置已设置"
       
-      - name: Check Files
+      # 7. 验证配置文件
+      - name: Verify configuration files
         run: |
-          ls -l android/app/google-services.json || echo "google-services.json NOT FOUND"
-          ls -l lib/firebase_options.dart || echo "firebase_options.dart NOT FOUND"
-        
-      - name: Build Fat APK (Universal)
+          echo "📁 验证配置文件："
+          ls -la android/app/google-services.json && echo "✅ google-services.json 存在" || echo "❌ google-services.json 不存在"
+          ls -la lib/firebase_options.dart && echo "✅ firebase_options.dart 存在" || echo "❌ firebase_options.dart 不存在"
+          
+          # 验证文件内容
+          if [ -f "android/app/google-services.json" ]; then
+            echo "google-services.json 文件大小：" $(wc -l < android/app/google-services.json) "行"
+          fi
+          
+          if [ -f "lib/firebase_options.dart" ]; then
+            echo "firebase_options.dart 文件大小：" $(wc -l < lib/firebase_options.dart) "行"
+          fi
+      
+      # 8. 创建版本名称和构建时间
+      - name: Generate build info
         run: |
+          BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S')
+          BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION_NAME=${{ github.event.inputs.tag_name }}
+          else
+            VERSION_NAME=${GITHUB_REF#refs/tags/}
+          fi
+          
+          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
+          echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> $GITHUB_ENV
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          
+          echo "📱 构建信息："
+          echo "版本: $VERSION_NAME"
+          echo "构建时间: $BUILD_DATE"
+          echo "构建时间戳: $BUILD_TIMESTAMP"
+      
+      # 9. 分析项目
+      - name: Analyze Flutter project
+        run: flutter analyze
+      
+      # 10. 运行测试
+      - name: Run tests
+        run: flutter test
+      
+      # 11. 构建通用APK
+      - name: Build universal APK
+        run: |
+          echo "🔨 开始构建通用APK..."
           flutter build apk --release
-          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
-        
-      - name: Build Split APKs
-        run: flutter build apk --release --split-per-abi
-        
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
-            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-          generate_release_notes: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          
+          # 重命名APK文件，包含版本信息
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/CQUT-Helper-${{ env.VERSION_NAME }}-universal-${{ env.BUILD_TIMESTAMP }}.apk
+          
+          echo "✅ 通用APK构建完成"
+      
+      # 12. 构建分架构APK（减少文件大小）
+      - name: Build split APKs
+        run: |
+          echo "🔨 开始构建分架构APK..."
+          flutter build apk --release --split-per-abi
+          
+          # 重命名分架构APK文件
+          for file in build/app/outputs/flutter-apk/app-*-release.apk; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              arc
