@@ -43,6 +43,7 @@ dependencies:
   url_launcher: ^6.3.2
   dynamic_color: ^1.8.1
   cached_network_image: ^3.4.1
+  package_info_plus: ^9.0.0
 
 dev_dependencies:
   flutter_test:
