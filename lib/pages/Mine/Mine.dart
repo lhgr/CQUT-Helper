@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cqut/api/api_service.dart';
 import 'package:cqut/manager/theme_manager.dart';
+import 'package:cqut/manager/update_manager.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -308,6 +309,13 @@ class _MineViewState extends State<MineView> {
                 );
               },
             );
+          },
+        ),
+        _buildMenuItem(
+          icon: Icons.system_update,
+          title: "检查更新",
+          onTap: () {
+            UpdateManager().checkUpdate(context, showNoUpdateToast: true);
           },
         ),
         _buildMenuItem(
