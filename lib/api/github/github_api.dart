@@ -3,8 +3,8 @@ import 'package:cqut/model/github_item.dart';
 
 class GithubApi {
   static const String _baseUrl = 'https://api.github.com';
-  static const String _owner = 'lhgr';
-  static const String _repo = 'CQUT-Helper';
+  static const String _owner = 'Royfor12';
+  static const String _repo = 'CQUT-Course-Guide-Sharing-Scheme';
 
   final Dio _dio = Dio();
 

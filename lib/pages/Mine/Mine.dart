@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cqut/api/api_service.dart';
 import 'package:cqut/manager/theme_manager.dart';
 import 'package:flutter/material.dart';
@@ -321,46 +322,130 @@ class _MineViewState extends State<MineView> {
                 color: Theme.of(context).colorScheme.primary,
               ),
               children: [
-                Text("CQUT 课程攻略共享计划 & 校园生活助手"),
+                Text("CQUTer的小助手"),
                 SizedBox(height: 24),
                 Text("作者信息", style: Theme.of(context).textTheme.titleSmall),
                 SizedBox(height: 12),
-                Row(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                        ),
-                      ),
-                      child: CircleAvatar(
-                        radius: 24,
-                        backgroundImage: NetworkImage(
-                          'https://github.com/lhgr.png',
-                        ),
-                        onBackgroundImageError: (_, __) {},
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHigh,
-                        child: Icon(Icons.person),
-                      ),
-                    ),
-                    SizedBox(width: 16),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () async {
+                    final Uri url = Uri.parse('https://github.com/lhgr');
+                    if (!await launchUrl(
+                      url,
+                      mode: LaunchMode.externalApplication,
+                    )) {
+                      debugPrint('Could not launch \$url');
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
                       children: [
-                        Text(
-                          "lhgr",
-                          style: Theme.of(context).textTheme.titleMedium,
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: CachedNetworkImage(
+                            imageUrl: 'https://github.com/lhgr.png',
+                            imageBuilder: (context, imageProvider) =>
+                                CircleAvatar(
+                                  radius: 24,
+                                  backgroundImage: imageProvider,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHigh,
+                                ),
+                            placeholder: (context, url) => CircleAvatar(
+                              radius: 24,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHigh,
+                              child: Icon(Icons.person),
+                            ),
+                            errorWidget: (context, url, error) => CircleAvatar(
+                              radius: 24,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHigh,
+                              child: Icon(Icons.person),
+                            ),
+                          ),
                         ),
-                        Text(
-                          "开发者",
-                          style: Theme.of(context).textTheme.bodySmall,
+                        SizedBox(width: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Dawn Drizzle",
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              "开发者",
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
+                ),
+                SizedBox(height: 8),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () async {
+                    const String urlString =
+                        'https://weibo.com/5401723589?refer_flag=1001030103_';
+                    final Uri url = Uri.parse(urlString);
+                    if (!await launchUrl(
+                      url,
+                      mode: LaunchMode.externalApplication,
+                    )) {
+                      debugPrint('Could not launch \$url');
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: CircleAvatar(
+                            radius: 24,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHigh,
+                            backgroundImage: AssetImage('lib/assets/Wing.jpg'),
+                          ),
+                        ),
+                        SizedBox(width: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Wing",
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              "吉祥物",
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 SizedBox(height: 24),
                 Text("开源地址", style: Theme.of(context).textTheme.titleSmall),
