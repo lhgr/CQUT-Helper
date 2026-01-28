@@ -13,7 +13,8 @@ class ApiClient {
     _dio = Dio();
     _cookieJar = CookieJar();
     
-    // 使用最简化的修复拦截器
+    // 关键：先添加 CookieFixInterceptor，再添加 CookieManager
+    // 这样 CookieFixInterceptor 会先修复 Cookie，然后 CookieManager 再处理修复后的 Cookie
     _dio.interceptors.add(BasicCookieFixInterceptor());
     _dio.interceptors.add(CookieManager(_cookieJar));
     
@@ -33,35 +34,96 @@ class ApiClient {
   Dio get dio => _dio;
   CookieJar get cookieJar => _cookieJar;
 
-  // getWithRedirects 方法保持不变
+  Future<Response<dynamic>> getWithRedirects(String url) async {
+    Uri current = Uri.parse(url);
+    for (int i = 0; i < 10; i++) {
+      final resp = await _dio.getUri(
+        current,
+        options: Options(followRedirects: false),
+      );
+      final status = resp.statusCode ?? 0;
+      if (status == 301 ||
+          status == 302 ||
+          status == 303 ||
+          status == 307 ||
+          status == 308) {
+        final location = resp.headers.value('location');
+        if (location == null || location.isEmpty) {
+          return resp;
+        }
+        final next = Uri.parse(location);
+        current = next.hasScheme ? next : current.resolve(location);
+        continue;
+      }
+      return resp;
+    }
+    throw Exception('Redirect loop detected');
+  }
+  
+  Future<Response<dynamic>> get(String url, {Map<String, dynamic>? queryParameters}) async {
+    return await _dio.get(url, queryParameters: queryParameters);
+  }
+  
+  Future<Response<dynamic>> post(String url, {dynamic data}) async {
+    return await _dio.post(url, data: data);
+  }
 }
 
 /// 基础修复，只处理 +0800 时区问题
 class BasicCookieFixInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    final setCookieHeaders = response.headers['set-cookie'];
-    if (setCookieHeaders != null && setCookieHeaders.isNotEmpty) {
-      final fixedCookies = <String>[];
-      
-      for (final cookie in setCookieHeaders) {
-        var fixedCookie = cookie;
+    try {
+      final setCookieHeaders = response.headers['set-cookie'];
+      if (setCookieHeaders != null && setCookieHeaders.isNotEmpty) {
+        final fixedCookies = <String>[];
         
-        // 修复 +0800 时区格式
-        if (cookie.contains(' +0800')) {
-          fixedCookie = cookie.replaceAll(' +0800', ' GMT');
-        }
-        // 修复 -0800 等其他时区
-        else if (cookie.contains(RegExp(r' [+-]\d{4}(?=;|$)'))) {
-          fixedCookie = cookie.replaceAll(RegExp(r' [+-]\d{4}(?=;|$)'), ' GMT');
+        for (final cookie in setCookieHeaders) {
+          var fixedCookie = cookie;
+          
+          // 修复特定格式：Fri, 27 Feb 2026 22:42:43 +0800
+          // 使用更精确的正则，只匹配 expires= 后面的日期
+          fixedCookie = _fixExpiresDate(fixedCookie);
+          
+          fixedCookies.add(fixedCookie);
         }
         
-        fixedCookies.add(fixedCookie);
+        // 更新响应头
+        response.headers.set('set-cookie', fixedCookies);
+        
+        // 调试输出
+        if (setCookieHeaders.length != fixedCookies.length) {
+          print('CookieFix: Fixed ${setCookieHeaders.length} cookies');
+        }
       }
-      
-      response.headers.set('set-cookie', fixedCookies);
+    } catch (e) {
+      print('CookieFixInterceptor error: $e');
+      // 不要抛出异常，继续处理
     }
     
     handler.next(response);
+  }
+  
+  String _fixExpiresDate(String cookie) {
+    // 使用正则表达式查找 expires= 后面的日期部分
+    final expiresRegex = RegExp(r'expires=([^;]+)', caseSensitive: false);
+    
+    return cookie.replaceAllMapped(expiresRegex, (match) {
+      final dateStr = match.group(1)!;
+      var fixedDate = dateStr;
+      
+      // 检查是否是 +0800 格式
+      if (dateStr.contains(' +0800')) {
+        fixedDate = dateStr.replaceAll(' +0800', ' GMT');
+        print('CookieFix: Fixed +0800 timezone: $dateStr -> $fixedDate');
+      }
+      // 检查其他时区偏移
+      else if (dateStr.contains(RegExp(r' [+-]\d{4}$'))) {
+        fixedDate = dateStr.replaceAll(RegExp(r' [+-]\d{4}$'), ' GMT');
+        print('CookieFix: Fixed timezone offset: $dateStr -> $fixedDate');
+      }
+      
+      return 'expires=$fixedDate';
+    });
   }
 }
