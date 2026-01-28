@@ -1,6 +1,7 @@
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:intl/intl.dart';
 
 class ApiClient {
   static final ApiClient _instance = ApiClient._internal();
@@ -12,8 +13,11 @@ class ApiClient {
   ApiClient._internal() {
     _dio = Dio();
     _cookieJar = CookieJar();
+    
+    // 先添加我们的自定义拦截器，再添加 CookieManager
+    _dio.interceptors.add(CookieDateFixInterceptor());
     _dio.interceptors.add(CookieManager(_cookieJar));
-    _dio.interceptors.add(CookieFixInterceptor());
+    
     _dio.options = BaseOptions(
       headers: const {
         'User-Agent':
@@ -57,19 +61,97 @@ class ApiClient {
   }
 }
 
-/// 修复 Cookie 中日期格式不标准的问题
-class CookieFixInterceptor extends Interceptor {
+/// 修复 Cookie 中非标准日期格式的问题
+class CookieDateFixInterceptor extends Interceptor {
+  static final List<DateFormat> _dateFormats = [
+    // RFC 1123: Fri, 27 Feb 2026 22:42:43 +0800
+    DateFormat('EEE, dd MMM yyyy HH:mm:ss Z', 'en_US'),
+    // RFC 850: Friday, 27-Feb-26 22:42:43 GMT
+    DateFormat('EEEE, dd-MMM-yy HH:mm:ss z', 'en_US'),
+    // asctime: Fri Feb 27 22:42:43 2026
+    DateFormat('EEE MMM dd HH:mm:ss yyyy', 'en_US'),
+    // RFC 1123 without timezone: Fri, 27 Feb 2026 22:42:43 GMT
+    DateFormat('EEE, dd MMM yyyy HH:mm:ss z', 'en_US'),
+  ];
+
   @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
-    final setCookie = response.headers['set-cookie'];
-    if (setCookie != null) {
-      final fixedCookies = setCookie.map((cookie) {
-        // 简单替换 +0800 为 GMT，虽然这会使过期时间延后8小时，但保证了格式的合法性
-        // 且对于 session cookie 或长期 cookie 影响不大
-        return cookie.replaceAll(' +0800', ' GMT');
-      }).toList();
-      response.headers.set('set-cookie', fixedCookies);
+  void onResponse(Response response, ResponseInterceptorHandler handler) async {
+    try {
+      final setCookieHeaders = response.headers['set-cookie'];
+      if (setCookieHeaders != null && setCookieHeaders.isNotEmpty) {
+        final fixedCookies = <String>[];
+        
+        for (final cookie in setCookieHeaders) {
+          fixedCookies.add(_fixCookieDate(cookie));
+        }
+        
+        // 更新响应头
+        response.headers.set('set-cookie', fixedCookies);
+      }
+    } catch (e) {
+      print('CookieDateFixInterceptor error: $e');
+      // 不抛出异常，继续处理
     }
-    super.onResponse(response, handler);
+    
+    handler.next(response);
+  }
+
+  String _fixCookieDate(String cookie) {
+    // 查找 expires= 部分
+    final expiresRegex = RegExp(r'expires=([^;]+)', caseSensitive: false);
+    final match = expiresRegex.firstMatch(cookie);
+    
+    if (match == null) {
+      return cookie; // 没有 expires 属性，直接返回
+    }
+    
+    final originalDateStr = match.group(1)!;
+    String fixedDateStr = originalDateStr;
+    
+    try {
+      // 尝试解析日期
+      DateTime? parsedDate;
+      
+      // 首先尝试直接解析
+      try {
+        parsedDate = DateTime.parse(originalDateStr.replaceAll(' GMT', ''));
+      } catch (_) {}
+      
+      // 如果直接解析失败，尝试使用各种格式
+      if (parsedDate == null) {
+        for (final format in _dateFormats) {
+          try {
+            parsedDate = format.parse(originalDateStr);
+            break;
+          } catch (_) {}
+        }
+      }
+      
+      // 如果解析成功，格式化为标准 GMT 时间
+      if (parsedDate != null) {
+        // 转换为 UTC/GMT
+        final gmtDate = parsedDate.toUtc();
+        fixedDateStr = DateFormat('EEE, dd MMM yyyy HH:mm:ss').format(gmtDate) + ' GMT';
+      } else {
+        // 如果所有解析都失败，使用更激进的方法
+        fixedDateStr = _forceFixDate(originalDateStr);
+      }
+    } catch (e) {
+      print('Failed to parse cookie date "$originalDateStr": $e');
+      // 如果解析失败，使用保守的修复方法
+      fixedDateStr = _forceFixDate(originalDateStr);
+    }
+    
+    // 替换原始 expires 值
+    return cookie.replaceFirst(
+      'expires=$originalDateStr',
+      'expires=$fixedDateStr',
+      match.start,
+    );
+  }
+
+  String _forceFixDate(String dateStr) {
+    // 移除时区偏移，直接添加 GMT
+    return dateStr.replaceAll(RegExp(r'\s*[+-]\d{4}'), '').trim() + ' GMT';
   }
 }
