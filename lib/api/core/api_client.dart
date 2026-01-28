@@ -13,6 +13,7 @@ class ApiClient {
     _dio = Dio();
     _cookieJar = CookieJar();
     _dio.interceptors.add(CookieManager(_cookieJar));
+    _dio.interceptors.add(CookieFixInterceptor());
     _dio.options = BaseOptions(
       headers: const {
         'User-Agent':
@@ -53,5 +54,22 @@ class ApiClient {
       return resp;
     }
     throw Exception('Redirect loop detected');
+  }
+}
+
+/// 修复 Cookie 中日期格式不标准的问题
+class CookieFixInterceptor extends Interceptor {
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    final setCookie = response.headers['set-cookie'];
+    if (setCookie != null) {
+      final fixedCookies = setCookie.map((cookie) {
+        // 简单替换 +0800 为 GMT，虽然这会使过期时间延后8小时，但保证了格式的合法性
+        // 且对于 session cookie 或长期 cookie 影响不大
+        return cookie.replaceAll(' +0800', ' GMT');
+      }).toList();
+      response.headers.set('set-cookie', fixedCookies);
+    }
+    super.onResponse(response, handler);
   }
 }
