@@ -1,7 +1,7 @@
 class GithubItem {
   final String name;
   final String path;
-  final String type; // 'file' or 'dir'
+  final String type; // 'file' 或 'dir'
   final String? downloadUrl;
   final String htmlUrl;
 

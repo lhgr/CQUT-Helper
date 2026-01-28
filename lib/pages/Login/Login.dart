@@ -119,7 +119,7 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       if (mounted) {
         String errorMessage = e.toString();
-        // Remove "Exception: " prefix if present
+        // 如果存在 "Exception: " 前缀，则移除
         if (errorMessage.startsWith("Exception: ")) {
           errorMessage = errorMessage.substring(11);
         }

@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 class FavoriteItem {
   final String title;
   final String path;
-  final String type; // 'dir' or 'file'
+  final String type; // 'dir' 或 'file'
   final String subtitle;
 
   FavoriteItem({

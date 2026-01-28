@@ -17,7 +17,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
   final ScheduleController _controller = ScheduleController();
   ScheduleData? _currentScheduleData; // 当前显示的周数据
 
-  // Getters for controller properties to minimize code changes
+  // 获取控制器属性的 Getter，以最小化代码更改
   Map<int, ScheduleData> get _weekCache => _controller.weekCache;
   List<String>? get _weekList => _controller.weekList;
   String? get _actualCurrentWeekStr => _controller.actualCurrentWeekStr;

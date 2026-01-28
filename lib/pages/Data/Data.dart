@@ -273,17 +273,8 @@ class _DataViewState extends State<DataView> {
                   if (item.type == 'dir') {
                     _navigateToRepoBrowser(item.path, item.title);
                   } else {
-                    // For files, we might need the full URL or handle it in RepoBrowser
-                    // But here we might just open the browser page which handles logic?
-                    // Actually RepoBrowserPage takes a path. If it's a file, it might need special handling.
-                    // But for now let's assume folders. If file, we might just open it.
-                    // Let's stick to folders for navigation as per user "folder" request.
-                    // If it is a file, _navigateToRepoBrowser will open RepoBrowser with that path,
-                    // which might show the file content or just list it?
-                    // GithubApi.getContents(path) returns list of items in that path if it's a dir.
-                    // If it's a file, getContents might return the file info or fail?
-                    // The API usually returns array for dir, object for file.
-                    // Let's assume user mostly favorites folders.
+                    // 对于文件，我们可能需要完整 URL 或者在 RepoBrowser 中处理
+                    // 目前假设用户主要收藏文件夹
                     _navigateToRepoBrowser(item.path, item.title);
                   }
                 },
@@ -371,6 +362,4 @@ class _DataViewState extends State<DataView> {
       },
     );
   }
-
-  // Helper method removed as it is replaced by _buildFavoritesList
 }

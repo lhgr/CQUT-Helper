@@ -34,7 +34,7 @@ class MyApp extends StatelessWidget {
             }
 
             return MaterialApp(
-              // key: ValueKey(ThemeManager().themeMode), // Commented out to avoid state loss
+              // key: ValueKey(ThemeManager().themeMode), // 注释掉以避免状态丢失
               title: 'CQUT',
               initialRoute: "/",
               routes: getRootRoutes(),

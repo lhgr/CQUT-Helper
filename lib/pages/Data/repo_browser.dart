@@ -93,7 +93,7 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                         path: item.path,
                         type: item.type,
                         subtitle: widget
-                            .title, // Use current folder name as subtitle/context
+                            .title, // 使用当前文件夹名称作为副标题/上下文
                       ),
                     );
                     if (mounted) {

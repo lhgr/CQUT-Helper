@@ -7,8 +7,8 @@ class UserApi {
       'https://timetable-cfc.cqut.edu.cn/api/courseSchedule/getUserInfo';
 
   Future<Map<String, dynamic>> getUserInfo() async {
-    // The cookies are managed by the cookieJar in ApiClient, so we just make the request.
-    // The request method is POST as per requirement.
+    // Cookie 由 ApiClient 中的 cookieJar 管理，所以我们直接发起请求。
+    // 根据需求，请求方法为 POST。
     final resp = await _client.dio.post(_userInfoApi);
 
     if (resp.data is Map<String, dynamic>) {

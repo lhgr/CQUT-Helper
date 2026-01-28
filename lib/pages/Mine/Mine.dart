@@ -14,9 +14,6 @@ class MineView extends StatefulWidget {
 
 class _MineViewState extends State<MineView> {
   final ApiService _apiService = ApiService();
-
-  // 目前是硬编码的，与 ClassSchedule 相同
-  // 在真实应用中，这应该在登录后存储在全局状态/提供者中
   String? _currentUserId;
 
   Map<String, dynamic>? _userInfo;
@@ -93,7 +90,7 @@ class _MineViewState extends State<MineView> {
       );
     }
 
-    // If error and no data, show error
+    // 如果发生错误且没有数据，显示错误页面
     if (_error != null && _userInfo == null) {
       return Scaffold(
         appBar: AppBar(title: Text("我的"), centerTitle: true),
@@ -410,7 +407,7 @@ class _MineViewState extends State<MineView> {
                         await prefs.remove('account');
                         await prefs.remove('encrypted_password');
                         if (context.mounted) {
-                          Navigator.pop(context); // Close dialog
+                          Navigator.pop(context); // 关闭弹窗
                           ScaffoldMessenger.of(
                             context,
                           ).showSnackBar(SnackBar(content: Text("已退出登录")));

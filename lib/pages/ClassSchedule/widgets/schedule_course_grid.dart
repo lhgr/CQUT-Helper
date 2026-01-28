@@ -169,7 +169,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                   final int duration =
                       int.tryParse(event.sessionLast ?? "1") ?? 1;
 
-                  // Adjust weekDay to 0-based index (Assuming 1=Monday)
+                  // 将 weekDay 调整为从 0 开始的索引（假设 1=周一）
                   final int dayIndex = weekDay - 1;
 
                   return Positioned(
