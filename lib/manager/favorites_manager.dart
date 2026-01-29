@@ -7,12 +7,14 @@ class FavoriteItem {
   final String path;
   final String type; // 'dir' 或 'file'
   final String subtitle;
+  final String? url;
 
   FavoriteItem({
     required this.title,
     required this.path,
     required this.type,
     this.subtitle = '',
+    this.url,
   });
 
   Map<String, dynamic> toJson() => {
@@ -20,6 +22,7 @@ class FavoriteItem {
     'path': path,
     'type': type,
     'subtitle': subtitle,
+    'url': url,
   };
 
   factory FavoriteItem.fromJson(Map<String, dynamic> json) => FavoriteItem(
@@ -27,6 +30,7 @@ class FavoriteItem {
     path: json['path'],
     type: json['type'],
     subtitle: json['subtitle'] ?? '',
+    url: json['url'],
   );
 }
 

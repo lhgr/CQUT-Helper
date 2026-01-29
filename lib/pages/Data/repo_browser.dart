@@ -94,6 +94,7 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                         type: item.type,
                         subtitle: widget
                             .title, // 使用当前文件夹名称作为副标题/上下文
+                        url: item.htmlUrl,
                       ),
                     );
                     if (mounted) {

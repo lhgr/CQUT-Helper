@@ -278,9 +278,12 @@ class _DataViewState extends State<DataView> {
                   if (item.type == 'dir') {
                     _navigateToRepoBrowser(item.path, item.title);
                   } else {
-                    // 对于文件，我们可能需要完整 URL 或者在 RepoBrowser 中处理
-                    // 目前假设用户主要收藏文件夹
-                    _navigateToRepoBrowser(item.path, item.title);
+                    if (item.url != null && item.url!.isNotEmpty) {
+                      _launchUrl(item.url!);
+                    } else {
+                      final url = "$_repoUrl/blob/main/${item.path}";
+                      _launchUrl(url);
+                    }
                   }
                 },
                 onLongPress: () {
