@@ -1,3 +1,4 @@
+import 'package:cqut/manager/update_manager.dart';
 import 'package:cqut/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut/pages/Data/Data.dart';
 import 'package:cqut/pages/Mine/Mine.dart';
@@ -33,6 +34,11 @@ class _MainPageState extends State<MainPage> {
       if (mounted) {
         setState(() {
           _isCheckingLogin = false;
+        });
+        // 登录成功后，自动检查更新
+        // 使用 addPostFrameCallback 确保在当前帧绘制完成后执行，避免构建冲突
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          UpdateManager().checkUpdate(context);
         });
       }
     }
