@@ -82,6 +82,7 @@ jobs:
             build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
             build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           generate_release_notes: true
-          draft: false
+          # 设置为 true，这样发布后会是草稿状态，你可以手动编辑 Release 说明后再正式发布
+          draft: true
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
