@@ -155,22 +155,62 @@ class ScheduleController {
     }
   }
 
-  Future<void> ensureWeekLoaded(String weekNum, String yearTerm) async {
-    final wInt = int.tryParse(weekNum) ?? 0;
-    if (weekCache.containsKey(wInt)) return;
+  /// 静默更新相邻周（强制刷新）
+  Future<void> silentUpdateAdjacentWeeks(
+    ScheduleData currentData,
+    Function() onUpdate,
+  ) async {
+    final wList = currentData.weekList;
+    final currentWeekStr = currentData.weekNum;
+    final cTerm = currentData.yearTerm;
 
-    // 尝试读取磁盘缓存
-    final cached = await loadFromCache(weekNum: weekNum, yearTerm: yearTerm);
-    if (cached != null) {
-      weekCache[wInt] = cached;
-      return;
+    if (wList == null || currentWeekStr == null || cTerm == null) return;
+
+    final currentIndex = wList.indexOf(currentWeekStr);
+    if (currentIndex == -1) return;
+
+    final futures = <Future>[];
+
+    // 强制刷新上一周
+    if (currentIndex > 0) {
+      final prevWeek = wList[currentIndex - 1];
+      futures.add(ensureWeekLoaded(prevWeek, cTerm, forceRefresh: true));
+    }
+    // 强制刷新下一周
+    if (currentIndex < wList.length - 1) {
+      final nextWeek = wList[currentIndex + 1];
+      futures.add(ensureWeekLoaded(nextWeek, cTerm, forceRefresh: true));
+    }
+
+    if (futures.isNotEmpty) {
+      await Future.wait(futures);
+      onUpdate();
+    }
+  }
+
+  Future<void> ensureWeekLoaded(
+    String weekNum,
+    String yearTerm, {
+    bool forceRefresh = false,
+  }) async {
+    final wInt = int.tryParse(weekNum) ?? 0;
+    
+    if (!forceRefresh) {
+      if (weekCache.containsKey(wInt)) return;
+
+      // 尝试读取磁盘缓存
+      final cached = await loadFromCache(weekNum: weekNum, yearTerm: yearTerm);
+      if (cached != null) {
+        weekCache[wInt] = cached;
+        return;
+      }
     }
 
     try {
       final data = await loadFromNetwork(weekNum: weekNum, yearTerm: yearTerm);
       processLoadedData(data);
     } catch (e) {
-      // 预取失败忽略
+      // 预取或刷新失败忽略
     }
   }
 }

@@ -54,6 +54,23 @@ jobs:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
           echo $GOOGLE_SERVICES_JSON_BASE64 | base64 -d > android/app/google-services.json
+
+      - name: Decode Keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo $ANDROID_KEYSTORE_BASE64 | base64 -d > android/app/upload-keystore.jks
+
+      - name: Create Key Properties
+        env:
+          ANDROID_KEY_PROPERTIES_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_PROPERTIES_STORE_PASSWORD }}
+          ANDROID_KEY_PROPERTIES_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PROPERTIES_KEY_PASSWORD }}
+          ANDROID_KEY_PROPERTIES_KEY_ALIAS: ${{ secrets.ANDROID_KEY_PROPERTIES_KEY_ALIAS }}
+        run: |
+          echo "storePassword=$ANDROID_KEY_PROPERTIES_STORE_PASSWORD" > android/key.properties
+          echo "keyPassword=$ANDROID_KEY_PROPERTIES_KEY_PASSWORD" >> android/key.properties
+          echo "keyAlias=$ANDROID_KEY_PROPERTIES_KEY_ALIAS" >> android/key.properties
+          echo "storeFile=upload-keystore.jks" >> android/key.properties
       
       - name: Check Files
         run: |
@@ -63,10 +80,14 @@ jobs:
       - name: Build Fat APK (Universal)
         run: |
           flutter build apk --release
-          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
+          mkdir -p build/releases
+          mv build/app/outputs/flutter-apk/app-release.apk build/releases/CQUT-Helper-universal.apk
         
       - name: Build Split APKs
-        run: flutter build apk --release --split-per-abi
+        run: |
+          flutter build apk --release --split-per-abi
+          mv build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk build/releases/
+          mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/releases/
         
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -78,9 +99,9 @@ jobs:
           tag_name: ${{ github.ref_name || github.event.inputs.tag_name }}
           name: Release ${{ github.ref_name || github.event.inputs.tag_name }}
           files: |
-            build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
-            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/releases/CQUT-Helper-universal.apk
+            build/releases/app-armeabi-v7a-release.apk
+            build/releases/app-arm64-v8a-release.apk
           generate_release_notes: true
           draft: false
           prerelease: false

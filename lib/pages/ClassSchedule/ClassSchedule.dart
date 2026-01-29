@@ -81,6 +81,13 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
 
     // 2. 从网络加载以获取最新的“当前”周
     await _loadFromNetwork();
+
+    // 3. 静默强制更新前后一周
+    if (_currentScheduleData != null) {
+      _controller.silentUpdateAdjacentWeeks(_currentScheduleData!, () {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   void _processLoadedData(ScheduleData data, {bool isInitial = false}) {
