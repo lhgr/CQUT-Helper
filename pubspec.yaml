@@ -101,20 +101,20 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-# flutter_launcher_icons:
-#   android: "launcher_icon"
-#   ios: true
-#   image_path: "lib/assets/icon.png"
-#   min_sdk_android: 21 # android min sdk min:16, default 21
-#   web:
-#     generate: true
-#     image_path: "lib/assets/icon.png"
-#     background_color: "#hex_color"
-#     theme_color: "#hex_color"
-#   windows:
-#     generate: true
-#     image_path: "lib/assets/icon.png"
-#     icon_size: 48 # min:48, max:256, default: 48
-#   macos:
-#     generate: true
-#     image_path: "lib/assets/icon.png"
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: false
+  image_path: "lib/assets/Icon.png"
+  min_sdk_android: 21 # android min sdk min:16, default 21
+  web:
+    generate: false
+    image_path: "lib/assets/Icon.png"
+    background_color: "#ffffff"
+    theme_color: "#ffffff"
+  windows:
+    generate: false
+    image_path: "lib/assets/Icon.png"
+    icon_size: 48 # min:48, max:256, default: 48
+  macos:
+    generate: false
+    image_path: "lib/assets/Icon.png"
