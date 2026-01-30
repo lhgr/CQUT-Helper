@@ -35,7 +35,7 @@ class MyApp extends StatelessWidget {
             }
 
             return MaterialApp(
-              title: 'CQUTer Helper',
+              title: 'CQUT Helper',
               initialRoute: "/",
               routes: getRootRoutes(),
               // 添加 Firebase Analytics 监听
