@@ -1,6 +1,7 @@
 import 'package:cqut/api/api_service.dart';
 import 'package:cqut/model/update_model.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -14,7 +15,10 @@ class UpdateManager {
   /// 检查更新
   /// [context] 用于显示弹窗
   /// [showNoUpdateToast] 是否在没有更新时显示提示（手动检查时为 true）
-  Future<void> checkUpdate(BuildContext context, {bool showNoUpdateToast = false}) async {
+  Future<void> checkUpdate(
+    BuildContext context, {
+    bool showNoUpdateToast = false,
+  }) async {
     // 1. 获取当前版本
     PackageInfo packageInfo = await PackageInfo.fromPlatform();
     String currentVersion = packageInfo.version;
@@ -24,9 +28,9 @@ class UpdateManager {
 
     if (updateInfo == null) {
       if (showNoUpdateToast && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('检查更新失败，请稍后重试')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('检查更新失败，请稍后重试')));
       }
       return;
     }
@@ -34,16 +38,16 @@ class UpdateManager {
     // 3. 比较版本
     // 假设 tag_name 格式为 "v1.0.1" 或 "1.0.1"
     String remoteVersion = updateInfo.tagName.replaceAll('v', '');
-    
+
     if (_hasNewVersion(currentVersion, remoteVersion)) {
       if (context.mounted) {
         _showUpdateDialog(context, updateInfo, currentVersion);
       }
     } else {
       if (showNoUpdateToast && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('当前已是最新版本')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('当前已是最新版本')));
       }
     }
   }
@@ -66,7 +70,11 @@ class UpdateManager {
     return false;
   }
 
-  void _showUpdateDialog(BuildContext context, UpdateModel info, String currentVersion) {
+  void _showUpdateDialog(
+    BuildContext context,
+    UpdateModel info,
+    String currentVersion,
+  ) {
     showDialog(
       context: context,
       builder: (context) {
@@ -81,7 +89,14 @@ class UpdateManager {
                 SizedBox(height: 8),
                 Text('更新内容:', style: TextStyle(fontWeight: FontWeight.bold)),
                 SizedBox(height: 4),
-                Text(info.body),
+                MarkdownBody(
+                  data: info.body,
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
+                  onTapLink: (text, href, title) {
+                    if (href == null || href.isEmpty) return;
+                    _launchExternalUrl(context, href);
+                  },
+                ),
               ],
             ),
           ),
@@ -93,7 +108,7 @@ class UpdateManager {
             FilledButton(
               onPressed: () {
                 Navigator.pop(context);
-                _launchDownload(context, info.downloadUrl);
+                _launchExternalUrl(context, info.downloadUrl);
               },
               child: Text('立即更新'),
             ),
@@ -103,13 +118,13 @@ class UpdateManager {
     );
   }
 
-  Future<void> _launchDownload(BuildContext context, String url) async {
+  Future<void> _launchExternalUrl(BuildContext context, String url) async {
     final Uri uri = Uri.parse(url);
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法打开下载链接')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('无法打开链接')));
       }
     }
   }
