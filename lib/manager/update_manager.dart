@@ -12,6 +12,23 @@ class UpdateManager {
 
   final ApiService _apiService = ApiService();
 
+  String _formatReleaseNotes(String raw) {
+    final normalized = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final lines = normalized.split('\n');
+    final buffer = StringBuffer();
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      if (line.isNotEmpty && !line.endsWith('  ')) {
+        buffer.write(line);
+        buffer.write('  ');
+      } else {
+        buffer.write(line);
+      }
+      if (i != lines.length - 1) buffer.write('\n');
+    }
+    return buffer.toString();
+  }
+
   /// 检查更新
   /// [context] 用于显示弹窗
   /// [showNoUpdateToast] 是否在没有更新时显示提示（手动检查时为 true）
@@ -90,7 +107,7 @@ class UpdateManager {
                 Text('更新内容:', style: TextStyle(fontWeight: FontWeight.bold)),
                 SizedBox(height: 4),
                 MarkdownBody(
-                  data: info.body,
+                  data: _formatReleaseNotes(info.body),
                   styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
                   onTapLink: (text, href, title) {
                     if (href == null || href.isEmpty) return;
