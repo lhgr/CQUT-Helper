@@ -24,6 +24,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
   String? get _actualCurrentWeekStr => _controller.actualCurrentWeekStr;
   String? get _actualCurrentTermStr => _controller.actualCurrentTermStr;
   String? get _currentTerm => _controller.currentTerm;
+  bool? get _nowInTeachingWeek => _controller.nowInTeachingWeek;
+  String? get _nowStatusLabel => _controller.nowStatusLabel;
 
   bool _loading = true; // 默认为 true，防止初始空数据渲染
   String? _error;
@@ -82,9 +84,58 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     // 2. 从网络加载以获取最新的“当前”周
     await _loadFromNetwork();
 
-    // 3. 静默强制更新前后一周
+    // 3. 优先预取前后一周，提升滑动体验
     if (_currentScheduleData != null) {
-      _controller.silentUpdateAdjacentWeeks(_currentScheduleData!, () {
+      _controller.schedulePrefetch(_currentScheduleData!, () {
+        if (mounted) setState(() {});
+      }, delay: Duration.zero);
+    }
+
+    if (_currentScheduleData != null) {
+      final changedWeeks = await _controller.silentCheckRecentWeeksForChanges(
+        _currentScheduleData!,
+        weeksAhead: 1,
+      );
+      if (!mounted) return;
+      if (changedWeeks.isNotEmpty) {
+        String labelForWeek(String week) {
+          final currentWeek = _currentScheduleData?.weekNum;
+          if (currentWeek != null && week == currentWeek) return '本周';
+          if (_weekList != null &&
+              currentWeek != null &&
+              _weekList!.indexOf(week) == _weekList!.indexOf(currentWeek) + 1) {
+            return '下周';
+          }
+          return '第$week周';
+        }
+
+        final msg = changedWeeks.length == 1
+            ? '${labelForWeek(changedWeeks.first)}课表有更新'
+            : '${labelForWeek(changedWeeks.first)}等${changedWeeks.length}周课表有更新';
+        final firstChanged = changedWeeks.first;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            action: _weekList != null && _weekList!.contains(firstChanged)
+                ? SnackBarAction(
+                    label: '查看',
+                    onPressed: () {
+                      final idx = _weekList!.indexOf(firstChanged);
+                      if (idx != -1) {
+                        _pageController?.jumpToPage(idx);
+                      }
+                    },
+                  )
+                : null,
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+
+    if (_currentScheduleData != null) {
+      _controller.prefetchAllWeeksInBackground(_currentScheduleData!, () {
         if (mounted) setState(() {});
       });
     }
@@ -117,19 +168,15 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
   Future<void> _loadFromNetwork({
     String? weekNum,
     String? yearTerm,
-    bool isPrefetch = false,
   }) async {
-    if (!isPrefetch &&
-        _controller.weekCache.containsKey(int.tryParse(weekNum ?? "") ?? -1)) {
+    if (_controller.weekCache.containsKey(int.tryParse(weekNum ?? "") ?? -1)) {
       // 如果内存中有数据，直接更新视图 (除非正在刷新)
     }
 
-    if (!isPrefetch) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
       final data = await _controller.loadFromNetwork(
@@ -137,22 +184,14 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
         yearTerm: yearTerm,
       );
 
-      if (!isPrefetch) {
-        _processLoadedData(data);
-        _schedulePrefetch(data);
-      } else {
-        // 对于预取，只更新缓存
-        _controller.processLoadedData(data);
-        if (mounted) setState(() {});
-      }
+      _processLoadedData(data);
+      _schedulePrefetch(data);
     } catch (e) {
-      if (!isPrefetch) {
-        setState(() {
-          _error = e.toString();
-        });
-      }
+      setState(() {
+        _error = e.toString();
+      });
     } finally {
-      if (!isPrefetch && mounted) {
+      if (mounted) {
         setState(() {
           _loading = false;
         });
@@ -168,11 +207,19 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
 
   Future<void> _ensureWeekLoaded(
     String weekNum,
-    String yearTerm, {
-    bool isPrefetch = false,
-  }) async {
+    String yearTerm,
+  ) async {
     await _controller.ensureWeekLoaded(weekNum, yearTerm);
-    if (mounted) setState(() {});
+    final wInt = int.tryParse(weekNum) ?? 0;
+    if (!mounted) return;
+    if (_weekCache.containsKey(wInt)) {
+      setState(() {
+        _currentScheduleData = _weekCache[wInt];
+      });
+      _schedulePrefetch(_weekCache[wInt]!);
+    } else {
+      setState(() {});
+    }
   }
 
   void _onPageChanged(int index) {
@@ -200,13 +247,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
       });
       _schedulePrefetch(_weekCache[wInt]!);
     } else {
-      // 如果不在缓存中，尝试加载它 (将检查磁盘缓存然后是网络)
-      // 我们是暂时将 currentScheduleData 设置为 null 还是保留上一个?
-      // 最好保留上一个直到新的加载完成，但 PageView 会处理主体内容
-      // 标题需要更新。我们可以构造一个虚拟的 ScheduleData 或者等待
-      // 但我们确实有来自 _weekList 的周数
       if (currentTerm != null) {
-        _loadFromNetwork(weekNum: targetWeek, yearTerm: currentTerm);
+        _ensureWeekLoaded(targetWeek, currentTerm);
       }
     }
   }
@@ -217,11 +259,6 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     // 需求说 "如果不是当前学期，默认为第 1 周"
     // 等等，如果我选择一个学期，没有逻辑很难知道它是否是当前学期
     // 我们直接加载目标周
-
-    final currentWeek = _currentScheduleData?.weekNum;
-    // 来自之前代码的逻辑：尽可能保持周数?
-    // 实际上之前的代码：如果 term == currentTerm，保持周数，否则第 1 周
-    // 但这里的 _currentTerm 可能是加载数据的学期
 
     // 我们直接加载数据
     _weekCache.clear();
@@ -466,7 +503,11 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      "第${_weekList![_currentWeekIndex]}周",
+                      (_nowInTeachingWeek == false &&
+                              _nowStatusLabel != null &&
+                              _nowStatusLabel!.isNotEmpty)
+                          ? "${_nowStatusLabel!} · 第${_weekList![_currentWeekIndex]}周"
+                          : "第${_weekList![_currentWeekIndex]}周",
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -533,25 +574,6 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
             final data = _weekCache[weekNum];
 
             if (data == null) {
-              // 如果未加载，则触发加载?
-              // 最好只显示此页面的加载指示器
-              // 我们可以在这里触发加载，但 build 方法应该无副作用
-              // 理想情况下 _onPageChanged 触发加载
-              // 但是对于相邻页面的初始渲染?
-              // 让我们依赖 _onPageChanged 和预取
-              // 如果用户快速滑动，_onPageChanged 将触发
-
-              // 我们可以检查是否应该在这里触发加载以提高鲁棒性
-              if (!_loading && _currentScheduleData?.yearTerm != null) {
-                // 推迟到下一帧
-                Future.microtask(
-                  () => _ensureWeekLoaded(
-                    weekStr,
-                    _currentScheduleData!.yearTerm!,
-                  ),
-                );
-              }
-
               return Center(child: CircularProgressIndicator());
             }
 

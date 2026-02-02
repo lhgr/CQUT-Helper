@@ -9,8 +9,16 @@ import 'package:pointycastle/asymmetric/rsa.dart';
 import 'package:pointycastle/api.dart' show PublicKeyParameter;
 import '../core/api_client.dart';
 
+class _TimetableLoginState {
+  DateTime? lastSuccessAt;
+  Future<void>? inFlight;
+}
+
 class AuthApi {
   final ApiClient _client = ApiClient();
+
+  static final Map<String, _TimetableLoginState> _timetableLoginStates = {};
+  static const Duration _defaultTimetableLoginTtl = Duration(minutes: 30);
 
   static const String _casLogin1 =
       'https://uis.cqut.edu.cn/center-auth-server/sso/doLogin';
@@ -30,6 +38,49 @@ Y/akVmYNtghKZzz6jwIDAQAB
   }) async {
     final encryptedPwd = encryptPassword(password);
     await loginWithEncrypted(account: account, encryptedPassword: encryptedPwd);
+  }
+
+  Future<void> ensureTimetableLogin({
+    required String account,
+    String? password,
+    String? encryptedPassword,
+    Duration ttl = _defaultTimetableLoginTtl,
+    bool force = false,
+  }) async {
+    if (encryptedPassword == null && password == null) {
+      throw Exception('Password or encryptedPassword must be provided');
+    }
+
+    final state = _timetableLoginStates.putIfAbsent(
+      account,
+      () => _TimetableLoginState(),
+    );
+
+    if (!force && state.lastSuccessAt != null) {
+      final age = DateTime.now().difference(state.lastSuccessAt!);
+      if (age <= ttl) return;
+    }
+
+    final inFlight = state.inFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+
+    state.inFlight = () async {
+      if (encryptedPassword != null) {
+        await loginWithEncrypted(account: account, encryptedPassword: encryptedPassword);
+      } else {
+        await login(account: account, password: password!);
+      }
+      state.lastSuccessAt = DateTime.now();
+    }();
+
+    try {
+      await state.inFlight;
+    } finally {
+      state.inFlight = null;
+    }
   }
 
   Future<void> loginWithEncrypted({
