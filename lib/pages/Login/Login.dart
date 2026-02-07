@@ -1,8 +1,8 @@
 import 'package:cqut/api/auth/auth_api.dart';
+import 'package:cqut/pages/Login/ForgetPassword.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class LoginPage extends StatefulWidget {
   LoginPage({Key? key}) : super(key: key);
@@ -364,18 +364,12 @@ class _LoginPageState extends State<LoginPage> {
                           await FirebaseAnalytics.instance.logEvent(
                             name: 'forgot_password_click',
                           );
-                          const url =
-                              'https://uis.cqut.edu.cn/unified_identity_logon/#/uia/forget';
-                          if (!await launchUrl(
-                            Uri.parse(url),
-                            mode: LaunchMode.externalApplication,
-                          )) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("无法打开重置密码页面")),
-                              );
-                            }
-                          }
+                          if (!context.mounted) return;
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const ForgetPasswordPage(),
+                            ),
+                          );
                         },
                         child: Text("忘记密码?"),
                       ),
