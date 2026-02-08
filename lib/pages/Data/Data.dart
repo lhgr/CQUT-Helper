@@ -15,6 +15,9 @@ class DataView extends StatefulWidget {
 class _DataViewState extends State<DataView> {
   final String _repoUrl =
       "https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme";
+  final String _licenseName = "CC BY-NC-SA 4.0";
+  final String _licenseUrl =
+      "https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh";
   final String _ownerName = "Royfor12";
   final String _ownerAvatarUrl = "https://github.com/Royfor12.png";
   final String _ownerProfileUrl = "https://github.com/Royfor12";
@@ -99,6 +102,19 @@ class _DataViewState extends State<DataView> {
                     onTap: () => _launchUrl(_repoUrl),
                     child: Text(
                       _repoUrl,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  Text("仓库协议:"),
+                  SizedBox(height: 4),
+                  InkWell(
+                    onTap: () => _launchUrl(_licenseUrl),
+                    child: Text(
+                      _licenseName,
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.primary,
                         decoration: TextDecoration.underline,
