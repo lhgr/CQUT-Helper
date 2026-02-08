@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "notices": [
+    {
+      "id": "2026-02-08-welcome",
+      "title": "公告测试",
+      "markdown": "公告内容支持 **Markdown**。\n\n- 支持列表\n- 支持链接 https://example.com",
+      "startAt": "2026-02-08T00:00:00+08:00",
+      "endAt": "2026-03-01T00:00:00+08:00",
+      "minVersion": "0.1.9",
+      "maxVersion": "0.2.0",
+      "platforms": ["android", "ios"],
+      "priority": 100,
+      "force": false,
+      "actions": [
+        { "label": "查看详情", "url": "https://example.com" }
+      ]
+    }
+  ]
+}
