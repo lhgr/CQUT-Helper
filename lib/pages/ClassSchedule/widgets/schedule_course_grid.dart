@@ -6,6 +6,7 @@ class ScheduleCourseGrid extends StatelessWidget {
   final double sessionHeight;
   final int sessionCount;
   final List<Color> colors;
+  final List<Color> textColors;
 
   const ScheduleCourseGrid({
     Key? key,
@@ -13,6 +14,7 @@ class ScheduleCourseGrid extends StatelessWidget {
     this.sessionHeight = 60.0,
     this.sessionCount = 12,
     required this.colors,
+    required this.textColors,
   }) : super(key: key);
 
   void _showCourseDetail(BuildContext context, EventItem event) {
@@ -172,6 +174,12 @@ class ScheduleCourseGrid extends StatelessWidget {
                   // 将 weekDay 调整为从 0 开始的索引（假设 1=周一）
                   final int dayIndex = weekDay - 1;
 
+                  final int colorIndex =
+                      event.eventName.hashCode % colors.length;
+                  final Color backgroundColor = colors[colorIndex];
+                  final Color textColor =
+                      textColors[colorIndex % textColors.length];
+
                   return Positioned(
                     left: dayIndex * dayWidth,
                     top: (start - 1) * sessionHeight,
@@ -183,8 +191,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                         margin: const EdgeInsets.all(1),
                         padding: const EdgeInsets.all(2),
                         decoration: BoxDecoration(
-                          color:
-                              colors[event.eventName.hashCode % colors.length],
+                          color: backgroundColor,
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
@@ -203,11 +210,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                                   ?.copyWith(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
-                                    color:
-                                        Theme.of(context).brightness ==
-                                            Brightness.dark
-                                        ? Colors.white
-                                        : Colors.black87,
+                                    color: textColor,
                                   ),
                               maxLines: 3,
                               overflow: TextOverflow.visible,
@@ -219,11 +222,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                                 style: Theme.of(context).textTheme.labelSmall
                                     ?.copyWith(
                                       fontSize: 9,
-                                      color:
-                                          Theme.of(context).brightness ==
-                                              Brightness.dark
-                                          ? Colors.white70
-                                          : Colors.black54,
+                                      color: textColor.withOpacity(0.8),
                                     ),
                                 maxLines: null,
                                 overflow: TextOverflow.visible,
@@ -235,11 +234,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                               style: Theme.of(context).textTheme.labelSmall
                                   ?.copyWith(
                                     fontSize: 9,
-                                    color:
-                                        Theme.of(context).brightness ==
-                                            Brightness.dark
-                                        ? Colors.white70
-                                        : Colors.black54,
+                                    color: textColor.withOpacity(0.8),
                                   ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,

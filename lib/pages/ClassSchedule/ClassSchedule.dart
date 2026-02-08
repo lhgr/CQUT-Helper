@@ -38,14 +38,25 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
   final double _timeColumnWidth = 30.0;
   final double _sessionHeight = 60.0;
   final List<Color> _lightColors = [
-    Colors.blue.shade100,
-    Colors.green.shade100,
-    Colors.orange.shade100,
-    Colors.purple.shade100,
-    Colors.red.shade100,
-    Colors.teal.shade100,
-    Colors.pink.shade100,
-    Colors.indigo.shade100,
+    Color(0xFFA8D8FF),
+    Color(0xFFB9FBC0),
+    Color(0xFFFFE29A),
+    Color(0xFFFFC6FF),
+    Color(0xFFFFADAD),
+    Color(0xFF9BF6FF),
+    Color(0xFFCAFFBF),
+    Color(0xFFBDB2FF),
+  ];
+
+  final List<Color> _lightTextColors = [
+    Color(0xFF0B3D91),
+    Color(0xFF0F5132),
+    Color(0xFF7A4E00),
+    Color(0xFF5A189A),
+    Color(0xFF7B2C2C),
+    Color(0xFF006064),
+    Color(0xFF155724),
+    Color(0xFF2D1E8F),
   ];
 
   final List<Color> _darkColors = [
@@ -57,6 +68,17 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     Colors.teal.shade900,
     Colors.pink.shade900,
     Colors.indigo.shade900,
+  ];
+
+  final List<Color> _darkTextColors = [
+    Colors.blue.shade300,
+    Colors.green.shade300,
+    Colors.orange.shade300,
+    Colors.purple.shade300,
+    Colors.red.shade300,
+    Colors.teal.shade300,
+    Colors.pink.shade300,
+    Colors.indigo.shade300,
   ];
 
   DateTime? _lastMessageTime;
@@ -165,10 +187,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     });
   }
 
-  Future<void> _loadFromNetwork({
-    String? weekNum,
-    String? yearTerm,
-  }) async {
+  Future<void> _loadFromNetwork({String? weekNum, String? yearTerm}) async {
     if (_controller.weekCache.containsKey(int.tryParse(weekNum ?? "") ?? -1)) {
       // 如果内存中有数据，直接更新视图 (除非正在刷新)
     }
@@ -205,10 +224,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     });
   }
 
-  Future<void> _ensureWeekLoaded(
-    String weekNum,
-    String yearTerm,
-  ) async {
+  Future<void> _ensureWeekLoaded(String weekNum, String yearTerm) async {
     await _controller.ensureWeekLoaded(weekNum, yearTerm);
     final wInt = int.tryParse(weekNum) ?? 0;
     if (!mounted) return;
@@ -601,6 +617,10 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
                                 Theme.of(context).brightness == Brightness.dark
                                 ? _darkColors
                                 : _lightColors,
+                            textColors:
+                                Theme.of(context).brightness == Brightness.dark
+                                ? _darkTextColors
+                                : _lightTextColors,
                           ),
                         ),
                       ],
