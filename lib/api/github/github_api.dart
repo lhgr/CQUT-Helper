@@ -10,6 +10,23 @@ class GithubApi {
 
   final Map<String, List<GithubItem>> _cache = {};
 
+  Future<void> downloadFile(
+    String url,
+    String savePath, {
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    await _dio.download(
+      url,
+      savePath,
+      onReceiveProgress: onReceiveProgress,
+      options: Options(
+        followRedirects: true,
+        receiveTimeout: const Duration(minutes: 2),
+        sendTimeout: const Duration(minutes: 1),
+      ),
+    );
+  }
+
   Future<List<GithubItem>> getContents(String path) async {
     // 移除 path 开头的斜杠
     final cleanPath = path.startsWith('/') ? path.substring(1) : path;
