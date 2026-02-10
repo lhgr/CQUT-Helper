@@ -124,13 +124,19 @@ class _DataViewState extends State<DataView> {
                   SizedBox(height: 16),
                   Text("作者:"),
                   SizedBox(height: 8),
-                  InkWell(
-                    onTap: () => _launchUrl(_ownerProfileUrl),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CachedNetworkImage(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      InkWell(
+                        onTap: () async {
+                          await FirebaseAnalytics.instance.logEvent(
+                            name: 'click_material_repo_author_avatar',
+                            parameters: {'owner': _ownerName},
+                          );
+                          await _launchUrl(_ownerProfileUrl);
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: CachedNetworkImage(
                           imageUrl: _ownerAvatarUrl,
                           imageBuilder: (context, imageProvider) =>
                               CircleAvatar(
@@ -153,16 +159,26 @@ class _DataViewState extends State<DataView> {
                             child: Icon(Icons.person, size: 20),
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Text(
-                          _ownerName,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
+                      ),
+                      SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => _launchUrl(_ownerProfileUrl),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 6,
+                          ),
+                          child: Text(
+                            _ownerName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                   SizedBox(height: 16),
                   Text("简介:"),

@@ -74,7 +74,6 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
 
     setState(() => _isLoading = true);
     try {
-      await FirebaseAnalytics.instance.logEvent(name: 'forgot_password_send_code');
       final ticket = await _api.sendAuthCode(mobilePhone: phone);
       if (!mounted) return;
       setState(() {
@@ -110,7 +109,6 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
 
     setState(() => _isLoading = true);
     try {
-      await FirebaseAnalytics.instance.logEvent(name: 'forgot_password_verify_code');
       await _api.checkAuthCode(ticket: ticket, authCode: code);
       if (!mounted) return;
       setState(() {

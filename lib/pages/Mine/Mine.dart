@@ -344,6 +344,9 @@ class _MineViewState extends State<MineView> {
                   InkWell(
                     borderRadius: BorderRadius.circular(12),
                     onTap: () async {
+                      await FirebaseAnalytics.instance.logEvent(
+                        name: 'about_us_developer_click',
+                      );
                       final Uri url = Uri.parse('https://github.com/lhgr');
                       if (!await launchUrl(
                         url,
@@ -414,6 +417,9 @@ class _MineViewState extends State<MineView> {
                   InkWell(
                     borderRadius: BorderRadius.circular(12),
                     onTap: () async {
+                      await FirebaseAnalytics.instance.logEvent(
+                        name: 'about_us_mascot_click',
+                      );
                       const String urlString =
                           'https://weibo.com/5401723589?refer_flag=1001030103_';
                       final Uri url = Uri.parse(urlString);
