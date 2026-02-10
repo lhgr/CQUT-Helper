@@ -1,10 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:cqut/model/update_model.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 class UpdateApi {
   final Dio _dio = Dio();
-  // 替换为您实际的 GitHub 仓库地址
-  static const String _owner = 'lhgr'; 
+  static const String _owner = 'lhgr';
   static const String _repo = 'CQUT-Helper';
 
   Future<UpdateModel?> checkUpdate() async {
@@ -17,8 +17,9 @@ class UpdateApi {
         return UpdateModel.fromJson(response.data);
       }
     } catch (e) {
-      // 忽略错误或记录日志
-      print('Check update failed: $e');
+      if (kDebugMode) {
+        debugPrint('Check update failed: $e');
+      }
     }
     return null;
   }

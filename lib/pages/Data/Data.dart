@@ -6,10 +6,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DataView extends StatefulWidget {
-  DataView({Key? key}) : super(key: key);
+  const DataView({super.key});
 
   @override
-  _DataViewState createState() => _DataViewState();
+  State<DataView> createState() => _DataViewState();
 }
 
 class _DataViewState extends State<DataView> {
@@ -84,7 +84,7 @@ class _DataViewState extends State<DataView> {
   Widget _buildProjectCard() {
     return Card(
       elevation: 0,
-      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
+      color: Theme.of(context).colorScheme.primaryContainer.withAlpha(102),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: () {
@@ -284,7 +284,7 @@ class _DataViewState extends State<DataView> {
                       fontSize: 12,
                       color: Theme.of(
                         context,
-                      ).colorScheme.outline.withOpacity(0.8),
+                      ).colorScheme.outline.withAlpha(204),
                     ),
                   ),
                 ],

@@ -10,10 +10,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class MineView extends StatefulWidget {
-  MineView({Key? key}) : super(key: key);
+  const MineView({super.key});
 
   @override
-  _MineViewState createState() => _MineViewState();
+  State<MineView> createState() => _MineViewState();
 }
 
 class _MineViewState extends State<MineView> {
@@ -166,7 +166,7 @@ class _MineViewState extends State<MineView> {
   ) {
     return Card(
       elevation: 0,
-      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.6),
+      color: Theme.of(context).colorScheme.primaryContainer.withAlpha(153),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -222,7 +222,7 @@ class _MineViewState extends State<MineView> {
                         decoration: BoxDecoration(
                           color: Theme.of(
                             context,
-                          ).colorScheme.surface.withOpacity(0.6),
+                          ).colorScheme.surface.withAlpha(153),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -269,9 +269,7 @@ class _MineViewState extends State<MineView> {
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                         ),
-                        RadioListTile<ThemeMode>(
-                          title: Text("跟随系统"),
-                          value: ThemeMode.system,
+                        RadioGroup<ThemeMode>(
                           groupValue: currentMode,
                           onChanged: (value) {
                             if (value != null) {
@@ -279,28 +277,23 @@ class _MineViewState extends State<MineView> {
                               Navigator.pop(context);
                             }
                           },
-                        ),
-                        RadioListTile<ThemeMode>(
-                          title: Text("亮色模式"),
-                          value: ThemeMode.light,
-                          groupValue: currentMode,
-                          onChanged: (value) {
-                            if (value != null) {
-                              ThemeManager().setThemeMode(value);
-                              Navigator.pop(context);
-                            }
-                          },
-                        ),
-                        RadioListTile<ThemeMode>(
-                          title: Text("深色模式"),
-                          value: ThemeMode.dark,
-                          groupValue: currentMode,
-                          onChanged: (value) {
-                            if (value != null) {
-                              ThemeManager().setThemeMode(value);
-                              Navigator.pop(context);
-                            }
-                          },
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              RadioListTile<ThemeMode>(
+                                title: Text("跟随系统"),
+                                value: ThemeMode.system,
+                              ),
+                              RadioListTile<ThemeMode>(
+                                title: Text("亮色模式"),
+                                value: ThemeMode.light,
+                              ),
+                              RadioListTile<ThemeMode>(
+                                title: Text("深色模式"),
+                                value: ThemeMode.dark,
+                              ),
+                            ],
+                          ),
                         ),
                         SizedBox(height: 16),
                       ],
@@ -326,177 +319,170 @@ class _MineViewState extends State<MineView> {
             String version = packageInfo.version;
             // String buildNumber = packageInfo.buildNumber;
 
-            if (context.mounted) {
-              showAboutDialog(
-                context: context,
-                applicationName: "CQUT 助手",
-                applicationVersion: version, // 使用获取到的版本号
-                applicationIcon: Icon(
-                  Icons.school,
-                  size: 48,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                children: [
-                  Text("CQUTer的小助手"),
-                  SizedBox(height: 24),
-                  Text("作者信息", style: Theme.of(context).textTheme.titleSmall),
-                  SizedBox(height: 12),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () async {
-                      await FirebaseAnalytics.instance.logEvent(
-                        name: 'about_us_developer_click',
-                      );
-                      final Uri url = Uri.parse('https://github.com/lhgr');
-                      if (!await launchUrl(
-                        url,
-                        mode: LaunchMode.externalApplication,
-                      )) {
-                        debugPrint('Could not launch \$url');
-                      }
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.outlineVariant,
-                              ),
-                            ),
-                            child: CachedNetworkImage(
-                              imageUrl: 'https://github.com/lhgr.png',
-                              imageBuilder: (context, imageProvider) =>
-                                  CircleAvatar(
-                                    radius: 24,
-                                    backgroundImage: imageProvider,
-                                    backgroundColor: Theme.of(
-                                      context,
-                                    ).colorScheme.surfaceContainerHigh,
-                                  ),
-                              placeholder: (context, url) => CircleAvatar(
-                                radius: 24,
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHigh,
-                                child: Icon(Icons.person),
-                              ),
-                              errorWidget: (context, url, error) =>
-                                  CircleAvatar(
-                                    radius: 24,
-                                    backgroundColor: Theme.of(
-                                      context,
-                                    ).colorScheme.surfaceContainerHigh,
-                                    child: Icon(Icons.person),
-                                  ),
+            if (!mounted) return;
+            showAboutDialog(
+              context: context,
+              applicationName: "CQUT 助手",
+              applicationVersion: version, // 使用获取到的版本号
+              applicationIcon: Icon(
+                Icons.school,
+                size: 48,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              children: [
+                Text("CQUTer的小助手"),
+                SizedBox(height: 24),
+                Text("作者信息", style: Theme.of(context).textTheme.titleSmall),
+                SizedBox(height: 12),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () async {
+                    await FirebaseAnalytics.instance.logEvent(
+                      name: 'about_us_developer_click',
+                    );
+                    final Uri url = Uri.parse('https://github.com/lhgr');
+                    if (!await launchUrl(
+                      url,
+                      mode: LaunchMode.externalApplication,
+                    )) {
+                      debugPrint('Could not launch \$url');
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.outlineVariant,
                             ),
                           ),
-                          SizedBox(width: 16),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Dawn Drizzle",
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              Text(
-                                "开发者",
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () async {
-                      await FirebaseAnalytics.instance.logEvent(
-                        name: 'about_us_mascot_click',
-                      );
-                      const String urlString =
-                          'https://weibo.com/5401723589?refer_flag=1001030103_';
-                      final Uri url = Uri.parse(urlString);
-                      if (!await launchUrl(
-                        url,
-                        mode: LaunchMode.externalApplication,
-                      )) {
-                        debugPrint('Could not launch \$url');
-                      }
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.outlineVariant,
-                              ),
-                            ),
-                            child: CircleAvatar(
+                          child: CachedNetworkImage(
+                            imageUrl: 'https://github.com/lhgr.png',
+                            imageBuilder: (context, imageProvider) => CircleAvatar(
                               radius: 24,
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHigh,
-                              backgroundImage: AssetImage(
-                                'lib/assets/Wing.jpg',
-                              ),
+                              backgroundImage: imageProvider,
+                              backgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHigh,
+                            ),
+                            placeholder: (context, url) => CircleAvatar(
+                              radius: 24,
+                              backgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHigh,
+                              child: Icon(Icons.person),
+                            ),
+                            errorWidget: (context, url, error) => CircleAvatar(
+                              radius: 24,
+                              backgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHigh,
+                              child: Icon(Icons.person),
                             ),
                           ),
-                          SizedBox(width: 16),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Wing",
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              Text(
-                                "吉祥物",
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
+                        ),
+                        SizedBox(width: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Dawn Drizzle",
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              "开发者",
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(height: 8),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () async {
+                    await FirebaseAnalytics.instance.logEvent(
+                      name: 'about_us_mascot_click',
+                    );
+                    const String urlString =
+                        'https://weibo.com/5401723589?refer_flag=1001030103_';
+                    final Uri url = Uri.parse(urlString);
+                    if (!await launchUrl(
+                      url,
+                      mode: LaunchMode.externalApplication,
+                    )) {
+                      debugPrint('Could not launch \$url');
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.outlineVariant,
+                            ),
                           ),
-                        ],
-                      ),
+                          child: CircleAvatar(
+                            radius: 24,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHigh,
+                            backgroundImage: AssetImage(
+                              'lib/assets/Wing.jpg',
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Wing",
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              "吉祥物",
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                  SizedBox(height: 24),
-                  Text("开源地址", style: Theme.of(context).textTheme.titleSmall),
-                  SizedBox(height: 8),
-                  InkWell(
-                    onTap: () async {
-                      await FirebaseAnalytics.instance.logEvent(
-                        name: 'click_repo_link',
-                      );
-                      final Uri url = Uri.parse(
-                        'https://github.com/lhgr/CQUT-Helper',
-                      );
-                      if (!await launchUrl(url)) {
-                        debugPrint('Could not launch \$url');
-                      }
-                    },
-                    child: Text(
+                ),
+                SizedBox(height: 24),
+                Text("开源地址", style: Theme.of(context).textTheme.titleSmall),
+                SizedBox(height: 8),
+                InkWell(
+                  onTap: () async {
+                    await FirebaseAnalytics.instance.logEvent(
+                      name: 'click_repo_link',
+                    );
+                    final Uri url = Uri.parse(
                       'https://github.com/lhgr/CQUT-Helper',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                      ),
+                    );
+                    if (!await launchUrl(url)) {
+                      debugPrint('Could not launch \$url');
+                    }
+                  },
+                  child: Text(
+                    'https://github.com/lhgr/CQUT-Helper',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      decoration: TextDecoration.underline,
                     ),
                   ),
-                ],
-              );
-            }
+                ),
+              ],
+            );
           },
         ),
         SizedBox(height: 24),

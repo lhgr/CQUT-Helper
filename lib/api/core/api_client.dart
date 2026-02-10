@@ -1,6 +1,7 @@
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 class ApiClient {
   static final ApiClient _instance = ApiClient._internal();
@@ -93,11 +94,15 @@ class BasicCookieFixInterceptor extends Interceptor {
         
         // 调试输出
         if (setCookieHeaders.length != fixedCookies.length) {
-          print('CookieFix: Fixed ${setCookieHeaders.length} cookies');
+          if (kDebugMode) {
+            debugPrint('CookieFix: Fixed ${setCookieHeaders.length} cookies');
+          }
         }
       }
     } catch (e) {
-      print('CookieFixInterceptor error: $e');
+      if (kDebugMode) {
+        debugPrint('CookieFixInterceptor error: $e');
+      }
       // 不要抛出异常，继续处理
     }
     
@@ -115,12 +120,16 @@ class BasicCookieFixInterceptor extends Interceptor {
       // 检查是否是 +0800 格式
       if (dateStr.contains(' +0800')) {
         fixedDate = dateStr.replaceAll(' +0800', ' GMT');
-        print('CookieFix: Fixed +0800 timezone: $dateStr -> $fixedDate');
+        if (kDebugMode) {
+          debugPrint('CookieFix: Fixed +0800 timezone: $dateStr -> $fixedDate');
+        }
       }
       // 检查其他时区偏移
       else if (dateStr.contains(RegExp(r' [+-]\d{4}$'))) {
         fixedDate = dateStr.replaceAll(RegExp(r' [+-]\d{4}$'), ' GMT');
-        print('CookieFix: Fixed timezone offset: $dateStr -> $fixedDate');
+        if (kDebugMode) {
+          debugPrint('CookieFix: Fixed timezone offset: $dateStr -> $fixedDate');
+        }
       }
       
       return 'expires=$fixedDate';

@@ -7,10 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class MainPage extends StatefulWidget {
-  MainPage({Key? key}) : super(key: key);
+  const MainPage({super.key});
 
   @override
-  _MainPageState createState() => _MainPageState();
+  State<MainPage> createState() => _MainPageState();
 }
 
 class _MainPageState extends State<MainPage> {
@@ -67,7 +67,7 @@ class _MainPageState extends State<MainPage> {
   }
 
   List<Widget> _getStackChildren() {
-    return [DataView(), ClassscheduleView(), MineView()];
+    return const [DataView(), ClassscheduleView(), MineView()];
   }
 
   @override

@@ -12,11 +12,10 @@ class RepoBrowserPage extends StatefulWidget {
   final String path;
   final String title;
 
-  const RepoBrowserPage({Key? key, required this.path, required this.title})
-    : super(key: key);
+  const RepoBrowserPage({super.key, required this.path, required this.title});
 
   @override
-  _RepoBrowserPageState createState() => _RepoBrowserPageState();
+  State<RepoBrowserPage> createState() => _RepoBrowserPageState();
 }
 
 class _RepoBrowserPageState extends State<RepoBrowserPage> {

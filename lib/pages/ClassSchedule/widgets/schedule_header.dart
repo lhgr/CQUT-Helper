@@ -7,11 +7,11 @@ class ScheduleHeader extends StatelessWidget {
   final double timeColumnWidth;
 
   const ScheduleHeader({
-    Key? key,
+    super.key,
     required this.scheduleData,
     this.height = 50.0,
     this.timeColumnWidth = 30.0,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -49,9 +49,7 @@ class ScheduleHeader extends StatelessWidget {
                   child: Container(
                     decoration: isToday
                         ? BoxDecoration(
-                            color: colorScheme.primaryContainer.withOpacity(
-                              0.3,
-                            ),
+                            color: colorScheme.primaryContainer.withAlpha(77),
                             borderRadius: BorderRadius.vertical(
                               top: Radius.circular(8),
                             ),

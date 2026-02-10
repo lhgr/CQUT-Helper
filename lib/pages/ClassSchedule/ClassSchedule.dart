@@ -8,10 +8,10 @@ import 'widgets/schedule_time_column.dart';
 import 'widgets/schedule_course_grid.dart';
 
 class ClassscheduleView extends StatefulWidget {
-  ClassscheduleView({Key? key}) : super(key: key);
+  const ClassscheduleView({super.key});
 
   @override
-  _ClassscheduleViewState createState() => _ClassscheduleViewState();
+  State<ClassscheduleView> createState() => _ClassscheduleViewState();
 }
 
 class _ClassscheduleViewState extends State<ClassscheduleView> {
@@ -287,7 +287,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     showModalBottomSheet(
       context: context,
       builder: (BuildContext context) {
-        return Container(
+        return SizedBox(
           height: 300,
           child: Column(
             children: [
@@ -341,7 +341,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     showModalBottomSheet(
       context: context,
       builder: (BuildContext context) {
-        return Container(
+        return SizedBox(
           height: 300,
           child: Column(
             children: [
@@ -487,8 +487,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
       floatingActionButton: showFab
           ? FloatingActionButton(
               onPressed: _returnToCurrentWeek,
-              child: Icon(Icons.today),
               tooltip: '返回本周',
+              child: Icon(Icons.today),
             )
           : null,
       appBar: AppBar(

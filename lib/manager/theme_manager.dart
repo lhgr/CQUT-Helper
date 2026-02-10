@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ThemeManager extends ChangeNotifier {
@@ -24,13 +25,19 @@ class ThemeManager extends ChangeNotifier {
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
-    print('ThemeManager: setThemeMode called with $mode');
+    if (kDebugMode) {
+      debugPrint('ThemeManager: setThemeMode called with $mode');
+    }
     if (_themeMode == mode) {
-      print('ThemeManager: mode is already $mode, ignoring');
+      if (kDebugMode) {
+        debugPrint('ThemeManager: mode is already $mode, ignoring');
+      }
       return;
     }
     _themeMode = mode;
-    print('ThemeManager: notifying listeners. New mode: $_themeMode');
+    if (kDebugMode) {
+      debugPrint('ThemeManager: notifying listeners. New mode: $_themeMode');
+    }
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeModeKey, mode.toString());

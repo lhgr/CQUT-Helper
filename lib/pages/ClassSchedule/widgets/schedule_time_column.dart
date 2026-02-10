@@ -6,11 +6,11 @@ class ScheduleTimeColumn extends StatelessWidget {
   final int sessionCount;
 
   const ScheduleTimeColumn({
-    Key? key,
+    super.key,
     this.width = 30.0,
     this.sessionHeight = 60.0,
     this.sessionCount = 12,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

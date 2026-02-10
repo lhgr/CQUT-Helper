@@ -9,13 +9,13 @@ class ScheduleCourseGrid extends StatelessWidget {
   final List<Color> textColors;
 
   const ScheduleCourseGrid({
-    Key? key,
+    super.key,
     required this.events,
     this.sessionHeight = 60.0,
     this.sessionCount = 12,
     required this.colors,
     required this.textColors,
-  }) : super(key: key);
+  });
 
   void _showCourseDetail(BuildContext context, EventItem event) {
     showDialog(
@@ -111,7 +111,7 @@ class ScheduleCourseGrid extends StatelessWidget {
         final double dayWidth = constraints.maxWidth / 7;
         final double totalHeight = sessionHeight * sessionCount;
 
-        return Container(
+        return SizedBox(
           height: totalHeight,
           child: Stack(
             children: [
@@ -128,7 +128,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                         bottom: BorderSide(
                           color: Theme.of(
                             context,
-                          ).colorScheme.outlineVariant.withOpacity(0.2),
+                          ).colorScheme.outlineVariant.withAlpha(51),
                         ),
                       ),
                     ),
@@ -147,7 +147,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                         right: BorderSide(
                           color: Theme.of(
                             context,
-                          ).colorScheme.outlineVariant.withOpacity(0.2),
+                          ).colorScheme.outlineVariant.withAlpha(51),
                         ),
                       ),
                     ),
@@ -195,7 +195,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
+                              color: Colors.black.withAlpha(13),
                               blurRadius: 4,
                               offset: Offset(0, 2),
                             ),
@@ -222,7 +222,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                                 style: Theme.of(context).textTheme.labelSmall
                                     ?.copyWith(
                                       fontSize: 9,
-                                      color: textColor.withOpacity(0.8),
+                                      color: textColor.withAlpha(204),
                                     ),
                                 maxLines: null,
                                 overflow: TextOverflow.visible,
@@ -234,7 +234,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                               style: Theme.of(context).textTheme.labelSmall
                                   ?.copyWith(
                                     fontSize: 9,
-                                    color: textColor.withOpacity(0.8),
+                                    color: textColor.withAlpha(204),
                                   ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -244,7 +244,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                       ),
                     ),
                   );
-                }).toList(),
+                }),
             ],
           ),
         );
