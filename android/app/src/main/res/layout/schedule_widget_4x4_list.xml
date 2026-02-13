@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_card_bg"
+    android:fillViewport="true"
+    android:padding="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:id="@+id/widget_4x4_list_header_left"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="12sp"
+                android:textColor="@color/widget_text_secondary"
+                android:text="今天 / 星期四" />
+            <TextView
+                android:id="@+id/widget_4x4_list_week"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="@color/widget_text_secondary"
+                android:text="第5周" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/widget_4x4_list_row1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_4x4_list_time1_start"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:text="08:00" />
+                <TextView
+                    android:id="@+id/widget_4x4_list_time1_end"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:text="10:00" />
+            </LinearLayout>
+            <View
+                android:id="@+id/widget_4x4_list_bar1"
+                android:layout_width="4dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="6dp"
+                android:background="@color/widget_bar_blue"
+                android:minHeight="28dp" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_4x4_list_title1"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/widget_text_primary"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="计算机科学导论" />
+                <TextView
+                    android:id="@+id/widget_4x4_list_detail1"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="第1-2节 | 教学楼 W-2 | 史老师" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/widget_4x4_list_row2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_4x4_list_time2_start"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:text="10:00" />
+                <TextView
+                    android:id="@+id/widget_4x4_list_time2_end"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:text="12:00" />
+            </LinearLayout>
+            <View
+                android:id="@+id/widget_4x4_list_bar2"
+                android:layout_width="4dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="6dp"
+                android:background="@color/widget_bar_blue"
+                android:minHeight="28dp" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_4x4_list_title2"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/widget_text_primary"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="数字逻辑" />
+                <TextView
+                    android:id="@+id/widget_4x4_list_detail2"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="第3-4节 | 教学楼 | 老师" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/widget_4x4_list_row3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_4x4_list_time3_start"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:text="14:00" />
+                <TextView
+                    android:id="@+id/widget_4x4_list_time3_end"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:text="16:00" />
+            </LinearLayout>
+            <View
+                android:id="@+id/widget_4x4_list_bar3"
+                android:layout_width="4dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="6dp"
+                android:background="@color/widget_bar_green"
+                android:minHeight="28dp" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_4x4_list_title3"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/widget_text_primary"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="高级语言程序设计" />
+                <TextView
+                    android:id="@+id/widget_4x4_list_detail3"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="第5-6节 | 教学楼 | 老师" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/widget_4x4_list_row4"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_4x4_list_time4_start"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:text="16:00" />
+                <TextView
+                    android:id="@+id/widget_4x4_list_time4_end"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:text="18:00" />
+            </LinearLayout>
+            <View
+                android:id="@+id/widget_4x4_list_bar4"
+                android:layout_width="4dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="6dp"
+                android:background="@color/widget_bar_teal"
+                android:minHeight="28dp" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_4x4_list_title4"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/widget_text_primary"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="离散数学" />
+                <TextView
+                    android:id="@+id/widget_4x4_list_detail4"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="10sp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="第7-8节 | 教学楼 | 老师" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_4x4_list_footer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textSize="10sp"
+            android:textColor="@color/widget_text_secondary"
+            android:text="其他3节课程・・・" />
+    </LinearLayout>
+</ScrollView>
