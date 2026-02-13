@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="widget_schedule_2x2_desc">课程 2×2：下一节课</string>
-    <string name="widget_schedule_4x2_desc">课程 4×2：今日课程列表</string>
-    <string name="widget_schedule_4x4_grid_desc">课程 4×4：周课表</string>
-    <string name="widget_schedule_4x4_list_desc">课程 4×4：今日课程详情</string>
-</resources>

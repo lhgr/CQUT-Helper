@@ -34,51 +34,6 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-
-        <receiver
-            android:name=".widget.ScheduleWidget2x2Provider"
-            android:exported="true"
-            android:label="@string/widget_schedule_2x2_desc">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/schedule_widget_2x2_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.ScheduleWidget4x2Provider"
-            android:exported="true"
-            android:label="@string/widget_schedule_4x2_desc">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/schedule_widget_4x2_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.ScheduleWidget4x4GridProvider"
-            android:exported="true"
-            android:label="@string/widget_schedule_4x4_grid_desc">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/schedule_widget_4x4_grid_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.ScheduleWidget4x4ListProvider"
-            android:exported="true"
-            android:label="@string/widget_schedule_4x4_list_desc">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/schedule_widget_4x4_list_info" />
-        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
