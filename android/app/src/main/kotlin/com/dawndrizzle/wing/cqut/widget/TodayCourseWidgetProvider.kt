@@ -114,6 +114,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
           )
+        views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
         views.setOnClickPendingIntent(R.id.rl_appwidget, pendingIntent)
         views.setOnClickPendingIntent(R.id.rl_title, pendingIntent)
         views.setOnClickPendingIntent(android.R.id.empty, pendingIntent)

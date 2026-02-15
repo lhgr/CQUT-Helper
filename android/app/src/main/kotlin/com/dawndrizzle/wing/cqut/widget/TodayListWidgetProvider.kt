@@ -55,7 +55,7 @@ class TodayListWidgetProvider : AppWidgetProvider() {
 
       val dark = WidgetTheme.isDark(context)
       views.setInt(
-        R.id.widget_root,
+        R.id.widget_card,
         "setBackgroundResource",
         if (dark) R.drawable.widget_bg_dark else R.drawable.widget_bg,
       )

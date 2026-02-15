@@ -7,6 +7,7 @@ class ScheduleCourseGrid extends StatelessWidget {
   final int sessionCount;
   final List<Color> colors;
   final List<Color> textColors;
+  final bool showWeekend;
 
   const ScheduleCourseGrid({
     super.key,
@@ -15,6 +16,7 @@ class ScheduleCourseGrid extends StatelessWidget {
     this.sessionCount = 12,
     required this.colors,
     required this.textColors,
+    this.showWeekend = true,
   });
 
   void _showCourseDetail(BuildContext context, EventItem event) {
@@ -108,8 +110,15 @@ class ScheduleCourseGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double dayWidth = constraints.maxWidth / 7;
+        final int dayCount = showWeekend ? 7 : 5;
+        final double dayWidth = constraints.maxWidth / dayCount;
         final double totalHeight = sessionHeight * sessionCount;
+        final visibleEvents = showWeekend
+            ? events
+            : events.where((event) {
+                final weekDay = int.tryParse(event.weekDay ?? '1') ?? 1;
+                return weekDay >= 1 && weekDay <= 5;
+              }).toList(growable: false);
 
         return SizedBox(
           height: totalHeight,
@@ -135,7 +144,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                   ),
                 );
               }),
-              ...List.generate(7, (index) {
+              ...List.generate(dayCount, (index) {
                 return Positioned(
                   left: index * dayWidth,
                   top: 0,
@@ -156,7 +165,7 @@ class ScheduleCourseGrid extends StatelessWidget {
               }),
 
               // Events
-              if (events.isEmpty)
+              if (visibleEvents.isEmpty)
                 Center(
                   child: Text(
                     "本周无课",
@@ -164,7 +173,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                   ),
                 )
               else
-                ...events.map((event) {
+                ...visibleEvents.map((event) {
                   final int weekDay = int.tryParse(event.weekDay ?? "1") ?? 1;
                   final int start =
                       int.tryParse(event.sessionStart ?? "1") ?? 1;
@@ -173,6 +182,9 @@ class ScheduleCourseGrid extends StatelessWidget {
 
                   // 将 weekDay 调整为从 0 开始的索引（假设 1=周一）
                   final int dayIndex = weekDay - 1;
+                  if (dayIndex < 0 || dayIndex >= dayCount) {
+                    return const SizedBox.shrink();
+                  }
 
                   final int colorIndex =
                       event.eventName.hashCode % colors.length;

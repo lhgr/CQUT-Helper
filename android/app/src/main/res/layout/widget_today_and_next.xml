@@ -1,124 +1,132 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
-    android:padding="12dp"
-    android:background="@drawable/widget_bg"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
     <RelativeLayout
-        android:id="@+id/rl_title"
+        android:id="@+id/widget_card"
+        android:layout_gravity="center"
+        android:padding="12dp"
+        android:background="@drawable/widget_bg"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
-        <TextView
-            android:id="@+id/tv_schedule_name"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="13sp"
-            android:maxLines="1"
-            android:maxLength="12"
-            android:text="课表" />
-        <TextView
-            android:id="@+id/tv_date"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="13sp"
-            android:layout_marginEnd="8dp"
-            android:layout_toStartOf="@+id/tv_week_count"
-            android:text="3.26" />
-        <TextView
-            android:id="@+id/tv_week_count"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="13sp"
-            android:layout_marginEnd="8dp"
-            android:layout_toStartOf="@+id/tv_week"
-            android:text="第1周" />
-        <TextView
-            android:id="@+id/tv_week"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="13sp"
-            android:textColor="#3F51B5"
-            android:layout_alignParentEnd="true"
-            android:text="周六" />
-    </RelativeLayout>
-    <LinearLayout
-        android:orientation="horizontal"
-        android:id="@+id/ll_title"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:layout_below="@+id/rl_title">
-        <TextView
-            android:textSize="12dp"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:text="今天"
-            android:layout_weight="1"
-            android:layout_marginEnd="8dp" />
-        <TextView
-            android:textSize="12dp"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:text="明天"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp" />
-    </LinearLayout>
-    <LinearLayout
-        android:orientation="horizontal"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginTop="4dp"
-        android:layout_below="@+id/ll_title">
-        <FrameLayout
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1">
-            <ListView
-                android:id="@+id/lv_course"
-                android:scrollbars="none"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:divider="@android:color/transparent"
-                android:dividerHeight="8dp" />
+        <RelativeLayout
+            android:id="@+id/rl_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
             <TextView
-                android:textSize="14sp"
-                android:gravity="center"
-                android:id="@+id/empty"
-                android:padding="8dp"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:text="暂无课程"
-                android:lineSpacingExtra="8dp"
-                android:textAlignment="center" />
-        </FrameLayout>
+                android:id="@+id/tv_schedule_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:maxLines="1"
+                android:maxLength="12"
+                android:text="课表" />
+            <TextView
+                android:id="@+id/tv_date"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:layout_marginEnd="8dp"
+                android:layout_toStartOf="@+id/tv_week_count"
+                android:text="3.26" />
+            <TextView
+                android:id="@+id/tv_week_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:layout_marginEnd="8dp"
+                android:layout_toStartOf="@+id/tv_week"
+                android:text="第1周" />
+            <TextView
+                android:id="@+id/tv_week"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:textColor="#3F51B5"
+                android:layout_alignParentEnd="true"
+                android:text="周六" />
+        </RelativeLayout>
         <LinearLayout
-            android:layout_width="1dp"
-            android:layout_height="match_parent"
-            android:alpha="0.5"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp" />
-        <FrameLayout
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1">
-            <ListView
-                android:id="@+id/lv_course_next_day"
-                android:scrollbars="none"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:divider="@android:color/transparent"
-                android:dividerHeight="8dp" />
+            android:orientation="horizontal"
+            android:id="@+id/ll_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_below="@+id/rl_title">
             <TextView
-                android:textSize="14sp"
-                android:gravity="center"
-                android:id="@+id/empty_next_day"
-                android:padding="8dp"
-                android:layout_width="match_parent"
+                android:textSize="12dp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:text="今天"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp" />
+            <TextView
+                android:textSize="12dp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:text="明天"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_below="@+id/ll_title">
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1">
+                <ListView
+                    android:id="@+id/lv_course"
+                    android:scrollbars="none"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:divider="@android:color/transparent"
+                    android:dividerHeight="8dp" />
+                <TextView
+                    android:textSize="14sp"
+                    android:gravity="center"
+                    android:id="@+id/empty"
+                    android:padding="8dp"
+                    android:minHeight="72dp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="暂无课程"
+                    android:lineSpacingExtra="8dp"
+                    android:textAlignment="center" />
+            </FrameLayout>
+            <LinearLayout
+                android:layout_width="1dp"
                 android:layout_height="match_parent"
-                android:text="暂无课程"
-                android:lineSpacingExtra="8dp"
-                android:textAlignment="center" />
-        </FrameLayout>
-    </LinearLayout>
-</RelativeLayout>
+                android:alpha="0.5"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp" />
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1">
+                <ListView
+                    android:id="@+id/lv_course_next_day"
+                    android:scrollbars="none"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:divider="@android:color/transparent"
+                    android:dividerHeight="8dp" />
+                <TextView
+                    android:textSize="14sp"
+                    android:gravity="center"
+                    android:id="@+id/empty_next_day"
+                    android:padding="8dp"
+                    android:minHeight="72dp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="暂无课程"
+                    android:lineSpacingExtra="8dp"
+                    android:textAlignment="center" />
+            </FrameLayout>
+        </LinearLayout>
+    </RelativeLayout>
+</FrameLayout>

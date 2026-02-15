@@ -5,17 +5,20 @@ class ScheduleHeader extends StatelessWidget {
   final ScheduleData scheduleData;
   final double height;
   final double timeColumnWidth;
+  final bool showWeekend;
 
   const ScheduleHeader({
     super.key,
     required this.scheduleData,
     this.height = 50.0,
     this.timeColumnWidth = 30.0,
+    this.showWeekend = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final weekDayList = scheduleData.weekDayList ?? [];
+    final weekDayListAll = scheduleData.weekDayList ?? [];
+    final weekDayList = showWeekend ? weekDayListAll : weekDayListAll.take(5);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(

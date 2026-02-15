@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cqut/pages/ClassSchedule/schedule_controller.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../model/schedule_model.dart';
 import 'widgets/schedule_header.dart';
 import 'widgets/schedule_time_column.dart';
@@ -15,6 +16,8 @@ class ClassscheduleView extends StatefulWidget {
 }
 
 class _ClassscheduleViewState extends State<ClassscheduleView> {
+  static const String _prefsKeyShowWeekend = 'schedule_show_weekend';
+
   final ScheduleController _controller = ScheduleController();
   ScheduleData? _currentScheduleData; // 当前显示的周数据
 
@@ -29,6 +32,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
 
   bool _loading = true; // 默认为 true，防止初始空数据渲染
   String? _error;
+  bool _showWeekend = true;
 
   // 用于周切换的 PageController
   PageController? _pageController;
@@ -86,6 +90,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
   @override
   void initState() {
     super.initState();
+    _loadPreferences();
     _loadInitialData();
   }
 
@@ -414,6 +419,55 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     );
   }
 
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final showWeekend = prefs.getBool(_prefsKeyShowWeekend);
+    if (!mounted) return;
+    setState(() {
+      _showWeekend = showWeekend ?? true;
+    });
+  }
+
+  Future<void> _setShowWeekend(bool value) async {
+    setState(() {
+      _showWeekend = value;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefsKeyShowWeekend, value);
+    unawaited(
+      FirebaseAnalytics.instance.logEvent(
+        name: 'schedule_toggle_show_weekend',
+        parameters: {'value': value},
+      ),
+    );
+  }
+
+  void _showScheduleSettingsSheet() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(
+                title: Text('显示周末'),
+                subtitle: Text('关闭后仅显示周一到周五'),
+                value: _showWeekend,
+                onChanged: (value) {
+                  Navigator.pop(context);
+                  _setShowWeekend(value);
+                },
+              ),
+              SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if ((_currentScheduleData == null || _weekList == null) && _loading) {
@@ -496,6 +550,11 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
                     yearTerm: _currentScheduleData?.yearTerm,
                   ),
             icon: Icon(Icons.refresh),
+          ),
+          IconButton(
+            onPressed: _showScheduleSettingsSheet,
+            icon: Icon(Icons.tune),
+            tooltip: '课表设置',
           ),
         ],
         title: Column(
@@ -592,6 +651,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
                   scheduleData: data,
                   height: _headerHeight,
                   timeColumnWidth: _timeColumnWidth,
+                  showWeekend: _showWeekend,
                 ),
                 Expanded(
                   child: SingleChildScrollView(
@@ -606,6 +666,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
                           child: ScheduleCourseGrid(
                             events: data.eventList ?? [],
                             sessionHeight: _sessionHeight,
+                            showWeekend: _showWeekend,
                             colors:
                                 Theme.of(context).brightness == Brightness.dark
                                 ? _darkColors
