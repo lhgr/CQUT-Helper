@@ -59,14 +59,30 @@ jobs:
         run: |
           ls -l android/app/google-services.json || echo "google-services.json NOT FOUND"
           ls -l lib/firebase_options.dart || echo "firebase_options.dart NOT FOUND"
+      
+      - name: Resolve Build Version
+        id: version
+        run: |
+          python3 - <<'PY' >> $GITHUB_OUTPUT
+          import re
+          from pathlib import Path
+          content = Path("pubspec.yaml").read_text(encoding="utf-8")
+          match = re.search(r"^version:\s*([0-9A-Za-z\.\-]+)\+(\d+)\s*$", content, re.M)
+          if not match:
+            raise SystemExit("pubspec.yaml missing version like x.y.z+N")
+          build_name = match.group(1)
+          build_number = int(match.group(2)) + 1
+          print(f"build_name={build_name}")
+          print(f"build_number={build_number}")
+          PY
         
       - name: Build Fat APK (Universal)
         run: |
-          flutter build apk --release
+          flutter build apk --release --build-name ${{ steps.version.outputs.build_name }} --build-number ${{ steps.version.outputs.build_number }}
           mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
         
       - name: Build Split APKs
-        run: flutter build apk --release --split-per-abi
+        run: flutter build apk --release --split-per-abi --build-name ${{ steps.version.outputs.build_name }} --build-number ${{ steps.version.outputs.build_number }}
         
       - name: Create Release
         uses: softprops/action-gh-release@v1
