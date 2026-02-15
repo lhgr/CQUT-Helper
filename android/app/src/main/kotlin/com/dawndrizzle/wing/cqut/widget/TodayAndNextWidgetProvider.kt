@@ -53,18 +53,28 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_today_and_next)
 
-      val dark = WidgetTheme.isDark(context)
-      views.setInt(
-        R.id.widget_card,
-        "setBackgroundResource",
-        if (dark) R.drawable.widget_bg_dark else R.drawable.widget_bg,
-      )
-      views.setTextColor(R.id.tv_schedule_name, WidgetTheme.primaryTextColor(dark))
-      views.setTextColor(R.id.tv_date, WidgetTheme.secondaryTextColor(dark))
-      views.setTextColor(R.id.tv_week_count, WidgetTheme.secondaryTextColor(dark))
-      views.setTextColor(R.id.tv_week, WidgetTheme.accentColor())
-      views.setTextColor(R.id.empty, WidgetTheme.secondaryTextColor(dark))
-      views.setTextColor(R.id.empty_next_day, WidgetTheme.secondaryTextColor(dark))
+      when (WidgetTheme.mode(context)) {
+        WidgetTheme.Mode.DARK -> {
+          views.setInt(R.id.widget_card, "setBackgroundResource", R.drawable.widget_bg_dark)
+          views.setTextColor(R.id.tv_schedule_name, WidgetTheme.primaryTextColor(true))
+          views.setTextColor(R.id.tv_date, WidgetTheme.secondaryTextColor(true))
+          views.setTextColor(R.id.tv_week_count, WidgetTheme.secondaryTextColor(true))
+          views.setTextColor(R.id.tv_week, WidgetTheme.accentColor())
+          views.setTextColor(R.id.empty, WidgetTheme.secondaryTextColor(true))
+          views.setTextColor(R.id.empty_next_day, WidgetTheme.secondaryTextColor(true))
+        }
+        WidgetTheme.Mode.LIGHT -> {
+          views.setInt(R.id.widget_card, "setBackgroundResource", R.drawable.widget_bg)
+          views.setTextColor(R.id.tv_schedule_name, WidgetTheme.primaryTextColor(false))
+          views.setTextColor(R.id.tv_date, WidgetTheme.secondaryTextColor(false))
+          views.setTextColor(R.id.tv_week_count, WidgetTheme.secondaryTextColor(false))
+          views.setTextColor(R.id.tv_week, WidgetTheme.accentColor())
+          views.setTextColor(R.id.empty, WidgetTheme.secondaryTextColor(false))
+          views.setTextColor(R.id.empty_next_day, WidgetTheme.secondaryTextColor(false))
+        }
+        WidgetTheme.Mode.SYSTEM -> {
+        }
+      }
 
       val header = TodayWidgetData.loadHeader(context)
       val weekCount = TodayWidgetData.loadWeekCountText(context)

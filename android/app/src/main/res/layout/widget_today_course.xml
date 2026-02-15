@@ -41,6 +41,7 @@
                         android:layout_height="wrap_content"
                         android:textSize="16sp"
                         android:textStyle="bold"
+                        android:textColor="@color/widget_primary_text"
                         android:layout_marginBottom="2dp"
                         android:text="8月9日" />
                     <LinearLayout
@@ -52,6 +53,7 @@
                             android:layout_height="wrap_content"
                             android:textSize="12sp"
                             android:textStyle="bold"
+                            android:textColor="@color/widget_primary_text"
                             android:maxLines="1"
                             android:maxLength="12"
                             android:text="课表" />
@@ -61,6 +63,7 @@
                             android:layout_height="wrap_content"
                             android:textSize="12sp"
                             android:textStyle="bold"
+                            android:textColor="@color/widget_secondary_text"
                             android:text=" | 第1周    " />
                         <TextView
                             android:id="@+id/tv_week"
@@ -68,7 +71,7 @@
                             android:layout_height="wrap_content"
                             android:textSize="12sp"
                             android:textStyle="bold"
-                            android:textColor="#3F51B5"
+                            android:textColor="@color/widget_accent"
                             android:text="周四" />
                     </LinearLayout>
                 </LinearLayout>
@@ -112,6 +115,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:textSize="12dp"
+                    android:textColor="@color/widget_secondary_text"
                     android:text="今日暂无课程"
                     android:lineSpacingExtra="8dp"
                     android:textAlignment="center" />

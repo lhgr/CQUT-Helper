@@ -19,6 +19,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textSize="12sp"
+                android:textColor="@color/widget_primary_text"
                 android:maxLines="1"
                 android:maxLength="12"
                 android:text="课表" />
@@ -27,6 +28,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textSize="12sp"
+                android:textColor="@color/widget_secondary_text"
                 android:layout_marginEnd="4dp"
                 android:layout_toStartOf="@+id/tv_week"
                 android:text="3.26" />
@@ -35,7 +37,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textSize="12sp"
-                android:textColor="#3F51B5"
+                android:textColor="@color/widget_accent"
                 android:layout_alignParentEnd="true"
                 android:text="周六" />
         </RelativeLayout>
@@ -56,6 +58,7 @@
             android:layout_below="@+id/rl_title"
             android:gravity="center"
             android:textSize="14sp"
+            android:textColor="@color/widget_secondary_text"
             android:lineSpacingExtra="8dp"
             android:textAlignment="center"
             android:text="今日暂无课程" />

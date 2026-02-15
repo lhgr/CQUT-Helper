@@ -64,13 +64,26 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
-      val dark = WidgetTheme.isDark(context)
-      views.setImageViewResource(R.id.iv_appwidget, if (dark) R.drawable.appwidget_bg_dark else R.drawable.appwidget_bg)
-      views.setInt(R.id.tv_schedule_name, "setTextColor", WidgetTheme.primaryTextColor(dark))
-      views.setInt(R.id.tv_date, "setTextColor", WidgetTheme.primaryTextColor(dark))
-      views.setInt(R.id.tv_week_count, "setTextColor", WidgetTheme.secondaryTextColor(dark))
-      views.setInt(R.id.tv_week, "setTextColor", WidgetTheme.accentColor())
-      views.setInt(R.id.empty_text, "setTextColor", WidgetTheme.secondaryTextColor(dark))
+      when (WidgetTheme.mode(context)) {
+        WidgetTheme.Mode.DARK -> {
+          views.setImageViewResource(R.id.iv_appwidget, R.drawable.appwidget_bg_dark)
+          views.setInt(R.id.tv_schedule_name, "setTextColor", WidgetTheme.primaryTextColor(true))
+          views.setInt(R.id.tv_date, "setTextColor", WidgetTheme.primaryTextColor(true))
+          views.setInt(R.id.tv_week_count, "setTextColor", WidgetTheme.secondaryTextColor(true))
+          views.setInt(R.id.tv_week, "setTextColor", WidgetTheme.accentColor())
+          views.setInt(R.id.empty_text, "setTextColor", WidgetTheme.secondaryTextColor(true))
+        }
+        WidgetTheme.Mode.LIGHT -> {
+          views.setImageViewResource(R.id.iv_appwidget, R.drawable.appwidget_bg)
+          views.setInt(R.id.tv_schedule_name, "setTextColor", WidgetTheme.primaryTextColor(false))
+          views.setInt(R.id.tv_date, "setTextColor", WidgetTheme.primaryTextColor(false))
+          views.setInt(R.id.tv_week_count, "setTextColor", WidgetTheme.secondaryTextColor(false))
+          views.setInt(R.id.tv_week, "setTextColor", WidgetTheme.accentColor())
+          views.setInt(R.id.empty_text, "setTextColor", WidgetTheme.secondaryTextColor(false))
+        }
+        WidgetTheme.Mode.SYSTEM -> {
+        }
+      }
 
       val dayOffset = getDayOffset(context, appWidgetId)
       val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)

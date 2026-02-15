@@ -65,6 +65,13 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_today_course_info" />
         </receiver>
+        <receiver
+            android:name="com.dawndrizzle.wing.cqut.widget.WidgetThemeChangedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+            </intent-filter>
+        </receiver>
         <service
             android:name="com.dawndrizzle.wing.cqut.widget.CourseListWidgetService"
             android:exported="false"

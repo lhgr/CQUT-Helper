@@ -43,16 +43,24 @@ private class CourseListRemoteViewsFactory(
   override fun getViewAt(position: Int): RemoteViews {
     val item = items.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_today_list_item)
-    val dark = WidgetTheme.isDark(context)
-    views.setInt(
-      R.id.ll_content,
-      "setBackgroundResource",
-      if (dark) R.drawable.widget_item_bg_dark else R.drawable.widget_item_bg,
-    )
-    views.setTextColor(R.id.tv_course_name, WidgetTheme.primaryTextColor(dark))
-    views.setTextColor(R.id.tv_location, WidgetTheme.secondaryTextColor(dark))
-    views.setTextColor(R.id.tv_teacher, WidgetTheme.secondaryTextColor(dark))
-    views.setTextColor(R.id.tv_time, WidgetTheme.secondaryTextColor(dark))
+    when (WidgetTheme.mode(context)) {
+      WidgetTheme.Mode.DARK -> {
+        views.setInt(R.id.ll_content, "setBackgroundResource", R.drawable.widget_item_bg_dark)
+        views.setTextColor(R.id.tv_course_name, WidgetTheme.primaryTextColor(true))
+        views.setTextColor(R.id.tv_location, WidgetTheme.secondaryTextColor(true))
+        views.setTextColor(R.id.tv_teacher, WidgetTheme.secondaryTextColor(true))
+        views.setTextColor(R.id.tv_time, WidgetTheme.secondaryTextColor(true))
+      }
+      WidgetTheme.Mode.LIGHT -> {
+        views.setInt(R.id.ll_content, "setBackgroundResource", R.drawable.widget_item_bg)
+        views.setTextColor(R.id.tv_course_name, WidgetTheme.primaryTextColor(false))
+        views.setTextColor(R.id.tv_location, WidgetTheme.secondaryTextColor(false))
+        views.setTextColor(R.id.tv_teacher, WidgetTheme.secondaryTextColor(false))
+        views.setTextColor(R.id.tv_time, WidgetTheme.secondaryTextColor(false))
+      }
+      WidgetTheme.Mode.SYSTEM -> {
+      }
+    }
 
     if (item == null) {
       views.setTextViewText(R.id.tv_course_name, "")

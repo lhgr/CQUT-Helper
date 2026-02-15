@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/widget_updater.dart';
 
 class ThemeManager extends ChangeNotifier {
   static final ThemeManager _instance = ThemeManager._internal();
@@ -41,5 +42,6 @@ class ThemeManager extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeModeKey, mode.toString());
+    await WidgetUpdater.updateTodayWidget();
   }
 }
