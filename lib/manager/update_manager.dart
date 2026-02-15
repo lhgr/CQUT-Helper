@@ -52,8 +52,6 @@ class UpdateManager {
       return;
     }
 
-    // 3. 比较版本
-    // 假设 tag_name 格式为 "v1.0.1" 或 "1.0.1"
     String remoteVersion = updateInfo.tagName.replaceAll('v', '');
 
     if (_hasNewVersion(currentVersion, remoteVersion)) {
@@ -71,20 +69,40 @@ class UpdateManager {
 
   bool _hasNewVersion(String current, String remote) {
     try {
-      List<int> currentParts = current.split('.').map(int.parse).toList();
-      List<int> remoteParts = remote.split('.').map(int.parse).toList();
+      List<String> currentChunks = current.split('-');
+      List<String> remoteChunks = remote.split('-');
+      List<int> currentParts = currentChunks.first
+          .split('.')
+          .map(int.parse)
+          .toList();
+      List<int> remoteParts = remoteChunks.first
+          .split('.')
+          .map(int.parse)
+          .toList();
+      String currentSuffix = currentChunks.length > 1
+          ? currentChunks.sublist(1).join('-')
+          : '';
+      String remoteSuffix = remoteChunks.length > 1
+          ? remoteChunks.sublist(1).join('-')
+          : '';
 
-      for (int i = 0; i < remoteParts.length; i++) {
-        int remotePart = remoteParts[i];
+      int maxLen = currentParts.length > remoteParts.length
+          ? currentParts.length
+          : remoteParts.length;
+      for (int i = 0; i < maxLen; i++) {
+        int remotePart = (i < remoteParts.length) ? remoteParts[i] : 0;
         int currentPart = (i < currentParts.length) ? currentParts[i] : 0;
 
         if (remotePart > currentPart) return true;
         if (remotePart < currentPart) return false;
       }
+      if (currentSuffix == remoteSuffix) return false;
+      if (currentSuffix.isEmpty && remoteSuffix.isNotEmpty) return true;
+      if (currentSuffix.isNotEmpty && remoteSuffix.isEmpty) return false;
+      return remoteSuffix.compareTo(currentSuffix) > 0;
     } catch (e) {
       return false;
     }
-    return false;
   }
 
   void _showUpdateDialog(
