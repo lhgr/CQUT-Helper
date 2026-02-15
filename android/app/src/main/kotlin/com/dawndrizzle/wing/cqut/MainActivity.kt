@@ -7,9 +7,13 @@ import android.os.Environment
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.dawndrizzle.wing.cqut.widget.TodayListWidgetProvider
+import com.dawndrizzle.wing.cqut.widget.TodayAndNextWidgetProvider
+import com.dawndrizzle.wing.cqut.widget.TodayCourseWidgetProvider
 
 class MainActivity : FlutterActivity() {
   private val channelName = "cqut/downloads"
+  private val widgetChannelName = "cqut/widget"
 
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
@@ -52,6 +56,20 @@ class MainActivity : FlutterActivity() {
             } catch (e: Exception) {
               result.error("DOWNLOAD_FAILED", e.toString(), null)
             }
+          }
+
+          else -> result.notImplemented()
+        }
+      }
+
+    MethodChannel(flutterEngine.dartExecutor.binaryMessenger, widgetChannelName)
+      .setMethodCallHandler { call, result ->
+        when (call.method) {
+          "updateTodayWidget" -> {
+            TodayListWidgetProvider.updateAll(applicationContext)
+            TodayAndNextWidgetProvider.updateAll(applicationContext)
+            TodayCourseWidgetProvider.updateAll(applicationContext)
+            result.success(null)
           }
 
           else -> result.notImplemented()

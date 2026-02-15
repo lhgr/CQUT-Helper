@@ -137,7 +137,7 @@ class UpdateManager {
 
   Future<void> _launchExternalUrl(BuildContext context, String url) async {
     final Uri uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    if (!await launchUrl(uri)) {
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,

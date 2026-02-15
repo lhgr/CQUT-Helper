@@ -133,7 +133,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
 
         final msg = changedWeeks.length == 1
             ? '${labelForWeek(changedWeeks.first)}课表有更新'
-            : '${labelForWeek(changedWeeks.first)}等${changedWeeks.length}周课表有更新';
+            : '${labelForWeek(changedWeeks.first)}第${changedWeeks.length}周课表有更新';
         final firstChanged = changedWeeks.first;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -255,7 +255,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     final targetWeek = _weekList![index];
     final currentTerm = _currentScheduleData?.yearTerm ?? _currentTerm;
 
-    // 如果我们有该周的缓存数据，立即更新标题
+    // 如果有该周的缓存数据，立即更新标题
     final wInt = int.tryParse(targetWeek) ?? 0;
     if (_weekCache.containsKey(wInt)) {
       setState(() {
@@ -270,13 +270,6 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
   }
 
   void _changeTerm(String term) {
-    // 当学期改变时，我们基本重置所有内容
-    // 加载新学期的第 1 周 (或者是当前周，如果是当前学期，但直接加载第 1 周或指定周更简单)
-    // 需求说 "如果不是当前学期，默认为第 1 周"
-    // 等等，如果我选择一个学期，没有逻辑很难知道它是否是当前学期
-    // 我们直接加载目标周
-
-    // 我们直接加载数据
     _weekCache.clear();
     _loadFromNetwork(weekNum: '1', yearTerm: term);
   }

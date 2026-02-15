@@ -4,6 +4,7 @@ import 'package:cqut/api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../model/schedule_model.dart';
 import '../../utils/schedule_date.dart';
+import '../../utils/widget_updater.dart';
 
 class ScheduleController {
   final ApiService _apiService = ApiService();
@@ -104,6 +105,7 @@ class ScheduleController {
 
       await prefs.setString(_lastViewedWeekKey(_userId!), data.weekNum!);
       await prefs.setString(_lastViewedTermKey(_userId!), data.yearTerm!);
+      await WidgetUpdater.updateTodayWidget();
     }
 
     if (weekNum == null && yearTerm == null) {

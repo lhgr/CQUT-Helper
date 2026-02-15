@@ -43,7 +43,7 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
 
   Future<void> _launchUrl(String urlString) async {
     final Uri url = Uri.parse(urlString);
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+    if (!await launchUrl(url)) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,

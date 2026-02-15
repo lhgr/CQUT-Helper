@@ -15,4 +15,30 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+
+    <style name="Theme.AppWidget.AppWidgetContainerParent" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:colorAccent">@color/md_theme_primary</item>
+        <item name="android:colorBackground">@android:color/transparent</item>
+        <item name="android:textColorPrimary">#111111</item>
+        <item name="android:textColorSecondary">#666666</item>
+        <item name="android:colorControlNormal">#666666</item>
+    </style>
+
+    <style name="Widget" />
+    <style name="Widget.AppWidget" parent="@style/Widget" />
+    <style name="Widget.AppWidget.AppWidget" parent="@style/Widget.AppWidget" />
+
+    <style name="Widget.AppWidget.AppWidget.Container" parent="@style/Widget.AppWidget.AppWidget">
+        <item name="android:background">@drawable/system_appwidget_bg</item>
+    </style>
+
+    <style name="ScheduleHeaderStyle">
+        <item name="android:textColor">#8a000000</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:background">@color/nodeIndex</item>
+        <item name="android:lineSpacingExtra">3dp</item>
+    </style>
 </resources>

@@ -341,10 +341,7 @@ class _MineViewState extends State<MineView> {
                       name: 'about_us_developer_click',
                     );
                     final Uri url = Uri.parse('https://github.com/lhgr');
-                    if (!await launchUrl(
-                      url,
-                      mode: LaunchMode.externalApplication,
-                    )) {
+                    if (!await launchUrl(url)) {
                       debugPrint('Could not launch \$url');
                     }
                   },
@@ -412,10 +409,7 @@ class _MineViewState extends State<MineView> {
                     const String urlString =
                         'https://weibo.com/5401723589?refer_flag=1001030103_';
                     final Uri url = Uri.parse(urlString);
-                    if (!await launchUrl(
-                      url,
-                      mode: LaunchMode.externalApplication,
-                    )) {
+                    if (!await launchUrl(url)) {
                       debugPrint('Could not launch \$url');
                     }
                   },
