@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/SDK-Flutter-blue?style=flat-square" alt="SDK" />
 </p>
 
-**CQUT-Helper** 是一款专为重庆理工大学学子打造的校园助手 App。采用 Flutter 开发，遵循 Material 3 设计规范，旨在提供美观、流畅、便捷的校园服务体验。
+**CQUT-Helper** 是一款专为重庆理工大学学子打造的课表助手 App。采用 Flutter 开发，遵循 Material 3 设计规范，旨在提供美观、流畅、便捷的学习体验。
 
 ## ✨ 主要功能
 
@@ -53,7 +53,7 @@
 
 ## ⚠️ 开发说明
 
-本项目的绝大部分代码是在 AI 辅助下完成的，主要用于学习和实验目的。代码质量和设计模式可能存在不足，仅供参考。
+本项目的绝大部分代码是在 AI 辅助下完成的，主要用于学习和实验目的。代码质量和设计模式可能存在不足，仅供参考。如果遇到问题或有任何建议,请通过[Issues](https://github.com/lhgr/CQUT-Helper/issues)或[邮件](mailto:3414950665lhgr@gmail.com)给出。
 
 ## 📚 参考资料
 
@@ -64,7 +64,7 @@
   集成了项目的仓库文件结构，便于查找。感谢各位上传的资料，~~屡次救我狗命~~。
 
 - [Wake Up课程表](https://www.wakeup.fun/)  
-  参考了它[桌面小部件](https://www.wakeup.fun/doc/widget.html)的样式
+  参考了它的[桌面小部件](https://www.wakeup.fun/doc/widget.html)样式
 
 ---
-*注：本项目为第三方非官方客户端，仅供学习交流使用。*
+*注：本项目为第三方非官方客户端，仅供学习交流使用,如有侵权问题请通过[邮件](mailto:3414950665lhgr@gmail.com)联系我们。*
