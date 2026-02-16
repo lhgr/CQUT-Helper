@@ -10,7 +10,7 @@
 
 ## ✨ 主要功能
 
-*   **📅 课程表**：直观展示每周课程。
+*   **📅 课程表**：展示每周课程,添加桌面小部件后不打开应用也能看到课程信息。
 *   **👤 个人中心**：便捷查看个人信息。
 *   **🎨 个性化主题**：支持 Material 3 动态取色(Dynamic Color)，界面随心而动。
 *   **🚀 自动更新**：基于 GitHub Releases 的应用内自动检查与更新功能。
@@ -62,6 +62,9 @@
 
 - [CQUT课程攻略共享计划](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)  
   集成了项目的仓库文件结构，便于查找。感谢各位上传的资料，~~屡次救我狗命~~。
+
+- [Wake Up课程表](https://www.wakeup.fun/)  
+  参考了它[桌面小部件](https://www.wakeup.fun/doc/widget.html)的样式
 
 ---
 *注：本项目为第三方非官方客户端，仅供学习交流使用。*
