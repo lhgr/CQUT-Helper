@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cqut/api/api_service.dart';
+import 'package:cqut/manager/announcement_manager.dart';
 import 'package:cqut/manager/theme_manager.dart';
 import 'package:cqut/manager/update_manager.dart';
+import 'package:cqut/pages/Announcement/Announcement.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -305,6 +307,36 @@ class _MineViewState extends State<MineView> {
           },
         ),
         _buildMenuItem(
+          icon: Icons.campaign_outlined,
+          title: "公告",
+          onTap: () async {
+            if (!mounted) return;
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => const Center(child: CircularProgressIndicator()),
+            );
+            final result = await AnnouncementManager().checkHealth();
+            if (mounted) Navigator.of(context).pop();
+
+            if (!result.ok) {
+              final failure = result.failure;
+              final text = failure == null
+                  ? '公告服务异常，请稍后再试'
+                  : (failure.type == AnnouncementFailureType.backend
+                      ? '后端服务异常：${failure.message}'
+                      : '用户侧问题：${failure.message}');
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+              }
+              return;
+            }
+
+            if (!mounted) return;
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AnnouncementListPage()));
+          },
+        ),
+        _buildMenuItem(
           icon: Icons.system_update,
           title: "检查更新",
           onTap: () {
@@ -353,30 +385,33 @@ class _MineViewState extends State<MineView> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: Theme.of(context).colorScheme.outlineVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
                             ),
                           ),
                           child: CachedNetworkImage(
                             imageUrl: 'https://github.com/lhgr.png',
-                            imageBuilder: (context, imageProvider) => CircleAvatar(
-                              radius: 24,
-                              backgroundImage: imageProvider,
-                              backgroundColor: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHigh,
-                            ),
+                            imageBuilder: (context, imageProvider) =>
+                                CircleAvatar(
+                                  radius: 24,
+                                  backgroundImage: imageProvider,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHigh,
+                                ),
                             placeholder: (context, url) => CircleAvatar(
                               radius: 24,
-                              backgroundColor: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHigh,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHigh,
                               child: Icon(Icons.person),
                             ),
                             errorWidget: (context, url, error) => CircleAvatar(
                               radius: 24,
-                              backgroundColor: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHigh,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHigh,
                               child: Icon(Icons.person),
                             ),
                           ),
@@ -421,17 +456,17 @@ class _MineViewState extends State<MineView> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: Theme.of(context).colorScheme.outlineVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
                             ),
                           ),
                           child: CircleAvatar(
                             radius: 24,
-                            backgroundColor: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHigh,
-                            backgroundImage: AssetImage(
-                              'lib/assets/Wing.jpg',
-                            ),
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHigh,
+                            backgroundImage: AssetImage('lib/assets/Wing.jpg'),
                           ),
                         ),
                         SizedBox(width: 16),

@@ -1,4 +1,5 @@
 import 'package:cqut/manager/update_manager.dart';
+import 'package:cqut/manager/announcement_manager.dart';
 import 'package:cqut/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut/pages/Data/Data.dart';
 import 'package:cqut/pages/Mine/Mine.dart';
@@ -39,6 +40,7 @@ class _MainPageState extends State<MainPage> {
         // 使用 addPostFrameCallback 确保在当前帧绘制完成后执行，避免构建冲突
         WidgetsBinding.instance.addPostFrameCallback((_) {
           UpdateManager().checkUpdate(context);
+          AnnouncementManager().checkAndShow(context);
         });
       }
     }
