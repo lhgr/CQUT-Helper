@@ -11,10 +11,10 @@
 ## ✨ 主要功能
 
 *   **📅 课程表**：展示每周课程,添加桌面小部件后不打开应用也能看到课程信息。
-*   **👤 个人中心**：便捷查看个人信息。
+*   **👤 个人中心**：实现"本科课表(测试)"中的[getUserInfo](https://timetable-cfc.cqut.edu.cn/api/courseSchedule/getUserInfo)接口,可以便捷查看个人信息。
 *   **🎨 个性化主题**：支持 Material 3 动态取色(Dynamic Color)，界面随心而动。
-*   **🚀 自动更新**：基于 GitHub Releases 的应用内自动检查与更新功能。
-*   **📂 开源浏览**：内置简单的 GitHub 仓库浏览器,用于浏览[Royfor12](https://github.com/Royfor12)的[课程资料仓库](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme),获得课程资料。
+*   **🚀 自动更新**：实现"本科课表(测试)"中的[listWeekEvents](https://timetable-cfc.cqut.edu.cn/api/courseSchedule/listWeekEvents)接口,自动请求并更新课表数据。
+*   **📂 开源浏览**：实现简单的 GitHub 仓库浏览器,用于浏览[Royfor12](https://github.com/Royfor12)的[课程资料仓库](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme),获得课程资料。
 
 ## 📱 下载安装
 
@@ -30,7 +30,7 @@
 
 ## 🔒 隐私说明
 
-本应用尊重并保护用户的个人隐私。我们承诺：
+尊重并保护用户的个人隐私：
 
 1. **核心数据本地化**：用户的账号、密码（经过加密处理）、课表详情等核心隐私数据**仅存储在本地设备上**，绝不会上传至除学校教务系统以外的任何第三方服务器。
 2. **统计分析**：为了优化用户体验和修复 Bug，本项目集成了 **Firebase Analytics**。它仅收集**匿名**的使用数据（如崩溃日志、功能点击次数），**不包含**任何个人身份信息。
@@ -40,16 +40,6 @@
    - 浏览开源仓库 (访问 GitHub API)
    - 匿名统计数据 (发送至 Firebase)
 4. **权限使用**：应用仅在必要时请求所需权限，并明确告知使用目的。
-
-## 🛠️ 技术栈
-
-*   **核心框架**: Flutter
-*   **语言**: Dart
-*   **UI 风格**: Material Design 3 (支持动态取色)
-*   **网络请求**: Dio + CookieManager
-*   **本地存储**: Shared Preferences
-*   **统计分析**: Firebase Analytics
-*   **自动构建**: GitHub Actions
 
 ## ⚠️ 开发说明
 
@@ -61,7 +51,7 @@
   参考了其中的[密码加密模块](https://github.com/CQUT-handsomeboy/cqut-net-login/blob/main/encrypt.py)
 
 - [CQUT课程攻略共享计划](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)  
-  集成了项目的仓库文件结构，便于查找。感谢各位上传的资料，~~屡次救我狗命~~。
+  集成了该项目的仓库文件结构，便于查找。感谢各位上传的资料，~~屡次救我狗命~~。
 
 - [Wake Up课程表](https://www.wakeup.fun/)  
   参考了它的[桌面小部件](https://www.wakeup.fun/doc/widget.html)样式
