@@ -1,8 +1,11 @@
 import 'package:cqut/manager/update_manager.dart';
 import 'package:cqut/manager/announcement_manager.dart';
 import 'package:cqut/pages/ClassSchedule/ClassSchedule.dart';
+import 'package:cqut/pages/ClassSchedule/schedule_update_worker.dart';
+import 'package:cqut/pages/ClassSchedule/schedule_update_intents.dart';
 import 'package:cqut/pages/Data/Data.dart';
 import 'package:cqut/pages/Mine/Mine.dart';
+import 'package:cqut/utils/local_notifications.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,11 +19,23 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   bool _isCheckingLogin = true;
+  int _lastOpenFromNotificationToken = 0;
 
   @override
   void initState() {
     super.initState();
+    ScheduleUpdateIntents.openFromSystemNotification.addListener(
+      _onOpenFromSystemNotification,
+    );
     _checkLoginStatus();
+  }
+
+  @override
+  void dispose() {
+    ScheduleUpdateIntents.openFromSystemNotification.removeListener(
+      _onOpenFromSystemNotification,
+    );
+    super.dispose();
   }
 
   Future<void> _checkLoginStatus() async {
@@ -38,12 +53,36 @@ class _MainPageState extends State<MainPage> {
         });
         // 登录成功后，自动检查更新
         // 使用 addPostFrameCallback 确保在当前帧绘制完成后执行，避免构建冲突
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
           UpdateManager().checkUpdate(context);
           AnnouncementManager().checkAndShow(context);
+          ScheduleUpdateWorker.syncFromPreferences();
+          final open = await LocalNotifications.consumeOpenScheduleUpdateFlag();
+          if (open) {
+            _openScheduleAndChanges();
+          }
         });
       }
     }
+  }
+
+  void _onOpenFromSystemNotification() {
+    final token = ScheduleUpdateIntents.openFromSystemNotification.value;
+    if (token == _lastOpenFromNotificationToken) return;
+    _lastOpenFromNotificationToken = token;
+    _openScheduleAndChanges();
+  }
+
+  void _openScheduleAndChanges() {
+    if (!mounted) return;
+    if (_currentIndex != 1) {
+      setState(() {
+        _currentIndex = 1;
+      });
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ScheduleUpdateIntents.requestOpenChangesSheet();
+    });
   }
 
   final List<Map<String, dynamic>> _tabList = [

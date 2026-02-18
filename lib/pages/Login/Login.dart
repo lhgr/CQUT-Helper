@@ -18,7 +18,6 @@ class _LoginPageState extends State<LoginPage> {
 
   bool _isLoading = false;
   bool _obscurePassword = true;
-  bool _rememberMe = true;
   String? _savedEncryptedPassword;
   String? _savedAccount;
 
@@ -81,12 +80,7 @@ class _LoginPageState extends State<LoginPage> {
                     Text(
                       "1. 核心数据本地化：用户的账号、密码（经过加密处理）、课表详情、成绩等核心隐私数据仅存储在本地设备上，绝不会上传至除学校教务系统以外的任何第三方服务器。\n"
                       "2. 统计分析：为了优化用户体验和修复 Bug，本项目集成了 Firebase Analytics。它仅收集匿名的使用数据（如崩溃日志、功能点击次数），不包含任何个人身份信息。\n"
-                      "3. 网络请求：应用仅在以下情况发起网络请求：\n"
-                      "   - 访问学校教务系统 (用于获取数据)\n"
-                      "   - 检查应用更新 (访问 GitHub Releases)\n"
-                      "   - 浏览开源仓库 (访问 GitHub API)\n"
-                      "   - 匿名统计数据 (发送至 Firebase)\n"
-                      "4. 权限使用：应用仅在必要时请求所需权限，并明确告知使用目的。",
+                      "3. 权限使用：应用仅在必要时请求所需权限，并明确告知使用目的。",
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     SizedBox(height: 16),
@@ -166,7 +160,6 @@ class _LoginPageState extends State<LoginPage> {
           _accountController.text = account;
           _savedAccount = account;
           _savedEncryptedPassword = encryptedPwd;
-          _rememberMe = encryptedPwd != null && encryptedPwd.isNotEmpty;
         });
       }
     }
@@ -215,17 +208,12 @@ class _LoginPageState extends State<LoginPage> {
       await FirebaseAnalytics.instance.logLogin(loginMethod: 'password');
 
       final prefs = await SharedPreferences.getInstance();
-      if (_rememberMe) {
-        await prefs.setString('account', account);
-        // 如果是输入的新密码，加密保存
-        if (!useSavedPassword && password.isNotEmpty) {
-          final encrypted = _authApi.encryptPassword(password);
-          await prefs.setString('encrypted_password', encrypted);
-        }
-        // 如果是用的旧密码，且账号没变，不需要更新
+      await prefs.setString('account', account);
+      if (useSavedPassword) {
+        await prefs.setString('encrypted_password', _savedEncryptedPassword!);
       } else {
-        await prefs.remove('account');
-        await prefs.remove('encrypted_password');
+        final encrypted = _authApi.encryptPassword(password);
+        await prefs.setString('encrypted_password', encrypted);
       }
 
       if (mounted) {
@@ -352,13 +340,7 @@ class _LoginPageState extends State<LoginPage> {
                   SizedBox(height: 12),
                   Row(
                     children: [
-                      Checkbox(
-                        value: _rememberMe,
-                        onChanged: (v) =>
-                            setState(() => _rememberMe = v ?? false),
-                      ),
-                      Text("记住密码"),
-                      Spacer(),
+                      const Spacer(),
                       TextButton(
                         onPressed: () async {
                           await FirebaseAnalytics.instance.logEvent(

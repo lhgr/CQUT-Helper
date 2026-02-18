@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../model/schedule_model.dart';
 import '../../utils/schedule_date.dart';
 import '../../utils/widget_updater.dart';
+import 'schedule_diff.dart';
 
 class ScheduleController {
   final ApiService _apiService = ApiService();
@@ -312,6 +313,85 @@ class ScheduleController {
     }
 
     return changedWeeks;
+  }
+
+  Future<List<ScheduleWeekChange>> silentCheckRecentWeeksForChangesDetailed(
+    ScheduleData currentData, {
+    int weeksAhead = 1,
+    int maxDiffLinesPerWeek = 30,
+  }) async {
+    final wList = currentData.weekList;
+    final currentWeekStr = currentData.weekNum;
+    final cTerm = currentData.yearTerm;
+    if (wList == null || currentWeekStr == null || cTerm == null) return [];
+
+    final currentIndex = wList.indexOf(currentWeekStr);
+    if (currentIndex == -1) return [];
+
+    await _loadCredentials();
+    if (_userId == null || _userId!.isEmpty) return [];
+    if (_encryptedPassword == null || _encryptedPassword!.isEmpty) return [];
+
+    final prefs = await SharedPreferences.getInstance();
+    final changed = <ScheduleWeekChange>[];
+
+    final candidates = <String>[currentWeekStr];
+    for (int offset = 1; offset <= weeksAhead; offset++) {
+      final idx = currentIndex + offset;
+      if (idx < 0 || idx >= wList.length) continue;
+      candidates.add(wList[idx]);
+    }
+
+    for (final week in candidates) {
+      if (_disposed) break;
+
+      final cacheKey = 'schedule_${_userId}_${cTerm}_$week';
+      final before = prefs.getString(cacheKey);
+
+      Map<String, dynamic> jsonMap;
+      try {
+        jsonMap = await _apiService.course.fetchWeekEvents(
+          userId: _userId!,
+          encryptedPassword: _encryptedPassword!,
+          weekNum: week,
+          yearTerm: cTerm,
+        );
+      } catch (_) {
+        continue;
+      }
+
+      final after = json.encode(jsonMap);
+      final afterData = ScheduleData.fromJson(jsonMap);
+      if (afterData.weekNum != null && afterData.yearTerm != null) {
+        await prefs.setString(cacheKey, after);
+        final wInt = int.tryParse(afterData.weekNum!) ?? 0;
+        weekCache[wInt] = afterData;
+      }
+
+      if (before == null || before == after) continue;
+
+      final notifiedKey = _notifiedKey(_userId!, cTerm, week);
+      final lastNotified = prefs.getString(notifiedKey);
+      if (lastNotified == after) continue;
+
+      List<String> lines = const <String>[];
+      try {
+        final decoded = json.decode(before);
+        if (decoded is Map<String, dynamic>) {
+          final beforeData = ScheduleData.fromJson(decoded);
+          lines = diffScheduleWeekLines(
+            before: beforeData,
+            after: afterData,
+            maxLines: maxDiffLinesPerWeek,
+          );
+        }
+      } catch (_) {}
+
+      await prefs.setString(notifiedKey, after);
+      changed.add(ScheduleWeekChange(weekNum: week, lines: lines));
+    }
+
+    return changed;
   }
 
   void prefetchAllWeeksInBackground(

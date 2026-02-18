@@ -51,6 +51,8 @@ dependencies:
   path_provider: ^2.1.5
   firebase_core: ^4.4.0
   firebase_analytics: ^12.1.1
+  workmanager: ^0.6.0
+  flutter_local_notifications: ^19.0.0
 
 dev_dependencies:
   flutter_test:

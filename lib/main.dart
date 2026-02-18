@@ -1,7 +1,9 @@
 import 'package:cqut/manager/theme_manager.dart';
+import 'package:cqut/pages/ClassSchedule/schedule_update_worker.dart';
 import 'package:cqut/routes/Routes.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:cqut/utils/local_notifications.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -12,5 +14,8 @@ void main() async {
 
   // 设置沉浸式状态栏
   await ThemeManager().init();
+  await LocalNotifications.initialize();
+  await ScheduleUpdateWorker.initialize();
+  await ScheduleUpdateWorker.syncFromPreferences();
   runApp(getRootWidget());
 }

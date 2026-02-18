@@ -1,9 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:cqut/pages/ClassSchedule/schedule_controller.dart';
+import 'package:cqut/pages/ClassSchedule/schedule_diff.dart';
+import 'package:cqut/pages/ClassSchedule/schedule_update_worker.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../model/schedule_model.dart';
+import '../../utils/local_notifications.dart';
+import 'schedule_update_intents.dart';
 import 'widgets/schedule_header.dart';
 import 'widgets/schedule_time_column.dart';
 import 'widgets/schedule_course_grid.dart';
@@ -15,8 +21,16 @@ class ClassscheduleView extends StatefulWidget {
   State<ClassscheduleView> createState() => _ClassscheduleViewState();
 }
 
-class _ClassscheduleViewState extends State<ClassscheduleView> {
+class _ClassscheduleViewState extends State<ClassscheduleView>
+    with WidgetsBindingObserver {
   static const String _prefsKeyShowWeekend = 'schedule_show_weekend';
+  static const String _prefsKeyUpdateWeeksAhead = 'schedule_update_weeks_ahead';
+  static const String _prefsKeyUpdateEnabled = 'schedule_update_enabled';
+  static const String _prefsKeyUpdateIntervalMinutes =
+      'schedule_update_interval_minutes';
+  static const String _prefsKeyUpdateShowDiff = 'schedule_update_show_diff';
+  static const String _prefsKeyUpdateSystemNotifyEnabled =
+      'schedule_update_system_notification_enabled';
 
   final ScheduleController _controller = ScheduleController();
   ScheduleData? _currentScheduleData; // 当前显示的周数据
@@ -33,6 +47,14 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
   bool _loading = true; // 默认为 true，防止初始空数据渲染
   String? _error;
   bool _showWeekend = true;
+  int _updateWeeksAhead = 1;
+  bool _updateEnabled = false;
+  int _updateIntervalMinutes = 60;
+  bool _updateShowDiff = true;
+  bool _updateSystemNotifyEnabled = false;
+  Timer? _updateTimer;
+  bool _updateCheckInFlight = false;
+  int _lastOpenChangesToken = 0;
 
   // 用于周切换的 PageController
   PageController? _pageController;
@@ -90,15 +112,27 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    ScheduleUpdateIntents.openChangesSheet.addListener(_onOpenChangesSheet);
     _loadPreferences();
     _loadInitialData();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    ScheduleUpdateIntents.openChangesSheet.removeListener(_onOpenChangesSheet);
+    _updateTimer?.cancel();
     _controller.dispose();
     _pageController?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _consumePendingChangesIfAny();
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -110,6 +144,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
 
     // 2. 从网络加载以获取最新的“当前”周
     await _loadFromNetwork();
+    await _consumePendingChangesIfAny();
 
     // 3. 优先预取前后一周，提升滑动体验
     if (_currentScheduleData != null) {
@@ -119,12 +154,18 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     }
 
     if (_currentScheduleData != null) {
-      final changedWeeks = await _controller.silentCheckRecentWeeksForChanges(
-        _currentScheduleData!,
-        weeksAhead: 1,
-      );
+      final prefs = await SharedPreferences.getInstance();
+      final weeksAhead =
+          prefs.getInt(_prefsKeyUpdateWeeksAhead) ?? _updateWeeksAhead;
+      final showDiff =
+          prefs.getBool(_prefsKeyUpdateShowDiff) ?? _updateShowDiff;
+      final changes = await _controller
+          .silentCheckRecentWeeksForChangesDetailed(
+            _currentScheduleData!,
+            weeksAhead: weeksAhead,
+          );
       if (!mounted) return;
-      if (changedWeeks.isNotEmpty) {
+      if (changes.isNotEmpty) {
         String labelForWeek(String week) {
           final currentWeek = _currentScheduleData?.weekNum;
           if (currentWeek != null && week == currentWeek) return '本周';
@@ -136,24 +177,32 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
           return '第$week周';
         }
 
-        final msg = changedWeeks.length == 1
-            ? '${labelForWeek(changedWeeks.first)}课表有更新'
-            : '${labelForWeek(changedWeeks.first)}第${changedWeeks.length}周课表有更新';
-        final firstChanged = changedWeeks.first;
+        final first = changes.first;
+        final firstLabel = labelForWeek(first.weekNum);
+        final brief = showDiff && first.lines.isNotEmpty
+            ? '：${first.brief}'
+            : '';
+        final msg = changes.length == 1
+            ? '$firstLabel课表有更新$brief'
+            : '$firstLabel等${changes.length}周课表有更新$brief';
+        final firstChanged = first.weekNum;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(msg),
-            action: _weekList != null && _weekList!.contains(firstChanged)
-                ? SnackBarAction(
-                    label: '查看',
-                    onPressed: () {
-                      final idx = _weekList!.indexOf(firstChanged);
-                      if (idx != -1) {
-                        _pageController?.jumpToPage(idx);
-                      }
-                    },
-                  )
-                : null,
+            action: SnackBarAction(
+              label: showDiff ? '详情' : '查看',
+              onPressed: () {
+                if (!mounted) return;
+                if (!showDiff) {
+                  if (_weekList != null && _weekList!.contains(firstChanged)) {
+                    final idx = _weekList!.indexOf(firstChanged);
+                    if (idx != -1) _pageController?.jumpToPage(idx);
+                  }
+                  return;
+                }
+                _showScheduleChangesSheet(changes);
+              },
+            ),
             duration: Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
           ),
@@ -190,6 +239,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
         }
       }
     });
+    _configureUpdateTimer();
   }
 
   Future<void> _loadFromNetwork({String? weekNum, String? yearTerm}) async {
@@ -419,13 +469,278 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     );
   }
 
+  String _labelForWeek(String week) {
+    final currentWeek = _currentScheduleData?.weekNum;
+    if (currentWeek != null && week == currentWeek) return '本周';
+    if (_weekList != null &&
+        currentWeek != null &&
+        _weekList!.indexOf(week) == _weekList!.indexOf(currentWeek) + 1) {
+      return '下周';
+    }
+    return '第$week周';
+  }
+
+  void _jumpToWeek(String week) {
+    if (_weekList == null) return;
+    final idx = _weekList!.indexOf(week);
+    if (idx == -1) return;
+    _pageController?.jumpToPage(idx);
+  }
+
+  void _showScheduleChangesSheet(List<ScheduleWeekChange> changes) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: changes.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final c = changes[index];
+                final title = '${_labelForWeek(c.weekNum)}变更';
+                final lines = c.lines.isEmpty
+                    ? const ['课表有更新（无法解析具体变更）']
+                    : c.lines;
+
+                return Material(
+                  color: Theme.of(context).colorScheme.surface,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _jumpToWeek(c.weekNum);
+                            },
+                            child: Text('跳转'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ...lines.map(
+                        (t) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text('· $t'),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  List<ScheduleWeekChange> _buildTestChanges() {
+    return const [
+      ScheduleWeekChange(
+        weekNum: '1',
+        lines: [
+          '新增：测试课程A（张三） 周一 1-2节 教室A101',
+          '测试课程B：时间 周二 3-4节 → 周三 5-6节；地点 B201 → B301',
+        ],
+      ),
+    ];
+  }
+
+  Future<bool> _writeTestPendingChanges() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('account');
+    if (userId == null || userId.trim().isEmpty) return false;
+
+    final changes = _buildTestChanges();
+    final payload = <String, dynamic>{
+      'createdAt': DateTime.now().millisecondsSinceEpoch,
+      'yearTerm': _currentScheduleData?.yearTerm,
+      'changes': changes
+          .map(
+            (c) => <String, dynamic>{
+              'weekNum': c.weekNum,
+              'lines': c.lines,
+            },
+          )
+          .toList(),
+    };
+
+    await prefs.setString(
+      ScheduleUpdateWorker.pendingKeyForUser(userId),
+      json.encode(payload),
+    );
+    return true;
+  }
+
+  void _onOpenChangesSheet() {
+    final token = ScheduleUpdateIntents.openChangesSheet.value;
+    if (token == _lastOpenChangesToken) return;
+    _lastOpenChangesToken = token;
+    _consumePendingChangesIfAny(autoOpen: true);
+  }
+
+  Future<bool> _consumePendingChangesIfAny({bool autoOpen = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('account');
+    if (userId == null || userId.trim().isEmpty) return false;
+
+    final key = ScheduleUpdateWorker.pendingKeyForUser(userId);
+    final raw = prefs.getString(key);
+    if (raw == null || raw.trim().isEmpty) return false;
+    await prefs.remove(key);
+
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is! Map<String, dynamic>) return false;
+      final items = decoded['changes'];
+      if (items is! List) return false;
+
+      final changes = <ScheduleWeekChange>[];
+      for (final it in items) {
+        if (it is! Map) continue;
+        final weekNum = (it['weekNum'] ?? '').toString();
+        final linesRaw = it['lines'];
+        final lines = linesRaw is List
+            ? linesRaw.map((e) => e.toString()).toList()
+            : const <String>[];
+        if (weekNum.isEmpty) continue;
+        changes.add(ScheduleWeekChange(weekNum: weekNum, lines: lines));
+      }
+      if (changes.isEmpty || !mounted) return false;
+
+      final first = changes.first;
+
+      if (autoOpen) {
+        if (_updateShowDiff) {
+          _showScheduleChangesSheet(changes);
+        } else {
+          _jumpToWeek(first.weekNum);
+        }
+        return true;
+      }
+
+      final msg = _updateShowDiff && first.lines.isNotEmpty
+          ? '后台检测到${_labelForWeek(first.weekNum)}课表有更新：${first.brief}'
+          : '后台检测到${_labelForWeek(first.weekNum)}课表有更新';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          action: SnackBarAction(
+            label: _updateShowDiff ? '详情' : '查看',
+            onPressed: () {
+              if (!mounted) return;
+              if (_updateShowDiff) {
+                _showScheduleChangesSheet(changes);
+              } else {
+                _jumpToWeek(first.weekNum);
+              }
+            },
+          ),
+          duration: Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      return false;
+    }
+    return true;
+  }
+
+  void _configureUpdateTimer() {
+    _updateTimer?.cancel();
+    _updateTimer = null;
+
+    if (!_updateEnabled) return;
+    if (_updateIntervalMinutes < 1) return;
+
+    _updateTimer = Timer.periodic(
+      Duration(minutes: _updateIntervalMinutes),
+      (_) => _runUpdateCheckOnce(fromTimer: true),
+    );
+  }
+
+  Future<void> _runUpdateCheckOnce({required bool fromTimer}) async {
+    if (_updateCheckInFlight) return;
+    if (_currentScheduleData == null) return;
+
+    _updateCheckInFlight = true;
+    try {
+      final maxWeeksAhead = _maxWeeksAheadForCurrentTerm();
+      final weeksAhead = _updateWeeksAhead.clamp(0, maxWeeksAhead);
+      final changes = await _controller
+          .silentCheckRecentWeeksForChangesDetailed(
+            _currentScheduleData!,
+            weeksAhead: weeksAhead,
+          );
+      if (!mounted) return;
+      if (changes.isEmpty) return;
+
+      final first = changes.first;
+      final firstLabel = _labelForWeek(first.weekNum);
+      final brief = _updateShowDiff && first.lines.isNotEmpty
+          ? '：${first.brief}'
+          : '';
+      final msg = changes.length == 1
+          ? '$firstLabel课表有更新$brief'
+          : '$firstLabel等${changes.length}周课表有更新$brief';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          action: SnackBarAction(
+            label: _updateShowDiff ? '详情' : '查看',
+            onPressed: () {
+              if (!mounted) return;
+              if (_updateShowDiff) {
+                _showScheduleChangesSheet(changes);
+              } else {
+                _jumpToWeek(first.weekNum);
+              }
+            },
+          ),
+          duration: Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      _updateCheckInFlight = false;
+    }
+  }
+
   Future<void> _loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     final showWeekend = prefs.getBool(_prefsKeyShowWeekend);
+    final weeksAhead = prefs.getInt(_prefsKeyUpdateWeeksAhead);
+    final updateEnabled = prefs.getBool(_prefsKeyUpdateEnabled);
+    final intervalMinutes = prefs.getInt(_prefsKeyUpdateIntervalMinutes);
+    final showDiff = prefs.getBool(_prefsKeyUpdateShowDiff);
+    final systemNotifyEnabled = prefs.getBool(
+      _prefsKeyUpdateSystemNotifyEnabled,
+    );
     if (!mounted) return;
     setState(() {
       _showWeekend = showWeekend ?? true;
+      _updateWeeksAhead = weeksAhead ?? 1;
+      _updateEnabled = updateEnabled ?? false;
+      _updateIntervalMinutes = intervalMinutes ?? 60;
+      _updateShowDiff = showDiff ?? true;
+      _updateSystemNotifyEnabled = systemNotifyEnabled ?? false;
     });
+    _configureUpdateTimer();
   }
 
   Future<void> _setShowWeekend(bool value) async {
@@ -442,27 +757,460 @@ class _ClassscheduleViewState extends State<ClassscheduleView> {
     );
   }
 
+  int _maxWeeksAheadForCurrentTerm() {
+    final totalWeeks = _weekList?.length ?? 0;
+    if (totalWeeks <= 1) return 0;
+    return totalWeeks - 1;
+  }
+
+  String _formatIntervalLabel(int minutes) {
+    if (minutes <= 0) return '未设置';
+    if (minutes % 60 == 0) {
+      final h = minutes ~/ 60;
+      return h == 1 ? '每 1 小时' : '每 $h 小时';
+    }
+    return '每 $minutes 分钟';
+  }
+
+  double? _estimateDailyRequests({
+    required int weeksAhead,
+    required int intervalMinutes,
+  }) {
+    if (intervalMinutes <= 0) return null;
+    final perDayRuns = 1440 / intervalMinutes;
+    return (1 + weeksAhead) * perDayRuns;
+  }
+
+  Future<bool> _confirmHighFrequencyIfNeeded({
+    required BuildContext context,
+    required int weeksAhead,
+    required int intervalMinutes,
+  }) async {
+    final est = _estimateDailyRequests(
+      weeksAhead: weeksAhead,
+      intervalMinutes: intervalMinutes,
+    );
+    final risky = intervalMinutes < 15 || (est != null && est >= 200);
+    if (!risky) return true;
+
+    final detail = <String>[
+      if (intervalMinutes < 15) '后台定时检查系统通常要求间隔不少于 15 分钟',
+      if (est != null) '按当前设置，预计每天约 ${est.toStringAsFixed(0)} 次课表接口请求',
+      '请求过于频繁可能导致耗电增加、流量增加，且可能触发学校系统的风控限制',
+    ].join('\n');
+
+    final proceed =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text('请求频率风险提示'),
+              content: Text(detail),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text('启用'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!proceed) return false;
+    if (!context.mounted) return false;
+
+    final disclaimer = <String>[
+      detail,
+      '',
+      '请注意：',
+      '1. 频繁请求可能导致耗电/流量增加，且可能触发学校系统风控（如账号被限制、请求被拒绝等）。',
+      '2. 由此产生的任何直接或间接损失（包括但不限于账号限制、数据异常等）由用户自行承担。',
+    ].join('\n');
+
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text('风险提醒'),
+              content: Text(disclaimer),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text('返回修改'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text('我已知悉'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+    return confirmed;
+  }
+
+  Future<int?> _askIntervalMinutes(BuildContext context, int initial) async {
+    final controller = TextEditingController(text: initial.toString());
+    final value = await showDialog<int?>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('设置检查间隔（分钟）'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(hintText: '例如 60'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final v = int.tryParse(controller.text.trim());
+                Navigator.pop(context, v);
+              },
+              child: Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+    if (value == null) return null;
+    if (value < 1) return 1;
+    return value;
+  }
+
   void _showScheduleSettingsSheet() {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
       builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SwitchListTile(
-                title: Text('显示周末'),
-                subtitle: Text('关闭后仅显示周一到周五'),
-                value: _showWeekend,
-                onChanged: (value) {
-                  Navigator.pop(context);
-                  _setShowWeekend(value);
-                },
+        final maxWeeksAhead = _maxWeeksAheadForCurrentTerm();
+        int weeksAhead = _updateWeeksAhead.clamp(0, maxWeeksAhead);
+        bool showWeekend = _showWeekend;
+        bool updateEnabled = _updateEnabled;
+        int intervalMinutes = _updateIntervalMinutes;
+        bool showDiff = _updateShowDiff;
+        bool systemNotifyEnabled = _updateSystemNotifyEnabled;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final est = _estimateDailyRequests(
+              weeksAhead: weeksAhead,
+              intervalMinutes: intervalMinutes,
+            );
+
+            String weeksLabel() {
+              if (weeksAhead == 0) return '仅本周';
+              return '本周 + 未来 $weeksAhead 周';
+            }
+
+            final showRisk =
+                updateEnabled &&
+                (intervalMinutes < 15 || (est != null && est >= 200));
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.85,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SwitchListTile(
+                          title: Text('显示周末'),
+                          subtitle: Text('关闭后仅显示周一到周五'),
+                          value: showWeekend,
+                          onChanged: (value) {
+                            setModalState(() {
+                              showWeekend = value;
+                            });
+                          },
+                        ),
+                        ListTile(
+                          title: Text('课表更新检查范围'),
+                          subtitle: Text(
+                            maxWeeksAhead == 0
+                                ? '本学期周数不足'
+                                : '${weeksLabel()}（上限：未来 $maxWeeksAhead 周）',
+                          ),
+                        ),
+                        if (maxWeeksAhead > 0)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Slider(
+                              min: 0,
+                              max: maxWeeksAhead.toDouble(),
+                              value: weeksAhead.toDouble(),
+                              divisions: maxWeeksAhead,
+                              label: weeksLabel(),
+                              onChanged: (v) {
+                                setModalState(() {
+                                  weeksAhead = v.round();
+                                });
+                              },
+                            ),
+                          ),
+                        SwitchListTile(
+                          title: Text('启用定时检查（后台）'),
+                          subtitle: Text('定期静默检查课表是否变化'),
+                          value: updateEnabled,
+                          onChanged: (value) {
+                            setModalState(() {
+                              updateEnabled = value;
+                            });
+                          },
+                        ),
+                        ListTile(
+                          title: Text('检查间隔'),
+                          subtitle: Text(
+                            updateEnabled
+                                ? _formatIntervalLabel(intervalMinutes)
+                                : '未启用',
+                          ),
+                          enabled: updateEnabled,
+                          onTap: !updateEnabled
+                              ? null
+                              : () async {
+                                  final v = await _askIntervalMinutes(
+                                    context,
+                                    intervalMinutes,
+                                  );
+                                  if (v == null) return;
+                                  setModalState(() {
+                                    intervalMinutes = v;
+                                  });
+                                },
+                        ),
+                        SwitchListTile(
+                          title: Text('变更提示显示详情'),
+                          subtitle: Text('提示具体变化课程以及变化详情'),
+                          value: showDiff,
+                          onChanged: (value) {
+                            setModalState(() {
+                              showDiff = value;
+                            });
+                          },
+                        ),
+                        SwitchListTile(
+                          title: Text('系统通知提醒'),
+                          subtitle: Text('在后台也发送系统通知提醒'),
+                          value: systemNotifyEnabled,
+                          onChanged: !updateEnabled
+                              ? null
+                              : (value) {
+                                  setModalState(() {
+                                    systemNotifyEnabled = value;
+                                  });
+                                },
+                        ),
+                        if (kDebugMode)
+                          ListTile(
+                            title: Text('测试：发送更新通知'),
+                            subtitle: Text('写入测试变更并发送系统通知（点通知自动打开详情）'),
+                            onTap: () async {
+                              final ok = await _writeTestPendingChanges();
+                              if (!ok) {
+                                if (!context.mounted) return;
+                                await showDialog<void>(
+                                  context: context,
+                                  builder: (context) {
+                                    return AlertDialog(
+                                      title: Text('无法测试'),
+                                      content: Text('未登录或没有账号信息。'),
+                                      actions: [
+                                        FilledButton(
+                                          onPressed: () => Navigator.pop(context),
+                                          child: Text('知道了'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                                return;
+                              }
+
+                              final granted =
+                                  await LocalNotifications.ensurePermission();
+                              if (!granted) {
+                                if (!context.mounted) return;
+                                await showDialog<void>(
+                                  context: context,
+                                  builder: (context) {
+                                    return AlertDialog(
+                                      title: Text('通知权限未授予'),
+                                      content: Text('请先授予通知权限再测试系统通知。'),
+                                      actions: [
+                                        FilledButton(
+                                          onPressed: () => Navigator.pop(context),
+                                          child: Text('知道了'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                                return;
+                              }
+
+                              await LocalNotifications.showScheduleUpdate(
+                                title: '课表更新提醒（测试）',
+                                body: '本周课表有更新：新增：测试课程A\n点击查看详情',
+                                payload: LocalNotifications.payloadScheduleUpdate,
+                              );
+
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('已发送测试通知'),
+                                  duration: Duration(seconds: 2),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            },
+                          ),
+                        if (kDebugMode)
+                          ListTile(
+                            title: Text('测试：直接打开详情'),
+                            subtitle: Text('不发通知，直接打开变更详情弹层'),
+                            onTap: () {
+                              final changes = _buildTestChanges();
+                              _showScheduleChangesSheet(changes);
+                            },
+                          ),
+                        if (showRisk)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              est == null
+                                  ? '当前设置可能导致请求频繁'
+                                  : '当前设置预计每天约 ${est.toStringAsFixed(0)} 次请求，可能触发风控或增加耗电',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: Text('取消'),
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: FilledButton(
+                                  onPressed: () async {
+                                    if (updateEnabled) {
+                                      final ok =
+                                          await _confirmHighFrequencyIfNeeded(
+                                            context: context,
+                                            weeksAhead: weeksAhead,
+                                            intervalMinutes: intervalMinutes,
+                                          );
+                                      if (!ok) return;
+                                    }
+
+                                    if (updateEnabled && systemNotifyEnabled) {
+                                      final ok =
+                                          await LocalNotifications.ensurePermission();
+                                      if (!ok) {
+                                        systemNotifyEnabled = false;
+                                        if (context.mounted) {
+                                          await showDialog<void>(
+                                            context: context,
+                                            builder: (context) {
+                                              return AlertDialog(
+                                                title: Text('通知权限未授予'),
+                                                content: Text(
+                                                  '未授予通知权限，将无法发送系统通知提醒。你仍可使用应用内提示。',
+                                                ),
+                                                actions: [
+                                                  FilledButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(context),
+                                                    child: Text('知道了'),
+                                                  ),
+                                                ],
+                                              );
+                                            },
+                                          );
+                                        }
+                                      }
+                                    }
+
+                                    await _setShowWeekend(showWeekend);
+
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    await prefs.setInt(
+                                      _prefsKeyUpdateWeeksAhead,
+                                      weeksAhead,
+                                    );
+                                    await prefs.setBool(
+                                      _prefsKeyUpdateEnabled,
+                                      updateEnabled,
+                                    );
+                                    await prefs.setInt(
+                                      _prefsKeyUpdateIntervalMinutes,
+                                      intervalMinutes,
+                                    );
+                                    await prefs.setBool(
+                                      _prefsKeyUpdateShowDiff,
+                                      showDiff,
+                                    );
+                                    await prefs.setBool(
+                                      _prefsKeyUpdateSystemNotifyEnabled,
+                                      systemNotifyEnabled,
+                                    );
+
+                                    if (!mounted) return;
+                                    setState(() {
+                                      _updateWeeksAhead = weeksAhead;
+                                      _updateEnabled = updateEnabled;
+                                      _updateIntervalMinutes = intervalMinutes;
+                                      _updateShowDiff = showDiff;
+                                      _updateSystemNotifyEnabled =
+                                          systemNotifyEnabled;
+                                    });
+                                    _configureUpdateTimer();
+                                    await ScheduleUpdateWorker.syncFromPreferences();
+
+                                    if (!context.mounted) return;
+                                    Navigator.pop(context);
+                                  },
+                                  child: Text('保存'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-              SizedBox(height: 8),
-            ],
-          ),
+            );
+          },
         );
       },
     );
