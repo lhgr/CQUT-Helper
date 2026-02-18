@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:cqut/api/api_service.dart';
 import 'package:cqut/model/announcement_model.dart';
-import 'package:cqut/pages/Announcement/Announcement.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -301,29 +300,6 @@ class AnnouncementManager {
             ),
           ),
           actions: [
-            if (!force)
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('稍后'),
-              ),
-            if (item.linkUrl != null && item.linkUrl!.isNotEmpty)
-              TextButton(
-                onPressed: () async {
-                  final url = item.linkUrl!;
-                  Navigator.pop(context);
-                  await _launchExternalUrl(context, url);
-                },
-                child: Text('打开链接'),
-              ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => AnnouncementListPage()),
-                );
-              },
-              child: Text('全部公告'),
-            ),
             FilledButton(
               onPressed: () => Navigator.pop(context),
               child: Text(force ? '我已知晓' : '关闭'),
