@@ -4,7 +4,6 @@ import 'package:cqut/pages/ClassSchedule/schedule_controller.dart';
 import 'package:cqut/pages/ClassSchedule/schedule_diff.dart';
 import 'package:cqut/pages/ClassSchedule/schedule_update_worker.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../model/schedule_model.dart';
@@ -548,44 +547,6 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     );
   }
 
-  List<ScheduleWeekChange> _buildTestChanges() {
-    return const [
-      ScheduleWeekChange(
-        weekNum: '1',
-        lines: [
-          '新增：测试课程A（张三） 周一 1-2节 教室A101',
-          '测试课程B：时间 周二 3-4节 → 周三 5-6节；地点 B201 → B301',
-        ],
-      ),
-    ];
-  }
-
-  Future<bool> _writeTestPendingChanges() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('account');
-    if (userId == null || userId.trim().isEmpty) return false;
-
-    final changes = _buildTestChanges();
-    final payload = <String, dynamic>{
-      'createdAt': DateTime.now().millisecondsSinceEpoch,
-      'yearTerm': _currentScheduleData?.yearTerm,
-      'changes': changes
-          .map(
-            (c) => <String, dynamic>{
-              'weekNum': c.weekNum,
-              'lines': c.lines,
-            },
-          )
-          .toList(),
-    };
-
-    await prefs.setString(
-      ScheduleUpdateWorker.pendingKeyForUser(userId),
-      json.encode(payload),
-    );
-    return true;
-  }
-
   void _onOpenChangesSheet() {
     final token = ScheduleUpdateIntents.openChangesSheet.value;
     if (token == _lastOpenChangesToken) return;
@@ -1018,79 +979,6 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                                   });
                                 },
                         ),
-                        if (kDebugMode)
-                          ListTile(
-                            title: Text('测试：发送更新通知'),
-                            subtitle: Text('写入测试变更并发送系统通知（点通知自动打开详情）'),
-                            onTap: () async {
-                              final ok = await _writeTestPendingChanges();
-                              if (!ok) {
-                                if (!context.mounted) return;
-                                await showDialog<void>(
-                                  context: context,
-                                  builder: (context) {
-                                    return AlertDialog(
-                                      title: Text('无法测试'),
-                                      content: Text('未登录或没有账号信息。'),
-                                      actions: [
-                                        FilledButton(
-                                          onPressed: () => Navigator.pop(context),
-                                          child: Text('知道了'),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                );
-                                return;
-                              }
-
-                              final granted =
-                                  await LocalNotifications.ensurePermission();
-                              if (!granted) {
-                                if (!context.mounted) return;
-                                await showDialog<void>(
-                                  context: context,
-                                  builder: (context) {
-                                    return AlertDialog(
-                                      title: Text('通知权限未授予'),
-                                      content: Text('请先授予通知权限再测试系统通知。'),
-                                      actions: [
-                                        FilledButton(
-                                          onPressed: () => Navigator.pop(context),
-                                          child: Text('知道了'),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                );
-                                return;
-                              }
-
-                              await LocalNotifications.showScheduleUpdate(
-                                title: '课表更新提醒（测试）',
-                                body: '本周课表有更新：新增：测试课程A\n点击查看详情',
-                                payload: LocalNotifications.payloadScheduleUpdate,
-                              );
-
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('已发送测试通知'),
-                                  duration: Duration(seconds: 2),
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            },
-                          ),
-                        if (kDebugMode)
-                          ListTile(
-                            title: Text('测试：直接打开详情'),
-                            subtitle: Text('不发通知，直接打开变更详情弹层'),
-                            onTap: () {
-                              final changes = _buildTestChanges();
-                              _showScheduleChangesSheet(changes);
-                            },
-                          ),
                         if (showRisk)
                           Padding(
                             padding: const EdgeInsets.symmetric(

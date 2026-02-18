@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cqut/api/api_service.dart';
+import 'package:cqut/pages/Mine/ClearCache.dart';
 import 'package:cqut/manager/theme_manager.dart';
 import 'package:cqut/manager/update_manager.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -309,6 +310,15 @@ class _MineViewState extends State<MineView> {
           title: "检查更新",
           onTap: () {
             UpdateManager().checkUpdate(context, showNoUpdateToast: true);
+          },
+        ),
+        _buildMenuItem(
+          icon: Icons.cleaning_services,
+          title: "清理缓存",
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ClearCachePage()),
+            );
           },
         ),
         _buildMenuItem(
