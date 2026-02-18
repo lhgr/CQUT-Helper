@@ -86,11 +86,16 @@ class _ClearCachePageState extends State<ClearCachePage> {
 
     setState(() => _clearing = true);
     try {
-      await CacheCleanupManager.clear(_selected);
+      final cleared = await CacheCleanupManager.clear(_selected);
       if (!mounted) return;
+      final details = cleared.entries
+          .where((e) => e.value > 0)
+          .map((e) => '${CacheCleanupManager.titleOf(e.key)} ${e.value}项')
+          .join('，');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已清理所选缓存')),
+        SnackBar(content: Text(details.isEmpty ? '已清理所选缓存' : '已清理：$details')),
       );
+      setState(() => _selected.clear());
       await _refresh();
     } catch (e) {
       if (!mounted) return;
@@ -198,4 +203,3 @@ class _ClearCachePageState extends State<ClearCachePage> {
     return '${gb.toStringAsFixed(1)} GB';
   }
 }
-

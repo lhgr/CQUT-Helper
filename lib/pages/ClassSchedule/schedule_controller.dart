@@ -32,6 +32,17 @@ class ScheduleController {
     _prefetchTimer?.cancel();
   }
 
+  void reset() {
+    weekCache.clear();
+    currentTerm = null;
+    weekList = null;
+    actualCurrentWeekStr = null;
+    actualCurrentTermStr = null;
+    nowInTeachingWeek = null;
+    nowStatusLabel = null;
+    _prefetchTimer?.cancel();
+  }
+
   Future<void> _loadCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     _userId = prefs.getString('account');

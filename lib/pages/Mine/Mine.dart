@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cqut/api/api_service.dart';
+import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/pages/Mine/ClearCache.dart';
 import 'package:cqut/manager/theme_manager.dart';
 import 'package:cqut/manager/update_manager.dart';
@@ -24,11 +25,34 @@ class _MineViewState extends State<MineView> {
   Map<String, dynamic>? _userInfo;
   bool _loading = true;
   String? _error;
+  int _lastUserInfoCacheEpoch = CacheCleanupManager.userInfoCacheEpoch.value;
 
   @override
   void initState() {
     super.initState();
+    CacheCleanupManager.userInfoCacheEpoch.addListener(_onUserInfoCacheCleared);
     _loadUserInfo();
+  }
+
+  @override
+  void dispose() {
+    CacheCleanupManager.userInfoCacheEpoch.removeListener(
+      _onUserInfoCacheCleared,
+    );
+    super.dispose();
+  }
+
+  void _onUserInfoCacheCleared() {
+    final epoch = CacheCleanupManager.userInfoCacheEpoch.value;
+    if (epoch == _lastUserInfoCacheEpoch) return;
+    _lastUserInfoCacheEpoch = epoch;
+    if (!mounted) return;
+    setState(() {
+      _userInfo = null;
+      _loading = true;
+      _error = null;
+    });
+    _loadUserInfo(forceRefresh: true);
   }
 
   Future<void> _loadUserInfo({bool forceRefresh = false}) async {

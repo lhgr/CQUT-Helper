@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cqut/api/github/github_api.dart';
+import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/manager/favorites_manager.dart';
 import 'package:cqut/model/github_item.dart';
 import 'package:flutter/material.dart';
@@ -27,18 +28,34 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchText = "";
   final FavoritesManager _favoritesManager = FavoritesManager();
+  int _lastFavoritesCacheEpoch = CacheCleanupManager.favoritesCacheEpoch.value;
 
   @override
   void initState() {
     super.initState();
     _contentsFuture = _githubApi.getContents(widget.path);
     _favoritesManager.init(); // Ensure initialized if accessed directly
+    CacheCleanupManager.favoritesCacheEpoch.addListener(
+      _onFavoritesCacheCleared,
+    );
   }
 
   @override
   void dispose() {
+    CacheCleanupManager.favoritesCacheEpoch.removeListener(
+      _onFavoritesCacheCleared,
+    );
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onFavoritesCacheCleared() {
+    final epoch = CacheCleanupManager.favoritesCacheEpoch.value;
+    if (epoch == _lastFavoritesCacheEpoch) return;
+    _lastFavoritesCacheEpoch = epoch;
+    if (!mounted) return;
+    _favoritesManager.init();
+    setState(() {});
   }
 
   Future<void> _launchUrl(String urlString) async {

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/pages/ClassSchedule/schedule_controller.dart';
 import 'package:cqut/pages/ClassSchedule/schedule_diff.dart';
 import 'package:cqut/pages/ClassSchedule/schedule_update_worker.dart';
@@ -54,6 +55,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   Timer? _updateTimer;
   bool _updateCheckInFlight = false;
   int _lastOpenChangesToken = 0;
+  int _lastTimetableCacheEpoch = CacheCleanupManager.timetableCacheEpoch.value;
 
   // 用于周切换的 PageController
   PageController? _pageController;
@@ -113,6 +115,9 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openChangesSheet.addListener(_onOpenChangesSheet);
+    CacheCleanupManager.timetableCacheEpoch.addListener(
+      _onTimetableCacheCleared,
+    );
     _loadPreferences();
     _loadInitialData();
   }
@@ -121,10 +126,35 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     ScheduleUpdateIntents.openChangesSheet.removeListener(_onOpenChangesSheet);
+    CacheCleanupManager.timetableCacheEpoch.removeListener(
+      _onTimetableCacheCleared,
+    );
     _updateTimer?.cancel();
     _controller.dispose();
     _pageController?.dispose();
     super.dispose();
+  }
+
+  void _onTimetableCacheCleared() {
+    final epoch = CacheCleanupManager.timetableCacheEpoch.value;
+    if (epoch == _lastTimetableCacheEpoch) return;
+    _lastTimetableCacheEpoch = epoch;
+    _controller.reset();
+    if (!mounted) return;
+    final pc = _pageController;
+    setState(() {
+      _currentScheduleData = null;
+      _error = null;
+      _loading = true;
+      _currentWeekIndex = 0;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (pc != null && pc.hasClients) {
+        pc.jumpToPage(0);
+      }
+    });
+    _loadFromNetwork();
   }
 
   @override

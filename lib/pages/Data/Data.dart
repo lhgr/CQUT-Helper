@@ -1,4 +1,5 @@
 import 'package:cqut/pages/Data/repo_browser.dart';
+import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/manager/favorites_manager.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
@@ -23,10 +24,29 @@ class _DataViewState extends State<DataView> {
   final String _ownerProfileUrl = "https://github.com/Royfor12";
 
   final FavoritesManager _favoritesManager = FavoritesManager();
+  int _lastFavoritesCacheEpoch = CacheCleanupManager.favoritesCacheEpoch.value;
 
   @override
   void initState() {
     super.initState();
+    _favoritesManager.init();
+    CacheCleanupManager.favoritesCacheEpoch.addListener(
+      _onFavoritesCacheCleared,
+    );
+  }
+
+  @override
+  void dispose() {
+    CacheCleanupManager.favoritesCacheEpoch.removeListener(
+      _onFavoritesCacheCleared,
+    );
+    super.dispose();
+  }
+
+  void _onFavoritesCacheCleared() {
+    final epoch = CacheCleanupManager.favoritesCacheEpoch.value;
+    if (epoch == _lastFavoritesCacheEpoch) return;
+    _lastFavoritesCacheEpoch = epoch;
     _favoritesManager.init();
   }
 

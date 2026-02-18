@@ -7,12 +7,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum AppCacheType {
-  timetable,
-  userInfo,
-  imageCache,
-  favorites,
-}
+enum AppCacheType { timetable, userInfo, imageCache, favorites }
 
 @immutable
 class AppCacheUsage {
@@ -32,6 +27,18 @@ class AppCacheUsage {
 }
 
 class CacheCleanupManager {
+  static final ValueNotifier<int> timetableCacheEpoch = ValueNotifier(0);
+  static final ValueNotifier<int> userInfoCacheEpoch = ValueNotifier(0);
+  static final ValueNotifier<int> favoritesCacheEpoch = ValueNotifier(0);
+  static final ValueNotifier<int> imageCacheEpoch = ValueNotifier(0);
+
+  static const Map<AppCacheType, String> _titles = {
+    AppCacheType.timetable: '课表缓存',
+    AppCacheType.userInfo: '个人信息缓存',
+    AppCacheType.imageCache: '图片缓存',
+    AppCacheType.favorites: '收藏数据',
+  };
+
   static Future<List<AppCacheUsage>> getUsages() async {
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs.getKeys();
@@ -81,17 +88,20 @@ class CacheCleanupManager {
     ];
   }
 
-  static Future<void> clear(Set<AppCacheType> types) async {
-    if (types.isEmpty) return;
+  static Future<Map<AppCacheType, int>> clear(Set<AppCacheType> types) async {
+    if (types.isEmpty) return {};
 
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs.getKeys();
+    final clearedCounts = <AppCacheType, int>{};
 
     if (types.contains(AppCacheType.timetable)) {
       final toRemove = keys.where(_isTimetableCacheKey).toList(growable: false);
       for (final k in toRemove) {
         await prefs.remove(k);
       }
+      clearedCounts[AppCacheType.timetable] = toRemove.length;
+      timetableCacheEpoch.value = timetableCacheEpoch.value + 1;
     }
 
     if (types.contains(AppCacheType.userInfo)) {
@@ -101,6 +111,8 @@ class CacheCleanupManager {
       for (final k in toRemove) {
         await prefs.remove(k);
       }
+      clearedCounts[AppCacheType.userInfo] = toRemove.length;
+      userInfoCacheEpoch.value = userInfoCacheEpoch.value + 1;
     }
 
     if (types.contains(AppCacheType.favorites)) {
@@ -113,13 +125,36 @@ class CacheCleanupManager {
       for (final k in toRemove) {
         await prefs.remove(k);
       }
+      clearedCounts[AppCacheType.favorites] = toRemove.length;
+      favoritesCacheEpoch.value = favoritesCacheEpoch.value + 1;
     }
 
     if (types.contains(AppCacheType.imageCache)) {
       await DefaultCacheManager().emptyCache();
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
+      try {
+        final tempDir = await getTemporaryDirectory();
+        final dir = Directory(
+          '${tempDir.path}${Platform.pathSeparator}libCachedImageData',
+        );
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      } catch (_) {}
+      clearedCounts[AppCacheType.imageCache] = 1;
+      imageCacheEpoch.value = imageCacheEpoch.value + 1;
     }
+
+    try {
+      await prefs.reload();
+    } catch (_) {}
+
+    return clearedCounts;
+  }
+
+  static String titleOf(AppCacheType type) {
+    return _titles[type] ?? type.name;
   }
 
   static bool _isTimetableCacheKey(String key) {
