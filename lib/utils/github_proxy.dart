@@ -33,6 +33,24 @@ class GithubProxy {
         host == 'github-releases.githubusercontent.com';
   }
 
+  static bool shouldProxyForExternalNav(Uri uri) {
+    final host = uri.host.toLowerCase();
+    if (host == 'api.github.com') return true;
+    if (host == 'raw.githubusercontent.com') return true;
+    if (host == 'objects.githubusercontent.com') return true;
+    if (host == 'github-releases.githubusercontent.com') return true;
+    if (host == 'codeload.github.com') return true;
+    if (host == 'github.com') {
+      final path = uri.path;
+      if (path.endsWith('.png')) return true;
+      if (path.contains('/releases/download/')) return true;
+      if (path.contains('/archive/')) return true;
+      if (path.contains('/raw/')) return true;
+      return false;
+    }
+    return false;
+  }
+
   static bool isWorkerUri(Uri uri) {
     final base = Uri.parse(workerBaseUrl);
     return uri.scheme == base.scheme && uri.host == base.host;
@@ -161,7 +179,7 @@ class GithubProxy {
     final raw = Uri.tryParse(urlString);
     if (raw == null) return false;
 
-    if (!isGithubUri(raw) || isWorkerUri(raw)) {
+    if (!isGithubUri(raw) || isWorkerUri(raw) || !shouldProxyForExternalNav(raw)) {
       return launchUrl(raw);
     }
 
