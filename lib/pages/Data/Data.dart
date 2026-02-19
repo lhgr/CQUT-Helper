@@ -4,7 +4,7 @@ import 'package:cqut/manager/favorites_manager.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:cqut/utils/github_proxy.dart';
 
 class DataView extends StatefulWidget {
   const DataView({super.key});
@@ -51,8 +51,7 @@ class _DataViewState extends State<DataView> {
   }
 
   Future<void> _launchUrl(String urlString) async {
-    final Uri url = Uri.parse(urlString);
-    if (!await launchUrl(url)) {
+    if (!await GithubProxy.launchExternalUrlString(urlString)) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -157,7 +156,7 @@ class _DataViewState extends State<DataView> {
                         },
                         borderRadius: BorderRadius.circular(16),
                         child: CachedNetworkImage(
-                          imageUrl: _ownerAvatarUrl,
+                          imageUrl: GithubProxy.proxyUrlOf(_ownerAvatarUrl),
                           imageBuilder: (context, imageProvider) =>
                               CircleAvatar(
                                 radius: 16,
@@ -174,10 +173,33 @@ class _DataViewState extends State<DataView> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                           ),
-                          errorWidget: (context, url, error) => CircleAvatar(
-                            radius: 16,
-                            child: Icon(Icons.person, size: 20),
-                          ),
+                          errorWidget: (context, url, error) =>
+                              CachedNetworkImage(
+                                imageUrl: _ownerAvatarUrl,
+                                imageBuilder: (context, imageProvider) =>
+                                    CircleAvatar(
+                                      radius: 16,
+                                      backgroundImage: imageProvider,
+                                    ),
+                                placeholder: (context, url) => CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                ),
+                                errorWidget: (context, url, error) =>
+                                    CircleAvatar(
+                                      radius: 16,
+                                      child: Icon(Icons.person, size: 20),
+                                    ),
+                              ),
                         ),
                       ),
                       SizedBox(width: 8),

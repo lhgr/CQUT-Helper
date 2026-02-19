@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cqut/utils/github_proxy.dart';
 
 class MineView extends StatefulWidget {
   const MineView({super.key});
@@ -374,9 +375,9 @@ class _MineViewState extends State<MineView> {
                     await FirebaseAnalytics.instance.logEvent(
                       name: 'about_us_developer_click',
                     );
-                    final Uri url = Uri.parse('https://github.com/lhgr');
-                    if (!await launchUrl(url)) {
-                      debugPrint('Could not launch \$url');
+                    const urlString = 'https://github.com/lhgr';
+                    if (!await GithubProxy.launchExternalUrlString(urlString)) {
+                      debugPrint('Could not launch \$urlString');
                     }
                   },
                   child: Padding(
@@ -393,7 +394,9 @@ class _MineViewState extends State<MineView> {
                             ),
                           ),
                           child: CachedNetworkImage(
-                            imageUrl: 'https://github.com/lhgr.png',
+                            imageUrl: GithubProxy.proxyUrlOf(
+                              'https://github.com/lhgr.png',
+                            ),
                             imageBuilder: (context, imageProvider) =>
                                 CircleAvatar(
                                   radius: 24,
@@ -409,13 +412,33 @@ class _MineViewState extends State<MineView> {
                               ).colorScheme.surfaceContainerHigh,
                               child: Icon(Icons.person),
                             ),
-                            errorWidget: (context, url, error) => CircleAvatar(
-                              radius: 24,
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHigh,
-                              child: Icon(Icons.person),
-                            ),
+                            errorWidget: (context, url, error) =>
+                                CachedNetworkImage(
+                                  imageUrl: 'https://github.com/lhgr.png',
+                                  imageBuilder: (context, imageProvider) =>
+                                      CircleAvatar(
+                                        radius: 24,
+                                        backgroundImage: imageProvider,
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHigh,
+                                      ),
+                                  placeholder: (context, url) => CircleAvatar(
+                                    radius: 24,
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHigh,
+                                    child: Icon(Icons.person),
+                                  ),
+                                  errorWidget: (context, url, error) =>
+                                      CircleAvatar(
+                                        radius: 24,
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHigh,
+                                        child: Icon(Icons.person),
+                                      ),
+                                ),
                           ),
                         ),
                         SizedBox(width: 16),
@@ -497,11 +520,9 @@ class _MineViewState extends State<MineView> {
                     await FirebaseAnalytics.instance.logEvent(
                       name: 'click_repo_link',
                     );
-                    final Uri url = Uri.parse(
-                      'https://github.com/lhgr/CQUT-Helper',
-                    );
-                    if (!await launchUrl(url)) {
-                      debugPrint('Could not launch \$url');
+                    const urlString = 'https://github.com/lhgr/CQUT-Helper';
+                    if (!await GithubProxy.launchExternalUrlString(urlString)) {
+                      debugPrint('Could not launch \$urlString');
                     }
                   },
                   child: Text(

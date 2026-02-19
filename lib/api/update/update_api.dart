@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:cqut/model/update_model.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:cqut/utils/github_proxy.dart';
 
 class UpdateApi {
   final Dio _dio = Dio();
@@ -9,8 +10,9 @@ class UpdateApi {
 
   Future<UpdateModel?> checkUpdate() async {
     try {
-      final response = await _dio.get(
-        'https://api.github.com/repos/$_owner/$_repo/releases/latest',
+      final response = await GithubProxy.getWithFallback(
+        _dio,
+        Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest'),
       );
 
       if (response.statusCode == 200) {

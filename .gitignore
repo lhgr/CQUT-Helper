@@ -54,4 +54,4 @@ android/key.properties
 **/*.jks
 .env
 docs
-
+test

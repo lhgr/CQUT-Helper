@@ -7,7 +7,7 @@ import 'package:cqut/model/github_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:cqut/utils/github_proxy.dart';
 
 class RepoBrowserPage extends StatefulWidget {
   final String path;
@@ -59,8 +59,7 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
   }
 
   Future<void> _launchUrl(String urlString) async {
-    final Uri url = Uri.parse(urlString);
-    if (!await launchUrl(url)) {
+    if (!await GithubProxy.launchExternalUrlString(urlString)) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -133,8 +132,9 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
 
     if (Platform.isAndroid) {
       try {
+        final preferredUrl = await GithubProxy.preferUrl(url);
         final res = await _enqueueAndroidDownload(
-          url: url,
+          url: preferredUrl,
           fileName: item.name,
         );
         if (!mounted) return;

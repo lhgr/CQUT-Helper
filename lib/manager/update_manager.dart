@@ -3,7 +3,7 @@ import 'package:cqut/model/update_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:cqut/utils/github_proxy.dart';
 
 class UpdateManager {
   static final UpdateManager _instance = UpdateManager._internal();
@@ -154,8 +154,7 @@ class UpdateManager {
   }
 
   Future<void> _launchExternalUrl(BuildContext context, String url) async {
-    final Uri uri = Uri.parse(url);
-    if (!await launchUrl(uri)) {
+    if (!await GithubProxy.launchExternalUrlString(url)) {
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,

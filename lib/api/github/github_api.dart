@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:cqut/model/github_item.dart';
+import 'package:cqut/utils/github_proxy.dart';
 
 class GithubApi {
   static const String _baseUrl = 'https://api.github.com';
@@ -15,8 +16,14 @@ class GithubApi {
     String savePath, {
     ProgressCallback? onReceiveProgress,
   }) async {
-    await _dio.download(
-      url,
+    final raw = Uri.tryParse(url);
+    if (raw == null) {
+      throw Exception('Invalid URL');
+    }
+
+    await GithubProxy.downloadWithFallback(
+      _dio,
+      raw,
       savePath,
       onReceiveProgress: onReceiveProgress,
       options: Options(
@@ -44,7 +51,10 @@ class GithubApi {
         url = '$_baseUrl/repos/$_owner/$_repo/contents/$cleanPath';
       }
 
-      final response = await _dio.get(url);
+      final response = await GithubProxy.getWithFallback(
+        _dio,
+        Uri.parse(url),
+      );
 
       if (response.statusCode == 200) {
         final List<dynamic> data = response.data;
