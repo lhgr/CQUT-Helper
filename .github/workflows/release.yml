@@ -29,6 +29,43 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Check tag matches pubspec version
+        env:
+          DISPATCH_TAG_NAME: ${{ github.event.inputs.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          content = Path("pubspec.yaml").read_text(encoding="utf-8")
+          match = re.search(r"^version:\s*([0-9A-Za-z\.\-]+)\+(\d+)\s*$", content, re.M)
+          if not match:
+            raise SystemExit("pubspec.yaml missing version like x.y.z+N")
+
+          pub_version = match.group(1)
+
+          ref_type = os.environ.get("GITHUB_REF_TYPE", "")
+          ref_name = os.environ.get("GITHUB_REF_NAME", "")
+          dispatch_tag = os.environ.get("DISPATCH_TAG_NAME", "") or ""
+
+          tag = ref_name if ref_type == "tag" else dispatch_tag
+          tag = tag.strip()
+          if tag.startswith("v"):
+            tag = tag[1:]
+          tag = tag.split("+", 1)[0]
+
+          if not tag:
+            print("::error ::No tag found (expected tag push or workflow_dispatch tag_name).")
+            raise SystemExit(1)
+
+          if pub_version != tag:
+            print(f"::error ::pubspec.yaml version ({pub_version}) does not match tag ({tag}). (+build part ignored)")
+            raise SystemExit(1)
+
+          print(f"pubspec.yaml version matches tag: {pub_version}")
+          PY
       
       - name: Setup Timezone
         run: |
