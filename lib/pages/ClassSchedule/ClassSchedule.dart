@@ -892,6 +892,13 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         int intervalMinutes = _updateIntervalMinutes;
         bool showDiff = _updateShowDiff;
         bool systemNotifyEnabled = _updateSystemNotifyEnabled;
+        final initialWeeksAhead = weeksAhead;
+        final initialShowWeekend = showWeekend;
+        final initialUpdateEnabled = updateEnabled;
+        final initialIntervalMinutes = intervalMinutes;
+        final initialShowDiff = showDiff;
+        final initialSystemNotifyEnabled = systemNotifyEnabled;
+        bool confirmDialogOpen = false;
 
         return StatefulBuilder(
           builder: (context, setModalState) {
@@ -899,6 +906,119 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               weeksAhead: weeksAhead,
               intervalMinutes: intervalMinutes,
             );
+
+            bool hasUnsavedChanges() {
+              return weeksAhead != initialWeeksAhead ||
+                  showWeekend != initialShowWeekend ||
+                  updateEnabled != initialUpdateEnabled ||
+                  intervalMinutes != initialIntervalMinutes ||
+                  showDiff != initialShowDiff ||
+                  systemNotifyEnabled != initialSystemNotifyEnabled;
+            }
+
+            Future<bool> saveSettings() async {
+              if (updateEnabled) {
+                final ok = await _confirmHighFrequencyIfNeeded(
+                  context: context,
+                  weeksAhead: weeksAhead,
+                  intervalMinutes: intervalMinutes,
+                );
+                if (!ok) return false;
+              }
+
+              if (updateEnabled && systemNotifyEnabled) {
+                final ok = await LocalNotifications.ensurePermission();
+                if (!ok) {
+                  systemNotifyEnabled = false;
+                  if (context.mounted) {
+                    await showDialog<void>(
+                      context: context,
+                      builder: (context) {
+                        return AlertDialog(
+                          title: Text('通知权限未授予'),
+                          content: Text('未授予通知权限，将无法发送系统通知提醒。你仍可使用应用内提示。'),
+                          actions: [
+                            FilledButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: Text('知道了'),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  }
+                }
+              }
+
+              await _setShowWeekend(showWeekend);
+
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setInt(_prefsKeyUpdateWeeksAhead, weeksAhead);
+              await prefs.setBool(_prefsKeyUpdateEnabled, updateEnabled);
+              await prefs.setInt(
+                _prefsKeyUpdateIntervalMinutes,
+                intervalMinutes,
+              );
+              await prefs.setBool(_prefsKeyUpdateShowDiff, showDiff);
+              await prefs.setBool(
+                _prefsKeyUpdateSystemNotifyEnabled,
+                systemNotifyEnabled,
+              );
+
+              if (!mounted) return false;
+              setState(() {
+                _updateWeeksAhead = weeksAhead;
+                _updateEnabled = updateEnabled;
+                _updateIntervalMinutes = intervalMinutes;
+                _updateShowDiff = showDiff;
+                _updateSystemNotifyEnabled = systemNotifyEnabled;
+              });
+              _configureUpdateTimer();
+              await ScheduleUpdateWorker.syncFromPreferences();
+              return true;
+            }
+
+            Future<void> maybeConfirmAndClose() async {
+              if (confirmDialogOpen) return;
+              if (!hasUnsavedChanges()) {
+                if (context.mounted) Navigator.pop(context);
+                return;
+              }
+
+              confirmDialogOpen = true;
+              try {
+                if (!context.mounted) return;
+                final shouldSave = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) {
+                    return AlertDialog(
+                      title: Text('未保存的更改'),
+                      content: Text('是否保存课表设置的修改？'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext, false),
+                          child: Text('不保存'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(dialogContext, true),
+                          child: Text('保存'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+                if (shouldSave == null) return;
+
+                if (shouldSave) {
+                  final ok = await saveSettings();
+                  if (!ok) return;
+                }
+
+                if (context.mounted) Navigator.pop(context);
+              } finally {
+                confirmDialogOpen = false;
+              }
+            }
 
             String weeksLabel() {
               if (weeksAhead == 0) return '仅本周';
@@ -909,220 +1029,156 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                 updateEnabled &&
                 (intervalMinutes < 15 || (est != null && est >= 200));
 
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.85,
+            return PopScope(
+              canPop: !hasUnsavedChanges(),
+              onPopInvokedWithResult: (didPop, result) {
+                if (didPop) return;
+                maybeConfirmAndClose();
+              },
+              child: SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
                   ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SwitchListTile(
-                          title: Text('显示周末'),
-                          subtitle: Text('关闭后仅显示周一到周五'),
-                          value: showWeekend,
-                          onChanged: (value) {
-                            setModalState(() {
-                              showWeekend = value;
-                            });
-                          },
-                        ),
-                        ListTile(
-                          title: Text('课表更新检查范围'),
-                          subtitle: Text(
-                            maxWeeksAhead == 0
-                                ? '本学期周数不足'
-                                : '${weeksLabel()}（上限：未来 $maxWeeksAhead 周）',
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.85,
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SwitchListTile(
+                            title: Text('显示周末'),
+                            subtitle: Text('关闭后仅显示周一到周五'),
+                            value: showWeekend,
+                            onChanged: (value) {
+                              setModalState(() {
+                                showWeekend = value;
+                              });
+                            },
                           ),
-                        ),
-                        if (maxWeeksAhead > 0)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Slider(
-                              min: 0,
-                              max: maxWeeksAhead.toDouble(),
-                              value: weeksAhead.toDouble(),
-                              divisions: maxWeeksAhead,
-                              label: weeksLabel(),
-                              onChanged: (v) {
-                                setModalState(() {
-                                  weeksAhead = v.round();
-                                });
-                              },
+                          ListTile(
+                            title: Text('课表更新检查范围'),
+                            subtitle: Text(
+                              maxWeeksAhead == 0
+                                  ? '本学期周数不足'
+                                  : '${weeksLabel()}（上限：未来 $maxWeeksAhead 周）',
                             ),
                           ),
-                        SwitchListTile(
-                          title: Text('启用定时检查（后台）'),
-                          subtitle: Text('定期静默检查课表是否变化'),
-                          value: updateEnabled,
-                          onChanged: (value) {
-                            setModalState(() {
-                              updateEnabled = value;
-                            });
-                          },
-                        ),
-                        ListTile(
-                          title: Text('检查间隔'),
-                          subtitle: Text(
-                            updateEnabled
-                                ? _formatIntervalLabel(intervalMinutes)
-                                : '未启用',
-                          ),
-                          enabled: updateEnabled,
-                          onTap: !updateEnabled
-                              ? null
-                              : () async {
-                                  final v = await _askIntervalMinutes(
-                                    context,
-                                    intervalMinutes,
-                                  );
-                                  if (v == null) return;
+                          if (maxWeeksAhead > 0)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Slider(
+                                min: 0,
+                                max: maxWeeksAhead.toDouble(),
+                                value: weeksAhead.toDouble(),
+                                divisions: maxWeeksAhead,
+                                label: weeksLabel(),
+                                onChanged: (v) {
                                   setModalState(() {
-                                    intervalMinutes = v;
+                                    weeksAhead = v.round();
                                   });
                                 },
-                        ),
-                        SwitchListTile(
-                          title: Text('变更提示显示详情'),
-                          subtitle: Text('提示具体变化课程以及变化详情'),
-                          value: showDiff,
-                          onChanged: (value) {
-                            setModalState(() {
-                              showDiff = value;
-                            });
-                          },
-                        ),
-                        SwitchListTile(
-                          title: Text('系统通知提醒'),
-                          subtitle: Text('在后台也发送系统通知提醒'),
-                          value: systemNotifyEnabled,
-                          onChanged: !updateEnabled
-                              ? null
-                              : (value) {
-                                  setModalState(() {
-                                    systemNotifyEnabled = value;
-                                  });
-                                },
-                        ),
-                        if (showRisk)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            child: Text(
-                              est == null
-                                  ? '当前设置可能导致请求频繁'
-                                  : '当前设置预计每天约 ${est.toStringAsFixed(0)} 次请求，可能触发风控或增加耗电',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
                               ),
                             ),
+                          SwitchListTile(
+                            title: Text('启用定时检查'),
+                            subtitle: Text('定期静默检查课表是否变化'),
+                            value: updateEnabled,
+                            onChanged: (value) {
+                              setModalState(() {
+                                updateEnabled = value;
+                              });
+                            },
                           ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: Text('取消'),
-                                ),
-                              ),
-                              SizedBox(width: 12),
-                              Expanded(
-                                child: FilledButton(
-                                  onPressed: () async {
-                                    if (updateEnabled) {
-                                      final ok =
-                                          await _confirmHighFrequencyIfNeeded(
-                                            context: context,
-                                            weeksAhead: weeksAhead,
-                                            intervalMinutes: intervalMinutes,
-                                          );
-                                      if (!ok) return;
-                                    }
-
-                                    if (updateEnabled && systemNotifyEnabled) {
-                                      final ok =
-                                          await LocalNotifications.ensurePermission();
-                                      if (!ok) {
-                                        systemNotifyEnabled = false;
-                                        if (context.mounted) {
-                                          await showDialog<void>(
-                                            context: context,
-                                            builder: (context) {
-                                              return AlertDialog(
-                                                title: Text('通知权限未授予'),
-                                                content: Text(
-                                                  '未授予通知权限，将无法发送系统通知提醒。你仍可使用应用内提示。',
-                                                ),
-                                                actions: [
-                                                  FilledButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(context),
-                                                    child: Text('知道了'),
-                                                  ),
-                                                ],
-                                              );
-                                            },
-                                          );
-                                        }
-                                      }
-                                    }
-
-                                    await _setShowWeekend(showWeekend);
-
-                                    final prefs =
-                                        await SharedPreferences.getInstance();
-                                    await prefs.setInt(
-                                      _prefsKeyUpdateWeeksAhead,
-                                      weeksAhead,
-                                    );
-                                    await prefs.setBool(
-                                      _prefsKeyUpdateEnabled,
-                                      updateEnabled,
-                                    );
-                                    await prefs.setInt(
-                                      _prefsKeyUpdateIntervalMinutes,
+                          ListTile(
+                            title: Text('检查间隔'),
+                            subtitle: Text(
+                              updateEnabled
+                                  ? _formatIntervalLabel(intervalMinutes)
+                                  : '未启用',
+                            ),
+                            enabled: updateEnabled,
+                            onTap: !updateEnabled
+                                ? null
+                                : () async {
+                                    final v = await _askIntervalMinutes(
+                                      context,
                                       intervalMinutes,
                                     );
-                                    await prefs.setBool(
-                                      _prefsKeyUpdateShowDiff,
-                                      showDiff,
-                                    );
-                                    await prefs.setBool(
-                                      _prefsKeyUpdateSystemNotifyEnabled,
-                                      systemNotifyEnabled,
-                                    );
-
-                                    if (!mounted) return;
-                                    setState(() {
-                                      _updateWeeksAhead = weeksAhead;
-                                      _updateEnabled = updateEnabled;
-                                      _updateIntervalMinutes = intervalMinutes;
-                                      _updateShowDiff = showDiff;
-                                      _updateSystemNotifyEnabled =
-                                          systemNotifyEnabled;
+                                    if (v == null) return;
+                                    setModalState(() {
+                                      intervalMinutes = v;
                                     });
-                                    _configureUpdateTimer();
-                                    await ScheduleUpdateWorker.syncFromPreferences();
-
-                                    if (!context.mounted) return;
-                                    Navigator.pop(context);
                                   },
-                                  child: Text('保存'),
+                          ),
+                          SwitchListTile(
+                            title: Text('变更提示显示详情'),
+                            subtitle: Text('提示具体变化课程以及变化详情'),
+                            value: showDiff,
+                            onChanged: (value) {
+                              setModalState(() {
+                                showDiff = value;
+                              });
+                            },
+                          ),
+                          SwitchListTile(
+                            title: Text('系统通知提醒'),
+                            subtitle: Text('在后台也发送系统通知提醒'),
+                            value: systemNotifyEnabled,
+                            onChanged: !updateEnabled
+                                ? null
+                                : (value) {
+                                    setModalState(() {
+                                      systemNotifyEnabled = value;
+                                    });
+                                  },
+                          ),
+                          if (showRisk)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              child: Text(
+                                est == null
+                                    ? '当前设置可能导致请求频繁'
+                                    : '当前设置预计每天约 ${est.toStringAsFixed(0)} 次请求，可能触发风控或增加耗电',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
                                 ),
                               ),
-                            ],
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: maybeConfirmAndClose,
+                                    child: Text('取消'),
+                                  ),
+                                ),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: FilledButton(
+                                    onPressed: () async {
+                                      final ok = await saveSettings();
+                                      if (!ok) return;
+                                      if (!context.mounted) return;
+                                      Navigator.pop(context);
+                                    },
+                                    child: Text('保存'),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
