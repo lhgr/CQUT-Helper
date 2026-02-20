@@ -60,9 +60,7 @@ class UpdateManager {
       }
     } else {
       if (showNoUpdateToast && context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('当前已是最新版本')));
+        _showLatestVersionDialog(context, updateInfo, currentVersion);
       }
     }
   }
@@ -146,6 +144,47 @@ class UpdateManager {
                 _launchExternalUrl(context, info.downloadUrl);
               },
               child: Text('立即更新'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showLatestVersionDialog(
+    BuildContext context,
+    UpdateModel info,
+    String currentVersion,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('当前已是最新版本 ${info.tagName}'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('当前版本: $currentVersion'),
+                SizedBox(height: 8),
+                Text('版本日志:', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(height: 4),
+                MarkdownBody(
+                  data: _formatReleaseNotes(info.body),
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
+                  onTapLink: (text, href, title) {
+                    if (href == null || href.isEmpty) return;
+                    _launchExternalUrl(context, href);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('知道了'),
             ),
           ],
         );
