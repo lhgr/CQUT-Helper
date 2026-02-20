@@ -8,6 +8,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../model/schedule_model.dart';
+import '../../utils/android_background_restrictions.dart';
 import '../../utils/local_notifications.dart';
 import 'schedule_update_intents.dart';
 import 'widgets/schedule_header.dart';
@@ -847,6 +848,132 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     return confirmed;
   }
 
+  Future<bool> _confirmEnableScheduleUpdate(BuildContext context) async {
+    final manufacturer = await AndroidBackgroundRestrictions.manufacturer();
+    bool? ignoringBattery = await AndroidBackgroundRestrictions
+        .isIgnoringBatteryOptimizations();
+    bool? backgroundRestricted = await AndroidBackgroundRestrictions
+        .isBackgroundRestricted();
+    if (!context.mounted) return false;
+
+    String batteryLabel() {
+      if (ignoringBattery == null) return '未知';
+      return ignoringBattery! ? '已忽略' : '未忽略';
+    }
+
+    String restrictedLabel() {
+      if (backgroundRestricted == null) return '未知';
+      return backgroundRestricted! ? '已限制' : '未限制';
+    }
+
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return StatefulBuilder(
+              builder: (context, setDialogState) {
+                Future<void> refresh() async {
+                  final b = await AndroidBackgroundRestrictions
+                      .isIgnoringBatteryOptimizations();
+                  final r =
+                      await AndroidBackgroundRestrictions.isBackgroundRestricted();
+                  if (!context.mounted) return;
+                  setDialogState(() {
+                    ignoringBattery = b;
+                    backgroundRestricted = r;
+                  });
+                }
+
+                return AlertDialog(
+                  title: Text('提示'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '请允许CQUT-Helper的自启动并忽略“电池优化”，否则可能无法正常唤醒课表定时检查。\n'
+                          '若使用的是国产定制 UI，你还需要在系统设置中进行相应修改。',
+                        ),
+                        if (manufacturer != null) ...[
+                          SizedBox(height: 8),
+                          Text('设备：$manufacturer'),
+                        ],
+                        SizedBox(height: 12),
+                        Text('电池优化：${batteryLabel()}'),
+                        SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton.tonal(
+                              onPressed: () async {
+                                await AndroidBackgroundRestrictions
+                                    .requestIgnoreBatteryOptimizations();
+                                await refresh();
+                              },
+                              child: Text('去忽略电池优化'),
+                            ),
+                            OutlinedButton(
+                              onPressed: () async {
+                                await AndroidBackgroundRestrictions
+                                    .openBatteryOptimizationSettings();
+                                await refresh();
+                              },
+                              child: Text('电池优化设置'),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 12),
+                        Text('后台限制：${restrictedLabel()}'),
+                        SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton.tonal(
+                              onPressed: () async {
+                                await AndroidBackgroundRestrictions
+                                    .openAutoStartSettings();
+                                await refresh();
+                              },
+                              child: Text('打开自启动设置'),
+                            ),
+                            OutlinedButton(
+                              onPressed: () async {
+                                await AndroidBackgroundRestrictions
+                                    .openAppDetailsSettings();
+                                await refresh();
+                              },
+                              child: Text('应用详情'),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 8),
+                        Text('自启动权限无法在所有设备上可靠自动检测，请在系统设置中确认已允许。'),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text('取消'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text('继续启用'),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ) ??
+        false;
+
+    return ok;
+  }
+
   Future<int?> _askIntervalMinutes(BuildContext context, int initial) async {
     final controller = TextEditingController(text: initial.toString());
     final value = await showDialog<int?>(
@@ -857,7 +984,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
           content: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
-            decoration: InputDecoration(hintText: '例如 60'),
+            decoration: InputDecoration(hintText: '例如 60（最小 15）'),
           ),
           actions: [
             TextButton(
@@ -876,7 +1003,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       },
     );
     if (value == null) return null;
-    if (value < 1) return 1;
+    if (value < 15) return 15;
     return value;
   }
 
@@ -892,12 +1019,12 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         int intervalMinutes = _updateIntervalMinutes;
         bool showDiff = _updateShowDiff;
         bool systemNotifyEnabled = _updateSystemNotifyEnabled;
-        final initialWeeksAhead = weeksAhead;
-        final initialShowWeekend = showWeekend;
-        final initialUpdateEnabled = updateEnabled;
-        final initialIntervalMinutes = intervalMinutes;
-        final initialShowDiff = showDiff;
-        final initialSystemNotifyEnabled = systemNotifyEnabled;
+        int savedWeeksAhead = weeksAhead;
+        bool savedShowWeekend = showWeekend;
+        bool savedUpdateEnabled = updateEnabled;
+        int savedIntervalMinutes = intervalMinutes;
+        bool savedShowDiff = showDiff;
+        bool savedSystemNotifyEnabled = systemNotifyEnabled;
         bool confirmDialogOpen = false;
 
         return StatefulBuilder(
@@ -908,15 +1035,18 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
             );
 
             bool hasUnsavedChanges() {
-              return weeksAhead != initialWeeksAhead ||
-                  showWeekend != initialShowWeekend ||
-                  updateEnabled != initialUpdateEnabled ||
-                  intervalMinutes != initialIntervalMinutes ||
-                  showDiff != initialShowDiff ||
-                  systemNotifyEnabled != initialSystemNotifyEnabled;
+              return weeksAhead != savedWeeksAhead ||
+                  showWeekend != savedShowWeekend ||
+                  updateEnabled != savedUpdateEnabled ||
+                  intervalMinutes != savedIntervalMinutes ||
+                  showDiff != savedShowDiff ||
+                  systemNotifyEnabled != savedSystemNotifyEnabled;
             }
 
             Future<bool> saveSettings() async {
+              if (updateEnabled && intervalMinutes < 15) {
+                intervalMinutes = 15;
+              }
               if (updateEnabled) {
                 final ok = await _confirmHighFrequencyIfNeeded(
                   context: context,
@@ -973,6 +1103,16 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                 _updateShowDiff = showDiff;
                 _updateSystemNotifyEnabled = systemNotifyEnabled;
               });
+              if (context.mounted) {
+                setModalState(() {
+                  savedWeeksAhead = weeksAhead;
+                  savedShowWeekend = showWeekend;
+                  savedUpdateEnabled = updateEnabled;
+                  savedIntervalMinutes = intervalMinutes;
+                  savedShowDiff = showDiff;
+                  savedSystemNotifyEnabled = systemNotifyEnabled;
+                });
+              }
               _configureUpdateTimer();
               await ScheduleUpdateWorker.syncFromPreferences();
               return true;
@@ -1012,9 +1152,20 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                 if (shouldSave) {
                   final ok = await saveSettings();
                   if (!ok) return;
+                } else if (context.mounted) {
+                  setModalState(() {
+                    weeksAhead = savedWeeksAhead;
+                    showWeekend = savedShowWeekend;
+                    updateEnabled = savedUpdateEnabled;
+                    intervalMinutes = savedIntervalMinutes;
+                    showDiff = savedShowDiff;
+                    systemNotifyEnabled = savedSystemNotifyEnabled;
+                  });
                 }
 
-                if (context.mounted) Navigator.pop(context);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) Navigator.pop(context);
+                });
               } finally {
                 confirmDialogOpen = false;
               }
@@ -1088,9 +1239,18 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                             title: Text('启用定时检查'),
                             subtitle: Text('定期静默检查课表是否变化'),
                             value: updateEnabled,
-                            onChanged: (value) {
+                            onChanged: (value) async {
+                              if (value && !updateEnabled) {
+                                final ok = await _confirmEnableScheduleUpdate(
+                                  context,
+                                );
+                                if (!ok) return;
+                              }
                               setModalState(() {
                                 updateEnabled = value;
+                                if (updateEnabled && intervalMinutes < 15) {
+                                  intervalMinutes = 15;
+                                }
                               });
                             },
                           ),
@@ -1169,7 +1329,12 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                                       final ok = await saveSettings();
                                       if (!ok) return;
                                       if (!context.mounted) return;
-                                      Navigator.pop(context);
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                        if (context.mounted) {
+                                          Navigator.pop(context);
+                                        }
+                                      });
                                     },
                                     child: Text('保存'),
                                   ),
