@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:cqut/api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../model/schedule_model.dart';
-import '../../utils/schedule_date.dart';
-import '../../utils/widget_updater.dart';
-import 'schedule_diff.dart';
+import '../models/class_schedule_model.dart';
+import '../models/schedule_week_change.dart';
+import '../services/schedule_service.dart';
+import '../utils/schedule_diff_utils.dart';
+import '../../../utils/schedule_date.dart';
 
 class ScheduleController {
-  final ApiService _apiService = ApiService();
+  final ScheduleService _service = ScheduleService();
 
   // 状态数据
   Map<int, ScheduleData> weekCache = {};
@@ -49,9 +49,6 @@ class ScheduleController {
     _encryptedPassword = prefs.getString('encrypted_password');
   }
 
-  String _lastViewedWeekKey(String userId) => 'schedule_last_week_$userId';
-  String _lastViewedTermKey(String userId) => 'schedule_last_term_$userId';
-
   /// 从缓存加载数据
   Future<ScheduleData?> loadFromCache({
     String? weekNum,
@@ -63,30 +60,14 @@ class ScheduleController {
     final userId = _userId;
     if (userId == null || userId.isEmpty) return null;
 
-    if (weekNum == null || yearTerm == null) {
-      final lastWeek = prefs.getString(_lastViewedWeekKey(userId));
-      final lastTerm = prefs.getString(_lastViewedTermKey(userId));
-      if (lastWeek == null || lastTerm == null) return null;
-      weekNum = lastWeek;
-      yearTerm = lastTerm;
-    }
-
-    final key = 'schedule_${userId}_${yearTerm}_$weekNum';
-    final jsonStr = prefs.getString(key);
-    if (jsonStr == null) return null;
-
-    try {
-      final decoded = json.decode(jsonStr);
-      if (decoded is Map<String, dynamic>) {
-        return ScheduleData.fromJson(decoded);
-      }
-    } catch (_) {}
-
-    return null;
+    return _service.loadFromCache(
+      userId: userId,
+      weekNum: weekNum,
+      yearTerm: yearTerm,
+    );
   }
 
   /// 从网络加载数据
-  /// 返回加载的 ScheduleData
   Future<ScheduleData> loadFromNetwork({
     String? weekNum,
     String? yearTerm,
@@ -100,25 +81,12 @@ class ScheduleController {
       throw Exception("凭证已过期，请重新登录");
     }
 
-    final jsonMap = await _apiService.course.fetchWeekEvents(
+    final data = await _service.loadFromNetwork(
       userId: _userId!,
       encryptedPassword: _encryptedPassword!,
       weekNum: weekNum,
       yearTerm: yearTerm,
     );
-
-    var data = ScheduleData.fromJson(jsonMap);
-
-    // 保存到 SharedPreferences
-    if (data.weekNum != null && data.yearTerm != null) {
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'schedule_${_userId}_${data.yearTerm}_${data.weekNum}';
-      await prefs.setString(key, json.encode(jsonMap));
-
-      await prefs.setString(_lastViewedWeekKey(_userId!), data.weekNum!);
-      await prefs.setString(_lastViewedTermKey(_userId!), data.yearTerm!);
-      await WidgetUpdater.updateTodayWidget();
-    }
 
     if (weekNum == null && yearTerm == null) {
       final now = DateTime.now();
@@ -138,7 +106,6 @@ class ScheduleController {
   }
 
   /// 处理加载的数据并更新缓存
-  /// 返回是否需要更新 UI (例如 currentTerm 改变)
   bool processLoadedData(ScheduleData data) {
     if (data.weekNum == null || data.weekList == null) return false;
 
@@ -201,130 +168,8 @@ class ScheduleController {
     onUpdate();
   }
 
-  Future<List<String>> silentCheckUpcomingWeeksForChanges(
-    ScheduleData currentData, {
-    int weeksAhead = 3,
-  }) async {
-    final wList = currentData.weekList;
-    final currentWeekStr = currentData.weekNum;
-    final cTerm = currentData.yearTerm;
-    if (wList == null || currentWeekStr == null || cTerm == null) return [];
-
-    final currentIndex = wList.indexOf(currentWeekStr);
-    if (currentIndex == -1) return [];
-
-    await _loadCredentials();
-    if (_userId == null || _userId!.isEmpty) return [];
-    if (_encryptedPassword == null || _encryptedPassword!.isEmpty) return [];
-
-    final prefs = await SharedPreferences.getInstance();
-    final changedWeeks = <String>[];
-
-    for (int offset = 1; offset <= weeksAhead; offset++) {
-      if (_disposed) break;
-      final idx = currentIndex + offset;
-      if (idx < 0 || idx >= wList.length) continue;
-      final week = wList[idx];
-
-      final cacheKey = 'schedule_${_userId}_${cTerm}_$week';
-      final before = prefs.getString(cacheKey);
-
-      Map<String, dynamic> jsonMap;
-      try {
-        jsonMap = await _apiService.course.fetchWeekEvents(
-          userId: _userId!,
-          encryptedPassword: _encryptedPassword!,
-          weekNum: week,
-          yearTerm: cTerm,
-        );
-      } catch (_) {
-        continue;
-      }
-
-      final after = json.encode(jsonMap);
-      if (before != null && before != after) {
-        changedWeeks.add(week);
-      }
-
-      final data = ScheduleData.fromJson(jsonMap);
-      if (data.weekNum != null && data.yearTerm != null) {
-        await prefs.setString(cacheKey, after);
-        final wInt = int.tryParse(data.weekNum!) ?? 0;
-        weekCache[wInt] = data;
-      }
-    }
-
-    return changedWeeks;
-  }
-
   String _notifiedKey(String userId, String yearTerm, String weekNum) =>
       'schedule_notified_${userId}_${yearTerm}_$weekNum';
-
-  Future<List<String>> silentCheckRecentWeeksForChanges(
-    ScheduleData currentData, {
-    int weeksAhead = 1,
-  }) async {
-    final wList = currentData.weekList;
-    final currentWeekStr = currentData.weekNum;
-    final cTerm = currentData.yearTerm;
-    if (wList == null || currentWeekStr == null || cTerm == null) return [];
-
-    final currentIndex = wList.indexOf(currentWeekStr);
-    if (currentIndex == -1) return [];
-
-    await _loadCredentials();
-    if (_userId == null || _userId!.isEmpty) return [];
-    if (_encryptedPassword == null || _encryptedPassword!.isEmpty) return [];
-
-    final prefs = await SharedPreferences.getInstance();
-    final changedWeeks = <String>[];
-
-    final candidates = <String>[currentWeekStr];
-    for (int offset = 1; offset <= weeksAhead; offset++) {
-      final idx = currentIndex + offset;
-      if (idx < 0 || idx >= wList.length) continue;
-      candidates.add(wList[idx]);
-    }
-
-    for (final week in candidates) {
-      if (_disposed) break;
-
-      final cacheKey = 'schedule_${_userId}_${cTerm}_$week';
-      final before = prefs.getString(cacheKey);
-
-      Map<String, dynamic> jsonMap;
-      try {
-        jsonMap = await _apiService.course.fetchWeekEvents(
-          userId: _userId!,
-          encryptedPassword: _encryptedPassword!,
-          weekNum: week,
-          yearTerm: cTerm,
-        );
-      } catch (_) {
-        continue;
-      }
-
-      final after = json.encode(jsonMap);
-
-      final data = ScheduleData.fromJson(jsonMap);
-      if (data.weekNum != null && data.yearTerm != null) {
-        await prefs.setString(cacheKey, after);
-        final wInt = int.tryParse(data.weekNum!) ?? 0;
-        weekCache[wInt] = data;
-      }
-
-      if (before == null || before == after) continue;
-
-      final notifiedKey = _notifiedKey(_userId!, cTerm, week);
-      final lastNotified = prefs.getString(notifiedKey);
-      if (lastNotified == after) continue;
-
-      await prefs.setString(notifiedKey, after);
-      changedWeeks.add(week);
-    }
-
-    return changedWeeks;
-  }
 
   Future<List<ScheduleWeekChange>> silentCheckRecentWeeksForChangesDetailed(
     ScheduleData currentData, {
@@ -356,25 +201,30 @@ class ScheduleController {
     for (final week in candidates) {
       if (_disposed) break;
 
-      final cacheKey = 'schedule_${_userId}_${cTerm}_$week';
-      final before = prefs.getString(cacheKey);
+      final before = await _service.getCachedScheduleJson(
+        userId: _userId!,
+        yearTerm: cTerm,
+        weekNum: week,
+      );
 
-      Map<String, dynamic> jsonMap;
-      try {
-        jsonMap = await _apiService.course.fetchWeekEvents(
-          userId: _userId!,
-          encryptedPassword: _encryptedPassword!,
-          weekNum: week,
-          yearTerm: cTerm,
-        );
-      } catch (_) {
-        continue;
-      }
+      final jsonMap = await _service.fetchRawWeekEvents(
+        userId: _userId!,
+        encryptedPassword: _encryptedPassword!,
+        weekNum: week,
+        yearTerm: cTerm,
+      );
+
+      if (jsonMap == null) continue;
 
       final after = json.encode(jsonMap);
       final afterData = ScheduleData.fromJson(jsonMap);
       if (afterData.weekNum != null && afterData.yearTerm != null) {
-        await prefs.setString(cacheKey, after);
+        await _service.saveScheduleJson(
+          userId: _userId!,
+          yearTerm: cTerm,
+          weekNum: week,
+          jsonStr: after,
+        );
         final wInt = int.tryParse(afterData.weekNum!) ?? 0;
         weekCache[wInt] = afterData;
       }
@@ -427,39 +277,6 @@ class ScheduleController {
         }
       }
     });
-  }
-
-  /// 静默更新相邻周（强制刷新）
-  Future<void> silentUpdateAdjacentWeeks(
-    ScheduleData currentData,
-    Function() onUpdate,
-  ) async {
-    final wList = currentData.weekList;
-    final currentWeekStr = currentData.weekNum;
-    final cTerm = currentData.yearTerm;
-
-    if (wList == null || currentWeekStr == null || cTerm == null) return;
-
-    final currentIndex = wList.indexOf(currentWeekStr);
-    if (currentIndex == -1) return;
-
-    final futures = <Future>[];
-
-    // 强制刷新上一周
-    if (currentIndex > 0) {
-      final prevWeek = wList[currentIndex - 1];
-      futures.add(ensureWeekLoaded(prevWeek, cTerm, forceRefresh: true));
-    }
-    // 强制刷新下一周
-    if (currentIndex < wList.length - 1) {
-      final nextWeek = wList[currentIndex + 1];
-      futures.add(ensureWeekLoaded(nextWeek, cTerm, forceRefresh: true));
-    }
-
-    if (futures.isNotEmpty) {
-      await Future.wait(futures);
-      onUpdate();
-    }
   }
 
   Future<void> ensureWeekLoaded(

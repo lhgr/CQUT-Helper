@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../model/schedule_model.dart';
+import '../models/class_schedule_model.dart';
 
 class ScheduleHeader extends StatelessWidget {
   final ScheduleData scheduleData;

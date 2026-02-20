@@ -1,19 +1,21 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:cqut/manager/cache_cleanup_manager.dart';
-import 'package:cqut/pages/ClassSchedule/schedule_controller.dart';
-import 'package:cqut/pages/ClassSchedule/schedule_diff.dart';
+import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
+import 'package:cqut/pages/ClassSchedule/models/class_schedule_model.dart';
+import 'package:cqut/pages/ClassSchedule/models/schedule_week_change.dart';
 import 'package:cqut/pages/ClassSchedule/schedule_update_worker.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../model/schedule_model.dart';
-import '../../utils/android_background_restrictions.dart';
-import '../../utils/local_notifications.dart';
 import 'schedule_update_intents.dart';
 import 'widgets/schedule_header.dart';
 import 'widgets/schedule_time_column.dart';
 import 'widgets/schedule_course_grid.dart';
+import 'widgets/week_picker_sheet.dart';
+import 'widgets/term_picker_sheet.dart';
+import 'widgets/schedule_changes_sheet.dart';
+import 'widgets/schedule_settings_sheet.dart';
 
 class ClassscheduleView extends StatefulWidget {
   const ClassscheduleView({super.key});
@@ -36,7 +38,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   final ScheduleController _controller = ScheduleController();
   ScheduleData? _currentScheduleData; // 当前显示的周数据
 
-  // 获取控制器属性的 Getter，以最小化代码更改
+  // 获取控制器属性的 Getter
   Map<int, ScheduleData> get _weekCache => _controller.weekCache;
   List<String>? get _weekList => _controller.weekList;
   String? get _actualCurrentWeekStr => _controller.actualCurrentWeekStr;
@@ -359,126 +361,42 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     _loadFromNetwork(weekNum: '1', yearTerm: term);
   }
 
-  // 显示选择器...
-  void _showWeekPicker() {
+  void _showWeekPickerSheet() {
     if (_weekList == null) return;
-    showModalBottomSheet(
+    showWeekPicker(
       context: context,
-      builder: (BuildContext context) {
-        return SizedBox(
-          height: 300,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  "选择周次",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _weekList!.length,
-                  itemBuilder: (context, index) {
-                    final week = _weekList![index];
-                    final isCurrentWeek =
-                        _actualCurrentTermStr != null &&
-                        _currentScheduleData?.yearTerm ==
-                            _actualCurrentTermStr &&
-                        week == _actualCurrentWeekStr;
-
-                    return ListTile(
-                      title: Text(
-                        "第 $week 周${isCurrentWeek ? ' (当前周)' : ''}",
-                        textAlign: TextAlign.center,
-                        style: isCurrentWeek
-                            ? TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.bold,
-                              )
-                            : null,
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _pageController?.jumpToPage(index);
-                      },
-                      selected: index == _currentWeekIndex,
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
+      weekList: _weekList!,
+      currentScheduleData: _currentScheduleData,
+      actualCurrentTermStr: _actualCurrentTermStr,
+      actualCurrentWeekStr: _actualCurrentWeekStr,
+      currentWeekIndex: _currentWeekIndex,
+      onWeekSelected: (index) {
+        _pageController?.jumpToPage(index);
       },
     );
   }
 
-  void _showTermPicker() {
-    if (_currentScheduleData?.yearTermList == null) return;
-    showModalBottomSheet(
+  void _showTermPickerSheet() {
+    showTermPicker(
       context: context,
-      builder: (BuildContext context) {
-        return SizedBox(
-          height: 300,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  "选择学期",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _currentScheduleData!.yearTermList!.length,
-                  itemBuilder: (context, index) {
-                    final term = _currentScheduleData!.yearTermList![index];
-                    final isCurrentTerm = term == _actualCurrentTermStr;
-                    return ListTile(
-                      title: Text(
-                        "$term${isCurrentTerm ? ' (当前学期)' : ''}",
-                        textAlign: TextAlign.center,
-                        style: isCurrentTerm
-                            ? TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.bold,
-                              )
-                            : null,
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _changeTerm(term);
-                      },
-                      selected: term == _currentScheduleData?.yearTerm,
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
+      currentScheduleData: _currentScheduleData,
+      actualCurrentTermStr: _actualCurrentTermStr,
+      onTermSelected: (term) {
+        _changeTerm(term);
       },
     );
   }
 
   void _returnToCurrentWeek() {
     if (_actualCurrentWeekStr == null || _weekList == null) {
-      // 回退：重新加载网络以查找当前
       _loadFromNetwork();
       return;
     }
 
-    // 检查我们是否在正确的学期。如果不是，切换学期
-    // 假设 actualCurrentWeek 仅对当前学期有效
-    // 但我们不存储 "actualCurrentTerm"。我们可以假设初始加载的学期是当前的
-    // 让我们遍历 weekList 来查找该周
     final index = _weekList!.indexOf(_actualCurrentWeekStr!);
     if (index != -1) {
       _pageController?.jumpToPage(index);
     } else {
-      // 也许我们在不同的学期，重新加载初始数据
       _loadFromNetwork();
     }
   }
@@ -518,63 +436,12 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   }
 
   void _showScheduleChangesSheet(List<ScheduleWeekChange> changes) {
-    showModalBottomSheet(
+    showScheduleChangesSheet(
       context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) {
-        return SafeArea(
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.6,
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: changes.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final c = changes[index];
-                final title = '${_labelForWeek(c.weekNum)}变更';
-                final lines = c.lines.isEmpty
-                    ? const ['课表有更新（无法解析具体变更）']
-                    : c.lines;
-
-                return Material(
-                  color: Theme.of(context).colorScheme.surface,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              title,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _jumpToWeek(c.weekNum);
-                            },
-                            child: Text('跳转'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      ...lines.map(
-                        (t) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text('· $t'),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        );
-      },
+      changes: changes,
+      onJumpToWeek: _jumpToWeek,
+      currentScheduleData: _currentScheduleData,
+      weekList: _weekList,
     );
   }
 
@@ -735,622 +602,39 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     _configureUpdateTimer();
   }
 
-  Future<void> _setShowWeekend(bool value) async {
-    setState(() {
-      _showWeekend = value;
-    });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefsKeyShowWeekend, value);
-    unawaited(
-      FirebaseAnalytics.instance.logEvent(
-        name: 'schedule_toggle_show_weekend',
-        parameters: {'value': value},
-      ),
-    );
-  }
-
   int _maxWeeksAheadForCurrentTerm() {
     final totalWeeks = _weekList?.length ?? 0;
     if (totalWeeks <= 1) return 0;
     return totalWeeks - 1;
   }
 
-  String _formatIntervalLabel(int minutes) {
-    if (minutes <= 0) return '未设置';
-    if (minutes % 60 == 0) {
-      final h = minutes ~/ 60;
-      return h == 1 ? '每 1 小时' : '每 $h 小时';
-    }
-    return '每 $minutes 分钟';
-  }
-
-  double? _estimateDailyRequests({
-    required int weeksAhead,
-    required int intervalMinutes,
-  }) {
-    if (intervalMinutes <= 0) return null;
-    final perDayRuns = 1440 / intervalMinutes;
-    return (1 + weeksAhead) * perDayRuns;
-  }
-
-  Future<bool> _confirmHighFrequencyIfNeeded({
-    required BuildContext context,
-    required int weeksAhead,
-    required int intervalMinutes,
-  }) async {
-    final est = _estimateDailyRequests(
-      weeksAhead: weeksAhead,
-      intervalMinutes: intervalMinutes,
-    );
-    final risky = intervalMinutes < 15 || (est != null && est >= 200);
-    if (!risky) return true;
-
-    final detail = <String>[
-      if (intervalMinutes < 15) '后台定时检查系统通常要求间隔不少于 15 分钟',
-      if (est != null) '按当前设置，预计每天约 ${est.toStringAsFixed(0)} 次课表接口请求',
-      '请求过于频繁可能导致耗电增加、流量增加，且可能触发学校系统的风控限制',
-    ].join('\n');
-
-    final proceed =
-        await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: Text('请求频率风险提示'),
-              content: Text(detail),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: Text('启用'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-
-    if (!proceed) return false;
-    if (!context.mounted) return false;
-
-    final disclaimer = <String>[
-      detail,
-      '',
-      '请注意：',
-      '1. 频繁请求可能导致耗电/流量增加，且可能触发学校系统风控（如账号被限制、请求被拒绝等）。',
-      '2. 由此产生的任何直接或间接损失（包括但不限于账号限制、数据异常等）由用户自行承担。',
-    ].join('\n');
-
-    final confirmed =
-        await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: Text('风险提醒'),
-              content: Text(disclaimer),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text('返回修改'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: Text('我已知悉'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-    return confirmed;
-  }
-
-  Future<bool> _confirmEnableScheduleUpdate(BuildContext context) async {
-    final manufacturer = await AndroidBackgroundRestrictions.manufacturer();
-    bool? ignoringBattery = await AndroidBackgroundRestrictions
-        .isIgnoringBatteryOptimizations();
-    bool? backgroundRestricted = await AndroidBackgroundRestrictions
-        .isBackgroundRestricted();
-    if (!context.mounted) return false;
-
-    String batteryLabel() {
-      if (ignoringBattery == null) return '未知';
-      return ignoringBattery! ? '已忽略' : '未忽略';
-    }
-
-    String restrictedLabel() {
-      if (backgroundRestricted == null) return '未知';
-      return backgroundRestricted! ? '已限制' : '未限制';
-    }
-
-    final ok =
-        await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return StatefulBuilder(
-              builder: (context, setDialogState) {
-                Future<void> refresh() async {
-                  final b = await AndroidBackgroundRestrictions
-                      .isIgnoringBatteryOptimizations();
-                  final r =
-                      await AndroidBackgroundRestrictions.isBackgroundRestricted();
-                  if (!context.mounted) return;
-                  setDialogState(() {
-                    ignoringBattery = b;
-                    backgroundRestricted = r;
-                  });
-                }
-
-                return AlertDialog(
-                  title: Text('提示'),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '请允许CQUT-Helper的自启动并忽略“电池优化”，否则可能无法正常唤醒课表定时检查。\n'
-                          '若使用的是国产定制 UI，你还需要在系统设置中进行相应修改。',
-                        ),
-                        if (manufacturer != null) ...[
-                          SizedBox(height: 8),
-                          Text('设备：$manufacturer'),
-                        ],
-                        SizedBox(height: 12),
-                        Text('电池优化：${batteryLabel()}'),
-                        SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            FilledButton.tonal(
-                              onPressed: () async {
-                                await AndroidBackgroundRestrictions
-                                    .requestIgnoreBatteryOptimizations();
-                                await refresh();
-                              },
-                              child: Text('去忽略电池优化'),
-                            ),
-                            OutlinedButton(
-                              onPressed: () async {
-                                await AndroidBackgroundRestrictions
-                                    .openBatteryOptimizationSettings();
-                                await refresh();
-                              },
-                              child: Text('电池优化设置'),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 12),
-                        Text('后台限制：${restrictedLabel()}'),
-                        SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            FilledButton.tonal(
-                              onPressed: () async {
-                                await AndroidBackgroundRestrictions
-                                    .openAutoStartSettings();
-                                await refresh();
-                              },
-                              child: Text('打开自启动设置'),
-                            ),
-                            OutlinedButton(
-                              onPressed: () async {
-                                await AndroidBackgroundRestrictions
-                                    .openAppDetailsSettings();
-                                await refresh();
-                              },
-                              child: Text('应用详情'),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 8),
-                        Text('自启动权限无法在所有设备上可靠自动检测，请在系统设置中确认已允许。'),
-                      ],
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: Text('取消'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: Text('继续启用'),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ) ??
-        false;
-
-    return ok;
-  }
-
-  Future<int?> _askIntervalMinutes(BuildContext context, int initial) async {
-    final controller = TextEditingController(text: initial.toString());
-    final value = await showDialog<int?>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('设置检查间隔（分钟）'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(hintText: '例如 60（最小 15）'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final v = int.tryParse(controller.text.trim());
-                Navigator.pop(context, v);
-              },
-              child: Text('确定'),
-            ),
-          ],
-        );
-      },
-    );
-    if (value == null) return null;
-    if (value < 15) return 15;
-    return value;
-  }
-
-  void _showScheduleSettingsSheet() {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        final maxWeeksAhead = _maxWeeksAheadForCurrentTerm();
-        int weeksAhead = _updateWeeksAhead.clamp(0, maxWeeksAhead);
-        bool showWeekend = _showWeekend;
-        bool updateEnabled = _updateEnabled;
-        int intervalMinutes = _updateIntervalMinutes;
-        bool showDiff = _updateShowDiff;
-        bool systemNotifyEnabled = _updateSystemNotifyEnabled;
-        int savedWeeksAhead = weeksAhead;
-        bool savedShowWeekend = showWeekend;
-        bool savedUpdateEnabled = updateEnabled;
-        int savedIntervalMinutes = intervalMinutes;
-        bool savedShowDiff = showDiff;
-        bool savedSystemNotifyEnabled = systemNotifyEnabled;
-        bool confirmDialogOpen = false;
-
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final est = _estimateDailyRequests(
-              weeksAhead: weeksAhead,
-              intervalMinutes: intervalMinutes,
-            );
-
-            bool hasUnsavedChanges() {
-              return weeksAhead != savedWeeksAhead ||
-                  showWeekend != savedShowWeekend ||
-                  updateEnabled != savedUpdateEnabled ||
-                  intervalMinutes != savedIntervalMinutes ||
-                  showDiff != savedShowDiff ||
-                  systemNotifyEnabled != savedSystemNotifyEnabled;
-            }
-
-            Future<bool> saveSettings() async {
-              if (updateEnabled && intervalMinutes < 15) {
-                intervalMinutes = 15;
-              }
-              if (updateEnabled) {
-                final ok = await _confirmHighFrequencyIfNeeded(
-                  context: context,
-                  weeksAhead: weeksAhead,
-                  intervalMinutes: intervalMinutes,
-                );
-                if (!ok) return false;
-              }
-
-              if (updateEnabled && systemNotifyEnabled) {
-                final ok = await LocalNotifications.ensurePermission();
-                if (!ok) {
-                  systemNotifyEnabled = false;
-                  if (context.mounted) {
-                    await showDialog<void>(
-                      context: context,
-                      builder: (context) {
-                        return AlertDialog(
-                          title: Text('通知权限未授予'),
-                          content: Text('未授予通知权限，将无法发送系统通知提醒。你仍可使用应用内提示。'),
-                          actions: [
-                            FilledButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: Text('知道了'),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  }
-                }
-              }
-
-              await _setShowWeekend(showWeekend);
-
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setInt(_prefsKeyUpdateWeeksAhead, weeksAhead);
-              await prefs.setBool(_prefsKeyUpdateEnabled, updateEnabled);
-              await prefs.setInt(
-                _prefsKeyUpdateIntervalMinutes,
-                intervalMinutes,
-              );
-              await prefs.setBool(_prefsKeyUpdateShowDiff, showDiff);
-              await prefs.setBool(
-                _prefsKeyUpdateSystemNotifyEnabled,
-                systemNotifyEnabled,
-              );
-
-              if (!mounted) return false;
-              setState(() {
-                _updateWeeksAhead = weeksAhead;
-                _updateEnabled = updateEnabled;
-                _updateIntervalMinutes = intervalMinutes;
-                _updateShowDiff = showDiff;
-                _updateSystemNotifyEnabled = systemNotifyEnabled;
-              });
-              if (context.mounted) {
-                setModalState(() {
-                  savedWeeksAhead = weeksAhead;
-                  savedShowWeekend = showWeekend;
-                  savedUpdateEnabled = updateEnabled;
-                  savedIntervalMinutes = intervalMinutes;
-                  savedShowDiff = showDiff;
-                  savedSystemNotifyEnabled = systemNotifyEnabled;
-                });
-              }
-              _configureUpdateTimer();
-              await ScheduleUpdateWorker.syncFromPreferences();
-              return true;
-            }
-
-            Future<void> maybeConfirmAndClose() async {
-              if (confirmDialogOpen) return;
-              if (!hasUnsavedChanges()) {
-                if (context.mounted) Navigator.pop(context);
-                return;
-              }
-
-              confirmDialogOpen = true;
-              try {
-                if (!context.mounted) return;
-                final shouldSave = await showDialog<bool>(
-                  context: context,
-                  builder: (dialogContext) {
-                    return AlertDialog(
-                      title: Text('未保存的更改'),
-                      content: Text('是否保存课表设置的修改？'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: Text('不保存'),
-                        ),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(dialogContext, true),
-                          child: Text('保存'),
-                        ),
-                      ],
-                    );
-                  },
-                );
-                if (shouldSave == null) return;
-
-                if (shouldSave) {
-                  final ok = await saveSettings();
-                  if (!ok) return;
-                } else if (context.mounted) {
-                  setModalState(() {
-                    weeksAhead = savedWeeksAhead;
-                    showWeekend = savedShowWeekend;
-                    updateEnabled = savedUpdateEnabled;
-                    intervalMinutes = savedIntervalMinutes;
-                    showDiff = savedShowDiff;
-                    systemNotifyEnabled = savedSystemNotifyEnabled;
-                  });
-                }
-
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (context.mounted) Navigator.pop(context);
-                });
-              } finally {
-                confirmDialogOpen = false;
-              }
-            }
-
-            String weeksLabel() {
-              if (weeksAhead == 0) return '仅本周';
-              return '本周 + 未来 $weeksAhead 周';
-            }
-
-            final showRisk =
-                updateEnabled &&
-                (intervalMinutes < 15 || (est != null && est >= 200));
-
-            return PopScope(
-              canPop: !hasUnsavedChanges(),
-              onPopInvokedWithResult: (didPop, result) {
-                if (didPop) return;
-                maybeConfirmAndClose();
-              },
-              child: SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
-                  ),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.85,
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SwitchListTile(
-                            title: Text('显示周末'),
-                            subtitle: Text('关闭后仅显示周一到周五'),
-                            value: showWeekend,
-                            onChanged: (value) {
-                              setModalState(() {
-                                showWeekend = value;
-                              });
-                            },
-                          ),
-                          ListTile(
-                            title: Text('课表更新检查范围'),
-                            subtitle: Text(
-                              maxWeeksAhead == 0
-                                  ? '本学期周数不足'
-                                  : '${weeksLabel()}（上限：未来 $maxWeeksAhead 周）',
-                            ),
-                          ),
-                          if (maxWeeksAhead > 0)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: Slider(
-                                min: 0,
-                                max: maxWeeksAhead.toDouble(),
-                                value: weeksAhead.toDouble(),
-                                divisions: maxWeeksAhead,
-                                label: weeksLabel(),
-                                onChanged: (v) {
-                                  setModalState(() {
-                                    weeksAhead = v.round();
-                                  });
-                                },
-                              ),
-                            ),
-                          SwitchListTile(
-                            title: Text('启用定时检查'),
-                            subtitle: Text('定期静默检查课表是否变化'),
-                            value: updateEnabled,
-                            onChanged: (value) async {
-                              if (value && !updateEnabled) {
-                                final ok = await _confirmEnableScheduleUpdate(
-                                  context,
-                                );
-                                if (!ok) return;
-                              }
-                              setModalState(() {
-                                updateEnabled = value;
-                                if (updateEnabled && intervalMinutes < 15) {
-                                  intervalMinutes = 15;
-                                }
-                              });
-                            },
-                          ),
-                          ListTile(
-                            title: Text('检查间隔'),
-                            subtitle: Text(
-                              updateEnabled
-                                  ? _formatIntervalLabel(intervalMinutes)
-                                  : '未启用',
-                            ),
-                            enabled: updateEnabled,
-                            onTap: !updateEnabled
-                                ? null
-                                : () async {
-                                    final v = await _askIntervalMinutes(
-                                      context,
-                                      intervalMinutes,
-                                    );
-                                    if (v == null) return;
-                                    setModalState(() {
-                                      intervalMinutes = v;
-                                    });
-                                  },
-                          ),
-                          SwitchListTile(
-                            title: Text('变更提示显示详情'),
-                            subtitle: Text('提示具体变化课程以及变化详情'),
-                            value: showDiff,
-                            onChanged: (value) {
-                              setModalState(() {
-                                showDiff = value;
-                              });
-                            },
-                          ),
-                          SwitchListTile(
-                            title: Text('系统通知提醒'),
-                            subtitle: Text('在后台也发送系统通知提醒'),
-                            value: systemNotifyEnabled,
-                            onChanged: !updateEnabled
-                                ? null
-                                : (value) {
-                                    setModalState(() {
-                                      systemNotifyEnabled = value;
-                                    });
-                                  },
-                          ),
-                          if (showRisk)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              child: Text(
-                                est == null
-                                    ? '当前设置可能导致请求频繁'
-                                    : '当前设置预计每天约 ${est.toStringAsFixed(0)} 次请求，可能触发风控或增加耗电',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                            ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: maybeConfirmAndClose,
-                                    child: Text('取消'),
-                                  ),
-                                ),
-                                SizedBox(width: 12),
-                                Expanded(
-                                  child: FilledButton(
-                                    onPressed: () async {
-                                      final ok = await saveSettings();
-                                      if (!ok) return;
-                                      if (!context.mounted) return;
-                                      WidgetsBinding.instance
-                                          .addPostFrameCallback((_) {
-                                        if (context.mounted) {
-                                          Navigator.pop(context);
-                                        }
-                                      });
-                                    },
-                                    child: Text('保存'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
+  void _showScheduleSettingsSheetWrapper() {
+    showScheduleSettingsSheet(
+      context,
+      initialWeeksAhead: _updateWeeksAhead,
+      initialShowWeekend: _showWeekend,
+      initialUpdateEnabled: _updateEnabled,
+      initialUpdateIntervalMinutes: _updateIntervalMinutes,
+      initialUpdateShowDiff: _updateShowDiff,
+      initialSystemNotifyEnabled: _updateSystemNotifyEnabled,
+      maxWeeksAhead: _maxWeeksAheadForCurrentTerm(),
+      onSave: ({
+        required weeksAhead,
+        required showWeekend,
+        required updateEnabled,
+        required updateIntervalMinutes,
+        required updateShowDiff,
+        required systemNotifyEnabled,
+      }) {
+        setState(() {
+          _updateWeeksAhead = weeksAhead;
+          _showWeekend = showWeekend;
+          _updateEnabled = updateEnabled;
+          _updateIntervalMinutes = updateIntervalMinutes;
+          _updateShowDiff = updateShowDiff;
+          _updateSystemNotifyEnabled = systemNotifyEnabled;
+        });
+        _configureUpdateTimer();
       },
     );
   }
@@ -1402,16 +686,12 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     }
 
     // 检查是否应该显示 FAB
-    // 如果当前显示的周 != 实际当前周，则显示
     bool showFab = false;
     if (_actualCurrentWeekStr != null && _weekList != null) {
       final displayedWeek = _weekList![_currentWeekIndex];
       if (displayedWeek != _actualCurrentWeekStr) {
         showFab = true;
       }
-      // 也要检查学期? 除了初始加载外，我们没有明确存储 currentTerm
-      // 但如果 _weekList 包含 _actualCurrentWeekStr，我们可能在正确的学期 (或者周数重叠，但通常是唯一的，或者我们假设如此)
-      // 实际上，如果我们切换学期，_weekList 会改变。如果 _weekList 不包含 _actualCurrentWeekStr，我们肯定在错误的学期 (或错误的周列表)
       if (!_weekList!.contains(_actualCurrentWeekStr)) {
         showFab = true;
       }
@@ -1439,7 +719,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
             icon: Icon(Icons.refresh),
           ),
           IconButton(
-            onPressed: _showScheduleSettingsSheet,
+            onPressed: _showScheduleSettingsSheetWrapper,
             icon: Icon(Icons.tune),
             tooltip: '课表设置',
           ),
@@ -1447,7 +727,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         title: Column(
           children: [
             InkWell(
-              onTap: _showWeekPicker,
+              onTap: _showWeekPickerSheet,
               borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -1474,7 +754,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
             ),
             if (_currentScheduleData != null)
               InkWell(
-                onTap: _showTermPicker,
+                onTap: _showTermPickerSheet,
                 borderRadius: BorderRadius.circular(8),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(

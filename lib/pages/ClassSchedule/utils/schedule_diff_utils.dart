@@ -1,13 +1,5 @@
-import '../../model/schedule_model.dart';
-
-class ScheduleWeekChange {
-  final String weekNum;
-  final List<String> lines;
-
-  const ScheduleWeekChange({required this.weekNum, required this.lines});
-
-  String get brief => lines.isNotEmpty ? lines.first : '课表有更新';
-}
+import '../models/class_schedule_model.dart';
+import '../models/schedule_week_change.dart';
 
 List<ScheduleWeekChange> diffScheduleWeeks({
   required String weekNum,
@@ -15,7 +7,11 @@ List<ScheduleWeekChange> diffScheduleWeeks({
   required ScheduleData after,
   int maxLines = 30,
 }) {
-  final lines = diffScheduleWeekLines(before: before, after: after, maxLines: maxLines);
+  final lines = diffScheduleWeekLines(
+    before: before,
+    after: after,
+    maxLines: maxLines,
+  );
   return [ScheduleWeekChange(weekNum: weekNum, lines: lines)];
 }
 
@@ -167,21 +163,27 @@ String? _diffEvent(EventItem before, EventItem after) {
   final beforeAddr = (before.address ?? '').trim();
   final afterAddr = (after.address ?? '').trim();
   if (beforeAddr != afterAddr) {
-    changes.add('地点 ${beforeAddr.isEmpty ? '-' : beforeAddr} → ${afterAddr.isEmpty ? '-' : afterAddr}');
+    changes.add(
+      '地点 ${beforeAddr.isEmpty ? '-' : beforeAddr} → ${afterAddr.isEmpty ? '-' : afterAddr}',
+    );
   }
 
   final beforeTeacher = (before.memberName ?? '').trim();
   final afterTeacher = (after.memberName ?? '').trim();
   if (beforeTeacher != afterTeacher &&
       (beforeTeacher.isNotEmpty || afterTeacher.isNotEmpty)) {
-    changes.add('教师 ${beforeTeacher.isEmpty ? '-' : beforeTeacher} → ${afterTeacher.isEmpty ? '-' : afterTeacher}');
+    changes.add(
+      '教师 ${beforeTeacher.isEmpty ? '-' : beforeTeacher} → ${afterTeacher.isEmpty ? '-' : afterTeacher}',
+    );
   }
 
   final beforeName = (before.eventName ?? '').trim();
   final afterName = (after.eventName ?? '').trim();
   if (beforeName != afterName &&
       (beforeName.isNotEmpty || afterName.isNotEmpty)) {
-    changes.add('课程 ${beforeName.isEmpty ? '-' : beforeName} → ${afterName.isEmpty ? '-' : afterName}');
+    changes.add(
+      '课程 ${beforeName.isEmpty ? '-' : beforeName} → ${afterName.isEmpty ? '-' : afterName}',
+    );
   }
 
   if (changes.isEmpty) return null;

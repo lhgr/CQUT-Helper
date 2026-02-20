@@ -1,4 +1,4 @@
-import '../model/schedule_model.dart';
+import '../pages/ClassSchedule/models/class_schedule_model.dart';
 
 typedef DateRange = ({DateTime start, DateTime end});
 
