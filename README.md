@@ -16,6 +16,8 @@
 *   **🚀 自动更新**：实现"本科课表(测试)"中的[listWeekEvents](https://timetable-cfc.cqut.edu.cn/api/courseSchedule/listWeekEvents)接口,自动请求并更新课表数据。
 *   **📂 开源浏览**：实现简单的 GitHub 仓库浏览器,用于浏览[Royfor12](https://github.com/Royfor12)的[课程资料仓库](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme),获得课程资料。
 
+    >本功能仅提供对[CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)的浏览和下载服务，所有内容版权归原作者所有，遵循[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh)协议。本软件不对内容进行修改、存储或商业利用。
+
 ## 📱 下载安装
 
 请前往 [Releases 页面](https://github.com/lhgr/CQUT-Helper/releases) 下载最新版本的 APK 安装包。
