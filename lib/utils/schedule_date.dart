@@ -1,4 +1,4 @@
-import '../pages/ClassSchedule/models/class_schedule_model.dart';
+import 'package:cqut/model/class_schedule_model.dart';
 
 typedef DateRange = ({DateTime start, DateTime end});
 

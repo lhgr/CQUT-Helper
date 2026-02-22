@@ -6,8 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
-import 'controllers/schedule_controller.dart';
-import '../../utils/local_notifications.dart';
+import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
+import 'package:cqut/utils/local_notifications.dart';
 
 const String _kPrefsKeyScheduleUpdateEnabled = 'schedule_update_enabled';
 const String _kPrefsKeyScheduleUpdateIntervalMinutes =

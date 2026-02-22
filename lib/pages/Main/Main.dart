@@ -1,8 +1,8 @@
 import 'package:cqut/manager/update_manager.dart';
 import 'package:cqut/manager/announcement_manager.dart';
 import 'package:cqut/pages/ClassSchedule/ClassSchedule.dart';
-import 'package:cqut/pages/ClassSchedule/schedule_update_worker.dart';
-import 'package:cqut/pages/ClassSchedule/schedule_update_intents.dart';
+import 'package:cqut/manager/schedule_update_worker.dart';
+import 'package:cqut/manager/schedule_update_intents.dart';
 import 'package:cqut/pages/Data/Data.dart';
 import 'package:cqut/pages/Mine/Mine.dart';
 import 'package:cqut/utils/local_notifications.dart';

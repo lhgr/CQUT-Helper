@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/class_schedule_model.dart';
+import 'package:cqut/model/class_schedule_model.dart';
 
 void showTermPicker({
   required BuildContext context,

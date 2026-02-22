@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/class_schedule_model.dart';
-import '../models/schedule_week_change.dart';
-import '../services/schedule_service.dart';
-import '../utils/schedule_diff_utils.dart';
-import '../../../utils/schedule_date.dart';
+import 'package:cqut/model/class_schedule_model.dart';
+import 'package:cqut/model/schedule_week_change.dart';
+import 'package:cqut/api/schedule/schedule_api.dart';
+import 'package:cqut/utils/schedule_diff_utils.dart';
+import 'package:cqut/utils/schedule_date.dart';
 
 class ScheduleController {
-  final ScheduleService _service = ScheduleService();
+  final ScheduleApi _service = ScheduleApi();
 
   // 状态数据
   Map<int, ScheduleData> weekCache = {};

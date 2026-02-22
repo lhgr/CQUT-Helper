@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../../../utils/android_background_restrictions.dart';
 import '../../../utils/local_notifications.dart';
-import '../schedule_update_worker.dart';
+import 'package:cqut/manager/schedule_update_worker.dart';
 
 class ScheduleSettingsSheet extends StatefulWidget {
   final int initialWeeksAhead;

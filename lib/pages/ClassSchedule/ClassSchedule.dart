@@ -1,21 +1,19 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
-import 'package:cqut/pages/ClassSchedule/models/class_schedule_model.dart';
-import 'package:cqut/pages/ClassSchedule/models/schedule_week_change.dart';
-import 'package:cqut/pages/ClassSchedule/schedule_update_worker.dart';
+import 'package:cqut/manager/schedule_settings_manager.dart';
+import 'package:cqut/manager/schedule_update_manager.dart';
+import 'package:cqut/model/class_schedule_model.dart';
+import 'package:cqut/model/schedule_week_change.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/schedule_app_bar.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/schedule_changes_sheet.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/schedule_page_view.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/term_picker_sheet.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/week_picker_sheet.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'schedule_update_intents.dart';
-import 'widgets/schedule_header.dart';
-import 'widgets/schedule_time_column.dart';
-import 'widgets/schedule_course_grid.dart';
-import 'widgets/week_picker_sheet.dart';
-import 'widgets/term_picker_sheet.dart';
-import 'widgets/schedule_changes_sheet.dart';
-import 'widgets/schedule_settings_sheet.dart';
+import 'package:cqut/manager/schedule_update_intents.dart';
 
 class ClassscheduleView extends StatefulWidget {
   const ClassscheduleView({super.key});
@@ -26,16 +24,10 @@ class ClassscheduleView extends StatefulWidget {
 
 class _ClassscheduleViewState extends State<ClassscheduleView>
     with WidgetsBindingObserver {
-  static const String _prefsKeyShowWeekend = 'schedule_show_weekend';
-  static const String _prefsKeyUpdateWeeksAhead = 'schedule_update_weeks_ahead';
-  static const String _prefsKeyUpdateEnabled = 'schedule_update_enabled';
-  static const String _prefsKeyUpdateIntervalMinutes =
-      'schedule_update_interval_minutes';
-  static const String _prefsKeyUpdateShowDiff = 'schedule_update_show_diff';
-  static const String _prefsKeyUpdateSystemNotifyEnabled =
-      'schedule_update_system_notification_enabled';
-
   final ScheduleController _controller = ScheduleController();
+  final ScheduleSettingsManager _settingsManager = ScheduleSettingsManager();
+  late final ScheduleUpdateManager _updateManager;
+
   ScheduleData? _currentScheduleData; // 当前显示的周数据
 
   // 获取控制器属性的 Getter
@@ -49,14 +41,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
 
   bool _loading = true; // 默认为 true，防止初始空数据渲染
   String? _error;
-  bool _showWeekend = true;
-  int _updateWeeksAhead = 1;
-  bool _updateEnabled = false;
-  int _updateIntervalMinutes = 60;
-  bool _updateShowDiff = true;
-  bool _updateSystemNotifyEnabled = false;
-  Timer? _updateTimer;
-  bool _updateCheckInFlight = false;
+
   int _lastOpenChangesToken = 0;
   int _lastTimetableCacheEpoch = CacheCleanupManager.timetableCacheEpoch.value;
 
@@ -64,58 +49,15 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   PageController? _pageController;
   int _currentWeekIndex = 0; // 对应 weekList 的 0 基索引
 
-  final double _headerHeight = 50.0;
-  final double _timeColumnWidth = 30.0;
-  final double _sessionHeight = 60.0;
-  final List<Color> _lightColors = [
-    Color(0xFFA8D8FF),
-    Color(0xFFB9FBC0),
-    Color(0xFFFFE29A),
-    Color(0xFFFFC6FF),
-    Color(0xFFFFADAD),
-    Color(0xFF9BF6FF),
-    Color(0xFFCAFFBF),
-    Color(0xFFBDB2FF),
-  ];
-
-  final List<Color> _lightTextColors = [
-    Color(0xFF0B3D91),
-    Color(0xFF0F5132),
-    Color(0xFF7A4E00),
-    Color(0xFF5A189A),
-    Color(0xFF7B2C2C),
-    Color(0xFF006064),
-    Color(0xFF155724),
-    Color(0xFF2D1E8F),
-  ];
-
-  final List<Color> _darkColors = [
-    Colors.blue.shade900,
-    Colors.green.shade900,
-    Colors.orange.shade900,
-    Colors.purple.shade900,
-    Colors.red.shade900,
-    Colors.teal.shade900,
-    Colors.pink.shade900,
-    Colors.indigo.shade900,
-  ];
-
-  final List<Color> _darkTextColors = [
-    Colors.blue.shade300,
-    Colors.green.shade300,
-    Colors.orange.shade300,
-    Colors.purple.shade300,
-    Colors.red.shade300,
-    Colors.teal.shade300,
-    Colors.pink.shade300,
-    Colors.indigo.shade300,
-  ];
-
   DateTime? _lastMessageTime;
 
   @override
   void initState() {
     super.initState();
+    _updateManager = ScheduleUpdateManager(
+      controller: _controller,
+      settings: _settingsManager,
+    );
     WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openChangesSheet.addListener(_onOpenChangesSheet);
     CacheCleanupManager.timetableCacheEpoch.addListener(
@@ -132,7 +74,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     CacheCleanupManager.timetableCacheEpoch.removeListener(
       _onTimetableCacheCleared,
     );
-    _updateTimer?.cancel();
+    _updateManager.dispose();
     _controller.dispose();
     _pageController?.dispose();
     super.dispose();
@@ -185,60 +127,14 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       }, delay: Duration.zero);
     }
 
+    // 检查是否有更新 (现在使用 updateManager)
     if (_currentScheduleData != null) {
-      final prefs = await SharedPreferences.getInstance();
-      final weeksAhead =
-          prefs.getInt(_prefsKeyUpdateWeeksAhead) ?? _updateWeeksAhead;
-      final showDiff =
-          prefs.getBool(_prefsKeyUpdateShowDiff) ?? _updateShowDiff;
-      final changes = await _controller
-          .silentCheckRecentWeeksForChangesDetailed(
-            _currentScheduleData!,
-            weeksAhead: weeksAhead,
-          );
+      final changes = await _updateManager.checkForUpdates(
+        _currentScheduleData!,
+      );
       if (!mounted) return;
       if (changes.isNotEmpty) {
-        String labelForWeek(String week) {
-          final currentWeek = _currentScheduleData?.weekNum;
-          if (currentWeek != null && week == currentWeek) return '本周';
-          if (_weekList != null &&
-              currentWeek != null &&
-              _weekList!.indexOf(week) == _weekList!.indexOf(currentWeek) + 1) {
-            return '下周';
-          }
-          return '第$week周';
-        }
-
-        final first = changes.first;
-        final firstLabel = labelForWeek(first.weekNum);
-        final brief = showDiff && first.lines.isNotEmpty
-            ? '：${first.brief}'
-            : '';
-        final msg = changes.length == 1
-            ? '$firstLabel课表有更新$brief'
-            : '$firstLabel等${changes.length}周课表有更新$brief';
-        final firstChanged = first.weekNum;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            action: SnackBarAction(
-              label: showDiff ? '详情' : '查看',
-              onPressed: () {
-                if (!mounted) return;
-                if (!showDiff) {
-                  if (_weekList != null && _weekList!.contains(firstChanged)) {
-                    final idx = _weekList!.indexOf(firstChanged);
-                    if (idx != -1) _pageController?.jumpToPage(idx);
-                  }
-                  return;
-                }
-                _showScheduleChangesSheet(changes);
-              },
-            ),
-            duration: Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _showUpdateNotification(changes);
       }
     }
 
@@ -411,7 +307,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        duration: Duration(seconds: 1),
+        duration: const Duration(seconds: 1),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -453,189 +349,101 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   }
 
   Future<bool> _consumePendingChangesIfAny({bool autoOpen = false}) async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('account');
-    if (userId == null || userId.trim().isEmpty) return false;
+    final changes = await _updateManager.checkPendingChanges();
+    if (changes.isEmpty || !mounted) return false;
 
-    final key = ScheduleUpdateWorker.pendingKeyForUser(userId);
-    final raw = prefs.getString(key);
-    if (raw == null || raw.trim().isEmpty) return false;
-    await prefs.remove(key);
+    final first = changes.first;
 
-    try {
-      final decoded = json.decode(raw);
-      if (decoded is! Map<String, dynamic>) return false;
-      final items = decoded['changes'];
-      if (items is! List) return false;
-
-      final changes = <ScheduleWeekChange>[];
-      for (final it in items) {
-        if (it is! Map) continue;
-        final weekNum = (it['weekNum'] ?? '').toString();
-        final linesRaw = it['lines'];
-        final lines = linesRaw is List
-            ? linesRaw.map((e) => e.toString()).toList()
-            : const <String>[];
-        if (weekNum.isEmpty) continue;
-        changes.add(ScheduleWeekChange(weekNum: weekNum, lines: lines));
+    if (autoOpen) {
+      if (_settingsManager.updateShowDiff) {
+        _showScheduleChangesSheet(changes);
+      } else {
+        _jumpToWeek(first.weekNum);
       }
-      if (changes.isEmpty || !mounted) return false;
-
-      final first = changes.first;
-
-      if (autoOpen) {
-        if (_updateShowDiff) {
-          _showScheduleChangesSheet(changes);
-        } else {
-          _jumpToWeek(first.weekNum);
-        }
-        return true;
-      }
-
-      final msg = _updateShowDiff && first.lines.isNotEmpty
-          ? '后台检测到${_labelForWeek(first.weekNum)}课表有更新：${first.brief}'
-          : '后台检测到${_labelForWeek(first.weekNum)}课表有更新';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          action: SnackBarAction(
-            label: _updateShowDiff ? '详情' : '查看',
-            onPressed: () {
-              if (!mounted) return;
-              if (_updateShowDiff) {
-                _showScheduleChangesSheet(changes);
-              } else {
-                _jumpToWeek(first.weekNum);
-              }
-            },
-          ),
-          duration: Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (_) {
-      return false;
+      return true;
     }
+
+    _showUpdateNotification(changes);
     return true;
   }
 
-  void _configureUpdateTimer() {
-    _updateTimer?.cancel();
-    _updateTimer = null;
+  void _showUpdateNotification(List<ScheduleWeekChange> changes) {
+    final first = changes.first;
+    final showDiff = _settingsManager.updateShowDiff;
+    final brief = showDiff && first.lines.isNotEmpty ? '：${first.brief}' : '';
+    final msg = changes.length == 1
+        ? '${_labelForWeek(first.weekNum)}课表有更新$brief'
+        : '${_labelForWeek(first.weekNum)}等${changes.length}周课表有更新$brief';
 
-    if (!_updateEnabled) return;
-    if (_updateIntervalMinutes < 1) return;
-
-    _updateTimer = Timer.periodic(
-      Duration(minutes: _updateIntervalMinutes),
-      (_) => _runUpdateCheckOnce(fromTimer: true),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        action: SnackBarAction(
+          label: showDiff ? '详情' : '查看',
+          onPressed: () {
+            if (!mounted) return;
+            if (showDiff) {
+              _showScheduleChangesSheet(changes);
+            } else {
+              _jumpToWeek(first.weekNum);
+            }
+          },
+        ),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
-  Future<void> _runUpdateCheckOnce({required bool fromTimer}) async {
-    if (_updateCheckInFlight) return;
-    if (_currentScheduleData == null) return;
-
-    _updateCheckInFlight = true;
-    try {
-      final maxWeeksAhead = _maxWeeksAheadForCurrentTerm();
-      final weeksAhead = _updateWeeksAhead.clamp(0, maxWeeksAhead);
-      final changes = await _controller
-          .silentCheckRecentWeeksForChangesDetailed(
-            _currentScheduleData!,
-            weeksAhead: weeksAhead,
-          );
-      if (!mounted) return;
-      if (changes.isEmpty) return;
-
-      final first = changes.first;
-      final firstLabel = _labelForWeek(first.weekNum);
-      final brief = _updateShowDiff && first.lines.isNotEmpty
-          ? '：${first.brief}'
-          : '';
-      final msg = changes.length == 1
-          ? '$firstLabel课表有更新$brief'
-          : '$firstLabel等${changes.length}周课表有更新$brief';
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          action: SnackBarAction(
-            label: _updateShowDiff ? '详情' : '查看',
-            onPressed: () {
-              if (!mounted) return;
-              if (_updateShowDiff) {
-                _showScheduleChangesSheet(changes);
-              } else {
-                _jumpToWeek(first.weekNum);
-              }
-            },
-          ),
-          duration: Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      _updateCheckInFlight = false;
-    }
+  void _configureUpdateTimer() {
+    _updateManager.startTimer(() => _currentScheduleData, (changes) {
+      if (mounted) {
+        _showUpdateNotification(changes);
+      }
+    });
   }
 
   Future<void> _loadPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    final showWeekend = prefs.getBool(_prefsKeyShowWeekend);
-    final weeksAhead = prefs.getInt(_prefsKeyUpdateWeeksAhead);
-    final updateEnabled = prefs.getBool(_prefsKeyUpdateEnabled);
-    final intervalMinutes = prefs.getInt(_prefsKeyUpdateIntervalMinutes);
-    final showDiff = prefs.getBool(_prefsKeyUpdateShowDiff);
-    final systemNotifyEnabled = prefs.getBool(
-      _prefsKeyUpdateSystemNotifyEnabled,
-    );
+    await _settingsManager.load();
     if (!mounted) return;
-    setState(() {
-      _showWeekend = showWeekend ?? true;
-      _updateWeeksAhead = weeksAhead ?? 1;
-      _updateEnabled = updateEnabled ?? false;
-      _updateIntervalMinutes = intervalMinutes ?? 60;
-      _updateShowDiff = showDiff ?? true;
-      _updateSystemNotifyEnabled = systemNotifyEnabled ?? false;
-    });
+    setState(() {}); // Refresh UI with loaded settings
     _configureUpdateTimer();
-  }
-
-  int _maxWeeksAheadForCurrentTerm() {
-    final totalWeeks = _weekList?.length ?? 0;
-    if (totalWeeks <= 1) return 0;
-    return totalWeeks - 1;
   }
 
   void _showScheduleSettingsSheetWrapper() {
     showScheduleSettingsSheet(
       context,
-      initialWeeksAhead: _updateWeeksAhead,
-      initialShowWeekend: _showWeekend,
-      initialUpdateEnabled: _updateEnabled,
-      initialUpdateIntervalMinutes: _updateIntervalMinutes,
-      initialUpdateShowDiff: _updateShowDiff,
-      initialSystemNotifyEnabled: _updateSystemNotifyEnabled,
-      maxWeeksAhead: _maxWeeksAheadForCurrentTerm(),
-      onSave: ({
-        required weeksAhead,
-        required showWeekend,
-        required updateEnabled,
-        required updateIntervalMinutes,
-        required updateShowDiff,
-        required systemNotifyEnabled,
-      }) {
-        setState(() {
-          _updateWeeksAhead = weeksAhead;
-          _showWeekend = showWeekend;
-          _updateEnabled = updateEnabled;
-          _updateIntervalMinutes = updateIntervalMinutes;
-          _updateShowDiff = updateShowDiff;
-          _updateSystemNotifyEnabled = systemNotifyEnabled;
-        });
-        _configureUpdateTimer();
-      },
+      initialWeeksAhead: _settingsManager.updateWeeksAhead,
+      initialShowWeekend: _settingsManager.showWeekend,
+      initialUpdateEnabled: _settingsManager.updateEnabled,
+      initialUpdateIntervalMinutes: _settingsManager.updateIntervalMinutes,
+      initialUpdateShowDiff: _settingsManager.updateShowDiff,
+      initialSystemNotifyEnabled: _settingsManager.updateSystemNotifyEnabled,
+      maxWeeksAhead: (_updateManager.controller.weekList?.length ?? 0) > 1
+          ? (_updateManager.controller.weekList!.length - 1)
+          : 0,
+      onSave:
+          ({
+            required weeksAhead,
+            required showWeekend,
+            required updateEnabled,
+            required updateIntervalMinutes,
+            required updateShowDiff,
+            required systemNotifyEnabled,
+          }) async {
+            await _settingsManager.save(
+              showWeekend: showWeekend,
+              updateWeeksAhead: weeksAhead,
+              updateEnabled: updateEnabled,
+              updateIntervalMinutes: updateIntervalMinutes,
+              updateShowDiff: updateShowDiff,
+              updateSystemNotifyEnabled: systemNotifyEnabled,
+            );
+            if (mounted) {
+              setState(() {}); // Refresh UI
+            }
+            _configureUpdateTimer();
+          },
     );
   }
 
@@ -643,14 +451,14 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   Widget build(BuildContext context) {
     if ((_currentScheduleData == null || _weekList == null) && _loading) {
       return Scaffold(
-        appBar: AppBar(title: Text("课表"), centerTitle: true),
-        body: Center(child: CircularProgressIndicator()),
+        appBar: AppBar(title: const Text("课表"), centerTitle: true),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if ((_currentScheduleData == null || _weekList == null) && _error != null) {
       return Scaffold(
-        appBar: AppBar(title: Text("课表"), centerTitle: true),
+        appBar: AppBar(title: const Text("课表"), centerTitle: true),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -660,16 +468,16 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                 size: 48,
                 color: Theme.of(context).colorScheme.error,
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
                 _error!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: () => _loadFromNetwork(),
-                icon: Icon(Icons.refresh),
-                label: Text("重试"),
+                icon: const Icon(Icons.refresh),
+                label: const Text("重试"),
               ),
             ],
           ),
@@ -680,8 +488,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     // 防止 _weekList 为空时导致的 Null Check Error
     if (_weekList == null || _weekList!.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: Text("课表"), centerTitle: true),
-        body: Center(child: CircularProgressIndicator()),
+        appBar: AppBar(title: const Text("课表"), centerTitle: true),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -702,156 +510,32 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
           ? FloatingActionButton(
               onPressed: _returnToCurrentWeek,
               tooltip: '返回本周',
-              child: Icon(Icons.today),
+              child: const Icon(Icons.today),
             )
           : null,
-      appBar: AppBar(
-        scrolledUnderElevation: 0,
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        actions: [
-          IconButton(
-            onPressed: _loading
-                ? null
-                : () => _loadFromNetwork(
-                    weekNum: _weekList![_currentWeekIndex],
-                    yearTerm: _currentScheduleData?.yearTerm,
-                  ),
-            icon: Icon(Icons.refresh),
-          ),
-          IconButton(
-            onPressed: _showScheduleSettingsSheetWrapper,
-            icon: Icon(Icons.tune),
-            tooltip: '课表设置',
-          ),
-        ],
-        title: Column(
-          children: [
-            InkWell(
-              onTap: _showWeekPickerSheet,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8.0,
-                  vertical: 2.0,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      (_nowInTeachingWeek == false &&
-                              _nowStatusLabel != null &&
-                              _nowStatusLabel!.isNotEmpty)
-                          ? "${_nowStatusLabel!} · 第${_weekList![_currentWeekIndex]}周"
-                          : "第${_weekList![_currentWeekIndex]}周",
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Icon(Icons.arrow_drop_down, size: 20),
-                  ],
-                ),
-              ),
-            ),
-            if (_currentScheduleData != null)
-              InkWell(
-                onTap: _showTermPickerSheet,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8.0,
-                    vertical: 2.0,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        "${_currentScheduleData!.yearTerm}学期",
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                      ),
-                      Icon(
-                        Icons.arrow_drop_down,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
+      appBar: ScheduleAppBar(
+        loading: _loading,
+        weekList: _weekList,
+        currentWeekIndex: _currentWeekIndex,
+        currentScheduleData: _currentScheduleData,
+        nowInTeachingWeek: _nowInTeachingWeek,
+        nowStatusLabel: _nowStatusLabel,
+        onRefresh: () => _loadFromNetwork(
+          weekNum: _weekList![_currentWeekIndex],
+          yearTerm: _currentScheduleData?.yearTerm,
         ),
-        centerTitle: true,
+        onSettings: _showScheduleSettingsSheetWrapper,
+        onWeekPicker: _showWeekPickerSheet,
+        onTermPicker: _showTermPickerSheet,
       ),
-      body: NotificationListener<OverscrollNotification>(
-        onNotification: (notification) {
-          if (notification.overscroll < 0) {
-            // 开始边界
-            if (_currentWeekIndex == 0) {
-              _showBoundaryMessage("已经是第一周了");
-            }
-          } else if (notification.overscroll > 0) {
-            // 结束边界
-            if (_weekList != null &&
-                _currentWeekIndex == _weekList!.length - 1) {
-              _showBoundaryMessage("已经是最后一周了");
-            }
-          }
-          return false;
-        },
-        child: PageView.builder(
-          controller: _pageController,
-          onPageChanged: _onPageChanged,
-          itemCount: _weekList!.length,
-          itemBuilder: (context, index) {
-            final weekStr = _weekList![index];
-            final weekNum = int.tryParse(weekStr) ?? 0;
-            final data = _weekCache[weekNum];
-
-            if (data == null) {
-              return Center(child: CircularProgressIndicator());
-            }
-
-            return Column(
-              children: [
-                ScheduleHeader(
-                  scheduleData: data,
-                  height: _headerHeight,
-                  timeColumnWidth: _timeColumnWidth,
-                  showWeekend: _showWeekend,
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ScheduleTimeColumn(
-                          width: _timeColumnWidth,
-                          sessionHeight: _sessionHeight,
-                        ),
-                        Expanded(
-                          child: ScheduleCourseGrid(
-                            events: data.eventList ?? [],
-                            sessionHeight: _sessionHeight,
-                            showWeekend: _showWeekend,
-                            colors:
-                                Theme.of(context).brightness == Brightness.dark
-                                ? _darkColors
-                                : _lightColors,
-                            textColors:
-                                Theme.of(context).brightness == Brightness.dark
-                                ? _darkTextColors
-                                : _lightTextColors,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
+      body: SchedulePageView(
+        pageController: _pageController,
+        onPageChanged: _onPageChanged,
+        weekList: _weekList!,
+        weekCache: _weekCache,
+        showWeekend: _settingsManager.showWeekend,
+        onBoundaryMessage: _showBoundaryMessage,
+        currentWeekIndex: _currentWeekIndex,
       ),
     );
   }

@@ -1,5 +1,5 @@
-import '../models/class_schedule_model.dart';
-import '../models/schedule_week_change.dart';
+import 'package:cqut/model/class_schedule_model.dart';
+import 'package:cqut/model/schedule_week_change.dart';
 
 List<ScheduleWeekChange> diffScheduleWeeks({
   required String weekNum,

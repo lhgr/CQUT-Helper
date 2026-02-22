@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:cqut/api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/class_schedule_model.dart';
-import '../../../utils/widget_updater.dart';
+import 'package:cqut/model/class_schedule_model.dart';
+import 'package:cqut/utils/widget_updater.dart';
 
-class ScheduleService {
+class ScheduleApi {
   final ApiService _apiService = ApiService();
 
   String _lastViewedWeekKey(String userId) => 'schedule_last_week_$userId';

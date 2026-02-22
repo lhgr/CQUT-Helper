@@ -1,5 +1,5 @@
 import 'package:cqut/manager/theme_manager.dart';
-import 'package:cqut/pages/ClassSchedule/schedule_update_worker.dart';
+import 'package:cqut/manager/schedule_update_worker.dart';
 import 'package:cqut/routes/Routes.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';

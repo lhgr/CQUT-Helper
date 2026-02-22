@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../pages/ClassSchedule/schedule_update_intents.dart';
+import 'package:cqut/manager/schedule_update_intents.dart';
 
 class LocalNotifications {
   static final FlutterLocalNotificationsPlugin _plugin =
