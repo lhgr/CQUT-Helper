@@ -8,6 +8,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut/utils/local_notifications.dart';
+import 'package:cqut/utils/schedule_update_range_utils.dart';
 
 const String _kPrefsKeyScheduleUpdateEnabled = 'schedule_update_enabled';
 const String _kPrefsKeyScheduleUpdateIntervalMinutes =
@@ -76,7 +77,15 @@ void callbackDispatcher() {
     final cached = await controller.loadFromCache();
     if (cached == null) return true;
 
-    final weeksAhead = prefs.getInt('schedule_update_weeks_ahead') ?? 1;
+    final maxWeeksAhead = maxWeeksAheadForSchedule(
+      weekList: cached.weekList,
+      currentWeek: cached.weekNum,
+    );
+    final weeksAhead =
+        (prefs.getInt('schedule_update_weeks_ahead') ?? 1).clamp(
+      0,
+      maxWeeksAhead,
+    );
     final changes = await controller.silentCheckRecentWeeksForChangesDetailed(
       cached,
       weeksAhead: weeksAhead,

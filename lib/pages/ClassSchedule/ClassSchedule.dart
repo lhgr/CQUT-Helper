@@ -11,6 +11,7 @@ import 'package:cqut/pages/ClassSchedule/widgets/schedule_page_view.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/week_picker_sheet.dart';
+import 'package:cqut/utils/schedule_update_range_utils.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:cqut/manager/schedule_update_intents.dart';
@@ -411,6 +412,11 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   }
 
   void _showScheduleSettingsSheetWrapper() {
+    final maxWeeksAhead = maxWeeksAheadForSchedule(
+      weekList: _currentScheduleData?.weekList ?? _updateManager.controller.weekList,
+      currentWeek:
+          _currentScheduleData?.weekNum ?? _updateManager.controller.actualCurrentWeekStr,
+    );
     showScheduleSettingsSheet(
       context,
       initialWeeksAhead: _settingsManager.updateWeeksAhead,
@@ -419,9 +425,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       initialUpdateIntervalMinutes: _settingsManager.updateIntervalMinutes,
       initialUpdateShowDiff: _settingsManager.updateShowDiff,
       initialSystemNotifyEnabled: _settingsManager.updateSystemNotifyEnabled,
-      maxWeeksAhead: (_updateManager.controller.weekList?.length ?? 0) > 1
-          ? (_updateManager.controller.weekList!.length - 1)
-          : 0,
+      maxWeeksAhead: maxWeeksAhead,
       onSave:
           ({
             required weeksAhead,

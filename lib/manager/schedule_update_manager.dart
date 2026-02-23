@@ -4,6 +4,7 @@ import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut/model/class_schedule_model.dart';
 import 'package:cqut/model/schedule_week_change.dart';
 import 'package:cqut/manager/schedule_update_worker.dart';
+import 'package:cqut/utils/schedule_update_range_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'schedule_settings_manager.dart';
 
@@ -50,7 +51,10 @@ class ScheduleUpdateManager {
     if (_checkInFlight) return [];
     _checkInFlight = true;
     try {
-      final maxWeeksAhead = _maxWeeksAheadForCurrentTerm(currentData);
+      final maxWeeksAhead = maxWeeksAheadForSchedule(
+        weekList: currentData.weekList,
+        currentWeek: currentData.weekNum,
+      );
       final weeksAhead = settings.updateWeeksAhead.clamp(0, maxWeeksAhead);
       return await controller.silentCheckRecentWeeksForChangesDetailed(
         currentData,
@@ -59,12 +63,6 @@ class ScheduleUpdateManager {
     } finally {
       _checkInFlight = false;
     }
-  }
-
-  int _maxWeeksAheadForCurrentTerm(ScheduleData currentData) {
-    final totalWeeks = currentData.weekList?.length ?? 0;
-    if (totalWeeks <= 1) return 0;
-    return totalWeeks - 1;
   }
 
   Future<List<ScheduleWeekChange>> checkPendingChanges() async {
