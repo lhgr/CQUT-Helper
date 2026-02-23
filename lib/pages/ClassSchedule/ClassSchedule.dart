@@ -61,6 +61,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     );
     WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openChangesSheet.addListener(_onOpenChangesSheet);
+    ScheduleUpdateIntents.scheduleUpdated.addListener(_onScheduleUpdated);
     CacheCleanupManager.timetableCacheEpoch.addListener(
       _onTimetableCacheCleared,
     );
@@ -72,6 +73,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     ScheduleUpdateIntents.openChangesSheet.removeListener(_onOpenChangesSheet);
+    ScheduleUpdateIntents.scheduleUpdated.removeListener(_onScheduleUpdated);
     CacheCleanupManager.timetableCacheEpoch.removeListener(
       _onTimetableCacheCleared,
     );
@@ -101,6 +103,24 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       }
     });
     _loadFromNetwork();
+  }
+
+  void _onScheduleUpdated() {
+    if (!mounted) return;
+    if (_weekList != null &&
+        _currentWeekIndex >= 0 &&
+        _currentWeekIndex < _weekList!.length) {
+      final week = _weekList![_currentWeekIndex];
+      final wInt = int.tryParse(week) ?? 0;
+      final data = _controller.weekCache[wInt];
+      if (data != null) {
+        setState(() {
+          _currentScheduleData = data;
+        });
+        return;
+      }
+    }
+    setState(() {});
   }
 
   @override

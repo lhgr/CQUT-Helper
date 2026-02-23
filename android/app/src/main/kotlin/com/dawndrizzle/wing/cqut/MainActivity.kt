@@ -5,8 +5,12 @@ import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.BatteryManager
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
@@ -116,6 +120,48 @@ class MainActivity : FlutterActivity() {
             }
             val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             result.success(am.isBackgroundRestricted)
+          }
+
+          "batteryLevel" -> {
+            val intent =
+              applicationContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            if (intent == null) {
+              result.success(null)
+              return@setMethodCallHandler
+            }
+            val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+            if (level < 0 || scale <= 0) {
+              result.success(null)
+              return@setMethodCallHandler
+            }
+            val percent = ((level.toDouble() / scale.toDouble()) * 100.0).toInt()
+            result.success(percent)
+          }
+
+          "isPowerSaveMode" -> {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            result.success(pm.isPowerSaveMode)
+          }
+
+          "isUnmeteredNetwork" -> {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = cm.activeNetwork
+            if (network == null) {
+              result.success(null)
+              return@setMethodCallHandler
+            }
+            val caps = cm.getNetworkCapabilities(network)
+            if (caps == null) {
+              result.success(null)
+              return@setMethodCallHandler
+            }
+            result.success(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
+          }
+
+          "isLowRamDevice" -> {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            result.success(am.isLowRamDevice)
           }
 
           "requestIgnoreBatteryOptimizations" -> {

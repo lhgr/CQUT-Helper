@@ -4,11 +4,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cqut/model/class_schedule_model.dart';
 import 'package:cqut/model/schedule_week_change.dart';
 import 'package:cqut/api/schedule/schedule_api.dart';
+import 'package:cqut/utils/retry_utils.dart';
 import 'package:cqut/utils/schedule_diff_utils.dart';
 import 'package:cqut/utils/schedule_date.dart';
+import 'package:cqut/utils/schedule_fingerprint_utils.dart';
+import 'package:cqut/utils/schedule_update_log.dart';
 
 class ScheduleController {
-  final ScheduleApi _service = ScheduleApi();
+  final ScheduleApi _service;
+
+  ScheduleController({ScheduleApi? service}) : _service = service ?? ScheduleApi();
 
   // 状态数据
   Map<int, ScheduleData> weekCache = {};
@@ -169,7 +174,16 @@ class ScheduleController {
   }
 
   String _notifiedKey(String userId, String yearTerm, String weekNum) =>
-      'schedule_notified_${userId}_${yearTerm}_$weekNum';
+      'schedule_notified_fp_${userId}_${yearTerm}_$weekNum';
+
+  String _fingerprintKey(String userId, String yearTerm, String weekNum) =>
+      'schedule_fp_${userId}_${yearTerm}_$weekNum';
+
+  String _fingerprintUpdatedAtKey(String userId, String yearTerm, String weekNum) =>
+      'schedule_fp_updated_at_${userId}_${yearTerm}_$weekNum';
+
+  String _lastFetchAtKey(String userId, String yearTerm, String weekNum) =>
+      'schedule_fetch_at_${userId}_${yearTerm}_$weekNum';
 
   Future<List<ScheduleWeekChange>> silentCheckRecentWeeksForChangesDetailed(
     ScheduleData currentData, {
@@ -201,45 +215,127 @@ class ScheduleController {
     for (final week in candidates) {
       if (_disposed) break;
 
-      final before = await _service.getCachedScheduleJson(
+      final beforeJsonStr = await _service.getCachedScheduleJson(
         userId: _userId!,
         yearTerm: cTerm,
         weekNum: week,
       );
 
-      final jsonMap = await _service.fetchRawWeekEvents(
-        userId: _userId!,
-        encryptedPassword: _encryptedPassword!,
-        weekNum: week,
-        yearTerm: cTerm,
-      );
+      final fpKey = _fingerprintKey(_userId!, cTerm, week);
+      final fpUpdatedAtKey = _fingerprintUpdatedAtKey(_userId!, cTerm, week);
+      final fetchAtKey = _lastFetchAtKey(_userId!, cTerm, week);
 
-      if (jsonMap == null) continue;
+      final lastFetchAt = prefs.getInt(fetchAtKey) ?? 0;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if (lastFetchAt > 0 && nowMs - lastFetchAt < 5 * 60 * 1000) {
+        continue;
+      }
 
-      final after = json.encode(jsonMap);
-      final afterData = ScheduleData.fromJson(jsonMap);
+      Map<String, dynamic>? beforeJson;
+      String? beforeFp = prefs.getString(fpKey);
+      if (beforeFp == null && beforeJsonStr != null && beforeJsonStr.isNotEmpty) {
+        try {
+          final decoded = json.decode(beforeJsonStr);
+          if (decoded is Map<String, dynamic>) {
+            beforeJson = decoded;
+            beforeFp = scheduleFingerprintFromWeekJsonMap(decoded);
+            await prefs.setString(fpKey, beforeFp);
+            await prefs.setInt(
+              fpUpdatedAtKey,
+              DateTime.now().millisecondsSinceEpoch,
+            );
+          }
+        } catch (_) {}
+      }
+
+      Map<String, dynamic>? afterJson;
+      Object? lastError;
+      int lastAttempt = 0;
+      try {
+        afterJson = await retryWithExponentialBackoff<Map<String, dynamic>>(
+          () => _service.fetchRawWeekEvents(
+            userId: _userId!,
+            encryptedPassword: _encryptedPassword!,
+            weekNum: week,
+            yearTerm: cTerm,
+          ),
+          maxAttempts: 3,
+          onError: (attempt, error) {
+            lastAttempt = attempt;
+            lastError = error;
+          },
+        );
+      } catch (_) {
+        await ScheduleUpdateLog.appendFailure({
+          'at': DateTime.now().millisecondsSinceEpoch,
+          'scope': 'silent_check',
+          'userId': _userId,
+          'yearTerm': cTerm,
+          'weekNum': week,
+          'attempt': lastAttempt,
+          'error': (lastError ?? 'unknown').toString(),
+        });
+        continue;
+      }
+
+      final afterFp = scheduleFingerprintFromWeekJsonMap(afterJson);
+      await prefs.setInt(fetchAtKey, DateTime.now().millisecondsSinceEpoch);
+      if (beforeFp != null && beforeFp == afterFp) continue;
+
+      final afterData = ScheduleData.fromJson(afterJson);
       if (afterData.weekNum != null && afterData.yearTerm != null) {
+        final afterStr = json.encode(afterJson);
         await _service.saveScheduleJson(
           userId: _userId!,
           yearTerm: cTerm,
           weekNum: week,
-          jsonStr: after,
+          jsonStr: afterStr,
         );
+        await prefs.setString(fpKey, afterFp);
+        await prefs.setInt(fpUpdatedAtKey, DateTime.now().millisecondsSinceEpoch);
+
         final wInt = int.tryParse(afterData.weekNum!) ?? 0;
         weekCache[wInt] = afterData;
+
+        if (beforeJson != null) {
+          final stats = diffWeekEventFingerprints(
+            beforeJson: beforeJson,
+            afterJson: afterJson,
+          );
+          await ScheduleUpdateLog.appendRun({
+            'at': DateTime.now().millisecondsSinceEpoch,
+            'type': 'week_update',
+            'userId': _userId,
+            'yearTerm': cTerm,
+            'weekNum': week,
+            'bytes': afterStr.length,
+            'delta': {
+              'added': stats.added,
+              'removed': stats.removed,
+              'changed': stats.changed,
+              'same': stats.same,
+            },
+          });
+        }
       }
 
-      if (before == null || before == after) continue;
+      if (beforeFp == null) continue;
 
       final notifiedKey = _notifiedKey(_userId!, cTerm, week);
-      final lastNotified = prefs.getString(notifiedKey);
-      if (lastNotified == after) continue;
+      final lastNotifiedFp = prefs.getString(notifiedKey);
+      if (lastNotifiedFp == afterFp) continue;
 
       List<String> lines = const <String>[];
       try {
-        final decoded = json.decode(before);
-        if (decoded is Map<String, dynamic>) {
-          final beforeData = ScheduleData.fromJson(decoded);
+        if (beforeJson == null &&
+            beforeJsonStr != null &&
+            beforeJsonStr.isNotEmpty) {
+          final decoded = json.decode(beforeJsonStr);
+          if (decoded is Map<String, dynamic>) beforeJson = decoded;
+        }
+
+        if (beforeJson != null) {
+          final beforeData = ScheduleData.fromJson(beforeJson);
           lines = diffScheduleWeekLines(
             before: beforeData,
             after: afterData,
@@ -248,7 +344,7 @@ class ScheduleController {
         }
       } catch (_) {}
 
-      await prefs.setString(notifiedKey, after);
+      await prefs.setString(notifiedKey, afterFp);
       changed.add(ScheduleWeekChange(weekNum: week, lines: lines));
     }
 

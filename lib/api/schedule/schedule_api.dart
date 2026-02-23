@@ -70,22 +70,18 @@ class ScheduleApi {
     return data;
   }
 
-  Future<Map<String, dynamic>?> fetchRawWeekEvents({
+  Future<Map<String, dynamic>> fetchRawWeekEvents({
     required String userId,
     required String encryptedPassword,
     required String weekNum,
     required String yearTerm,
   }) async {
-    try {
-      return await _apiService.course.fetchWeekEvents(
-        userId: userId,
-        encryptedPassword: encryptedPassword,
-        weekNum: weekNum,
-        yearTerm: yearTerm,
-      );
-    } catch (_) {
-      return null;
-    }
+    return await _apiService.course.fetchWeekEvents(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+      weekNum: weekNum,
+      yearTerm: yearTerm,
+    );
   }
 
   Future<String?> getCachedScheduleJson({

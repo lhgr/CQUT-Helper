@@ -4,7 +4,9 @@ import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut/model/class_schedule_model.dart';
 import 'package:cqut/model/schedule_week_change.dart';
 import 'package:cqut/manager/schedule_update_worker.dart';
+import 'package:cqut/manager/schedule_update_intents.dart';
 import 'package:cqut/utils/schedule_update_range_utils.dart';
+import 'package:cqut/utils/schedule_update_log.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'schedule_settings_manager.dart';
 
@@ -51,15 +53,30 @@ class ScheduleUpdateManager {
     if (_checkInFlight) return [];
     _checkInFlight = true;
     try {
+      final startAt = DateTime.now();
       final maxWeeksAhead = maxWeeksAheadForSchedule(
         weekList: currentData.weekList,
         currentWeek: currentData.weekNum,
       );
       final weeksAhead = settings.updateWeeksAhead.clamp(0, maxWeeksAhead);
-      return await controller.silentCheckRecentWeeksForChangesDetailed(
+      final changes = await controller.silentCheckRecentWeeksForChangesDetailed(
         currentData,
         weeksAhead: weeksAhead,
       );
+      if (changes.isNotEmpty) {
+        ScheduleUpdateIntents.requestScheduleUpdated();
+      }
+
+      final durationMs = DateTime.now().difference(startAt).inMilliseconds;
+      await ScheduleUpdateLog.appendRun({
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'type': 'foreground_timer',
+        'weeksPlanned': 1 + weeksAhead,
+        'weeksChanged': changes.length,
+        'durationMs': durationMs,
+      });
+
+      return changes;
     } finally {
       _checkInFlight = false;
     }

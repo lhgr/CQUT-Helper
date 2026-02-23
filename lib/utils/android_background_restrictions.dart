@@ -75,5 +75,41 @@ class AndroidBackgroundRestrictions {
       return false;
     }
   }
+
+  static Future<int?> batteryLevel() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<int>('batteryLevel');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool?> isPowerSaveMode() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<bool>('isPowerSaveMode');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool?> isUnmeteredNetwork() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<bool>('isUnmeteredNetwork');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool?> isLowRamDevice() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<bool>('isLowRamDevice');
+    } catch (_) {
+      return null;
+    }
+  }
 }
 

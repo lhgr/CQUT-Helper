@@ -17,13 +17,14 @@ class MainPage extends StatefulWidget {
   State<MainPage> createState() => _MainPageState();
 }
 
-class _MainPageState extends State<MainPage> {
+class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   bool _isCheckingLogin = true;
   int _lastOpenFromNotificationToken = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openFromSystemNotification.addListener(
       _onOpenFromSystemNotification,
     );
@@ -32,10 +33,27 @@ class _MainPageState extends State<MainPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     ScheduleUpdateIntents.openFromSystemNotification.removeListener(
       _onOpenFromSystemNotification,
     );
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _markActive();
+      ScheduleUpdateWorker.syncFromPreferences();
+    }
+  }
+
+  Future<void> _markActive() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      'app_last_active_at',
+      DateTime.now().millisecondsSinceEpoch,
+    );
   }
 
   Future<void> _checkLoginStatus() async {
@@ -57,6 +75,7 @@ class _MainPageState extends State<MainPage> {
           UpdateManager().checkUpdate(context);
           AnnouncementManager().checkAndShow(context);
           ScheduleUpdateWorker.syncFromPreferences();
+          _markActive();
           final open = await LocalNotifications.consumeOpenScheduleUpdateFlag();
           if (open) {
             _openScheduleAndChanges();
