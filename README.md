@@ -14,7 +14,9 @@
 *   **👤 个人中心**：实现"本科课表(测试)"中的[getUserInfo](https://timetable-cfc.cqut.edu.cn/api/courseSchedule/getUserInfo)接口,可以便捷查看个人信息。
 *   **🎨 个性化主题**：支持 Material 3 动态取色(Dynamic Color)，界面随心而动。
 *   **🚀 自动更新**：实现"本科课表(测试)"中的[listWeekEvents](https://timetable-cfc.cqut.edu.cn/api/courseSchedule/listWeekEvents)接口,自动请求并更新课表数据。
-*   **📂 开源浏览**：实现简单的 GitHub 仓库浏览器,用于浏览[Royfor12](https://github.com/Royfor12)的[课程资料仓库](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme),获得课程资料。
+*   **📂 开源浏览**：实现简单的 GitHub 仓库浏览器,用于浏览[Royfor12](https://github.com/Royfor12)的[CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)仓库,获得课程资料。
+
+    >本功能仅提供对[CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)仓库的浏览和下载服务，所有内容版权归原作者所有，遵循[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh)协议。本软件不对内容进行修改、存储或商业利用。
 
 ## 📱 下载安装
 
@@ -45,7 +47,7 @@
 - [cqut-net-login](https://github.com/CQUT-handsomeboy/cqut-net-login)  
   参考了其中的[密码加密模块](https://github.com/CQUT-handsomeboy/cqut-net-login/blob/main/encrypt.py)
 
-- [CQUT课程攻略共享计划](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)  
+- [CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)  
   集成了该项目的仓库文件结构，便于查找。感谢各位上传的资料，~~屡次救我狗命~~。
 
 - [Wake Up课程表](https://www.wakeup.fun/)  
