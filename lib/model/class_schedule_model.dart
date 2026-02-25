@@ -114,3 +114,26 @@ class EventItem {
     );
   }
 }
+
+class CampusTimeInfo {
+  String? campusName;
+  int? sessionNum;
+  String? startTime;
+  String? endTime;
+
+  CampusTimeInfo({
+    this.campusName,
+    this.sessionNum,
+    this.startTime,
+    this.endTime,
+  });
+
+  factory CampusTimeInfo.fromJson(Map<String, dynamic> json) {
+    return CampusTimeInfo(
+      campusName: json['campusName'],
+      sessionNum: json['sessionNum'],
+      startTime: json['startTime'],
+      endTime: json['endTime'],
+    );
+  }
+}

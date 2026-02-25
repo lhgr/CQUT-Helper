@@ -131,6 +131,11 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   }
 
   Future<void> _loadInitialData() async {
+    // 0. 加载时间表
+    _controller.ensureTimeInfoLoaded().then((_) {
+      if (mounted) setState(() {});
+    });
+
     // 1. 优先尝试加载缓存以立即显示内容
     final cachedData = await _controller.loadFromCache();
     if (cachedData != null) {
@@ -209,6 +214,14 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
 
       _processLoadedData(data);
       _schedulePrefetch(data);
+
+      // Ensure time info is loaded after successful network request
+      // This helps if previous attempt failed due to missing auth
+      if (_controller.timeInfoList == null) {
+        _controller.ensureTimeInfoLoaded().then((_) {
+          if (mounted) setState(() {});
+        });
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -560,6 +573,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         showWeekend: _settingsManager.showWeekend,
         onBoundaryMessage: _showBoundaryMessage,
         currentWeekIndex: _currentWeekIndex,
+        timeInfoList: _controller.timeInfoList,
       ),
     );
   }

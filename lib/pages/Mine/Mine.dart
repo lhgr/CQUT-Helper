@@ -322,6 +322,62 @@ class _MineViewState extends State<MineView> {
                           ),
                         ),
                         SizedBox(height: 16),
+                        Divider(),
+                        SwitchListTile(
+                          title: Text("跟随系统主题色"),
+                          value: ThemeManager().isSystemColor,
+                          onChanged: (value) {
+                            ThemeManager().setSystemColor(value);
+                          },
+                        ),
+                        if (!ThemeManager().isSystemColor) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                Colors.blue,
+                                Colors.red,
+                                Colors.green,
+                                Colors.orange,
+                                Colors.purple,
+                                Colors.teal,
+                                Colors.pink,
+                                Colors.indigo,
+                                Colors.brown,
+                                Colors.cyan,
+                                Colors.amber,
+                                Colors.lime,
+                              ].map((color) {
+                                return GestureDetector(
+                                  onTap: () {
+                                    ThemeManager().setCustomColor(color);
+                                  },
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: color,
+                                      shape: BoxShape.circle,
+                                      border: ThemeManager().customColor.value ==
+                                              color.value
+                                          ? Border.all(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface,
+                                              width: 3,
+                                            )
+                                          : null,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          SizedBox(height: 16),
+                        ],
+                        SizedBox(height: 16),
                       ],
                     );
                   },

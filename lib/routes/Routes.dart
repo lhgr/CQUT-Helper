@@ -18,19 +18,29 @@ class MyApp extends StatelessWidget {
       builder: (context, child) {
         return DynamicColorBuilder(
           builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
+            final themeManager = ThemeManager();
             ColorScheme lightScheme;
-            if (lightDynamic != null) {
+            if (themeManager.isSystemColor && lightDynamic != null) {
               lightScheme = lightDynamic.harmonized();
+            } else if (themeManager.isSystemColor) {
+              lightScheme = ColorScheme.fromSeed(seedColor: Colors.blue);
             } else {
-              lightScheme = ColorScheme.fromSeed(seedColor: defaultSeedColor);
+              lightScheme = ColorScheme.fromSeed(
+                seedColor: themeManager.customColor,
+              );
             }
 
             ColorScheme darkScheme;
-            if (darkDynamic != null) {
+            if (themeManager.isSystemColor && darkDynamic != null) {
               darkScheme = darkDynamic.harmonized();
+            } else if (themeManager.isSystemColor) {
+              darkScheme = ColorScheme.fromSeed(
+                seedColor: Colors.blue,
+                brightness: Brightness.dark,
+              );
             } else {
               darkScheme = ColorScheme.fromSeed(
-                seedColor: defaultSeedColor,
+                seedColor: themeManager.customColor,
                 brightness: Brightness.dark,
               );
             }

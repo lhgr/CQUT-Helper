@@ -12,9 +12,10 @@ class SchedulePageView extends StatelessWidget {
   final bool showWeekend;
   final Function(String) onBoundaryMessage;
   final int currentWeekIndex;
+  final List<CampusTimeInfo>? timeInfoList;
 
   static const double _headerHeight = 50.0;
-  static const double _timeColumnWidth = 30.0;
+  static const double _timeColumnWidth = 35.0; // Increased width for time labels
   static const double _sessionHeight = 60.0;
 
   static const List<Color> _lightColors = [
@@ -70,6 +71,7 @@ class SchedulePageView extends StatelessWidget {
     required this.showWeekend,
     required this.onBoundaryMessage,
     required this.currentWeekIndex,
+    this.timeInfoList,
   });
 
   @override
@@ -116,6 +118,7 @@ class SchedulePageView extends StatelessWidget {
                       ScheduleTimeColumn(
                         width: _timeColumnWidth,
                         sessionHeight: _sessionHeight,
+                        timeInfoList: timeInfoList,
                       ),
                       Expanded(
                         child: ScheduleCourseGrid(

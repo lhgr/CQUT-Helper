@@ -9,9 +9,16 @@ class ThemeManager extends ChangeNotifier {
   ThemeManager._internal();
 
   static const String _themeModeKey = 'theme_mode';
+  static const String _isSystemColorKey = 'is_system_color';
+  static const String _customColorKey = 'custom_color';
+
   ThemeMode _themeMode = ThemeMode.system;
+  bool _isSystemColor = true;
+  Color _customColor = Colors.blue;
 
   ThemeMode get themeMode => _themeMode;
+  bool get isSystemColor => _isSystemColor;
+  Color get customColor => _customColor;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -21,6 +28,12 @@ class ThemeManager extends ChangeNotifier {
         (e) => e.toString() == savedMode,
         orElse: () => ThemeMode.system,
       );
+    }
+
+    _isSystemColor = prefs.getBool(_isSystemColorKey) ?? true;
+    final savedColor = prefs.getInt(_customColorKey);
+    if (savedColor != null) {
+      _customColor = Color(savedColor);
     }
     notifyListeners();
   }
@@ -43,5 +56,21 @@ class ThemeManager extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeModeKey, mode.toString());
     await WidgetUpdater.updateTodayWidget();
+  }
+
+  Future<void> setSystemColor(bool isSystem) async {
+    if (_isSystemColor == isSystem) return;
+    _isSystemColor = isSystem;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_isSystemColorKey, isSystem);
+  }
+
+  Future<void> setCustomColor(Color color) async {
+    if (_customColor.value == color.value) return;
+    _customColor = color;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_customColorKey, color.value);
   }
 }

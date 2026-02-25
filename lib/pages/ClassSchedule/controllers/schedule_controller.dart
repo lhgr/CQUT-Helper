@@ -17,6 +17,7 @@ class ScheduleController {
 
   // 状态数据
   Map<int, ScheduleData> weekCache = {};
+  List<CampusTimeInfo>? timeInfoList;
   String? currentTerm;
   List<String>? weekList;
   String? actualCurrentWeekStr;
@@ -52,6 +53,27 @@ class ScheduleController {
     final prefs = await SharedPreferences.getInstance();
     _userId = prefs.getString('account');
     _encryptedPassword = prefs.getString('encrypted_password');
+  }
+
+  Future<void> ensureTimeInfoLoaded() async {
+    if (timeInfoList != null) return;
+
+    try {
+      final campusName = await _service.getCampusName();
+      if (campusName != null) {
+        timeInfoList = await _service.fetchCampusTimeInfo(campusName);
+      } else {
+        // Fallback: Try to fetch for default campus if name retrieval fails but we have network
+        try {
+          timeInfoList = await _service.fetchCampusTimeInfo("两江校区");
+        } catch (_) {}
+      }
+    } catch (_) {
+      // Try fallback if getCampusName throws
+      try {
+        timeInfoList = await _service.fetchCampusTimeInfo("两江校区");
+      } catch (_) {}
+    }
   }
 
   /// 从缓存加载数据

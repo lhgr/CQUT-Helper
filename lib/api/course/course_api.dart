@@ -9,6 +9,23 @@ class CourseApi {
   static const String _timeTableApi =
       'https://timetable-cfc.cqut.edu.cn/api/courseSchedule/listWeekEvents';
 
+  static const String _campusTimeInfoApi =
+      'https://timetable-cfc.cqut.edu.cn/api/courseSchedule/getCampusTimeInfo';
+
+  Future<List<dynamic>> fetchCampusTimeInfo(String campusName) async {
+    final body = <String, dynamic>{'campusName': campusName};
+    final resp = await _client.dio.post(_campusTimeInfoApi, data: body);
+    if (resp.data is List) {
+      return resp.data as List<dynamic>;
+    }
+    // Handle potential JSON string or map wrapping
+    if (resp.data is String) {
+      final decoded = json.decode(resp.data);
+      if (decoded is List) return decoded;
+    }
+    throw Exception('Failed to fetch campus time info');
+  }
+
   Future<Map<String, dynamic>> fetchWeekEvents({
     required String userId,
     String? weekNum,

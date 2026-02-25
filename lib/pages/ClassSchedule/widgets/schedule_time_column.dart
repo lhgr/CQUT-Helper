@@ -1,15 +1,18 @@
+import 'package:cqut/model/class_schedule_model.dart';
 import 'package:flutter/material.dart';
 
 class ScheduleTimeColumn extends StatelessWidget {
   final double width;
   final double sessionHeight;
   final int sessionCount;
+  final List<CampusTimeInfo>? timeInfoList;
 
   const ScheduleTimeColumn({
     super.key,
-    this.width = 30.0,
+    this.width = 35.0,
     this.sessionHeight = 60.0,
     this.sessionCount = 12,
+    this.timeInfoList,
   });
 
   @override
@@ -27,15 +30,49 @@ class ScheduleTimeColumn extends StatelessWidget {
       ),
       child: Column(
         children: List.generate(sessionCount, (index) {
+          final sessionNum = index + 1;
+          String? start;
+          String? end;
+          if (timeInfoList != null) {
+            try {
+              final info = timeInfoList!.firstWhere(
+                (element) => element.sessionNum == sessionNum,
+              );
+              start = info.startTime;
+              end = info.endTime;
+            } catch (_) {}
+          }
+
           return Container(
             height: sessionHeight,
             alignment: Alignment.center,
-            child: Text(
-              "${index + 1}",
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.bold,
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (start != null)
+                  Text(
+                    start,
+                    style: TextStyle(
+                      fontSize: 8,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                Text(
+                  "$sessionNum",
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                if (end != null)
+                  Text(
+                    end,
+                    style: TextStyle(
+                      fontSize: 8,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
             ),
           );
         }),

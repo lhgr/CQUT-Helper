@@ -84,6 +84,22 @@ class ScheduleApi {
     );
   }
 
+  Future<List<CampusTimeInfo>> fetchCampusTimeInfo(String campusName) async {
+    final list = await _apiService.course.fetchCampusTimeInfo(campusName);
+    return list.map((e) => CampusTimeInfo.fromJson(e)).toList();
+  }
+
+  Future<String?> getCampusName() async {
+    try {
+      final info = await _apiService.user.getUserInfo();
+      if (info['userCustomSetting'] != null &&
+          info['userCustomSetting']['campusName'] != null) {
+        return info['userCustomSetting']['campusName'];
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<String?> getCachedScheduleJson({
     required String userId,
     required String yearTerm,
