@@ -89,8 +89,9 @@ void callbackDispatcher() {
     final unmetered = await AndroidBackgroundRestrictions.isUnmeteredNetwork();
 
     int nextMinutes = baseMinutes;
-    if (backgroundRestricted == true)
+    if (backgroundRestricted == true) {
       nextMinutes = nextMinutes < 360 ? 360 : nextMinutes;
+    }
     if (powerSave == true || (batteryLevel != null && batteryLevel <= 20)) {
       nextMinutes = nextMinutes * 3;
     }

@@ -67,10 +67,10 @@ class ThemeManager extends ChangeNotifier {
   }
 
   Future<void> setCustomColor(Color color) async {
-    if (_customColor.value == color.value) return;
+    if (_customColor == color) return;
     _customColor = color;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_customColorKey, color.value);
+    await prefs.setInt(_customColorKey, color.toARGB32());
   }
 }

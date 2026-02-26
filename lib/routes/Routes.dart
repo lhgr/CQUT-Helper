@@ -23,7 +23,7 @@ class MyApp extends StatelessWidget {
             if (themeManager.isSystemColor && lightDynamic != null) {
               lightScheme = lightDynamic.harmonized();
             } else if (themeManager.isSystemColor) {
-              lightScheme = ColorScheme.fromSeed(seedColor: Colors.blue);
+              lightScheme = ColorScheme.fromSeed(seedColor: defaultSeedColor);
             } else {
               lightScheme = ColorScheme.fromSeed(
                 seedColor: themeManager.customColor,
@@ -35,7 +35,7 @@ class MyApp extends StatelessWidget {
               darkScheme = darkDynamic.harmonized();
             } else if (themeManager.isSystemColor) {
               darkScheme = ColorScheme.fromSeed(
-                seedColor: Colors.blue,
+                seedColor: defaultSeedColor,
                 brightness: Brightness.dark,
               );
             } else {

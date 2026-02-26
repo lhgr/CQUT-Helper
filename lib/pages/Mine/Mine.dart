@@ -360,8 +360,8 @@ class _MineViewState extends State<MineView> {
                                     decoration: BoxDecoration(
                                       color: color,
                                       shape: BoxShape.circle,
-                                      border: ThemeManager().customColor.value ==
-                                              color.value
+                                      border: ThemeManager().customColor ==
+                                              color
                                           ? Border.all(
                                               color: Theme.of(context)
                                                   .colorScheme

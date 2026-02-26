@@ -21,7 +21,8 @@ class ScheduleSettingsSheet extends StatefulWidget {
     required int updateIntervalMinutes,
     required bool updateShowDiff,
     required bool systemNotifyEnabled,
-  }) onSave;
+  })
+  onSave;
 
   const ScheduleSettingsSheet({
     super.key,
@@ -172,10 +173,10 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
   Future<bool> _confirmEnableScheduleUpdate(BuildContext context) async {
     final manufacturer = await AndroidBackgroundRestrictions.manufacturer();
-    bool? ignoringBattery = await AndroidBackgroundRestrictions
-        .isIgnoringBatteryOptimizations();
-    bool? backgroundRestricted = await AndroidBackgroundRestrictions
-        .isBackgroundRestricted();
+    bool? ignoringBattery =
+        await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
+    bool? backgroundRestricted =
+        await AndroidBackgroundRestrictions.isBackgroundRestricted();
     if (!context.mounted) return false;
 
     String batteryLabel() {
@@ -195,8 +196,8 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
             return StatefulBuilder(
               builder: (context, setDialogState) {
                 Future<void> refresh() async {
-                  final b = await AndroidBackgroundRestrictions
-                      .isIgnoringBatteryOptimizations();
+                  final b =
+                      await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
                   final r =
                       await AndroidBackgroundRestrictions.isBackgroundRestricted();
                   if (!context.mounted) return;
@@ -230,16 +231,14 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                           children: [
                             FilledButton.tonal(
                               onPressed: () async {
-                                await AndroidBackgroundRestrictions
-                                    .requestIgnoreBatteryOptimizations();
+                                await AndroidBackgroundRestrictions.requestIgnoreBatteryOptimizations();
                                 await refresh();
                               },
                               child: Text('去忽略电池优化'),
                             ),
                             OutlinedButton(
                               onPressed: () async {
-                                await AndroidBackgroundRestrictions
-                                    .openBatteryOptimizationSettings();
+                                await AndroidBackgroundRestrictions.openBatteryOptimizationSettings();
                                 await refresh();
                               },
                               child: Text('电池优化设置'),
@@ -255,16 +254,14 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                           children: [
                             FilledButton.tonal(
                               onPressed: () async {
-                                await AndroidBackgroundRestrictions
-                                    .openAutoStartSettings();
+                                await AndroidBackgroundRestrictions.openAutoStartSettings();
                                 await refresh();
                               },
                               child: Text('打开自启动设置'),
                             ),
                             OutlinedButton(
                               onPressed: () async {
-                                await AndroidBackgroundRestrictions
-                                    .openAppDetailsSettings();
+                                await AndroidBackgroundRestrictions.openAppDetailsSettings();
                                 await refresh();
                               },
                               child: Text('应用详情'),
@@ -346,7 +343,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       final ok = await LocalNotifications.ensurePermission();
       if (!ok) {
         systemNotifyEnabled = false;
-        if (context.mounted) {
+        if (mounted) {
           await showDialog<void>(
             context: context,
             builder: (context) {
@@ -372,7 +369,10 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       ScheduleSettingsSheet.prefsKeyUpdateWeeksAhead,
       weeksAhead,
     );
-    await prefs.setBool(ScheduleSettingsSheet.prefsKeyUpdateEnabled, updateEnabled);
+    await prefs.setBool(
+      ScheduleSettingsSheet.prefsKeyUpdateEnabled,
+      updateEnabled,
+    );
     await prefs.setInt(
       ScheduleSettingsSheet.prefsKeyUpdateIntervalMinutes,
       intervalMinutes,
@@ -406,13 +406,13 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   Future<void> maybeConfirmAndClose() async {
     if (confirmDialogOpen) return;
     if (!hasUnsavedChanges()) {
-      if (context.mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context);
       return;
     }
 
     confirmDialogOpen = true;
     try {
-      if (!context.mounted) return;
+      if (!mounted) return;
       final shouldSave = await showDialog<bool>(
         context: context,
         builder: (dialogContext) {
@@ -440,7 +440,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       }
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) Navigator.pop(context);
+        if (mounted) Navigator.pop(context);
       });
     } finally {
       confirmDialogOpen = false;
@@ -606,9 +606,9 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                             onPressed: () async {
                               final ok = await saveSettings();
                               if (!ok) return;
-                              if (!context.mounted) return;
+                              if (!mounted) return;
                               WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (context.mounted) {
+                                if (mounted) {
                                   Navigator.pop(context);
                                 }
                               });
@@ -629,7 +629,8 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   }
 }
 
-void showScheduleSettingsSheet(BuildContext context, {
+void showScheduleSettingsSheet(
+  BuildContext context, {
   required int initialWeeksAhead,
   required bool initialShowWeekend,
   required bool initialUpdateEnabled,
@@ -644,7 +645,8 @@ void showScheduleSettingsSheet(BuildContext context, {
     required int updateIntervalMinutes,
     required bool updateShowDiff,
     required bool systemNotifyEnabled,
-  }) onSave,
+  })
+  onSave,
 }) {
   showModalBottomSheet(
     context: context,
