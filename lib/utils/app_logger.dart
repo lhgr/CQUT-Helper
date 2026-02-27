@@ -71,6 +71,7 @@ class FileLogSink implements LogSink {
 
   final String fileName;
   final int maxBytes;
+  static const Duration _maxAge = Duration(days: 1);
 
   IOSink? _sink;
   File? _file;
@@ -134,7 +135,7 @@ class FileLogSink implements LogSink {
       await _sink?.close();
       _sink = null;
 
-      final rotatedName = fileName.replaceFirst(
+      final base = fileName.replaceFirst(
         RegExp(r'\.log$', caseSensitive: false),
         '',
       );
@@ -143,10 +144,30 @@ class FileLogSink implements LogSink {
         '-',
       );
       final rotated = File(
-        '${file.parent.path}${Platform.pathSeparator}'
-        '${rotatedName}_$ts.log',
+        '${file.parent.path}${Platform.pathSeparator}${base}_$ts.log',
       );
       await file.rename(rotated.path);
+
+      try {
+        final cutoff = DateTime.now().subtract(_maxAge);
+        final dir = Directory(rotated.parent.path);
+        final rotatedRegex = RegExp(
+          '^${RegExp.escape(base)}_.*\\.log\$',
+          caseSensitive: false,
+        );
+        await for (final entity in dir.list(followLinks: false)) {
+          if (entity is! File) continue;
+          final name = pBasename(entity.path);
+          if (!rotatedRegex.hasMatch(name)) continue;
+          try {
+            final st = await entity.stat();
+            if (st.modified.isBefore(cutoff)) {
+              await entity.delete();
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+
       await _open();
     } catch (_) {}
   }
@@ -272,7 +293,43 @@ class AppLogger {
     }
   }
 
+  Future<void> pruneLogs({Duration maxAge = const Duration(days: 1)}) async {
+    final cutoff = DateTime.now().subtract(maxAge);
+    await _detachFileSink();
+    try {
+      final logFiles = await _listLogFiles(includeExports: false);
+      for (final f in logFiles) {
+        try {
+          final st = await f.stat();
+          if (st.modified.isBefore(cutoff)) {
+            await f.delete();
+          }
+        } catch (_) {}
+      }
+
+      final current = await _resolveCurrentLogFile();
+      if (await current.exists()) {
+        await _rewriteLogFileKeepingSince(current, cutoff);
+      }
+
+      final exports = await _listExportFiles();
+      for (final f in exports) {
+        try {
+          final st = await f.stat();
+          if (st.modified.isBefore(cutoff)) {
+            await f.delete();
+          }
+        } catch (_) {}
+      }
+    } finally {
+      if (_enableFile) {
+        await _ensureFileSink();
+      }
+    }
+  }
+
   Future<String> exportLogs({int maxTotalBytes = 8 * 1024 * 1024}) async {
+    await pruneLogs();
     final ts = DateTime.now().toIso8601String().replaceAll(
       RegExp(r'[:\.]'),
       '-',
@@ -617,6 +674,59 @@ class AppLogger {
       '${docs.path}${Platform.pathSeparator}$_downloadExportDirName',
     );
   }
+
+  Future<File> _resolveCurrentLogFile() async {
+    final docs = await getApplicationDocumentsDirectory();
+    return File('${docs.path}${Platform.pathSeparator}$_fileName');
+  }
+
+  Future<void> _rewriteLogFileKeepingSince(File file, DateTime cutoff) async {
+    final tmp = File('${file.path}.tmp');
+    await tmp.parent.create(recursive: true);
+
+    final out = tmp.openWrite(mode: FileMode.write, encoding: utf8);
+    bool keepBlock = false;
+    try {
+      final lines = file
+          .openRead()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter());
+      await for (final line in lines) {
+        final ts = _tryParseLogLineTimestamp(line);
+        if (ts != null) {
+          keepBlock = !ts.isBefore(cutoff);
+        }
+        if (keepBlock) {
+          out.writeln(line);
+        }
+      }
+      await out.flush();
+    } catch (_) {
+      await out.flush();
+    } finally {
+      await out.close();
+    }
+
+    try {
+      await file.delete();
+    } catch (_) {}
+    try {
+      await tmp.rename(file.path);
+    } catch (_) {
+      try {
+        final bytes = await tmp.readAsBytes();
+        await file.writeAsBytes(bytes, flush: true);
+        await tmp.delete();
+      } catch (_) {}
+    }
+  }
+}
+
+DateTime? _tryParseLogLineTimestamp(String line) {
+  final i = line.indexOf(' ');
+  if (i <= 0) return null;
+  final head = line.substring(0, i);
+  return DateTime.tryParse(head);
 }
 
 String _logBaseName(String fileName) {
