@@ -1,7 +1,7 @@
 <h1 align="center">CQUT Helper</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/lhgr/CQUT-Helper?style=flat-square" alt="Release" />
+  <img src="https://img.shields.io/github/v/release/lhgr/CQUT-Helper?style=flat-square&include_prereleases" alt="Release" />
   <img src="https://img.shields.io/badge/Platform-Android-green?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/SDK-Flutter-blue?style=flat-square" alt="SDK" />
 </p>
