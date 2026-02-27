@@ -1,15 +1,22 @@
 import 'package:dio/dio.dart';
 import 'package:cqut/model/github_item.dart';
 import 'package:cqut/utils/github_proxy.dart';
+import 'package:cqut/utils/app_logger.dart';
 
 class GithubApi {
   static const String _baseUrl = 'https://api.github.com';
   static const String _owner = 'Royfor12';
   static const String _repo = 'CQUT-Course-Guide-Sharing-Scheme';
+  static const String _tag = 'GithubApi';
 
-  final Dio _dio = Dio();
+  late final Dio _dio;
 
   final Map<String, List<GithubItem>> _cache = {};
+
+  GithubApi() {
+    _dio = Dio();
+    AppLogger.I.attachToDio(_dio, tag: _tag);
+  }
 
   Future<void> downloadFile(
     String url,

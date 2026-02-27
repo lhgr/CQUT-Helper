@@ -1,10 +1,12 @@
 import 'dart:convert';
 
+import 'package:cqut/utils/app_logger.dart';
 import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class GithubProxy {
   static const String workerBaseUrl = 'https://dawndrizzle.xyz';
+  static const String _tag = 'GithubProxy';
 
   static final Dio _healthDio = Dio(
     BaseOptions(
@@ -72,6 +74,7 @@ class GithubProxy {
   static Duration _defaultHealthTtl() => const Duration(minutes: 2);
 
   static Future<bool> isWorkerHealthy({Duration? ttl}) async {
+    AppLogger.I.attachToDio(_healthDio, tag: _tag);
     final effectiveTtl = ttl ?? _defaultHealthTtl();
     final updatedAt = _healthUpdatedAt;
     final cached = _healthOk;
@@ -119,6 +122,7 @@ class GithubProxy {
     Uri raw, {
     Options? options,
   }) async {
+    AppLogger.I.attachToDio(dio, tag: _tag);
     if (!isGithubUri(raw) || isWorkerUri(raw)) {
       return dio.getUri<T>(raw, options: options);
     }
@@ -143,6 +147,7 @@ class GithubProxy {
     ProgressCallback? onReceiveProgress,
     Options? options,
   }) async {
+    AppLogger.I.attachToDio(dio, tag: _tag);
     if (!isGithubUri(raw) || isWorkerUri(raw)) {
       await dio.downloadUri(
         raw,

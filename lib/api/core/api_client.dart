@@ -1,7 +1,7 @@
 import 'package:cookie_jar/cookie_jar.dart';
+import 'package:cqut/utils/app_logger.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 class ApiClient {
   static final ApiClient _instance = ApiClient._internal();
@@ -18,6 +18,7 @@ class ApiClient {
     // 这样 CookieFixInterceptor 会先修复 Cookie，然后 CookieManager 再处理修复后的 Cookie
     _dio.interceptors.add(BasicCookieFixInterceptor());
     _dio.interceptors.add(CookieManager(_cookieJar));
+    AppLogger.I.attachToDio(_dio, tag: 'ApiClient');
     
     _dio.options = BaseOptions(
       headers: const {
@@ -72,6 +73,8 @@ class ApiClient {
 
 /// 基础修复，只处理 +0800 时区问题
 class BasicCookieFixInterceptor extends Interceptor {
+  static const _tag = 'CookieFix';
+
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     try {
@@ -94,15 +97,14 @@ class BasicCookieFixInterceptor extends Interceptor {
         
         // 调试输出
         if (setCookieHeaders.length != fixedCookies.length) {
-          if (kDebugMode) {
-            debugPrint('CookieFix: Fixed ${setCookieHeaders.length} cookies');
-          }
+          AppLogger.I.debug(
+            _tag,
+            'Fixed ${setCookieHeaders.length} cookies',
+          );
         }
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('CookieFixInterceptor error: $e');
-      }
+      AppLogger.I.warn(_tag, 'Interceptor error', error: e);
       // 不要抛出异常，继续处理
     }
     
@@ -120,16 +122,20 @@ class BasicCookieFixInterceptor extends Interceptor {
       // 检查是否是 +0800 格式
       if (dateStr.contains(' +0800')) {
         fixedDate = dateStr.replaceAll(' +0800', ' GMT');
-        if (kDebugMode) {
-          debugPrint('CookieFix: Fixed +0800 timezone: $dateStr -> $fixedDate');
-        }
+        AppLogger.I.debug(
+          _tag,
+          'Fixed +0800 timezone',
+          fields: {'from': dateStr, 'to': fixedDate},
+        );
       }
       // 检查其他时区偏移
       else if (dateStr.contains(RegExp(r' [+-]\d{4}$'))) {
         fixedDate = dateStr.replaceAll(RegExp(r' [+-]\d{4}$'), ' GMT');
-        if (kDebugMode) {
-          debugPrint('CookieFix: Fixed timezone offset: $dateStr -> $fixedDate');
-        }
+        AppLogger.I.debug(
+          _tag,
+          'Fixed timezone offset',
+          fields: {'from': dateStr, 'to': fixedDate},
+        );
       }
       
       return 'expires=$fixedDate';

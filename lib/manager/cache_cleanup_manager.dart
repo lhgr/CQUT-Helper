@@ -1,13 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cqut/utils/app_logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum AppCacheType { timetable, userInfo, imageCache, favorites }
+enum AppCacheType { timetable, userInfo, imageCache, favorites, logs }
 
 @immutable
 class AppCacheUsage {
@@ -31,12 +32,14 @@ class CacheCleanupManager {
   static final ValueNotifier<int> userInfoCacheEpoch = ValueNotifier(0);
   static final ValueNotifier<int> favoritesCacheEpoch = ValueNotifier(0);
   static final ValueNotifier<int> imageCacheEpoch = ValueNotifier(0);
+  static final ValueNotifier<int> logCacheEpoch = ValueNotifier(0);
 
   static const Map<AppCacheType, String> _titles = {
     AppCacheType.timetable: '课表缓存',
     AppCacheType.userInfo: '个人信息缓存',
     AppCacheType.imageCache: '图片缓存',
     AppCacheType.favorites: '收藏数据',
+    AppCacheType.logs: '日志文件',
   };
 
   static Future<List<AppCacheUsage>> getUsages() async {
@@ -55,6 +58,7 @@ class CacheCleanupManager {
     final favoritesBytes = _estimatePrefsBytes(prefs, favoritesKeys);
 
     final imageCacheBytes = await _getImageCacheBytes();
+    final logBytes = await AppLogger.I.getLogBytes();
 
     return [
       AppCacheUsage(
@@ -83,6 +87,13 @@ class CacheCleanupManager {
         title: '收藏数据',
         description: '资料页收藏列表（本地保存）',
         bytes: favoritesBytes,
+        supported: true,
+      ),
+      AppCacheUsage(
+        type: AppCacheType.logs,
+        title: '日志文件',
+        description: '调试/错误/网络请求日志与导出文件',
+        bytes: logBytes,
         supported: true,
       ),
     ];
@@ -144,6 +155,12 @@ class CacheCleanupManager {
       } catch (_) {}
       clearedCounts[AppCacheType.imageCache] = 1;
       imageCacheEpoch.value = imageCacheEpoch.value + 1;
+    }
+
+    if (types.contains(AppCacheType.logs)) {
+      final removed = await AppLogger.I.clearLogFiles();
+      clearedCounts[AppCacheType.logs] = removed;
+      logCacheEpoch.value = logCacheEpoch.value + 1;
     }
 
     try {

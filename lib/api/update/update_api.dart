@@ -1,12 +1,18 @@
 import 'package:dio/dio.dart';
 import 'package:cqut/model/update_model.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:cqut/utils/github_proxy.dart';
+import 'package:cqut/utils/app_logger.dart';
 
 class UpdateApi {
-  final Dio _dio = Dio();
+  static const String _tag = 'UpdateApi';
+  late final Dio _dio;
   static const String _owner = 'lhgr';
   static const String _repo = 'CQUT-Helper';
+
+  UpdateApi() {
+    _dio = Dio();
+    AppLogger.I.attachToDio(_dio, tag: _tag);
+  }
 
   Future<UpdateModel?> checkUpdate() async {
     try {
@@ -19,9 +25,7 @@ class UpdateApi {
         return UpdateModel.fromJson(response.data);
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Check update failed: $e');
-      }
+      AppLogger.I.warn(_tag, 'Check update failed', error: e);
     }
     return null;
   }

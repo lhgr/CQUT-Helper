@@ -1,5 +1,7 @@
 import 'package:cqut/manager/cache_cleanup_manager.dart';
+import 'package:cqut/utils/app_logger.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ClearCachePage extends StatefulWidget {
   const ClearCachePage({super.key});
@@ -11,6 +13,7 @@ class ClearCachePage extends StatefulWidget {
 class _ClearCachePageState extends State<ClearCachePage> {
   bool _loading = true;
   bool _clearing = false;
+  bool _exporting = false;
   List<AppCacheUsage> _usages = const [];
   final Set<AppCacheType> _selected = {};
 
@@ -99,11 +102,55 @@ class _ClearCachePageState extends State<ClearCachePage> {
       await _refresh();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('清理失败: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('清理失败: $e')));
     } finally {
       if (mounted) setState(() => _clearing = false);
+    }
+  }
+
+  Future<void> _exportLogs() async {
+    if (_exporting || _clearing) return;
+    setState(() => _exporting = true);
+    try {
+      final path = await AppLogger.I.exportLogs();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text('日志已导出'),
+            content: SelectableText(path),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  final ok = await launchUrl(Uri.file(path));
+                  if (context.mounted) Navigator.pop(context);
+                  if (!mounted) return;
+                  if (!ok) {
+                    ScaffoldMessenger.of(
+                      this.context,
+                    ).showSnackBar(SnackBar(content: Text('无法打开文件，请手动前往该路径')));
+                  }
+                },
+                child: Text('打开文件'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导出失败: $e')));
+    } finally {
+      if (mounted) setState(() => _exporting = false);
     }
   }
 
@@ -115,6 +162,12 @@ class _ClearCachePageState extends State<ClearCachePage> {
       appBar: AppBar(
         title: Text('清理缓存'),
         actions: [
+          IconButton(
+            onPressed: (_loading || _clearing || _exporting)
+                ? null
+                : _exportLogs,
+            icon: Icon(Icons.upload_file),
+          ),
           IconButton(
             onPressed: _clearing ? null : _refresh,
             icon: Icon(Icons.refresh),
@@ -159,7 +212,8 @@ class _ClearCachePageState extends State<ClearCachePage> {
   Widget _buildUsageTile(AppCacheUsage u) {
     final selected = _selected.contains(u.type);
     final sizeText = u.bytes == null ? '无法统计' : _formatBytes(u.bytes!);
-    final subtitle = '${u.description}\n占用：$sizeText${u.supported ? '' : '（不可清理）'}';
+    final subtitle =
+        '${u.description}\n占用：$sizeText${u.supported ? '' : '（不可清理）'}';
 
     return Card(
       elevation: 0,

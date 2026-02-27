@@ -1,18 +1,24 @@
 import 'package:cqut/model/announcement_model.dart';
+import 'package:cqut/utils/app_logger.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 class AnnouncementApi {
   static const String _baseUrl = 'https://dawndrizzle.top';
+  static const String _tag = 'AnnouncementApi';
 
-  final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: _baseUrl,
-      connectTimeout: const Duration(seconds: 8),
-      receiveTimeout: const Duration(seconds: 10),
-      sendTimeout: const Duration(seconds: 10),
-    ),
-  );
+  late final Dio _dio;
+
+  AnnouncementApi() {
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: _baseUrl,
+        connectTimeout: const Duration(seconds: 8),
+        receiveTimeout: const Duration(seconds: 10),
+        sendTimeout: const Duration(seconds: 10),
+      ),
+    );
+    AppLogger.I.attachToDio(_dio, tag: _tag);
+  }
 
   Future<AnnouncementModel?> getLatest({String? appVersion}) async {
     try {
@@ -30,9 +36,7 @@ class AnnouncementApi {
         return AnnouncementModel.fromJson(item as Map<String, dynamic>);
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Get latest announcement failed: $e');
-      }
+      AppLogger.I.warn(_tag, 'Get latest announcement failed', error: e);
     }
     return null;
   }
@@ -48,9 +52,7 @@ class AnnouncementApi {
       }
       return false;
     } on DioException catch (e) {
-      if (kDebugMode) {
-        debugPrint('Health check failed: $e');
-      }
+      AppLogger.I.warn(_tag, 'Health check failed', error: e, stackTrace: e.stackTrace);
       rethrow;
     }
   }
@@ -78,9 +80,7 @@ class AnnouncementApi {
             .toList();
       }
     } on DioException catch (e) {
-      if (kDebugMode) {
-        debugPrint('Get announcements failed: $e');
-      }
+      AppLogger.I.warn(_tag, 'Get announcements failed', error: e, stackTrace: e.stackTrace);
       rethrow;
     }
     return const [];
@@ -97,9 +97,7 @@ class AnnouncementApi {
       }
       return null;
     } on DioException catch (e) {
-      if (kDebugMode) {
-        debugPrint('Get announcement detail failed: $e');
-      }
+      AppLogger.I.warn(_tag, 'Get announcement detail failed', error: e, stackTrace: e.stackTrace);
       rethrow;
     }
   }
