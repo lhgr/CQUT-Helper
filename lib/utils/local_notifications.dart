@@ -12,9 +12,14 @@ class LocalNotifications {
   static const String _channelId = 'schedule_updates';
   static const String _channelName = '课表更新';
   static const String _channelDescription = '用于提示课表变化与更新信息';
+  static const String _courseChannelId = 'course_reminders';
+  static const String _courseChannelName = '上课提醒';
+  static const String _courseChannelDescription = '用于上课前提醒与自动静音/振动';
   static const String _prefsKeyOpenScheduleUpdate =
       'schedule_open_update_from_notification';
   static const String payloadScheduleUpdate = 'schedule_update';
+  static const String payloadCourseReminder = 'course_reminder';
+  static const String payloadCourseReminderTest = 'course_reminder_test';
 
   static bool _initialized = false;
 
@@ -44,6 +49,14 @@ class LocalNotifications {
           _channelId,
           _channelName,
           description: _channelDescription,
+          importance: Importance.high,
+        ),
+      );
+      await android.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _courseChannelId,
+          _courseChannelName,
+          description: _courseChannelDescription,
           importance: Importance.high,
         ),
       );
@@ -102,6 +115,35 @@ class LocalNotifications {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        importance: Importance.high,
+        priority: Priority.high,
+        styleInformation: BigTextStyleInformation(body),
+      ),
+    );
+
+    await _plugin.show(
+      id ?? DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+      title,
+      body,
+      details,
+      payload: payload,
+    );
+  }
+
+  static Future<void> showCourseReminder({
+    required String title,
+    required String body,
+    String? payload,
+    int? id,
+  }) async {
+    if (!Platform.isAndroid) return;
+    await initialize();
+
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _courseChannelId,
+        _courseChannelName,
+        channelDescription: _courseChannelDescription,
         importance: Importance.high,
         priority: Priority.high,
         styleInformation: BigTextStyleInformation(body),

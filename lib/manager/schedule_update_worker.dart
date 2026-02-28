@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
+import 'package:cqut/manager/course_reminder_manager.dart';
 import 'package:cqut/utils/local_notifications.dart';
 import 'package:cqut/utils/android_background_restrictions.dart';
 import 'package:cqut/utils/schedule_update_log.dart';
@@ -206,6 +207,7 @@ void callbackDispatcher() {
       initialDelay: Duration(minutes: nextMinutes),
     );
 
+    await CourseReminderManager.sync();
     return true;
   });
 }

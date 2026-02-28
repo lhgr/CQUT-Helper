@@ -5,6 +5,8 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import '../../../utils/android_background_restrictions.dart';
 import '../../../utils/local_notifications.dart';
 import 'package:cqut/manager/schedule_update_worker.dart';
+import 'package:cqut/manager/course_reminder_manager.dart';
+import 'package:cqut/utils/course_reminder_planner.dart';
 
 class ScheduleSettingsSheet extends StatefulWidget {
   final int initialWeeksAhead;
@@ -58,6 +60,12 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   late bool systemNotifyEnabled;
   bool confirmDialogOpen = false;
 
+  CourseReminderSettings? _initialCourseSettings;
+  bool courseReminderEnabled = false;
+  int courseAdvanceMinutes = 10;
+  bool courseAutoSound = false;
+  CourseReminderSoundMode courseSoundMode = CourseReminderSoundMode.vibrate;
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +75,19 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     intervalMinutes = widget.initialUpdateIntervalMinutes;
     showDiff = widget.initialUpdateShowDiff;
     systemNotifyEnabled = widget.initialSystemNotifyEnabled;
+    _loadCourseReminderSettings();
+  }
+
+  Future<void> _loadCourseReminderSettings() async {
+    final s = await CourseReminderManager.loadSettings();
+    if (!mounted) return;
+    setState(() {
+      _initialCourseSettings = s;
+      courseReminderEnabled = s.enabled;
+      courseAdvanceMinutes = s.advanceMinutes;
+      courseAutoSound = s.autoSwitchSoundMode;
+      courseSoundMode = s.soundMode;
+    });
   }
 
   bool hasUnsavedChanges() {
@@ -75,7 +96,14 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         updateEnabled != widget.initialUpdateEnabled ||
         intervalMinutes != widget.initialUpdateIntervalMinutes ||
         showDiff != widget.initialUpdateShowDiff ||
-        systemNotifyEnabled != widget.initialSystemNotifyEnabled;
+        systemNotifyEnabled != widget.initialSystemNotifyEnabled ||
+        (_initialCourseSettings != null &&
+            (courseReminderEnabled != _initialCourseSettings!.enabled ||
+                courseAdvanceMinutes !=
+                    _initialCourseSettings!.advanceMinutes ||
+                courseAutoSound !=
+                    _initialCourseSettings!.autoSwitchSoundMode ||
+                courseSoundMode != _initialCourseSettings!.soundMode));
   }
 
   String _formatIntervalLabel(int minutes) {
@@ -326,6 +354,55 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     return value;
   }
 
+  String _formatAdvanceMinutes(int minutes) {
+    final v = minutes.clamp(1, 120);
+    return '提前 $v 分钟';
+  }
+
+  Future<int?> _askCourseAdvanceMinutes(
+    BuildContext context,
+    int initial,
+  ) async {
+    final options = <int>[5, 10, 15, 20, 30, 45, 60];
+    final current = initial.clamp(1, 120);
+    return await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Text('选择提前提醒时间', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              ...options.map((m) {
+                return ListTile(
+                  title: Text(
+                    _formatAdvanceMinutes(m),
+                    textAlign: TextAlign.center,
+                  ),
+                  selected: m == current,
+                  onTap: () => Navigator.pop(context, m),
+                );
+              }),
+              if (!options.contains(current))
+                ListTile(
+                  title: Text(
+                    _formatAdvanceMinutes(current),
+                    textAlign: TextAlign.center,
+                  ),
+                  selected: true,
+                  onTap: () => Navigator.pop(context, current),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<bool> saveSettings() async {
     if (updateEnabled && intervalMinutes < 15) {
       intervalMinutes = 15;
@@ -383,6 +460,16 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       systemNotifyEnabled,
     );
 
+    await CourseReminderManager.saveSettings(
+      CourseReminderSettings(
+        enabled: courseReminderEnabled,
+        advanceMinutes: courseAdvanceMinutes.clamp(1, 120),
+        autoSwitchSoundMode: false,
+        soundMode: courseSoundMode,
+        daysAhead: 2,
+      ),
+    );
+
     unawaited(
       FirebaseAnalytics.instance.logEvent(
         name: 'schedule_toggle_show_weekend',
@@ -400,6 +487,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     );
 
     await ScheduleUpdateWorker.syncFromPreferences();
+    await CourseReminderManager.sync();
     return true;
   }
 
@@ -575,6 +663,60 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                             });
                           },
                   ),
+                  const Divider(height: 16),
+                  ListTile(
+                    title: Text('上课提醒'),
+                    subtitle: Text('课程开始前自动提醒，可选自动静音/振动'),
+                  ),
+                  SwitchListTile(
+                    title: Text('启用上课提醒'),
+                    subtitle: Text('按课表时间自动推送提醒通知'),
+                    value: courseReminderEnabled,
+                    onChanged: (value) async {
+                      if (value && !courseReminderEnabled) {
+                        final ok = await LocalNotifications.ensurePermission();
+                        if (!ok) {
+                          if (!context.mounted) return;
+                          await showDialog<void>(
+                            context: context,
+                            builder: (context) {
+                              return AlertDialog(
+                                title: Text('通知权限未授予'),
+                                content: Text('未授予通知权限，将无法发送上课提醒。'),
+                                actions: [
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: Text('知道了'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                          return;
+                        }
+                      }
+                      setState(() {
+                        courseReminderEnabled = value;
+                      });
+                    },
+                  ),
+                  ListTile(
+                    title: Text('提前提醒时间'),
+                    subtitle: Text(_formatAdvanceMinutes(courseAdvanceMinutes)),
+                    enabled: courseReminderEnabled,
+                    onTap: !courseReminderEnabled
+                        ? null
+                        : () async {
+                            final v = await _askCourseAdvanceMinutes(
+                              context,
+                              courseAdvanceMinutes,
+                            );
+                            if (v == null) return;
+                            setState(() {
+                              courseAdvanceMinutes = v;
+                            });
+                          },
+                  ),
                   if (showRisk)
                     Padding(
                       padding: const EdgeInsets.symmetric(
@@ -606,9 +748,9 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                             onPressed: () async {
                               final ok = await saveSettings();
                               if (!ok) return;
-                              if (!mounted) return;
+                              if (!context.mounted) return;
                               WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (mounted) {
+                                if (context.mounted) {
                                   Navigator.pop(context);
                                 }
                               });
