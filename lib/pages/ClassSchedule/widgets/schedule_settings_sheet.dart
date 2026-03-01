@@ -59,8 +59,16 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   late bool showDiff;
   late bool systemNotifyEnabled;
   bool confirmDialogOpen = false;
+  bool _allowPop = false;
 
-  CourseReminderSettings? _initialCourseSettings;
+  late int _baselineWeeksAhead;
+  late bool _baselineShowWeekend;
+  late bool _baselineUpdateEnabled;
+  late int _baselineIntervalMinutes;
+  late bool _baselineShowDiff;
+  late bool _baselineSystemNotifyEnabled;
+
+  CourseReminderSettings? _baselineCourseSettings;
   bool courseReminderEnabled = false;
   int courseAdvanceMinutes = 10;
   bool courseAutoSound = false;
@@ -75,6 +83,14 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     intervalMinutes = widget.initialUpdateIntervalMinutes;
     showDiff = widget.initialUpdateShowDiff;
     systemNotifyEnabled = widget.initialSystemNotifyEnabled;
+
+    _baselineWeeksAhead = weeksAhead;
+    _baselineShowWeekend = showWeekend;
+    _baselineUpdateEnabled = updateEnabled;
+    _baselineIntervalMinutes = intervalMinutes;
+    _baselineShowDiff = showDiff;
+    _baselineSystemNotifyEnabled = systemNotifyEnabled;
+
     _loadCourseReminderSettings();
   }
 
@@ -82,7 +98,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     final s = await CourseReminderManager.loadSettings();
     if (!mounted) return;
     setState(() {
-      _initialCourseSettings = s;
+      _baselineCourseSettings = s;
       courseReminderEnabled = s.enabled;
       courseAdvanceMinutes = s.advanceMinutes;
       courseAutoSound = s.autoSwitchSoundMode;
@@ -91,19 +107,18 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   }
 
   bool hasUnsavedChanges() {
-    return weeksAhead != widget.initialWeeksAhead ||
-        showWeekend != widget.initialShowWeekend ||
-        updateEnabled != widget.initialUpdateEnabled ||
-        intervalMinutes != widget.initialUpdateIntervalMinutes ||
-        showDiff != widget.initialUpdateShowDiff ||
-        systemNotifyEnabled != widget.initialSystemNotifyEnabled ||
-        (_initialCourseSettings != null &&
-            (courseReminderEnabled != _initialCourseSettings!.enabled ||
-                courseAdvanceMinutes !=
-                    _initialCourseSettings!.advanceMinutes ||
-                courseAutoSound !=
-                    _initialCourseSettings!.autoSwitchSoundMode ||
-                courseSoundMode != _initialCourseSettings!.soundMode));
+    final baseCourse = _baselineCourseSettings;
+    return weeksAhead != _baselineWeeksAhead ||
+        showWeekend != _baselineShowWeekend ||
+        updateEnabled != _baselineUpdateEnabled ||
+        intervalMinutes != _baselineIntervalMinutes ||
+        showDiff != _baselineShowDiff ||
+        systemNotifyEnabled != _baselineSystemNotifyEnabled ||
+        (baseCourse != null &&
+            (courseReminderEnabled != baseCourse.enabled ||
+                courseAdvanceMinutes != baseCourse.advanceMinutes ||
+                courseAutoSound != baseCourse.autoSwitchSoundMode ||
+                courseSoundMode != baseCourse.soundMode));
   }
 
   String _formatIntervalLabel(int minutes) {
@@ -460,15 +475,14 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       systemNotifyEnabled,
     );
 
-    await CourseReminderManager.saveSettings(
-      CourseReminderSettings(
-        enabled: courseReminderEnabled,
-        advanceMinutes: courseAdvanceMinutes.clamp(1, 120),
-        autoSwitchSoundMode: false,
-        soundMode: courseSoundMode,
-        daysAhead: 2,
-      ),
+    final savedCourseSettings = CourseReminderSettings(
+      enabled: courseReminderEnabled,
+      advanceMinutes: courseAdvanceMinutes.clamp(1, 120),
+      autoSwitchSoundMode: courseAutoSound,
+      soundMode: courseSoundMode,
+      daysAhead: 2,
     );
+    await CourseReminderManager.saveSettings(savedCourseSettings);
 
     unawaited(
       FirebaseAnalytics.instance.logEvent(
@@ -486,15 +500,55 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       systemNotifyEnabled: systemNotifyEnabled,
     );
 
-    await ScheduleUpdateWorker.syncFromPreferences();
-    await CourseReminderManager.sync();
+    try {
+      await ScheduleUpdateWorker.syncFromPreferences();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('后台同步失败: $e')));
+      }
+    }
+    try {
+      await CourseReminderManager.sync();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('课程提醒同步失败: $e')));
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _baselineWeeksAhead = weeksAhead;
+        _baselineShowWeekend = showWeekend;
+        _baselineUpdateEnabled = updateEnabled;
+        _baselineIntervalMinutes = intervalMinutes;
+        _baselineShowDiff = showDiff;
+        _baselineSystemNotifyEnabled = systemNotifyEnabled;
+
+        _baselineCourseSettings = savedCourseSettings;
+        courseAdvanceMinutes = savedCourseSettings.advanceMinutes;
+      });
+    }
+
     return true;
+  }
+
+  void _requestClose() {
+    if (!mounted) return;
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+    });
   }
 
   Future<void> maybeConfirmAndClose() async {
     if (confirmDialogOpen) return;
     if (!hasUnsavedChanges()) {
-      if (mounted) Navigator.pop(context);
+      _requestClose();
       return;
     }
 
@@ -527,9 +581,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         if (!ok) return;
       }
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.pop(context);
-      });
+      _requestClose();
     } finally {
       confirmDialogOpen = false;
     }
@@ -551,7 +603,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         updateEnabled && (intervalMinutes < 15 || (est != null && est >= 200));
 
     return PopScope(
-      canPop: !hasUnsavedChanges(),
+      canPop: _allowPop || !hasUnsavedChanges(),
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         maybeConfirmAndClose();
@@ -749,11 +801,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                               final ok = await saveSettings();
                               if (!ok) return;
                               if (!context.mounted) return;
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                }
-                              });
+                              _requestClose();
                             },
                             child: Text('保存'),
                           ),
@@ -792,6 +840,7 @@ void showScheduleSettingsSheet(
 }) {
   showModalBottomSheet(
     context: context,
+    useRootNavigator: true,
     showDragHandle: true,
     isScrollControlled: true,
     builder: (context) {
