@@ -658,14 +658,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  sound_mode:
-    dependency: "direct main"
-    description:
-      name: sound_mode
-      sha256: ae2c7436750603cfc0d3c75e230c1fd8c69be04dd891d21418202cb9e5584a40
-      url: "https://mirrors.tuna.tsinghua.edu.cn/dart-pub/"
-    source: hosted
-    version: "3.1.1"
   source_span:
     dependency: transitive
     description:
