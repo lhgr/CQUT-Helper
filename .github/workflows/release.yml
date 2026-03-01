@@ -101,14 +101,20 @@ jobs:
         id: version
         run: |
           python3 - <<'PY' >> $GITHUB_OUTPUT
+          import os
           import re
           from pathlib import Path
+          # 1) 版本名始终来自 pubspec（与校验步骤保持一致）
           content = Path("pubspec.yaml").read_text(encoding="utf-8")
-          match = re.search(r"^version:\s*([0-9A-Za-z\.\-]+)\+(\d+)\s*$", content, re.M)
-          if not match:
+          m = re.search(r"^version:\s*([0-9A-Za-z\.\-]+)\+(\d+)\s*$", content, re.M)
+          if not m:
             raise SystemExit("pubspec.yaml missing version like x.y.z+N")
-          build_name = match.group(1)
-          build_number = int(match.group(2)) + 1
+          build_name = m.group(1)
+          # 2) 构建号始终使用 CI 的流水线递增号，避免手动维护
+          try:
+            build_number = int(os.environ.get("GITHUB_RUN_NUMBER", "1"))
+          except Exception:
+            build_number = 1
           print(f"build_name={build_name}")
           print(f"build_number={build_number}")
           PY
