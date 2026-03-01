@@ -487,7 +487,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     unawaited(
       FirebaseAnalytics.instance.logEvent(
         name: 'schedule_toggle_show_weekend',
-        parameters: {'value': showWeekend},
+        parameters: {'value': showWeekend ? 1 : 0},
       ),
     );
 

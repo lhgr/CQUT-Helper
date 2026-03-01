@@ -1,7 +1,6 @@
 import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/utils/app_logger.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class ClearCachePage extends StatefulWidget {
   const ClearCachePage({super.key});
@@ -114,36 +113,37 @@ class _ClearCachePageState extends State<ClearCachePage> {
     if (_exporting || _clearing) return;
     setState(() => _exporting = true);
     try {
-      final path = await AppLogger.I.exportLogs();
-      if (!mounted) return;
-      await showDialog<void>(
+      final kind = await showModalBottomSheet<LogExportKind>(
         context: context,
+        showDragHandle: true,
         builder: (context) {
-          return AlertDialog(
-            title: Text('日志已导出'),
-            content: SelectableText(path),
-            actions: [
-              TextButton(
-                onPressed: () async {
-                  final ok = await launchUrl(Uri.file(path));
-                  if (context.mounted) Navigator.pop(context);
-                  if (!mounted) return;
-                  if (!ok) {
-                    ScaffoldMessenger.of(
-                      this.context,
-                    ).showSnackBar(SnackBar(content: Text('无法打开文件，请手动前往该路径')));
-                  }
-                },
-                child: Text('打开文件'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('关闭'),
-              ),
-            ],
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  title: Text('网络日志'),
+                  onTap: () => Navigator.pop(context, LogExportKind.network),
+                ),
+                ListTile(
+                  title: Text('其他日志'),
+                  onTap: () => Navigator.pop(context, LogExportKind.other),
+                ),
+                ListTile(
+                  title: Text('全部日志'),
+                  onTap: () => Navigator.pop(context, LogExportKind.all),
+                ),
+              ],
+            ),
           );
         },
       );
+      if (kind == null) return;
+      await AppLogger.I.exportLogsWithKind(kind: kind);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('日志已保存在/Download/CQUT-Helper/log文件夹中')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
