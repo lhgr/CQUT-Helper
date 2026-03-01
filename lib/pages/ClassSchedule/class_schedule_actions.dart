@@ -70,7 +70,16 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
 
     final index = _weekList!.indexOf(_actualCurrentWeekStr!);
     if (index != -1) {
-      _pageController?.jumpToPage(index);
+      final pc = _pageController;
+      if (pc != null && pc.hasClients) {
+        pc.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        pc?.jumpToPage(index);
+      }
     } else {
       _loadFromNetwork();
     }
