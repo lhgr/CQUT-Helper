@@ -40,7 +40,7 @@
 
 ## ⚠️ 开发说明
 
-本项目的绝大部分代码是在 AI 辅助下完成的，主要用于学习和实验目的。代码质量和设计模式可能存在不足，仅供参考。如果遇到问题或有任何建议,请通过[Issues](https://github.com/lhgr/CQUT-Helper/issues)或[邮件](mailto:3414950665lhgr@gmail.com)给出。
+本项目的绝大部分代码是在 AI 辅助下完成的，主要用于学习和实验目的。代码质量和设计模式可能存在不足，仅供参考。如果遇到问题或有任何建议,请通过[Issues](https://github.com/lhgr/CQUT-Helper/issues)或[邮件](mailto:dawndrizzle@outlook.com)给出。
 
 ## 📚 参考资料
 
@@ -54,4 +54,4 @@
   参考了它的[桌面小部件](https://www.wakeup.fun/doc/widget.html)样式
 
 ---
-*注：本项目为第三方非官方客户端，仅供学习交流使用,如有侵权问题请通过[邮件](mailto:3414950665lhgr@gmail.com)联系我们。*
+*注：本项目为第三方非官方客户端，仅供学习交流使用,如有侵权问题请通过[邮件](mailto:dawndrizzle@outlook.com)联系我们。*
