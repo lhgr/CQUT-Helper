@@ -52,6 +52,7 @@ lib/firebase_options.dart
 android/key.properties
 **/*.keystore
 **/*.jks
+workers
 .env
 docs
 test

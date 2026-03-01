@@ -3,7 +3,7 @@ import 'package:cqut/utils/app_logger.dart';
 import 'package:dio/dio.dart';
 
 class AnnouncementApi {
-  static const String _baseUrl = 'https://dawndrizzle.top';
+  static const String _baseUrl = 'https://api.dawndrizzle.top';
   static const String _tag = 'AnnouncementApi';
 
   late final Dio _dio;
@@ -23,7 +23,7 @@ class AnnouncementApi {
   Future<AnnouncementModel?> getLatest({String? appVersion}) async {
     try {
       final response = await _dio.get(
-        '/v1/announcements/latest',
+        '/announcements/latest',
         queryParameters: {
           if (appVersion != null && appVersion.isNotEmpty)
             'appVersion': appVersion,
@@ -43,7 +43,7 @@ class AnnouncementApi {
 
   Future<bool> health() async {
     try {
-      final response = await _dio.get('/v1/health');
+      final response = await _dio.get('/announcements/health');
       if (response.statusCode == 200) {
         final data = response.data;
         if (data is Map<String, dynamic>) {
@@ -52,7 +52,12 @@ class AnnouncementApi {
       }
       return false;
     } on DioException catch (e) {
-      AppLogger.I.warn(_tag, 'Health check failed', error: e, stackTrace: e.stackTrace);
+      AppLogger.I.warn(
+        _tag,
+        'Health check failed',
+        error: e,
+        stackTrace: e.stackTrace,
+      );
       rethrow;
     }
   }
@@ -64,7 +69,7 @@ class AnnouncementApi {
   }) async {
     try {
       final response = await _dio.get(
-        '/v1/announcements',
+        '/announcements',
         queryParameters: {
           if (appVersion != null && appVersion.isNotEmpty)
             'appVersion': appVersion,
@@ -80,7 +85,12 @@ class AnnouncementApi {
             .toList();
       }
     } on DioException catch (e) {
-      AppLogger.I.warn(_tag, 'Get announcements failed', error: e, stackTrace: e.stackTrace);
+      AppLogger.I.warn(
+        _tag,
+        'Get announcements failed',
+        error: e,
+        stackTrace: e.stackTrace,
+      );
       rethrow;
     }
     return const [];
@@ -88,7 +98,7 @@ class AnnouncementApi {
 
   Future<AnnouncementModel?> getDetail(String id) async {
     try {
-      final response = await _dio.get('/v1/announcements/$id');
+      final response = await _dio.get('/announcements/$id');
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
         final item = data['item'];
@@ -97,7 +107,12 @@ class AnnouncementApi {
       }
       return null;
     } on DioException catch (e) {
-      AppLogger.I.warn(_tag, 'Get announcement detail failed', error: e, stackTrace: e.stackTrace);
+      AppLogger.I.warn(
+        _tag,
+        'Get announcement detail failed',
+        error: e,
+        stackTrace: e.stackTrace,
+      );
       rethrow;
     }
   }

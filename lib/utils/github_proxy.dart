@@ -5,7 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class GithubProxy {
-  static const String workerBaseUrl = 'https://dawndrizzle.xyz';
+  static const String workerBaseUrl =
+      'https://api.dawndrizzle.top/github-porxy';
   static const String _tag = 'GithubProxy';
 
   static final Dio _healthDio = Dio(
@@ -84,7 +85,7 @@ class GithubProxy {
       return cached;
     }
 
-    final healthUri = Uri.parse('$workerBaseUrl/__health');
+    final healthUri = Uri.parse('$workerBaseUrl/health');
     try {
       final resp = await _healthDio.getUri(healthUri);
       final data = resp.data;
@@ -184,7 +185,9 @@ class GithubProxy {
     final raw = Uri.tryParse(urlString);
     if (raw == null) return false;
 
-    if (!isGithubUri(raw) || isWorkerUri(raw) || !shouldProxyForExternalNav(raw)) {
+    if (!isGithubUri(raw) ||
+        isWorkerUri(raw) ||
+        !shouldProxyForExternalNav(raw)) {
       return launchUrl(raw);
     }
 
