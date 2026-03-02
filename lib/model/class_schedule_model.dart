@@ -136,4 +136,13 @@ class CampusTimeInfo {
       endTime: json['endTime'],
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'campusName': campusName,
+      'sessionNum': sessionNum,
+      'startTime': startTime,
+      'endTime': endTime,
+    };
+  }
 }

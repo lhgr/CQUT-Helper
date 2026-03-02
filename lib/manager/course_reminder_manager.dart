@@ -80,7 +80,8 @@ class CourseReminderManager {
     final cached = await controller.loadFromCache();
     if (cached == null) return;
     controller.processLoadedData(cached);
-    await controller.ensureTimeInfoLoaded();
+    await controller.loadTimeInfoFromCacheIfAny();
+    await controller.refreshTimeInfoIfEnabled();
 
     final candidateWeeks = await _loadCandidateWeeks(
       controller: controller,

@@ -176,6 +176,7 @@ class CacheCleanupManager {
 
   static bool _isTimetableCacheKey(String key) {
     if (key == 'schedule_show_weekend') return false;
+    if (key == 'schedule_time_info_enabled') return false;
     if (key.startsWith('schedule_update_')) return false;
     if (key == 'schedule_open_update_from_notification') return false;
 

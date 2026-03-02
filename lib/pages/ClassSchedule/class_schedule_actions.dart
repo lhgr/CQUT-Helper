@@ -130,6 +130,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       context,
       initialWeeksAhead: _settingsManager.updateWeeksAhead,
       initialShowWeekend: _settingsManager.showWeekend,
+      initialTimeInfoEnabled: _settingsManager.timeInfoEnabled,
       initialUpdateEnabled: _settingsManager.updateEnabled,
       initialUpdateIntervalMinutes: _settingsManager.updateIntervalMinutes,
       initialUpdateShowDiff: _settingsManager.updateShowDiff,
@@ -139,6 +140,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
           ({
             required weeksAhead,
             required showWeekend,
+            required timeInfoEnabled,
             required updateEnabled,
             required updateIntervalMinutes,
             required updateShowDiff,
@@ -146,6 +148,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
           }) async {
             await _settingsManager.save(
               showWeekend: showWeekend,
+              timeInfoEnabled: timeInfoEnabled,
               updateWeeksAhead: weeksAhead,
               updateEnabled: updateEnabled,
               updateIntervalMinutes: updateIntervalMinutes,
@@ -154,6 +157,18 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
             );
             if (mounted) {
               _setState(() {});
+            }
+            if (!timeInfoEnabled) {
+              _controller.timeInfoList = null;
+              if (mounted) _setState(() {});
+            } else {
+              final loaded = await _controller.loadTimeInfoFromCacheIfAny();
+              if (loaded && mounted) _setState(() {});
+              unawaited(
+                _controller.refreshTimeInfoIfEnabled().then((changed) {
+                  if (changed && mounted) _setState(() {});
+                }),
+              );
             }
             _configureUpdateTimer();
           },

@@ -11,6 +11,7 @@ import 'package:cqut/utils/course_reminder_planner.dart';
 class ScheduleSettingsSheet extends StatefulWidget {
   final int initialWeeksAhead;
   final bool initialShowWeekend;
+  final bool initialTimeInfoEnabled;
   final bool initialUpdateEnabled;
   final int initialUpdateIntervalMinutes;
   final bool initialUpdateShowDiff;
@@ -19,6 +20,7 @@ class ScheduleSettingsSheet extends StatefulWidget {
   final Function({
     required int weeksAhead,
     required bool showWeekend,
+    required bool timeInfoEnabled,
     required bool updateEnabled,
     required int updateIntervalMinutes,
     required bool updateShowDiff,
@@ -30,6 +32,7 @@ class ScheduleSettingsSheet extends StatefulWidget {
     super.key,
     required this.initialWeeksAhead,
     required this.initialShowWeekend,
+    required this.initialTimeInfoEnabled,
     required this.initialUpdateEnabled,
     required this.initialUpdateIntervalMinutes,
     required this.initialUpdateShowDiff,
@@ -39,6 +42,7 @@ class ScheduleSettingsSheet extends StatefulWidget {
   });
 
   static const String prefsKeyShowWeekend = 'schedule_show_weekend';
+  static const String prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
   static const String prefsKeyUpdateWeeksAhead = 'schedule_update_weeks_ahead';
   static const String prefsKeyUpdateEnabled = 'schedule_update_enabled';
   static const String prefsKeyUpdateIntervalMinutes =
@@ -54,6 +58,7 @@ class ScheduleSettingsSheet extends StatefulWidget {
 class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   late int weeksAhead;
   late bool showWeekend;
+  late bool timeInfoEnabled;
   late bool updateEnabled;
   late int intervalMinutes;
   late bool showDiff;
@@ -63,6 +68,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
   late int _baselineWeeksAhead;
   late bool _baselineShowWeekend;
+  late bool _baselineTimeInfoEnabled;
   late bool _baselineUpdateEnabled;
   late int _baselineIntervalMinutes;
   late bool _baselineShowDiff;
@@ -79,6 +85,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     super.initState();
     weeksAhead = widget.initialWeeksAhead.clamp(0, widget.maxWeeksAhead);
     showWeekend = widget.initialShowWeekend;
+    timeInfoEnabled = widget.initialTimeInfoEnabled;
     updateEnabled = widget.initialUpdateEnabled;
     intervalMinutes = widget.initialUpdateIntervalMinutes;
     showDiff = widget.initialUpdateShowDiff;
@@ -86,6 +93,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
     _baselineWeeksAhead = weeksAhead;
     _baselineShowWeekend = showWeekend;
+    _baselineTimeInfoEnabled = timeInfoEnabled;
     _baselineUpdateEnabled = updateEnabled;
     _baselineIntervalMinutes = intervalMinutes;
     _baselineShowDiff = showDiff;
@@ -110,6 +118,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     final baseCourse = _baselineCourseSettings;
     return weeksAhead != _baselineWeeksAhead ||
         showWeekend != _baselineShowWeekend ||
+        timeInfoEnabled != _baselineTimeInfoEnabled ||
         updateEnabled != _baselineUpdateEnabled ||
         intervalMinutes != _baselineIntervalMinutes ||
         showDiff != _baselineShowDiff ||
@@ -457,6 +466,10 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(ScheduleSettingsSheet.prefsKeyShowWeekend, showWeekend);
+    await prefs.setBool(
+      ScheduleSettingsSheet.prefsKeyTimeInfoEnabled,
+      timeInfoEnabled,
+    );
     await prefs.setInt(
       ScheduleSettingsSheet.prefsKeyUpdateWeeksAhead,
       weeksAhead,
@@ -494,6 +507,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     widget.onSave(
       weeksAhead: weeksAhead,
       showWeekend: showWeekend,
+      timeInfoEnabled: timeInfoEnabled,
       updateEnabled: updateEnabled,
       updateIntervalMinutes: intervalMinutes,
       updateShowDiff: showDiff,
@@ -523,6 +537,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       setState(() {
         _baselineWeeksAhead = weeksAhead;
         _baselineShowWeekend = showWeekend;
+        _baselineTimeInfoEnabled = timeInfoEnabled;
         _baselineUpdateEnabled = updateEnabled;
         _baselineIntervalMinutes = intervalMinutes;
         _baselineShowDiff = showDiff;
@@ -628,6 +643,16 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                     onChanged: (value) {
                       setState(() {
                         showWeekend = value;
+                      });
+                    },
+                  ),
+                  SwitchListTile(
+                    title: Text('显示上课时间'),
+                    subtitle: Text('关闭后不再请求课表时间（仅显示节次）'),
+                    value: timeInfoEnabled,
+                    onChanged: (value) {
+                      setState(() {
+                        timeInfoEnabled = value;
                       });
                     },
                   ),
@@ -823,6 +848,7 @@ void showScheduleSettingsSheet(
   BuildContext context, {
   required int initialWeeksAhead,
   required bool initialShowWeekend,
+  required bool initialTimeInfoEnabled,
   required bool initialUpdateEnabled,
   required int initialUpdateIntervalMinutes,
   required bool initialUpdateShowDiff,
@@ -831,6 +857,7 @@ void showScheduleSettingsSheet(
   required Function({
     required int weeksAhead,
     required bool showWeekend,
+    required bool timeInfoEnabled,
     required bool updateEnabled,
     required int updateIntervalMinutes,
     required bool updateShowDiff,
@@ -847,6 +874,7 @@ void showScheduleSettingsSheet(
       return ScheduleSettingsSheet(
         initialWeeksAhead: initialWeeksAhead,
         initialShowWeekend: initialShowWeekend,
+        initialTimeInfoEnabled: initialTimeInfoEnabled,
         initialUpdateEnabled: initialUpdateEnabled,
         initialUpdateIntervalMinutes: initialUpdateIntervalMinutes,
         initialUpdateShowDiff: initialUpdateShowDiff,

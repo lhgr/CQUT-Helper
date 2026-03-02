@@ -2,9 +2,16 @@ part of 'ClassSchedule.dart';
 
 extension _ClassScheduleLoading on _ClassscheduleViewState {
   Future<void> _loadInitialData() async {
-    _controller.ensureTimeInfoLoaded().then((_) {
-      _setState(() {});
-    });
+    unawaited(
+      _controller.loadTimeInfoFromCacheIfAny().then((loaded) {
+        if (loaded) _setState(() {});
+      }),
+    );
+    unawaited(
+      _controller.refreshTimeInfoIfEnabled().then((changed) {
+        if (changed) _setState(() {});
+      }),
+    );
 
     final cachedData = await _controller.loadFromCache();
     if (cachedData != null) {
@@ -77,9 +84,16 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       _schedulePrefetch(data);
 
       if (_controller.timeInfoList == null) {
-        _controller.ensureTimeInfoLoaded().then((_) {
-          _setState(() {});
-        });
+        unawaited(
+          _controller.loadTimeInfoFromCacheIfAny().then((loaded) {
+            if (loaded) _setState(() {});
+          }),
+        );
+        unawaited(
+          _controller.refreshTimeInfoIfEnabled().then((changed) {
+            if (changed) _setState(() {});
+          }),
+        );
       }
     } catch (e) {
       _setState(() {

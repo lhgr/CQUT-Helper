@@ -15,6 +15,10 @@ class ScheduleController {
 
   ScheduleController({ScheduleApi? service}) : _service = service ?? ScheduleApi();
 
+  static const String _prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
+  static const String _prefsKeyTimeInfoCache = 'schedule_time_info_cache_v1';
+  static const String _prefsKeyTimeInfoLastCampus = 'schedule_time_info_last_campus';
+
   // 状态数据
   Map<int, ScheduleData> weekCache = {};
   List<CampusTimeInfo>? timeInfoList;
@@ -55,25 +59,106 @@ class ScheduleController {
     _encryptedPassword = prefs.getString('encrypted_password');
   }
 
-  Future<void> ensureTimeInfoLoaded() async {
-    if (timeInfoList != null) return;
+  String _timeInfoFingerprint(List<CampusTimeInfo> list) {
+    final items = list.map((e) => e.toJson()).toList();
+    items.sort((a, b) {
+      final sa = (a['sessionNum'] as int?) ?? 0;
+      final sb = (b['sessionNum'] as int?) ?? 0;
+      if (sa != sb) return sa.compareTo(sb);
+      final aStart = (a['startTime'] ?? '').toString();
+      final bStart = (b['startTime'] ?? '').toString();
+      return aStart.compareTo(bStart);
+    });
+    return json.encode(items);
+  }
 
+  Future<bool> loadTimeInfoFromCacheIfAny() async {
+    if (timeInfoList != null) return true;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_prefsKeyTimeInfoCache);
+    if (raw == null || raw.trim().isEmpty) return false;
     try {
-      final campusName = await _service.getCampusName();
-      if (campusName != null) {
-        timeInfoList = await _service.fetchCampusTimeInfo(campusName);
-      } else {
-        // Fallback: Try to fetch for default campus if name retrieval fails but we have network
-        try {
-          timeInfoList = await _service.fetchCampusTimeInfo("两江校区");
-        } catch (_) {}
+      final decoded = json.decode(raw);
+      if (decoded is! Map<String, dynamic>) return false;
+      final items = decoded['items'];
+      if (items is! List) return false;
+      final list = <CampusTimeInfo>[];
+      for (final it in items) {
+        if (it is Map<String, dynamic>) {
+          list.add(CampusTimeInfo.fromJson(it));
+        } else if (it is Map) {
+          list.add(CampusTimeInfo.fromJson(it.cast<String, dynamic>()));
+        }
       }
+      if (list.isEmpty) return false;
+      timeInfoList = list;
+      return true;
     } catch (_) {
-      // Try fallback if getCampusName throws
+      return false;
+    }
+  }
+
+  Future<bool> refreshTimeInfoIfEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool(_prefsKeyTimeInfoEnabled) ?? true;
+    if (!enabled) return false;
+
+    String? campusName = prefs.getString(_prefsKeyTimeInfoLastCampus);
+    if (campusName == null || campusName.trim().isEmpty) {
       try {
-        timeInfoList = await _service.fetchCampusTimeInfo("两江校区");
+        campusName = await _service.getCampusName();
+      } catch (_) {}
+      if (campusName != null && campusName.trim().isNotEmpty) {
+        await prefs.setString(_prefsKeyTimeInfoLastCampus, campusName);
+      }
+    }
+    campusName ??= '两江校区';
+
+    String? oldFp;
+    final cachedRaw = prefs.getString(_prefsKeyTimeInfoCache);
+    if (cachedRaw != null && cachedRaw.trim().isNotEmpty) {
+      try {
+        final decoded = json.decode(cachedRaw);
+        if (decoded is Map<String, dynamic>) {
+          oldFp = decoded['fingerprint']?.toString();
+        }
       } catch (_) {}
     }
+
+    List<CampusTimeInfo>? fetched;
+    try {
+      fetched = await _service.fetchCampusTimeInfo(campusName);
+    } catch (_) {
+      return false;
+    }
+    if (fetched.isEmpty) return false;
+
+    final newFp = _timeInfoFingerprint(fetched);
+    if (oldFp != null && oldFp == newFp) {
+      if (timeInfoList == null) {
+        await loadTimeInfoFromCacheIfAny();
+      }
+      return false;
+    }
+
+    timeInfoList = fetched;
+    await prefs.setString(
+      _prefsKeyTimeInfoCache,
+      json.encode({
+        'v': 1,
+        'campusName': campusName,
+        'fingerprint': newFp,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+        'items': fetched.map((e) => e.toJson()).toList(),
+      }),
+    );
+    return true;
+  }
+
+  Future<void> ensureTimeInfoLoaded() async {
+    if (timeInfoList != null) return;
+    await loadTimeInfoFromCacheIfAny();
+    await refreshTimeInfoIfEnabled();
   }
 
   /// 从缓存加载数据
