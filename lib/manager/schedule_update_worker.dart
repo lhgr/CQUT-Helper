@@ -6,8 +6,10 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'package:cqut/model/schedule_week_change.dart';
 import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut/manager/course_reminder_manager.dart';
+import 'package:cqut/utils/app_logger.dart';
 import 'package:cqut/utils/local_notifications.dart';
 import 'package:cqut/utils/android_background_restrictions.dart';
 import 'package:cqut/utils/schedule_update_log.dart';
@@ -19,6 +21,8 @@ const String _kPrefsKeyScheduleUpdateIntervalMinutes =
 const String _kPrefsKeyScheduleUpdateSystemNotifyEnabled =
     'schedule_update_system_notification_enabled';
 const String _kPrefsKeyAppLastActiveAt = 'app_last_active_at';
+const String _kPrefsKeyScheduleUpdateBgFailureStreak =
+    'schedule_update_bg_failure_streak_v1';
 
 class ScheduleUpdateWorker {
   static const String _prefsKeyPendingPrefix = 'schedule_pending_changes_';
@@ -66,6 +70,14 @@ void callbackDispatcher() {
     DartPluginRegistrant.ensureInitialized();
 
     final startAt = DateTime.now();
+    final logDate = startAt.toIso8601String().split('T').first;
+    await AppLogger.I.init(
+      minLevel: LogLevel.info,
+      enableConsole: false,
+      enableFile: true,
+      fileName: 'cqut_$logDate.log',
+    );
+    AppLogger.I.info('ScheduleUpdate', 'background_task_start');
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool(_kPrefsKeyScheduleUpdateEnabled) ?? false;
     if (!enabled) return true;
@@ -90,23 +102,51 @@ void callbackDispatcher() {
     final unmetered = await AndroidBackgroundRestrictions.isUnmeteredNetwork();
 
     int nextMinutes = baseMinutes;
+    final reasons = <String>[];
     if (backgroundRestricted == true) {
       nextMinutes = nextMinutes < 360 ? 360 : nextMinutes;
+      reasons.add('backgroundRestricted');
     }
     if (powerSave == true || (batteryLevel != null && batteryLevel <= 20)) {
       nextMinutes = nextMinutes * 3;
+      reasons.add('powerSaveOrLowBattery');
     }
     if (!activeRecently) {
       nextMinutes = nextMinutes * 2;
       if (nextMinutes < 120) nextMinutes = 120;
+      reasons.add('inactiveRecently');
     }
-    if (lowRam == true) nextMinutes = nextMinutes * 2;
+    if (lowRam == true) {
+      nextMinutes = nextMinutes * 2;
+      reasons.add('lowRamDevice');
+    }
     if (nextMinutes < 15) nextMinutes = 15;
     if (nextMinutes > 24 * 60) nextMinutes = 24 * 60;
 
     final controller = ScheduleController();
     final cached = await controller.loadFromCache();
     if (cached == null) {
+      await ScheduleUpdateLog.appendRun({
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'type': 'background_no_cache',
+        'intervalBaseMin': baseMinutes,
+        'intervalNextMin': nextMinutes,
+        'reasons': reasons,
+        'unmetered': unmetered,
+        'batteryLevel': batteryLevel,
+        'powerSave': powerSave,
+        'backgroundRestricted': backgroundRestricted,
+        'activeRecently': activeRecently,
+      });
+      AppLogger.I.info(
+        'ScheduleUpdate',
+        'background_task_schedule',
+        fields: {
+          'nextMinutes': nextMinutes,
+          'reasons': reasons,
+          'note': 'no_cache',
+        },
+      );
       await Workmanager().registerOneOffTask(
         ScheduleUpdateWorker._uniqueName,
         ScheduleUpdateWorker._taskName,
@@ -127,11 +167,53 @@ void callbackDispatcher() {
     );
 
     final expectedWeeks = 1 + weeksAhead;
-    final changes = await controller.silentCheckRecentWeeksForChangesDetailed(
-      cached,
-      weeksAhead: weeksAhead,
-    );
+    final failuresBefore = await ScheduleUpdateLog.failureCounter();
+    List<ScheduleWeekChange> changes = const <ScheduleWeekChange>[];
+    Object? runError;
+    StackTrace? runStack;
+    try {
+      changes = await controller.silentCheckRecentWeeksForChangesDetailed(
+        cached,
+        weeksAhead: weeksAhead,
+      );
+    } catch (e, st) {
+      runError = e;
+      runStack = st;
+      await ScheduleUpdateLog.appendFailure({
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'scope': 'background_task',
+        'error': e.toString(),
+      });
+    }
     final fetchedAt = DateTime.now().millisecondsSinceEpoch;
+    final failuresAfter = await ScheduleUpdateLog.failureCounter();
+    final failureDelta = failuresAfter - failuresBefore;
+    final hadFailures = runError != null || failureDelta > 0;
+    if (hadFailures) {
+      final streak = (prefs.getInt(_kPrefsKeyScheduleUpdateBgFailureStreak) ?? 0) + 1;
+      await prefs.setInt(_kPrefsKeyScheduleUpdateBgFailureStreak, streak);
+      int retryMinutes = 15;
+      for (int i = 1; i < streak && retryMinutes < nextMinutes; i++) {
+        retryMinutes = retryMinutes * 2;
+      }
+      if (retryMinutes < nextMinutes) {
+        nextMinutes = retryMinutes;
+        reasons.add('failureRetry');
+        reasons.add('failureStreak=$streak');
+      } else {
+        reasons.add('failureStreak=$streak');
+      }
+    } else {
+      await prefs.setInt(_kPrefsKeyScheduleUpdateBgFailureStreak, 0);
+    }
+    if (runStack != null) {
+      AppLogger.I.warn(
+        'ScheduleUpdate',
+        'background_task_exception',
+        error: runError,
+        stackTrace: runStack,
+      );
+    }
 
     final systemNotify =
         prefs.getBool(_kPrefsKeyScheduleUpdateSystemNotifyEnabled) ?? false;
@@ -188,6 +270,8 @@ void callbackDispatcher() {
       'type': 'background',
       'weeksPlanned': expectedWeeks,
       'weeksChanged': changes.length,
+      'hadFailures': hadFailures,
+      'failureDelta': failureDelta,
       'linesBytes': bytes,
       'durationMs': durationMs,
       'unmetered': unmetered,
@@ -197,8 +281,19 @@ void callbackDispatcher() {
       'activeRecently': activeRecently,
       'intervalBaseMin': baseMinutes,
       'intervalNextMin': nextMinutes,
+      'reasons': reasons,
     });
 
+    AppLogger.I.info(
+      'ScheduleUpdate',
+      'background_task_schedule',
+      fields: {
+        'nextMinutes': nextMinutes,
+        'reasons': reasons,
+        'hadFailures': hadFailures,
+        'weeksChanged': changes.length,
+      },
+    );
     await Workmanager().registerOneOffTask(
       ScheduleUpdateWorker._uniqueName,
       ScheduleUpdateWorker._taskName,
@@ -208,6 +303,15 @@ void callbackDispatcher() {
     );
 
     await CourseReminderManager.sync();
+    AppLogger.I.info(
+      'ScheduleUpdate',
+      'background_task_end',
+      fields: {
+        'hadFailures': hadFailures,
+        'weeksChanged': changes.length,
+        'nextMinutes': nextMinutes,
+      },
+    );
     return true;
   });
 }
