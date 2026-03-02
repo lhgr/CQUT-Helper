@@ -165,7 +165,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
               final loaded = await _controller.loadTimeInfoFromCacheIfAny();
               if (loaded && mounted) _setState(() {});
               unawaited(
-                _controller.refreshTimeInfoIfEnabled().then((changed) {
+                _controller.refreshTimeInfoIfEnabled(force: true).then((changed) {
                   if (changed && mounted) _setState(() {});
                 }),
               );

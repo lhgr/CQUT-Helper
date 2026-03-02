@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cqut/model/class_schedule_model.dart';
 import 'package:cqut/model/schedule_week_change.dart';
 import 'package:cqut/api/schedule/schedule_api.dart';
+import 'package:cqut/utils/app_logger.dart';
 import 'package:cqut/utils/retry_utils.dart';
 import 'package:cqut/utils/schedule_diff_utils.dart';
 import 'package:cqut/utils/schedule_date.dart';
@@ -17,7 +18,9 @@ class ScheduleController {
 
   static const String _prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
   static const String _prefsKeyTimeInfoCache = 'schedule_time_info_cache_v1';
-  static const String _prefsKeyTimeInfoLastCampus = 'schedule_time_info_last_campus';
+  static const String _prefsKeyTimeInfoLastCampus =
+      'schedule_time_info_last_campus';
+  static const int _timeInfoRefreshCooldownMs = 60 * 1000;
 
   // 状态数据
   Map<int, ScheduleData> weekCache = {};
@@ -36,6 +39,8 @@ class ScheduleController {
   // 预取定时器
   Timer? _prefetchTimer;
   bool _disposed = false;
+  Future<bool>? _timeInfoRefreshInFlight;
+  int _lastTimeInfoRefreshAtMs = 0;
 
   void dispose() {
     _disposed = true;
@@ -92,16 +97,57 @@ class ScheduleController {
       }
       if (list.isEmpty) return false;
       timeInfoList = list;
+      AppLogger.I.info(
+        'TimeInfo',
+        'cache_loaded',
+        fields: {
+          'count': list.length,
+          'campus': decoded['campusName']?.toString(),
+          'updatedAt': decoded['updatedAt'],
+        },
+      );
       return true;
     } catch (_) {
       return false;
     }
   }
 
-  Future<bool> refreshTimeInfoIfEnabled() async {
+  Future<bool> refreshTimeInfoIfEnabled({bool force = false}) async {
+    final inFlight = _timeInfoRefreshInFlight;
+    if (inFlight != null) return await inFlight;
+    final future = _refreshTimeInfoIfEnabledInternal(force: force);
+    _timeInfoRefreshInFlight = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_timeInfoRefreshInFlight, future)) {
+        _timeInfoRefreshInFlight = null;
+      }
+    }
+  }
+
+  Future<bool> _refreshTimeInfoIfEnabledInternal({required bool force}) async {
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool(_prefsKeyTimeInfoEnabled) ?? true;
-    if (!enabled) return false;
+    if (!enabled) {
+      AppLogger.I.info('TimeInfo', 'disabled');
+      return false;
+    }
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (!force &&
+        _lastTimeInfoRefreshAtMs > 0 &&
+        nowMs - _lastTimeInfoRefreshAtMs < _timeInfoRefreshCooldownMs) {
+      AppLogger.I.info(
+        'TimeInfo',
+        'refresh_skipped_cooldown',
+        fields: {
+          'cooldownMs': _timeInfoRefreshCooldownMs,
+          'sinceMs': nowMs - _lastTimeInfoRefreshAtMs,
+        },
+      );
+      return false;
+    }
+    _lastTimeInfoRefreshAtMs = nowMs;
 
     String? campusName = prefs.getString(_prefsKeyTimeInfoLastCampus);
     if (campusName == null || campusName.trim().isEmpty) {
@@ -125,10 +171,20 @@ class ScheduleController {
       } catch (_) {}
     }
 
+    AppLogger.I.info(
+      'TimeInfo',
+      'refresh_start',
+      fields: {
+        'campus': campusName,
+        'hasCache': oldFp != null,
+        'force': force,
+      },
+    );
     List<CampusTimeInfo>? fetched;
     try {
       fetched = await _service.fetchCampusTimeInfo(campusName);
     } catch (_) {
+      AppLogger.I.warn('TimeInfo', 'refresh_failed');
       return false;
     }
     if (fetched.isEmpty) return false;
@@ -138,6 +194,11 @@ class ScheduleController {
       if (timeInfoList == null) {
         await loadTimeInfoFromCacheIfAny();
       }
+      AppLogger.I.info(
+        'TimeInfo',
+        'refresh_unchanged',
+        fields: {'campus': campusName, 'count': fetched.length},
+      );
       return false;
     }
 
@@ -152,10 +213,16 @@ class ScheduleController {
         'items': fetched.map((e) => e.toJson()).toList(),
       }),
     );
+    AppLogger.I.info(
+      'TimeInfo',
+      'refresh_updated',
+      fields: {'campus': campusName, 'count': fetched.length},
+    );
     return true;
   }
 
   Future<void> ensureTimeInfoLoaded() async {
+    if (_disposed) return;
     if (timeInfoList != null) return;
     await loadTimeInfoFromCacheIfAny();
     await refreshTimeInfoIfEnabled();
