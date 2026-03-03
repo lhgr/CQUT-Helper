@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:cqut/utils/github_proxy.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class RepoBrowserPage extends StatefulWidget {
   final String path;
@@ -60,6 +61,17 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
 
   Future<void> _launchUrl(String urlString) async {
     if (!await GithubProxy.launchExternalUrlString(urlString)) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('无法打开链接: $urlString')));
+      }
+    }
+  }
+
+  Future<void> _launchDirectUrl(String urlString) async {
+    final uri = Uri.tryParse(urlString);
+    if (uri == null || !await launchUrl(uri)) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -418,7 +430,7 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                         if (isDir) {
                           _navigateToSubDir(item);
                         } else {
-                          _launchUrl(item.htmlUrl);
+                          _launchDirectUrl(item.htmlUrl);
                         }
                       },
                       onLongPress: () {
