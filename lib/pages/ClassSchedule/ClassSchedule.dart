@@ -228,7 +228,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         showWeekend: _settingsManager.showWeekend,
         onBoundaryMessage: _showBoundaryMessage,
         currentWeekIndex: _currentWeekIndex,
-        timeInfoList: _controller.timeInfoList,
+        timeInfoList:
+            _settingsManager.timeInfoEnabled ? _controller.timeInfoList : null,
       ),
     );
   }

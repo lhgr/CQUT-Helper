@@ -648,7 +648,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                   ),
                   SwitchListTile(
                     title: Text('显示上课时间'),
-                    subtitle: Text('关闭后不再请求课表时间（仅显示节次）'),
+                    subtitle: Text('关闭后将不会展示课程时间'),
                     value: timeInfoEnabled,
                     onChanged: (value) {
                       setState(() {

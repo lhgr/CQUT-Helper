@@ -16,7 +16,6 @@ class ScheduleController {
 
   ScheduleController({ScheduleApi? service}) : _service = service ?? ScheduleApi();
 
-  static const String _prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
   static const String _prefsKeyTimeInfoCache = 'schedule_time_info_cache_v1';
   static const String _prefsKeyTimeInfoLastCampus =
       'schedule_time_info_last_campus';
@@ -128,11 +127,6 @@ class ScheduleController {
 
   Future<bool> _refreshTimeInfoIfEnabledInternal({required bool force}) async {
     final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_prefsKeyTimeInfoEnabled) ?? true;
-    if (!enabled) {
-      AppLogger.I.info('TimeInfo', 'disabled');
-      return false;
-    }
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (!force &&
         _lastTimeInfoRefreshAtMs > 0 &&

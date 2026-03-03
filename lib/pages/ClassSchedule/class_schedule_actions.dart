@@ -158,10 +158,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
             if (mounted) {
               _setState(() {});
             }
-            if (!timeInfoEnabled) {
-              _controller.timeInfoList = null;
-              if (mounted) _setState(() {});
-            } else {
+            if (timeInfoEnabled) {
               final loaded = await _controller.loadTimeInfoFromCacheIfAny();
               if (loaded && mounted) _setState(() {});
               unawaited(
