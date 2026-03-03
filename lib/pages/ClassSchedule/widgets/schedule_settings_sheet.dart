@@ -688,6 +688,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                       if (value && !updateEnabled) {
                         final ok = await _confirmEnableScheduleUpdate(context);
                         if (!ok) return;
+                        if (!mounted) return;
                       }
                       setState(() {
                         updateEnabled = value;
@@ -695,6 +696,26 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                           intervalMinutes = 15;
                         }
                       });
+                      if (value) {
+                        if (!mounted) return;
+                        await showDialog<void>(
+                          context: this.context,
+                          builder: (context) {
+                            return AlertDialog(
+                              title: Text('提示'),
+                              content: Text(
+                                '由于系统限制，后台请求间隔可能不会严格按照检查间隔进行，可能会延迟几分钟甚至更久。',
+                              ),
+                              actions: [
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: Text('知道了'),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      }
                     },
                   ),
                   ListTile(
