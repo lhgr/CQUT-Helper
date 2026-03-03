@@ -119,6 +119,7 @@ class FileLogSink implements LogSink {
   File? _file;
   RandomAccessFile? _raf;
   Future<void>? _opening;
+  final Set<Future<void>> _pendingFinalizers = {};
   int _consecutiveWriteFailures = 0;
   DateTime? _disabledUntil;
   DateTime _lastFsyncAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -172,6 +173,12 @@ class FileLogSink implements LogSink {
     try {
       await raf.flush();
     } catch (_) {}
+    final pending = _pendingFinalizers.toList(growable: false);
+    if (pending.isNotEmpty) {
+      try {
+        await Future.wait(pending);
+      } catch (_) {}
+    }
   }
 
   @override
@@ -185,6 +192,12 @@ class FileLogSink implements LogSink {
       } catch (_) {}
       try {
         await raf.close();
+      } catch (_) {}
+    }
+    final pending = _pendingFinalizers.toList(growable: false);
+    if (pending.isNotEmpty) {
+      try {
+        await Future.wait(pending);
       } catch (_) {}
     }
   }
@@ -239,7 +252,13 @@ class FileLogSink implements LogSink {
       );
       await file.rename(rotated.path);
 
-      unawaited(_finalizeRotated(rotated, base: base));
+      final f = _finalizeRotated(rotated, base: base);
+      _pendingFinalizers.add(f);
+      unawaited(
+        f.whenComplete(() {
+          _pendingFinalizers.remove(f);
+        }),
+      );
 
       await _open();
     } catch (_) {}

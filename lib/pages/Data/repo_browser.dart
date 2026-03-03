@@ -1,12 +1,13 @@
 import 'dart:io';
 
 import 'package:cqut/api/github/github_api.dart';
+import 'package:cqut/manager/repo_download_manager.dart';
 import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/manager/favorites_manager.dart';
 import 'package:cqut/model/github_item.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:cqut/utils/github_proxy.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -22,6 +23,7 @@ class RepoBrowserPage extends StatefulWidget {
 
 class _RepoBrowserPageState extends State<RepoBrowserPage> {
   final GithubApi _githubApi = GithubApi();
+  final RepoDownloadManager _downloadManager = RepoDownloadManager();
   static const MethodChannel _downloadsChannel = MethodChannel(
     'cqut/downloads',
   );
@@ -30,6 +32,9 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
   String _searchText = "";
   final FavoritesManager _favoritesManager = FavoritesManager();
   int _lastFavoritesCacheEpoch = CacheCleanupManager.favoritesCacheEpoch.value;
+  bool _selectionMode = false;
+  final Set<String> _selectedPaths = {};
+  List<GithubItem> _currentItems = const [];
 
   @override
   void initState() {
@@ -59,16 +64,6 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
     setState(() {});
   }
 
-  Future<void> _launchUrl(String urlString) async {
-    if (!await GithubProxy.launchExternalUrlString(urlString)) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('无法打开链接: $urlString')));
-      }
-    }
-  }
-
   Future<void> _launchDirectUrl(String urlString) async {
     final uri = Uri.tryParse(urlString);
     if (uri == null || !await launchUrl(uri)) {
@@ -90,26 +85,43 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
     );
   }
 
+  void _enterSelectionMode() {
+    setState(() {
+      _selectionMode = true;
+      _selectedPaths.clear();
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedPaths.clear();
+    });
+  }
+
+  void _toggleSelected(GithubItem item) {
+    setState(() {
+      if (_selectedPaths.contains(item.path)) {
+        _selectedPaths.remove(item.path);
+      } else {
+        _selectedPaths.add(item.path);
+      }
+    });
+  }
+
+  void _selectAllItems() {
+    setState(() {
+      _selectedPaths
+        ..clear()
+        ..addAll(_currentItems.map((e) => e.path));
+    });
+  }
+
   String _sanitizeFileName(String name) {
     final sanitized = name
         .replaceAll(RegExp(r'[<>:"/\\|?*\u0000-\u001F]'), '_')
         .trim();
     return sanitized.isEmpty ? 'file' : sanitized;
-  }
-
-  String _buildUniqueSavePath(String directoryPath, String fileName) {
-    final safeName = _sanitizeFileName(fileName);
-    final dotIndex = safeName.lastIndexOf('.');
-    final base = dotIndex > 0 ? safeName.substring(0, dotIndex) : safeName;
-    final ext = dotIndex > 0 ? safeName.substring(dotIndex) : '';
-
-    String candidate = '$directoryPath${Platform.pathSeparator}$safeName';
-    int i = 1;
-    while (File(candidate).existsSync()) {
-      candidate = '$directoryPath${Platform.pathSeparator}$base ($i)$ext';
-      i++;
-    }
-    return candidate;
   }
 
   Future<Map<String, dynamic>?> _enqueueAndroidDownload({
@@ -166,28 +178,15 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
       return;
     }
 
-    Directory? downloadDir = await getDownloadsDirectory();
-    if (downloadDir == null) {
-      final baseDir = await getApplicationDocumentsDirectory();
-      downloadDir = Directory(
-        '${baseDir.path}${Platform.pathSeparator}downloads',
-      );
-      if (!await downloadDir.exists()) {
-        await downloadDir.create(recursive: true);
-      }
-    }
-
-    final appDownloadDir = Directory(
-      '${downloadDir.path}${Platform.pathSeparator}CQUT-Helper',
+    final appDownloadDir = await _downloadManager.resolveAppDownloadDir();
+    final savePath = _downloadManager.buildUniqueSavePath(
+      appDownloadDir.path,
+      item.name,
     );
-    if (!await appDownloadDir.exists()) {
-      await appDownloadDir.create(recursive: true);
-    }
-
-    final savePath = _buildUniqueSavePath(appDownloadDir.path, item.name);
 
     StateSetter? dialogSetState;
     double? progress;
+    final cancelToken = CancelToken();
     if (mounted) {
       showDialog(
         context: context,
@@ -214,6 +213,14 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                     Text(percent == null ? '请稍候…' : '$percent%'),
                   ],
                 ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      cancelToken.cancel('user_cancelled');
+                    },
+                    child: Text('取消'),
+                  ),
+                ],
               );
             },
           );
@@ -222,9 +229,10 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
     }
 
     try {
-      await _githubApi.downloadFile(
-        url,
-        savePath,
+      await _downloadManager.downloadUrlToPath(
+        url: Uri.parse(url),
+        savePath: savePath,
+        cancelToken: cancelToken,
         onReceiveProgress: (received, total) {
           if (total <= 0) return;
           final next = received / total;
@@ -243,9 +251,366 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
     } catch (e) {
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
+        final msg = e is DioException && CancelToken.isCancel(e)
+            ? '已取消下载'
+            : '下载失败：$e';
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('下载失败：$e')));
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    }
+  }
+
+  Future<void> _downloadFolderZip(GithubItem item) async {
+    if (item.type != 'dir') return;
+
+    final cancelToken = CancelToken();
+    RepoFolderDownloadProgress? progress;
+    StateSetter? dialogSetState;
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              dialogSetState = setState;
+
+              final p = progress;
+              String phaseText = '准备中…';
+              double? value;
+
+              if (p != null) {
+                switch (p.phase) {
+                  case RepoDownloadPhase.listing:
+                    phaseText = '正在扫描文件…';
+                    value = null;
+                    break;
+                  case RepoDownloadPhase.downloading:
+                    phaseText = '正在下载文件…';
+                    value = p.total <= 0 ? null : (p.current / p.total);
+                    break;
+                  case RepoDownloadPhase.zipping:
+                    phaseText = '正在打包 ZIP…';
+                    value = null;
+                    break;
+                }
+              }
+
+              final detail = p?.currentName;
+              final countText = p == null
+                  ? null
+                  : (p.total <= 0 ? '${p.current}' : '${p.current}/${p.total}');
+
+              return AlertDialog(
+                title: Text('下载文件夹'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(phaseText),
+                    SizedBox(height: 12),
+                    LinearProgressIndicator(value: value?.clamp(0.0, 1.0)),
+                    SizedBox(height: 8),
+                    if (countText != null) Text(countText),
+                    if (detail != null) ...[SizedBox(height: 8), Text(detail)],
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      cancelToken.cancel('user_cancelled');
+                    },
+                    child: Text('取消'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    }
+
+    try {
+      final zipPath = await _downloadManager.downloadFolderAsZip(
+        folderPath: item.path,
+        folderName: item.name,
+        cancelToken: cancelToken,
+        onProgress: (p) {
+          final updater = dialogSetState;
+          if (updater != null) {
+            updater(() {
+              progress = p;
+            });
+          } else {
+            progress = p;
+          }
+          return p;
+        },
+      );
+
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        final messenger = ScaffoldMessenger.of(context);
+        if (Platform.isAndroid) {
+          final fileName = zipPath.split(Platform.pathSeparator).last;
+          final res = await _downloadsChannel.invokeMapMethod<String, dynamic>(
+            'exportToDownloads',
+            {
+              'srcPath': zipPath,
+              'fileName': fileName,
+              'mimeType': 'application/zip',
+            },
+          );
+          if (!mounted) return;
+          final savedPath = res?['path']?.toString();
+          if (savedPath != null && savedPath.isNotEmpty) {
+            try {
+              await File(zipPath).delete();
+            } catch (_) {}
+            messenger.showSnackBar(SnackBar(content: Text('已保存：$savedPath')));
+          } else {
+            messenger.showSnackBar(SnackBar(content: Text('已保存：$zipPath')));
+          }
+        } else {
+          messenger.showSnackBar(SnackBar(content: Text('已保存：$zipPath')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        final msg = e is DioException && CancelToken.isCancel(e)
+            ? '已取消下载'
+            : '下载失败：$e';
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    }
+  }
+
+  Future<void> _downloadSelected() async {
+    final selected = _currentItems
+        .where((e) => _selectedPaths.contains(e.path))
+        .toList();
+    if (selected.isEmpty) return;
+    if (selected.any((e) => e.type == 'dir')) {
+      return _downloadSelectedAsZip(selected);
+    }
+    return _downloadSelectedFiles(selected);
+  }
+
+  Future<void> _downloadSelectedFiles(List<GithubItem> files) async {
+    if (files.isEmpty) return;
+
+    final cancelToken = CancelToken();
+    RepoBatchDownloadProgress? progress;
+    StateSetter? dialogSetState;
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              dialogSetState = setState;
+              final p = progress;
+              final value = p == null || p.total <= 0
+                  ? null
+                  : (p.done / p.total);
+              final title = p == null ? '批量下载' : '批量下载（${p.done}/${p.total}）';
+
+              return AlertDialog(
+                title: Text(title),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LinearProgressIndicator(value: value?.clamp(0.0, 1.0)),
+                    SizedBox(height: 12),
+                    Text(p?.currentName ?? '准备中…'),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      cancelToken.cancel('user_cancelled');
+                    },
+                    child: Text('取消'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    }
+
+    try {
+      final dir = await _downloadManager.downloadFilesBatch(
+        files: files,
+        concurrency: 3,
+        cancelToken: cancelToken,
+        onProgress: (p) {
+          final updater = dialogSetState;
+          if (updater != null) {
+            updater(() {
+              progress = p;
+            });
+          } else {
+            progress = p;
+          }
+        },
+      );
+
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('已保存到：${dir.path}')));
+        _exitSelectionMode();
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        final msg = e is DioException && CancelToken.isCancel(e)
+            ? '已取消下载'
+            : '下载失败：$e';
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    }
+  }
+
+  Future<void> _downloadSelectedAsZip(List<GithubItem> selected) async {
+    if (selected.isEmpty) return;
+
+    final cancelToken = CancelToken();
+    RepoFolderDownloadProgress? progress;
+    StateSetter? dialogSetState;
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              dialogSetState = setState;
+
+              final p = progress;
+              String phaseText = '准备中…';
+              double? value;
+
+              if (p != null) {
+                switch (p.phase) {
+                  case RepoDownloadPhase.listing:
+                    phaseText = '正在扫描文件…';
+                    value = null;
+                    break;
+                  case RepoDownloadPhase.downloading:
+                    phaseText = '正在下载文件…';
+                    value = p.total <= 0 ? null : (p.current / p.total);
+                    break;
+                  case RepoDownloadPhase.zipping:
+                    phaseText = '正在打包 ZIP…';
+                    value = null;
+                    break;
+                }
+              }
+
+              final detail = p?.currentName;
+              final countText = p == null
+                  ? null
+                  : (p.total <= 0 ? '${p.current}' : '${p.current}/${p.total}');
+
+              return AlertDialog(
+                title: Text('批量下载（ZIP）'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(phaseText),
+                    SizedBox(height: 12),
+                    LinearProgressIndicator(value: value?.clamp(0.0, 1.0)),
+                    SizedBox(height: 8),
+                    if (countText != null) Text(countText),
+                    if (detail != null) ...[SizedBox(height: 8), Text(detail)],
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      cancelToken.cancel('user_cancelled');
+                    },
+                    child: Text('取消'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    }
+
+    try {
+      final zipPath = await _downloadManager.downloadItemsAsZip(
+        items: selected,
+        zipName: '${widget.title}_selected',
+        concurrency: 3,
+        cancelToken: cancelToken,
+        onProgress: (p) {
+          final updater = dialogSetState;
+          if (updater != null) {
+            updater(() {
+              progress = p;
+            });
+          } else {
+            progress = p;
+          }
+          return p;
+        },
+      );
+
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        final messenger = ScaffoldMessenger.of(context);
+        if (Platform.isAndroid) {
+          final fileName = zipPath.split(Platform.pathSeparator).last;
+          final res = await _downloadsChannel.invokeMapMethod<String, dynamic>(
+            'exportToDownloads',
+            {
+              'srcPath': zipPath,
+              'fileName': fileName,
+              'mimeType': 'application/zip',
+            },
+          );
+          if (!mounted) return;
+          final savedPath = res?['path']?.toString();
+          if (savedPath != null && savedPath.isNotEmpty) {
+            try {
+              await File(zipPath).delete();
+            } catch (_) {}
+            messenger.showSnackBar(SnackBar(content: Text('已保存：$savedPath')));
+            _exitSelectionMode();
+            return;
+          }
+        }
+        messenger.showSnackBar(SnackBar(content: Text('已保存：$zipPath')));
+        _exitSelectionMode();
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        final msg = e is DioException && CancelToken.isCancel(e)
+            ? '已取消下载'
+            : '下载失败：$e';
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
       }
     }
   }
@@ -308,6 +673,18 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                     await _downloadFile(item);
                   },
                 ),
+              if (item.type == 'dir')
+                ListTile(
+                  title: Text('下载文件夹（ZIP）'),
+                  leading: Icon(
+                    Icons.folder_zip,
+                    color: Theme.of(sheetContext).colorScheme.primary,
+                  ),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    await _downloadFolderZip(item);
+                  },
+                ),
             ],
           ),
         );
@@ -318,7 +695,33 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title), centerTitle: true),
+      appBar: AppBar(
+        title: Text(
+          _selectionMode ? '已选择 ${_selectedPaths.length}' : widget.title,
+        ),
+        centerTitle: true,
+        actions: [
+          if (!_selectionMode)
+            IconButton(
+              icon: Icon(Icons.checklist),
+              onPressed: () => _enterSelectionMode(),
+            ),
+          if (_selectionMode) ...[
+            IconButton(
+              icon: Icon(Icons.select_all),
+              onPressed: _selectAllItems,
+            ),
+            IconButton(
+              icon: Icon(Icons.download),
+              onPressed: _selectedPaths.isEmpty ? null : _downloadSelected,
+            ),
+            IconButton(
+              icon: Icon(Icons.close),
+              onPressed: () => _exitSelectionMode(),
+            ),
+          ],
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -390,6 +793,7 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                 }
 
                 final allItems = snapshot.data!;
+                _currentItems = allItems;
                 final items = _searchText.isEmpty
                     ? allItems
                     : allItems
@@ -416,6 +820,7 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                   itemBuilder: (context, index) {
                     final item = items[index];
                     final isDir = item.type == 'dir';
+                    final isSelected = _selectedPaths.contains(item.path);
 
                     return ListTile(
                       leading: Icon(
@@ -425,8 +830,18 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                             : Theme.of(context).colorScheme.outline,
                       ),
                       title: Text(item.name),
-                      trailing: isDir ? Icon(Icons.chevron_right) : null,
+                      trailing: _selectionMode
+                          ? Checkbox(
+                              value: isSelected,
+                              onChanged: (_) => _toggleSelected(item),
+                            )
+                          : (isDir ? Icon(Icons.chevron_right) : null),
                       onTap: () {
+                        if (_selectionMode) {
+                          _toggleSelected(item);
+                          return;
+                        }
+
                         if (isDir) {
                           _navigateToSubDir(item);
                         } else {
@@ -434,6 +849,10 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                         }
                       },
                       onLongPress: () {
+                        if (_selectionMode) {
+                          _toggleSelected(item);
+                          return;
+                        }
                         _showAddToFavoritesDialog(item);
                       },
                     );

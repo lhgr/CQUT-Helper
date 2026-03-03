@@ -3,6 +3,7 @@ package com.dawndrizzle.wing.cqut
 import android.app.DownloadManager
 import android.app.ActivityManager
 import android.content.ComponentName
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -13,6 +14,7 @@ import android.os.Build
 import android.os.BatteryManager
 import android.os.Environment
 import android.os.PowerManager
+import android.provider.MediaStore
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -66,6 +68,72 @@ class MainActivity : FlutterActivity() {
               result.success(map)
             } catch (e: Exception) {
               result.error("DOWNLOAD_FAILED", e.toString(), null)
+            }
+          }
+
+          "exportToDownloads" -> {
+            val srcPath = call.argument<String>("srcPath")
+            val fileName = call.argument<String>("fileName")
+            val mimeType = call.argument<String>("mimeType") ?: "application/octet-stream"
+
+            if (srcPath.isNullOrBlank() || fileName.isNullOrBlank()) {
+              result.error("INVALID_ARGS", "srcPath/fileName is required", null)
+              return@setMethodCallHandler
+            }
+
+            try {
+              val src = java.io.File(srcPath)
+              if (!src.exists() || !src.isFile) {
+                result.error("NOT_FOUND", "source file not found", null)
+                return@setMethodCallHandler
+              }
+
+              val savedPath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                  put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                  put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                  put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/CQUT-Helper")
+                  put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+
+                val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                val uri = contentResolver.insert(collection, values)
+                  ?: throw IllegalStateException("failed to create downloads item")
+
+                contentResolver.openOutputStream(uri)?.use { out ->
+                  src.inputStream().use { input ->
+                    input.copyTo(out)
+                  }
+                } ?: throw IllegalStateException("failed to open output stream")
+
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                contentResolver.update(uri, values, null, null)
+
+                "/Download/CQUT-Helper/$fileName"
+              } else {
+                val dir = java.io.File(
+                  Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                  "CQUT-Helper",
+                )
+                if (!dir.exists()) {
+                  dir.mkdirs()
+                }
+                val dst = java.io.File(dir, fileName)
+                src.inputStream().use { input ->
+                  dst.outputStream().use { out ->
+                    input.copyTo(out)
+                  }
+                }
+                dst.absolutePath
+              }
+
+              val map: HashMap<String, Any> = hashMapOf(
+                "path" to savedPath,
+              )
+              result.success(map)
+            } catch (e: Exception) {
+              result.error("EXPORT_FAILED", e.toString(), null)
             }
           }
 
