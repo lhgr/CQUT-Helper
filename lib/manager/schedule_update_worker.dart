@@ -23,6 +23,10 @@ const String _kPrefsKeyScheduleUpdateSystemNotifyEnabled =
 const String _kPrefsKeyAppLastActiveAt = 'app_last_active_at';
 const String _kPrefsKeyScheduleUpdateBgFailureStreak =
     'schedule_update_bg_failure_streak_v1';
+const int _kScheduleUpdateBgFullScanIntervalMs = 12 * 60 * 60 * 1000;
+
+String _bgFullScanAtKey(String userId, String yearTerm) =>
+    'schedule_update_bg_full_scan_at_${userId}_$yearTerm';
 
 class ScheduleUpdateWorker {
   static const String _prefsKeyPendingPrefix = 'schedule_pending_changes_';
@@ -161,10 +165,29 @@ void callbackDispatcher() {
       weekList: cached.weekList,
       currentWeek: cached.weekNum,
     );
-    final weeksAhead = (prefs.getInt('schedule_update_weeks_ahead') ?? 1).clamp(
-      0,
-      maxWeeksAhead,
-    );
+    final configuredWeeksAhead =
+        (prefs.getInt('schedule_update_weeks_ahead') ?? 1).clamp(
+          0,
+          maxWeeksAhead,
+        );
+    final systemNotify =
+        prefs.getBool(_kPrefsKeyScheduleUpdateSystemNotifyEnabled) ?? false;
+
+    int weeksAhead = configuredWeeksAhead;
+    if ((systemNotify || unmetered == true) &&
+        maxWeeksAhead > configuredWeeksAhead) {
+      final term = cached.yearTerm ?? '';
+      if (term.isNotEmpty) {
+        final key = _bgFullScanAtKey(userId, term);
+        final last = prefs.getInt(key) ?? 0;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (last <= 0 || now - last >= _kScheduleUpdateBgFullScanIntervalMs) {
+          weeksAhead = maxWeeksAhead;
+          await prefs.setInt(key, now);
+          reasons.add('fullScan');
+        }
+      }
+    }
 
     final expectedWeeks = 1 + weeksAhead;
     final failuresBefore = await ScheduleUpdateLog.failureCounter();
@@ -190,7 +213,8 @@ void callbackDispatcher() {
     final failureDelta = failuresAfter - failuresBefore;
     final hadFailures = runError != null || failureDelta > 0;
     if (hadFailures) {
-      final streak = (prefs.getInt(_kPrefsKeyScheduleUpdateBgFailureStreak) ?? 0) + 1;
+      final streak =
+          (prefs.getInt(_kPrefsKeyScheduleUpdateBgFailureStreak) ?? 0) + 1;
       await prefs.setInt(_kPrefsKeyScheduleUpdateBgFailureStreak, streak);
       int retryMinutes = 15;
       for (int i = 1; i < streak && retryMinutes < nextMinutes; i++) {
@@ -215,8 +239,6 @@ void callbackDispatcher() {
       );
     }
 
-    final systemNotify =
-        prefs.getBool(_kPrefsKeyScheduleUpdateSystemNotifyEnabled) ?? false;
     if (systemNotify && changes.isNotEmpty) {
       final first = changes.first;
       final week = first.weekNum;

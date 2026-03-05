@@ -160,6 +160,27 @@ String? _diffEvent(EventItem before, EventItem after) {
     }
   }
 
+  final beforeCover = (before.weekCover ?? '').trim();
+  final afterCover = (after.weekCover ?? '').trim();
+  if (beforeCover != afterCover && (beforeCover.isNotEmpty || afterCover.isNotEmpty)) {
+    changes.add('周次 ${beforeCover.isEmpty ? '-' : beforeCover} → ${afterCover.isEmpty ? '-' : afterCover}');
+  } else {
+    final beforeWeekList = (before.weekList ?? const <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .join(',');
+    final afterWeekList = (after.weekList ?? const <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .join(',');
+    if (beforeWeekList != afterWeekList &&
+        (beforeWeekList.isNotEmpty || afterWeekList.isNotEmpty)) {
+      changes.add(
+        '周次 ${beforeWeekList.isEmpty ? '-' : beforeWeekList} → ${afterWeekList.isEmpty ? '-' : afterWeekList}',
+      );
+    }
+  }
+
   final beforeAddr = (before.address ?? '').trim();
   final afterAddr = (after.address ?? '').trim();
   if (beforeAddr != afterAddr) {

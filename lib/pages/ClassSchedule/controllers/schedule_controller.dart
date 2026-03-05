@@ -523,6 +523,7 @@ class ScheduleController {
     ScheduleData currentData,
     Function() onUpdate, {
     Duration interval = const Duration(milliseconds: 150),
+    bool forceRefresh = false,
   }) {
     Future(() async {
       final wList = currentData.weekList;
@@ -533,7 +534,7 @@ class ScheduleController {
       for (final week in wList) {
         if (_disposed) return;
         if (week == currentWeekStr) continue;
-        await ensureWeekLoaded(week, cTerm);
+        await ensureWeekLoaded(week, cTerm, forceRefresh: forceRefresh);
         if (_disposed) return;
         onUpdate();
         if (interval > Duration.zero) {
@@ -564,6 +565,20 @@ class ScheduleController {
     try {
       final data = await loadFromNetwork(weekNum: weekNum, yearTerm: yearTerm);
       processLoadedData(data);
+      final uid = _userId;
+      final term = (data.yearTerm ?? yearTerm).trim();
+      final week = (data.weekNum ?? weekNum).trim();
+      if (uid != null && uid.isNotEmpty && term.isNotEmpty && week.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        final fpKey = _fingerprintKey(uid, term, week);
+        final fpUpdatedAtKey = _fingerprintUpdatedAtKey(uid, term, week);
+        final fetchAtKey = _lastFetchAtKey(uid, term, week);
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final fp = scheduleFingerprintFromScheduleData(data);
+        await prefs.setString(fpKey, fp);
+        await prefs.setInt(fpUpdatedAtKey, now);
+        await prefs.setInt(fetchAtKey, now);
+      }
     } catch (e) {
       // 预取或刷新失败忽略
     }

@@ -19,12 +19,34 @@ extension _ClassScheduleUpdates on _ClassscheduleViewState {
   }
 
   Future<bool> _consumePendingChangesIfAny({bool autoOpen = false}) async {
-    final changes = await _updateManager.checkPendingChanges();
+    final pending = await _updateManager.checkPendingChanges();
+    final changes = pending.changes;
     if (changes.isEmpty || !mounted) return false;
 
     final first = changes.first;
 
+    Future<void> refreshWeeks() async {
+      final payloadTerm = pending.yearTerm;
+      final currentTerm = _currentScheduleData?.yearTerm ?? _currentTerm;
+      final termToUse = payloadTerm == null ||
+              payloadTerm.isEmpty ||
+              currentTerm == null ||
+              currentTerm == payloadTerm
+          ? (payloadTerm ?? currentTerm)
+          : currentTerm;
+      if (termToUse == null || termToUse.trim().isEmpty) return;
+
+      final uniqWeeks = changes.map((c) => c.weekNum).toSet().toList();
+      for (final w in uniqWeeks) {
+        if (!mounted) return;
+        await _controller.ensureWeekLoaded(w, termToUse, forceRefresh: true);
+      }
+      if (!mounted) return;
+      _setState(() {});
+    }
+
     if (autoOpen) {
+      await refreshWeeks();
       if (_settingsManager.updateShowDiff) {
         _showScheduleChangesSheet(changes);
       } else {
@@ -33,6 +55,7 @@ extension _ClassScheduleUpdates on _ClassscheduleViewState {
       return true;
     }
 
+    unawaited(refreshWeeks());
     _showUpdateNotification(changes);
     return true;
   }

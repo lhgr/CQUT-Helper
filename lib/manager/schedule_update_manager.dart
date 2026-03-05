@@ -179,21 +179,34 @@ class ScheduleUpdateManager {
     });
   }
 
-  Future<List<ScheduleWeekChange>> checkPendingChanges() async {
+  Future<({String? yearTerm, List<ScheduleWeekChange> changes})>
+  checkPendingChanges() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('account');
-    if (userId == null || userId.trim().isEmpty) return [];
+    if (userId == null || userId.trim().isEmpty) {
+      return (yearTerm: null, changes: const <ScheduleWeekChange>[]);
+    }
 
     final key = ScheduleUpdateWorker.pendingKeyForUser(userId);
     final raw = prefs.getString(key);
-    if (raw == null || raw.trim().isEmpty) return [];
+    if (raw == null || raw.trim().isEmpty) {
+      return (yearTerm: null, changes: const <ScheduleWeekChange>[]);
+    }
     await prefs.remove(key);
 
     try {
       final decoded = json.decode(raw);
-      if (decoded is! Map<String, dynamic>) return [];
+      if (decoded is! Map<String, dynamic>) {
+        return (yearTerm: null, changes: const <ScheduleWeekChange>[]);
+      }
+      final yearTerm = (decoded['yearTerm'] ?? '').toString().trim();
       final items = decoded['changes'];
-      if (items is! List) return [];
+      if (items is! List) {
+        return (
+          yearTerm: yearTerm.isEmpty ? null : yearTerm,
+          changes: const <ScheduleWeekChange>[],
+        );
+      }
 
       final changes = <ScheduleWeekChange>[];
       for (final it in items) {
@@ -206,9 +219,9 @@ class ScheduleUpdateManager {
         if (weekNum.isEmpty) continue;
         changes.add(ScheduleWeekChange(weekNum: weekNum, lines: lines));
       }
-      return changes;
+      return (yearTerm: yearTerm.isEmpty ? null : yearTerm, changes: changes);
     } catch (_) {
-      return [];
+      return (yearTerm: null, changes: const <ScheduleWeekChange>[]);
     }
   }
 }

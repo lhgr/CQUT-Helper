@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:cqut/model/class_schedule_model.dart';
 
 String scheduleFingerprintFromWeekJsonMap(Map<String, dynamic> jsonMap) {
   final eventsRaw = jsonMap['eventList'];
@@ -34,6 +35,65 @@ String scheduleFingerprintFromWeekJsonMap(Map<String, dynamic> jsonMap) {
     final dupType = norm(m['duplicateGroupType']);
     final dupGroup = normInt(m['duplicateGroup']);
     final eventType = norm(m['eventType']);
+
+    final key = eventId.isNotEmpty
+        ? 'id=$eventId'
+        : 'k=$eventName|$teacher|$address|$weekDay|$sessionStart|$sessionLast|$sessionList|$weekList|$weekCover|$dupType|$dupGroup|$eventType';
+
+    sigs.add(
+      [
+        key,
+        'n=$eventName',
+        't=$teacher',
+        'a=$address',
+        'd=$weekDay',
+        'w=$weekNum',
+        's=$sessionStart',
+        'l=$sessionLast',
+        'sl=$sessionList',
+        'wl=$weekList',
+        'wc=$weekCover',
+        'dt=$dupType',
+        'dg=$dupGroup',
+        'et=$eventType',
+      ].join(';'),
+    );
+  }
+
+  sigs.sort();
+  final canonical = json.encode(sigs);
+  return sha256.convert(utf8.encode(canonical)).toString();
+}
+
+String scheduleFingerprintFromScheduleData(ScheduleData data) {
+  final events = data.eventList;
+  if (events == null || events.isEmpty) {
+    return sha256.convert(utf8.encode('no_events')).toString();
+  }
+
+  String norm(String? v) => (v ?? '').toString().trim();
+  String normInt(Object? v) => v == null ? '' : v.toString().trim();
+  String normList(List<String>? v) {
+    if (v == null || v.isEmpty) return '';
+    return v.map((e) => (e).toString().trim()).join(',');
+  }
+
+  final sigs = <String>[];
+  for (final e in events) {
+    final eventId = norm(e.eventID);
+    final eventName = norm(e.eventName);
+    final teacher = norm(e.memberName);
+    final address = norm(e.address);
+    final weekDay = norm(e.weekDay);
+    final weekNum = norm(e.weekNum);
+    final weekCover = norm(e.weekCover);
+    final weekList = normList(e.weekList);
+    final sessionList = normList(e.sessionList);
+    final sessionStart = normInt(e.sessionStart);
+    final sessionLast = normInt(e.sessionLast);
+    final dupType = norm(e.duplicateGroupType);
+    final dupGroup = normInt(e.duplicateGroup);
+    final eventType = norm(e.eventType);
 
     final key = eventId.isNotEmpty
         ? 'id=$eventId'
