@@ -67,9 +67,7 @@ object TodayWidgetData {
   fun loadCoursesByDayOffset(context: Context, dayOffset: Int): List<CourseItem> {
     val data = loadScheduleJsonObject(context) ?: return emptyList()
     if (!scheduleContainsSystemDate(data)) return emptyList()
-    val today = loadTodayWeekDayAndDateFromSchedule(data)
-    val baseWeekDay =
-      today?.weekDay?.toIntOrNull() ?: toMondayBasedWeekday(Calendar.getInstance())
+    val baseWeekDay = toMondayBasedWeekday(Calendar.getInstance())
 
     val rawTarget = baseWeekDay + dayOffset
     var targetWeekDay = rawTarget
@@ -89,13 +87,17 @@ object TodayWidgetData {
   }
 
   private fun scheduleContainsSystemDate(data: JSONObject): Boolean {
-    val weekDayList = data.optJSONArray("weekDayList") ?: return false
-    val systemDateText =
-      SimpleDateFormat("M.d", Locale.CHINA).format(Calendar.getInstance().time)
+    val weekDayList = data.optJSONArray("weekDayList")
+    if (weekDayList == null || weekDayList.length() == 0) {
+      val events = data.optJSONArray("eventList")
+      return events != null && events.length() > 0
+    }
     for (i in 0 until weekDayList.length()) {
       val d = weekDayList.optJSONObject(i) ?: continue
       val weekDate = d.optString("weekDate", "")
-      if (weekDate.isNotBlank() && weekDate == systemDateText) return true
+      if (d.optBoolean("today", false)) return true
+      if (weekDate.isBlank()) return true
+      if (isSameAsSystemDate(weekDate)) return true
     }
     return false
   }
@@ -172,8 +174,7 @@ object TodayWidgetData {
 
   fun loadTodayCourses(context: Context): List<CourseItem> {
     val data = loadScheduleJsonObject(context) ?: return emptyList()
-    val today = loadTodayWeekDayAndDateFromSchedule(data) ?: loadTodayWeekDayAndDate(context)
-    val todayWeekDay = today?.weekDay ?: toMondayBasedWeekday(Calendar.getInstance()).toString()
+    val todayWeekDay = toMondayBasedWeekday(Calendar.getInstance()).toString()
 
     return loadCoursesByWeekdayFromSchedule(data, todayWeekDay)
   }
@@ -191,20 +192,19 @@ object TodayWidgetData {
 
   private fun loadTodayWeekDayAndDateFromSchedule(data: JSONObject): TodayInfo? {
     val weekDayList = data.optJSONArray("weekDayList") ?: return null
-    val systemDateText =
-      SimpleDateFormat("M.d", Locale.CHINA).format(Calendar.getInstance().time)
     for (i in 0 until weekDayList.length()) {
       val d = weekDayList.optJSONObject(i) ?: continue
       if (!d.optBoolean("today", false)) continue
 
       val weekDay = d.optString("weekDay", "")
       val weekDate = d.optString("weekDate", "")
-      if (weekDate.isNotBlank() && weekDate != systemDateText) continue
+      if (weekDate.isNotBlank() && !isSameAsSystemDate(weekDate)) continue
+      val computedWeekDay = mondayBasedWeekdayFromWeekDateText(weekDate)
       val weekText =
-        if (weekDay.isNotBlank()) {
-          "周${toChineseWeekday(weekDay.toIntOrNull() ?: 1)}"
-        } else {
-          ""
+        when {
+          computedWeekDay != null -> "周${toChineseWeekday(computedWeekDay)}"
+          weekDay.isNotBlank() -> "周${toChineseWeekday(weekDay.toIntOrNull() ?: 1)}"
+          else -> ""
         }
 
       val dateText =
@@ -215,7 +215,13 @@ object TodayWidgetData {
         }
 
       if (weekDay.isBlank() && dateText.isBlank()) return null
-      return TodayInfo(weekDay = weekDay, dateText = dateText, weekText = weekText)
+      val normalizedWeekDay =
+        when {
+          computedWeekDay != null -> computedWeekDay.toString()
+          weekDay.isNotBlank() -> weekDay
+          else -> ""
+        }
+      return TodayInfo(weekDay = normalizedWeekDay, dateText = dateText, weekText = weekText)
     }
     return null
   }
@@ -235,6 +241,72 @@ object TodayWidgetData {
     } catch (_: Exception) {
       null
     }
+  }
+
+  private fun isSameAsSystemDate(weekDateText: String): Boolean {
+    val md = extractMonthDay(weekDateText) ?: return false
+    val cal = Calendar.getInstance()
+    val sysMonth = cal.get(Calendar.MONTH) + 1
+    val sysDay = cal.get(Calendar.DAY_OF_MONTH)
+    return md.first == sysMonth && md.second == sysDay
+  }
+
+  private fun mondayBasedWeekdayFromWeekDateText(weekDateText: String): Int? {
+    val md = extractMonthDay(weekDateText) ?: return null
+    val calNow = Calendar.getInstance()
+    val nowYear = calNow.get(Calendar.YEAR)
+    val nowMonth = calNow.get(Calendar.MONTH) + 1
+    val nowDay = calNow.get(Calendar.DAY_OF_MONTH)
+
+    val base = Calendar.getInstance().apply {
+      set(Calendar.YEAR, nowYear)
+      set(Calendar.MONTH, md.first - 1)
+      set(Calendar.DAY_OF_MONTH, md.second)
+      set(Calendar.HOUR_OF_DAY, 0)
+      set(Calendar.MINUTE, 0)
+      set(Calendar.SECOND, 0)
+      set(Calendar.MILLISECOND, 0)
+    }
+
+    val nowDate = Calendar.getInstance().apply {
+      set(Calendar.YEAR, nowYear)
+      set(Calendar.MONTH, nowMonth - 1)
+      set(Calendar.DAY_OF_MONTH, nowDay)
+      set(Calendar.HOUR_OF_DAY, 0)
+      set(Calendar.MINUTE, 0)
+      set(Calendar.SECOND, 0)
+      set(Calendar.MILLISECOND, 0)
+    }
+
+    val diffDays = ((base.timeInMillis - nowDate.timeInMillis) / (24L * 60 * 60 * 1000)).toInt()
+    if (kotlin.math.abs(diffDays) > 183) {
+      val adjustedYear = if (diffDays > 0) nowYear - 1 else nowYear + 1
+      base.set(Calendar.YEAR, adjustedYear)
+    }
+
+    return toMondayBasedWeekday(base)
+  }
+
+  private fun extractMonthDay(raw: String): Pair<Int, Int>? {
+    val s = raw.trim()
+    if (s.isEmpty()) return null
+
+    val nums = Regex("""\d{1,4}""").findAll(s).map { it.value }.toList()
+    if (nums.size < 2) return null
+
+    val month: Int
+    val day: Int
+    if (nums[0].length == 4 && nums.size >= 3) {
+      month = nums[1].toIntOrNull() ?: return null
+      day = nums[2].toIntOrNull() ?: return null
+    } else {
+      month = nums[0].toIntOrNull() ?: return null
+      day = nums[1].toIntOrNull() ?: return null
+    }
+
+    if (month !in 1..12) return null
+    if (day !in 1..31) return null
+    return month to day
   }
 
   private fun toMondayBasedWeekday(calendar: Calendar): Int {

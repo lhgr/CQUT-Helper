@@ -502,13 +502,32 @@ class ScheduleController {
           if (decoded is Map<String, dynamic>) beforeJson = decoded;
         }
 
+        ScheduleData? beforeData;
         if (beforeJson != null) {
-          final beforeData = ScheduleData.fromJson(beforeJson);
+          beforeData = ScheduleData.fromJson(beforeJson);
+        } else {
+          final wInt = int.tryParse(week) ?? 0;
+          beforeData = weekCache[wInt];
+        }
+
+        if (beforeData != null) {
           lines = diffScheduleWeekLines(
             before: beforeData,
             after: afterData,
             maxLines: maxDiffLinesPerWeek,
           );
+        }
+
+        if (lines.isEmpty && beforeJson != null) {
+          final stats = diffWeekEventFingerprints(
+            beforeJson: beforeJson,
+            afterJson: afterJson,
+          );
+          if (stats.added > 0 || stats.removed > 0 || stats.changed > 0) {
+            lines = [
+              '变更概览：新增${stats.added} 删除${stats.removed} 修改${stats.changed}',
+            ];
+          }
         }
       } catch (_) {}
 
