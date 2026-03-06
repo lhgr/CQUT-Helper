@@ -2,6 +2,10 @@ part of 'ClassSchedule.dart';
 
 extension _ClassScheduleLoading on _ClassscheduleViewState {
   Future<void> _loadInitialData() async {
+    await _settingsManager.load();
+    if (!mounted) return;
+    _setState(() {});
+
     unawaited(
       _controller.loadTimeInfoFromCacheIfAny().then((loaded) {
         if (loaded) _setState(() {});
@@ -18,7 +22,68 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       _processLoadedData(cachedData, isInitial: true);
     }
 
-    await _loadFromNetwork();
+    final networkData = await _loadFromNetwork();
+    if (cachedData != null && networkData != null && mounted) {
+      final sameWeek = (cachedData.weekNum ?? '').trim().isNotEmpty &&
+          (networkData.weekNum ?? '').trim().isNotEmpty &&
+          cachedData.weekNum!.trim() == networkData.weekNum!.trim();
+      final sameTerm = (cachedData.yearTerm ?? '').trim().isNotEmpty &&
+          (networkData.yearTerm ?? '').trim().isNotEmpty &&
+          cachedData.yearTerm!.trim() == networkData.yearTerm!.trim();
+      if (sameWeek && sameTerm) {
+        final beforeFp = scheduleFingerprintFromScheduleData(cachedData);
+        final afterFp = scheduleFingerprintFromScheduleData(networkData);
+        if (beforeFp != afterFp) {
+          var lines = diffScheduleWeekLines(before: cachedData, after: networkData);
+          if (lines.isEmpty) {
+            lines = const <String>['课表内容有更新'];
+          }
+          _showUpdateNotification([
+            ScheduleWeekChange(
+              weekNum: networkData.weekNum!.trim(),
+              lines: lines,
+            ),
+          ]);
+        }
+      }
+    }
+
+    if (_currentScheduleData != null && mounted) {
+      final current = _currentScheduleData!;
+      final wList = current.weekList;
+      final currentWeekStr = current.weekNum;
+      final term = current.yearTerm;
+      if (wList != null && currentWeekStr != null && term != null) {
+        final maxWeeksAhead = maxWeeksAheadForSchedule(
+          weekList: wList,
+          currentWeek: currentWeekStr,
+        );
+        final weeksAhead = _settingsManager.updateWeeksAhead.clamp(
+          0,
+          maxWeeksAhead,
+        );
+        final currentIndex = wList.indexOf(currentWeekStr);
+        if (currentIndex != -1) {
+          unawaited(
+            Future(() async {
+              for (int offset = 1; offset <= weeksAhead; offset++) {
+                if (!mounted) return;
+                final idx = currentIndex + offset;
+                if (idx < 0 || idx >= wList.length) continue;
+                await _controller.ensureWeekLoaded(
+                  wList[idx],
+                  term,
+                  forceRefresh: true,
+                );
+              }
+              if (!mounted) return;
+              _setState(() {});
+            }),
+          );
+        }
+      }
+    }
+
     await _consumePendingChangesIfAny();
 
     if (_currentScheduleData != null) {
@@ -68,7 +133,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     _configureUpdateTimer();
   }
 
-  Future<void> _loadFromNetwork({String? weekNum, String? yearTerm}) async {
+  Future<ScheduleData?> _loadFromNetwork({String? weekNum, String? yearTerm}) async {
     if (_controller.weekCache.containsKey(int.tryParse(weekNum ?? "") ?? -1)) {}
 
     _setState(() {
@@ -97,10 +162,12 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
           }),
         );
       }
+      return data;
     } catch (e) {
       _setState(() {
         _error = e.toString();
       });
+      return null;
     } finally {
       _setState(() {
         _loading = false;

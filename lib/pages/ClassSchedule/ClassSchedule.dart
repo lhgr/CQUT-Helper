@@ -11,6 +11,8 @@ import 'package:cqut/pages/ClassSchedule/widgets/schedule_page_view.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/week_picker_sheet.dart';
+import 'package:cqut/utils/schedule_diff_utils.dart';
+import 'package:cqut/utils/schedule_fingerprint_utils.dart';
 import 'package:cqut/utils/schedule_update_range_utils.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
