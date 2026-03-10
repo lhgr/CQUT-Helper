@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:chewie/chewie.dart';
+import 'package:cqut/manager/preview_cache_manager.dart';
 import 'package:cqut/manager/resumable_downloader.dart';
 import 'package:cqut/model/github_item.dart';
 import 'package:cqut/utils/github_proxy.dart';
@@ -10,7 +12,6 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -42,6 +43,7 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     super.initState();
     _ext = _fileExt(widget.item.name);
     _kind = _decideKind(_ext);
+    unawaited(PreviewCacheManager.cleanupIfNeeded());
 
     if (_kind == _PreviewKind.markdown) {
       _textFuture = _loadText();
@@ -144,11 +146,7 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
   }
 
   Future<File> _ensureLocalFile(Uri raw) async {
-    final tempDir = await getTemporaryDirectory();
-    final dir = Directory('${tempDir.path}/cqut_preview');
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
+    final dir = await PreviewCacheManager.resolveDir();
 
     final key = sha1.convert(utf8.encode(raw.toString())).toString();
     final ext = _ext.isEmpty ? '' : '.$_ext';
@@ -156,7 +154,12 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     final file = File(path);
     if (await file.exists()) {
       final len = await file.length();
-      if (len > 0) return file;
+      if (len > 0) {
+        try {
+          await file.setLastModified(DateTime.now());
+        } catch (_) {}
+        return file;
+      }
     }
 
     final downloader = ResumableDownloader();
@@ -182,6 +185,9 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
         });
       },
     );
+    try {
+      await file.setLastModified(DateTime.now());
+    } catch (_) {}
     if (mounted) {
       setState(() {
         _downloadProgress = 1.0;
