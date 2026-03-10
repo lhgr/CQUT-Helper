@@ -25,6 +25,10 @@ object TodayWidgetData {
 
   private const val PREFS_NAME = "FlutterSharedPreferences"
   private const val FLUTTER_PREFIX = "flutter."
+  private const val KEY_WIDGET_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_widget_week_"
+  private const val KEY_WIDGET_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_widget_term_"
+  private const val KEY_LAST_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_last_week_"
+  private const val KEY_LAST_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_last_term_"
 
   fun loadHeader(context: Context): Header {
     val calendar = Calendar.getInstance()
@@ -113,12 +117,18 @@ object TodayWidgetData {
   private fun loadOffsetWeekScheduleJsonObject(context: Context, offsetWeeks: Int): JSONObject? {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val userId = prefs.getString("${FLUTTER_PREFIX}account", null)?.takeIf { it.isNotBlank() } ?: return null
-    val lastTerm = prefs.getString("${FLUTTER_PREFIX}schedule_last_term_$userId", null)?.takeIf { it.isNotBlank() } ?: return null
-    val lastWeekStr = prefs.getString("${FLUTTER_PREFIX}schedule_last_week_$userId", null)?.takeIf { it.isNotBlank() } ?: return null
-    val lastWeek = lastWeekStr.toIntOrNull() ?: return null
+    val baseTerm =
+      prefs.getString("$KEY_WIDGET_TERM_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_TERM_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: return null
+    val baseWeekStr =
+      prefs.getString("$KEY_WIDGET_WEEK_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_WEEK_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: return null
+    val baseWeek = baseWeekStr.toIntOrNull() ?: return null
 
-    val targetWeek = (lastWeek + offsetWeeks).toString()
-    val scheduleKey = "${FLUTTER_PREFIX}schedule_${userId}_${lastTerm}_$targetWeek"
+    val targetWeek = (baseWeek + offsetWeeks).toString()
+    val scheduleKey = "${FLUTTER_PREFIX}schedule_${userId}_${baseTerm}_$targetWeek"
     val jsonStr = prefs.getString(scheduleKey, null) ?: return null
     return try {
       JSONObject(jsonStr)
@@ -230,10 +240,16 @@ object TodayWidgetData {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val userId = prefs.getString("${FLUTTER_PREFIX}account", null)?.takeIf { it.isNotBlank() } ?: return null
 
-    val lastTerm = prefs.getString("${FLUTTER_PREFIX}schedule_last_term_$userId", null)?.takeIf { it.isNotBlank() } ?: return null
-    val lastWeek = prefs.getString("${FLUTTER_PREFIX}schedule_last_week_$userId", null)?.takeIf { it.isNotBlank() } ?: return null
+    val term =
+      prefs.getString("$KEY_WIDGET_TERM_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_TERM_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: return null
+    val week =
+      prefs.getString("$KEY_WIDGET_WEEK_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_WEEK_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: return null
 
-    val scheduleKey = "${FLUTTER_PREFIX}schedule_${userId}_${lastTerm}_$lastWeek"
+    val scheduleKey = "${FLUTTER_PREFIX}schedule_${userId}_${term}_$week"
     val jsonStr = prefs.getString(scheduleKey, null) ?: return null
 
     return try {

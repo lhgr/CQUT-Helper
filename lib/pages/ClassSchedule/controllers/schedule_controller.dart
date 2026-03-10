@@ -244,6 +244,8 @@ class ScheduleController {
   Future<ScheduleData> loadFromNetwork({
     String? weekNum,
     String? yearTerm,
+    bool persistLastViewed = true,
+    bool updateWidgetPins = false,
   }) async {
     await _loadCredentials();
 
@@ -254,11 +256,17 @@ class ScheduleController {
       throw Exception("凭证已过期，请重新登录");
     }
 
+    final shouldPinWidget =
+        updateWidgetPins ||
+        ((weekNum == null || weekNum.trim().isEmpty) &&
+            (yearTerm == null || yearTerm.trim().isEmpty));
     final data = await _service.loadFromNetwork(
       userId: _userId!,
       encryptedPassword: _encryptedPassword!,
       weekNum: weekNum,
       yearTerm: yearTerm,
+      persistLastViewed: persistLastViewed,
+      updateWidgetPins: shouldPinWidget,
     );
 
     if (weekNum == null && yearTerm == null) {
@@ -567,6 +575,7 @@ class ScheduleController {
     String weekNum,
     String yearTerm, {
     bool forceRefresh = false,
+    bool updateLastViewed = false,
   }) async {
     final wInt = int.tryParse(weekNum) ?? 0;
 
@@ -582,7 +591,12 @@ class ScheduleController {
     }
 
     try {
-      final data = await loadFromNetwork(weekNum: weekNum, yearTerm: yearTerm);
+      final data = await loadFromNetwork(
+        weekNum: weekNum,
+        yearTerm: yearTerm,
+        persistLastViewed: updateLastViewed,
+        updateWidgetPins: false,
+      );
       processLoadedData(data);
       final uid = _userId;
       final term = (data.yearTerm ?? yearTerm).trim();

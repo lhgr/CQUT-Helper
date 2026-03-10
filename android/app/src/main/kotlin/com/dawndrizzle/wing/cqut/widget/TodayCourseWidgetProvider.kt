@@ -64,7 +64,8 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
-      when (WidgetTheme.mode(context)) {
+      val themeMode = WidgetTheme.mode(context)
+      when (themeMode) {
         WidgetTheme.Mode.DARK -> {
           views.setImageViewResource(R.id.iv_appwidget, R.drawable.appwidget_bg_dark)
           views.setInt(R.id.tv_schedule_name, "setTextColor", WidgetTheme.primaryTextColor(true))

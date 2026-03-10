@@ -133,7 +133,11 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     _configureUpdateTimer();
   }
 
-  Future<ScheduleData?> _loadFromNetwork({String? weekNum, String? yearTerm}) async {
+  Future<ScheduleData?> _loadFromNetwork({
+    String? weekNum,
+    String? yearTerm,
+    bool updateWidgetPins = false,
+  }) async {
     if (_controller.weekCache.containsKey(int.tryParse(weekNum ?? "") ?? -1)) {}
 
     _setState(() {
@@ -145,6 +149,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       final data = await _controller.loadFromNetwork(
         weekNum: weekNum,
         yearTerm: yearTerm,
+        updateWidgetPins: updateWidgetPins,
       );
 
       _processLoadedData(data);
@@ -182,7 +187,11 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
   }
 
   Future<void> _ensureWeekLoaded(String weekNum, String yearTerm) async {
-    await _controller.ensureWeekLoaded(weekNum, yearTerm);
+    await _controller.ensureWeekLoaded(
+      weekNum,
+      yearTerm,
+      updateLastViewed: true,
+    );
     final wInt = int.tryParse(weekNum) ?? 0;
     if (!mounted) return;
     if (_weekCache.containsKey(wInt)) {

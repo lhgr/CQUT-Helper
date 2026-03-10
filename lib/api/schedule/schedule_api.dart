@@ -11,6 +11,8 @@ class ScheduleApi {
 
   String _lastViewedWeekKey(String userId) => 'schedule_last_week_$userId';
   String _lastViewedTermKey(String userId) => 'schedule_last_term_$userId';
+  String _widgetWeekKey(String userId) => 'schedule_widget_week_$userId';
+  String _widgetTermKey(String userId) => 'schedule_widget_term_$userId';
   String _scheduleKey(String userId, String yearTerm, String weekNum) =>
       'schedule_${userId}_${_norm(yearTerm)}_${_norm(weekNum)}';
 
@@ -50,6 +52,8 @@ class ScheduleApi {
     required String encryptedPassword,
     String? weekNum,
     String? yearTerm,
+    bool persistLastViewed = true,
+    bool updateWidgetPins = false,
   }) async {
     final reqWeek = _norm(weekNum);
     final reqTerm = _norm(yearTerm);
@@ -81,9 +85,15 @@ class ScheduleApi {
       final key = _scheduleKey(userId, saveTerm, saveWeek);
       await prefs.setString(key, json.encode(jsonMap));
 
-      await prefs.setString(_lastViewedWeekKey(userId), saveWeek);
-      await prefs.setString(_lastViewedTermKey(userId), saveTerm);
-      await WidgetUpdater.updateTodayWidget();
+      if (persistLastViewed) {
+        await prefs.setString(_lastViewedWeekKey(userId), saveWeek);
+        await prefs.setString(_lastViewedTermKey(userId), saveTerm);
+      }
+      if (updateWidgetPins) {
+        await prefs.setString(_widgetWeekKey(userId), saveWeek);
+        await prefs.setString(_widgetTermKey(userId), saveTerm);
+        await WidgetUpdater.updateTodayWidget();
+      }
     }
 
     return data;
