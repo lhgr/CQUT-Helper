@@ -141,7 +141,7 @@ class _DataViewState extends State<DataView> {
                     ),
                   ),
                   SizedBox(height: 16),
-                  Text("作者:"),
+                  Text("所有者:"),
                   SizedBox(height: 8),
                   Row(
                     mainAxisSize: MainAxisSize.min,
