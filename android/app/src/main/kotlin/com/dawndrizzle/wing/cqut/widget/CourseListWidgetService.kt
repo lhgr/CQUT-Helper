@@ -47,16 +47,18 @@ private class CourseListRemoteViewsFactory(
       WidgetTheme.Mode.DARK -> {
         views.setInt(R.id.ll_content, "setBackgroundResource", R.drawable.widget_item_bg_dark)
         views.setTextColor(R.id.tv_course_name, WidgetTheme.primaryTextColor(true))
-        views.setTextColor(R.id.tv_location, WidgetTheme.secondaryTextColor(true))
+        views.setTextColor(R.id.tv_campus, WidgetTheme.secondaryTextColor(true))
+        views.setTextColor(R.id.tv_classroom, WidgetTheme.secondaryTextColor(true))
         views.setTextColor(R.id.tv_teacher, WidgetTheme.secondaryTextColor(true))
-        views.setTextColor(R.id.tv_time, WidgetTheme.secondaryTextColor(true))
+        views.setTextColor(R.id.tv_periods, WidgetTheme.secondaryTextColor(true))
       }
       WidgetTheme.Mode.LIGHT -> {
         views.setInt(R.id.ll_content, "setBackgroundResource", R.drawable.widget_item_bg)
         views.setTextColor(R.id.tv_course_name, WidgetTheme.primaryTextColor(false))
-        views.setTextColor(R.id.tv_location, WidgetTheme.secondaryTextColor(false))
+        views.setTextColor(R.id.tv_campus, WidgetTheme.secondaryTextColor(false))
+        views.setTextColor(R.id.tv_classroom, WidgetTheme.secondaryTextColor(false))
         views.setTextColor(R.id.tv_teacher, WidgetTheme.secondaryTextColor(false))
-        views.setTextColor(R.id.tv_time, WidgetTheme.secondaryTextColor(false))
+        views.setTextColor(R.id.tv_periods, WidgetTheme.secondaryTextColor(false))
       }
       WidgetTheme.Mode.SYSTEM -> {
       }
@@ -64,17 +66,19 @@ private class CourseListRemoteViewsFactory(
 
     if (item == null) {
       views.setTextViewText(R.id.tv_course_name, "")
-      views.setTextViewText(R.id.tv_location, "")
+      views.setTextViewText(R.id.tv_campus, "")
+      views.setTextViewText(R.id.tv_classroom, "")
       views.setTextViewText(R.id.tv_teacher, "")
-      views.setTextViewText(R.id.tv_time, "")
+      views.setTextViewText(R.id.tv_periods, "")
       views.setInt(R.id.iv_indicator, "setColorFilter", 0x00000000)
       return views
     }
 
     views.setTextViewText(R.id.tv_course_name, item.name)
-    views.setTextViewText(R.id.tv_location, item.location)
+    views.setTextViewText(R.id.tv_campus, item.campus)
+    views.setTextViewText(R.id.tv_classroom, item.classroom)
     views.setTextViewText(R.id.tv_teacher, item.teacher)
-    views.setTextViewText(R.id.tv_time, item.time)
+    views.setTextViewText(R.id.tv_periods, item.periods)
     views.setInt(R.id.iv_indicator, "setColorFilter", item.indicatorColor)
 
     val fillInIntent = Intent().apply {
