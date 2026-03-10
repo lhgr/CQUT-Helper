@@ -92,14 +92,12 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       }, delay: Duration.zero);
     }
 
-    bool forceRefreshAllWeeks = false;
     if (_currentScheduleData != null) {
       final changes = await _updateManager.checkForUpdates(
         _currentScheduleData!,
       );
       if (!mounted) return;
       if (changes.isNotEmpty) {
-        forceRefreshAllWeeks = true;
         _showUpdateNotification(changes);
       }
     }

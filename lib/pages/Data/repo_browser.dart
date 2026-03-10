@@ -5,11 +5,11 @@ import 'package:cqut/manager/repo_download_manager.dart';
 import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/manager/favorites_manager.dart';
 import 'package:cqut/model/github_item.dart';
+import 'package:cqut/pages/Data/repo_file_preview.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cqut/utils/github_proxy.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class RepoBrowserPage extends StatefulWidget {
   final String path;
@@ -62,17 +62,6 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
     if (!mounted) return;
     _favoritesManager.init();
     setState(() {});
-  }
-
-  Future<void> _launchDirectUrl(String urlString) async {
-    final uri = Uri.tryParse(urlString);
-    if (uri == null || !await launchUrl(uri)) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('无法打开链接: $urlString')));
-      }
-    }
   }
 
   void _navigateToSubDir(GithubItem item) {
@@ -845,7 +834,13 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
                         if (isDir) {
                           _navigateToSubDir(item);
                         } else {
-                          _launchDirectUrl(item.htmlUrl);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  RepoFilePreviewPage(item: item),
+                            ),
+                          );
                         }
                       },
                       onLongPress: () {

@@ -1,6 +1,8 @@
 import 'package:cqut/pages/Data/repo_browser.dart';
+import 'package:cqut/pages/Data/repo_file_preview.dart';
 import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/manager/favorites_manager.dart';
+import 'package:cqut/model/github_item.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -70,6 +72,26 @@ class _DataViewState extends State<DataView> {
       MaterialPageRoute(
         builder: (context) => RepoBrowserPage(path: path, title: title),
       ),
+    );
+  }
+
+  void _navigateToFilePreview(FavoriteItem item) {
+    final htmlUrl =
+        (item.url != null && item.url!.isNotEmpty) ? item.url! : '$_repoUrl/blob/main/${item.path}';
+    final rawUri = Uri.https(
+      'raw.githubusercontent.com',
+      'Royfor12/CQUT-Course-Guide-Sharing-Scheme/main/${item.path}',
+    );
+    final previewItem = GithubItem(
+      name: item.title,
+      path: item.path,
+      type: 'file',
+      downloadUrl: rawUri.toString(),
+      htmlUrl: htmlUrl,
+    );
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => RepoFilePreviewPage(item: previewItem)),
     );
   }
 
@@ -352,12 +374,7 @@ class _DataViewState extends State<DataView> {
                   if (item.type == 'dir') {
                     _navigateToRepoBrowser(item.path, item.title);
                   } else {
-                    if (item.url != null && item.url!.isNotEmpty) {
-                      _launchUrl(item.url!);
-                    } else {
-                      final url = "$_repoUrl/blob/main/${item.path}";
-                      _launchUrl(url);
-                    }
+                    _navigateToFilePreview(item);
                   }
                 },
                 onLongPress: () {
