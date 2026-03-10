@@ -15,6 +15,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 enum _PreviewKind { image, markdown, pdf, video, audio, office, unsupported }
 
@@ -114,7 +115,16 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
   }
 
   Future<void> _openGithubOriginal() async {
-    final ok = await GithubProxy.launchExternalUrlString(widget.item.htmlUrl);
+    final uri = Uri.tryParse(widget.item.htmlUrl);
+    if (uri == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('无效链接: ${widget.item.htmlUrl}')));
+      }
+      return;
+    }
+    final ok = await launchUrl(uri);
     if (!ok && mounted) {
       ScaffoldMessenger.of(
         context,
