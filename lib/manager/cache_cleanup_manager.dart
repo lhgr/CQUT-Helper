@@ -8,7 +8,9 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum AppCacheType { timetable, userInfo, imageCache, favorites, logs }
+import 'package:cqut/manager/preview_cache_manager.dart';
+
+enum AppCacheType { timetable, userInfo, imageCache, favorites, logs, preview }
 
 @immutable
 class AppCacheUsage {
@@ -33,6 +35,7 @@ class CacheCleanupManager {
   static final ValueNotifier<int> favoritesCacheEpoch = ValueNotifier(0);
   static final ValueNotifier<int> imageCacheEpoch = ValueNotifier(0);
   static final ValueNotifier<int> logCacheEpoch = ValueNotifier(0);
+  static final ValueNotifier<int> previewCacheEpoch = ValueNotifier(0);
 
   static const Map<AppCacheType, String> _titles = {
     AppCacheType.timetable: '课表缓存',
@@ -40,6 +43,7 @@ class CacheCleanupManager {
     AppCacheType.imageCache: '图片缓存',
     AppCacheType.favorites: '收藏数据',
     AppCacheType.logs: '日志文件',
+    AppCacheType.preview: '预览缓存',
   };
 
   static Future<List<AppCacheUsage>> getUsages() async {
@@ -59,6 +63,7 @@ class CacheCleanupManager {
 
     final imageCacheBytes = await _getImageCacheBytes();
     final logBytes = await AppLogger.I.getLogBytes();
+    final previewBytes = await PreviewCacheManager.getCacheSize();
 
     return [
       AppCacheUsage(
@@ -80,6 +85,13 @@ class CacheCleanupManager {
         title: '图片缓存',
         description: '网络图片磁盘缓存与内存缓存',
         bytes: imageCacheBytes,
+        supported: true,
+      ),
+      AppCacheUsage(
+        type: AppCacheType.preview,
+        title: '预览缓存',
+        description: '仓库文件预览产生的临时文件',
+        bytes: previewBytes,
         supported: true,
       ),
       AppCacheUsage(
@@ -161,6 +173,12 @@ class CacheCleanupManager {
       final removed = await AppLogger.I.clearLogFiles();
       clearedCounts[AppCacheType.logs] = removed;
       logCacheEpoch.value = logCacheEpoch.value + 1;
+    }
+
+    if (types.contains(AppCacheType.preview)) {
+      await PreviewCacheManager.clearCache();
+      clearedCounts[AppCacheType.preview] = 1;
+      previewCacheEpoch.value = previewCacheEpoch.value + 1;
     }
 
     try {

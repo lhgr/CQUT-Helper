@@ -105,6 +105,33 @@ class PreviewCacheManager {
       await prefs.reload();
     } catch (_) {}
   }
+  static Future<int> getCacheSize() async {
+    try {
+      final dir = await resolveDir();
+      if (!await dir.exists()) return 0;
+      int total = 0;
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (entity is File) {
+          try {
+            total += await entity.length();
+          } catch (_) {}
+        }
+      }
+      return total;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static Future<void> clearCache() async {
+    try {
+      final dir = await resolveDir();
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+        await dir.create(recursive: true);
+      }
+    } catch (_) {}
+  }
 }
 
 class _CacheEntry {
