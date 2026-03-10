@@ -40,6 +40,9 @@ class ScheduleController {
   bool _disposed = false;
   Future<bool>? _timeInfoRefreshInFlight;
   int _lastTimeInfoRefreshAtMs = 0;
+  Future<void>? _foregroundFullRefreshInFlight;
+
+  static const int _foregroundFullRefreshCooldownMs = 6 * 60 * 60 * 1000;
 
   void dispose() {
     _disposed = true;
@@ -56,6 +59,9 @@ class ScheduleController {
     nowStatusLabel = null;
     _prefetchTimer?.cancel();
   }
+
+  String _foregroundFullRefreshAtKey(String userId, String yearTerm) =>
+      'schedule_foreground_full_refresh_at_${userId}_$yearTerm';
 
   Future<void> _loadCredentials() async {
     final prefs = await SharedPreferences.getInstance();
@@ -361,6 +367,85 @@ class ScheduleController {
   String _lastFetchAtKey(String userId, String yearTerm, String weekNum) =>
       'schedule_fetch_at_${userId}_${yearTerm}_$weekNum';
 
+  String _stableEventKey(EventItem e) {
+    final id = (e.eventID ?? '').trim();
+    if (id.isNotEmpty) {
+      final dup = e.duplicateGroup?.toString() ?? '';
+      final dupType = (e.duplicateGroupType ?? '').trim();
+      return 'id:$id|d:$dupType:$dup';
+    }
+    final name = (e.eventName ?? '').trim();
+    final teacher = (e.memberName ?? '').trim();
+    final type = (e.eventType ?? '').trim();
+    final cover = (e.weekCover ?? '').trim();
+    final group = e.duplicateGroup?.toString() ?? '';
+    final groupType = (e.duplicateGroupType ?? '').trim();
+    return 'n:$name|t:$teacher|tp:$type|c:$cover|g:$groupType:$group';
+  }
+
+  Future<void> refreshAllWeeksInForeground(
+    ScheduleData currentData, {
+    Duration interval = const Duration(seconds: 2),
+  }) async {
+    if (_disposed) return;
+    final inFlight = _foregroundFullRefreshInFlight;
+    if (inFlight != null) return await inFlight;
+
+    final future = _refreshAllWeeksInForegroundInternal(
+      currentData,
+      interval: interval,
+    );
+    _foregroundFullRefreshInFlight = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_foregroundFullRefreshInFlight, future)) {
+        _foregroundFullRefreshInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _refreshAllWeeksInForegroundInternal(
+    ScheduleData currentData, {
+    required Duration interval,
+  }) async {
+    final wList = currentData.weekList;
+    final term = (currentData.yearTerm ?? '').trim();
+    if (wList == null || wList.isEmpty || term.isEmpty) return;
+
+    await _loadCredentials();
+    final uid = (_userId ?? '').trim();
+    if (uid.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final key = _foregroundFullRefreshAtKey(uid, term);
+    final last = prefs.getInt(key) ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (last > 0 && now - last < _foregroundFullRefreshCooldownMs) return;
+
+    for (final week in wList) {
+      if (_disposed) return;
+      final w = week.trim();
+      if (w.isEmpty) continue;
+      await ensureWeekLoaded(
+        w,
+        term,
+        forceRefresh: true,
+        updateLastViewed: false,
+      );
+      if (_disposed) return;
+      if (interval > Duration.zero) {
+        await Future.delayed(interval);
+      }
+    }
+    await prefs.setInt(key, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  Set<String> _stableKeysFromEvents(List<EventItem>? list) {
+    if (list == null || list.isEmpty) return <String>{};
+    return list.map(_stableEventKey).where((k) => k.isNotEmpty).toSet();
+  }
+
   Future<List<ScheduleWeekChange>> silentCheckRecentWeeksForChangesDetailed(
     ScheduleData currentData, {
     int weeksAhead = 1,
@@ -380,6 +465,8 @@ class ScheduleController {
 
     final prefs = await SharedPreferences.getInstance();
     final changed = <ScheduleWeekChange>[];
+    final removedStableKeys = <String>{};
+    var forceScanRemaining = false;
 
     final candidates = <String>[currentWeekStr];
     for (int offset = 1; offset <= weeksAhead; offset++) {
@@ -403,7 +490,9 @@ class ScheduleController {
 
       final lastFetchAt = prefs.getInt(fetchAtKey) ?? 0;
       final nowMs = DateTime.now().millisecondsSinceEpoch;
-      if (lastFetchAt > 0 && nowMs - lastFetchAt < 5 * 60 * 1000) {
+      if (!forceScanRemaining &&
+          lastFetchAt > 0 &&
+          nowMs - lastFetchAt < 5 * 60 * 1000) {
         continue;
       }
 
@@ -457,6 +546,9 @@ class ScheduleController {
       final afterFp = scheduleFingerprintFromWeekJsonMap(afterJson);
       await prefs.setInt(fetchAtKey, DateTime.now().millisecondsSinceEpoch);
       if (beforeFp != null && beforeFp == afterFp) continue;
+      if (beforeFp != null && beforeFp != afterFp) {
+        forceScanRemaining = true;
+      }
 
       final afterData = ScheduleData.fromJson(afterJson);
       if (afterData.weekNum != null && afterData.yearTerm != null) {
@@ -495,7 +587,24 @@ class ScheduleController {
         }
       }
 
-      if (beforeFp == null) continue;
+      if (beforeFp == null) {
+        final movedAdded = (afterData.eventList ?? const <EventItem>[])
+            .where((e) => removedStableKeys.contains(_stableEventKey(e)))
+            .toList(growable: false);
+        if (movedAdded.isNotEmpty) {
+          final beforeEmpty = ScheduleData(weekNum: week, eventList: const <EventItem>[]);
+          final afterOnlyMoved = ScheduleData(weekNum: week, eventList: movedAdded);
+          final lines = diffScheduleWeekLines(
+            before: beforeEmpty,
+            after: afterOnlyMoved,
+            maxLines: maxDiffLinesPerWeek,
+          );
+          if (lines.isNotEmpty) {
+            changed.add(ScheduleWeekChange(weekNum: week, lines: lines));
+          }
+        }
+        continue;
+      }
 
       final notifiedKey = _notifiedKey(_userId!, cTerm, week);
       final lastNotifiedFp = prefs.getString(notifiedKey);
@@ -519,6 +628,11 @@ class ScheduleController {
         }
 
         if (beforeData != null) {
+          final beforeKeys = _stableKeysFromEvents(beforeData.eventList);
+          final afterKeys = _stableKeysFromEvents(afterData.eventList);
+          if (beforeKeys.isNotEmpty) {
+            removedStableKeys.addAll(beforeKeys.difference(afterKeys));
+          }
           lines = diffScheduleWeekLines(
             before: beforeData,
             after: afterData,

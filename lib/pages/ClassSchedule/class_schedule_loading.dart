@@ -105,9 +105,12 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     }
 
     if (_currentScheduleData != null) {
-      _controller.prefetchAllWeeksInBackground(_currentScheduleData!, () {
-        _setState(() {});
-      }, forceRefresh: forceRefreshAllWeeks);
+      unawaited(
+        _controller.refreshAllWeeksInForeground(
+          _currentScheduleData!,
+          interval: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
