@@ -274,6 +274,11 @@ class ScheduleController {
       persistLastViewed: persistLastViewed,
       updateWidgetPins: shouldPinWidget,
     );
+    final loadedWeek = (data.weekNum ?? '').trim();
+    final loadedWeeks = data.weekList;
+    if (loadedWeek.isEmpty || loadedWeeks == null || loadedWeeks.isEmpty) {
+      throw Exception("课表鉴权失败，请重新登录");
+    }
 
     if (weekNum == null && yearTerm == null) {
       final now = DateTime.now();

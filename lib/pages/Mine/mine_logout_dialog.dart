@@ -1,3 +1,4 @@
+import 'package:cqut/api/auth/auth_api.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,6 +18,7 @@ Future<void> showMineLogoutDialog(BuildContext context) async {
             final prefs = await SharedPreferences.getInstance();
             await prefs.remove('account');
             await prefs.remove('encrypted_password');
+            await AuthApi().resetLoginContext();
             if (context.mounted) {
               Navigator.pop(context);
               ScaffoldMessenger.of(

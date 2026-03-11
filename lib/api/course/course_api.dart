@@ -77,6 +77,9 @@ class CourseApi {
           allowReloginRetry: false,
         );
       }
+      if (_looksLikeAuthError(parsed)) {
+        throw Exception(_authErrorMessage(parsed));
+      }
       return parsed;
     } catch (e) {
       if (!allowReloginRetry) rethrow;
@@ -115,5 +118,11 @@ class CourseApi {
     if (hasScheduleFields) return false;
     if (data.containsKey('code') || data.containsKey('msg')) return true;
     return false;
+  }
+
+  String _authErrorMessage(Map<String, dynamic> data) {
+    final msg = (data['msg'] ?? '').toString().trim();
+    if (msg.isNotEmpty) return msg;
+    return '课表鉴权失败，请重新登录';
   }
 }

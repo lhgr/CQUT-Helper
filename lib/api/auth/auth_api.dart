@@ -40,6 +40,15 @@ Y/akVmYNtghKZzz6jwIDAQAB
     await loginWithEncrypted(account: account, encryptedPassword: encryptedPwd);
   }
 
+  Future<void> resetLoginContext({String? account}) async {
+    if (account == null || account.trim().isEmpty) {
+      _timetableLoginStates.clear();
+    } else {
+      _timetableLoginStates.remove(account.trim());
+    }
+    await _client.cookieJar.deleteAll();
+  }
+
   Future<void> ensureTimetableLogin({
     required String account,
     String? password,
