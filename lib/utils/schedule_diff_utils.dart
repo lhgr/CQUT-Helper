@@ -136,6 +136,13 @@ String _formatSessions(EventItem e) {
   final start = (e.sessionStart ?? '').trim();
   final last = (e.sessionLast ?? '').trim();
   if (start.isNotEmpty && last.isNotEmpty) {
+    final s = int.tryParse(start);
+    final l = int.tryParse(last);
+    if (s != null && l != null && s > 0 && l > 0) {
+      final end = s + l - 1;
+      if (end <= s) return '$s节';
+      return '$s-$end节';
+    }
     return '$start-$last节';
   }
   final list = e.sessionList ?? const <String>[];

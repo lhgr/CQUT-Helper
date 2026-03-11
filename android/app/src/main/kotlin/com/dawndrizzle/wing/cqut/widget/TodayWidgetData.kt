@@ -17,14 +17,20 @@ object TodayWidgetData {
   data class CourseItem(
     val eventId: String?,
     val name: String,
-    val location: String,
+    val campus: String,
+    val classroom: String,
     val teacher: String,
-    val time: String,
+    val periods: String,
     val indicatorColor: Int,
+    val sortOrder: Int,
   )
 
   private const val PREFS_NAME = "FlutterSharedPreferences"
   private const val FLUTTER_PREFIX = "flutter."
+  private const val KEY_WIDGET_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_widget_week_"
+  private const val KEY_WIDGET_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_widget_term_"
+  private const val KEY_LAST_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_last_week_"
+  private const val KEY_LAST_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_last_term_"
 
   fun loadHeader(context: Context): Header {
     val calendar = Calendar.getInstance()
@@ -113,12 +119,18 @@ object TodayWidgetData {
   private fun loadOffsetWeekScheduleJsonObject(context: Context, offsetWeeks: Int): JSONObject? {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val userId = prefs.getString("${FLUTTER_PREFIX}account", null)?.takeIf { it.isNotBlank() } ?: return null
-    val lastTerm = prefs.getString("${FLUTTER_PREFIX}schedule_last_term_$userId", null)?.takeIf { it.isNotBlank() } ?: return null
-    val lastWeekStr = prefs.getString("${FLUTTER_PREFIX}schedule_last_week_$userId", null)?.takeIf { it.isNotBlank() } ?: return null
-    val lastWeek = lastWeekStr.toIntOrNull() ?: return null
+    val baseTerm =
+      prefs.getString("$KEY_WIDGET_TERM_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_TERM_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: return null
+    val baseWeekStr =
+      prefs.getString("$KEY_WIDGET_WEEK_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_WEEK_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: return null
+    val baseWeek = baseWeekStr.toIntOrNull() ?: return null
 
-    val targetWeek = (lastWeek + offsetWeeks).toString()
-    val scheduleKey = "${FLUTTER_PREFIX}schedule_${userId}_${lastTerm}_$targetWeek"
+    val targetWeek = (baseWeek + offsetWeeks).toString()
+    val scheduleKey = "${FLUTTER_PREFIX}schedule_${userId}_${baseTerm}_$targetWeek"
     val jsonStr = prefs.getString(scheduleKey, null) ?: return null
     return try {
       JSONObject(jsonStr)
@@ -137,12 +149,13 @@ object TodayWidgetData {
       if (eWeekDay != weekDay) continue
 
       val name = e.optString("eventName", "").ifBlank { "课程" }
-      val location = e.optString("address", "").ifBlank { " " }
+      val location = e.optString("address", "").trim()
+      val (campus, classroom) = splitCampusAndClassroom(location)
       val teacher = e.optString("memberName", "").ifBlank { " " }
 
       val start = e.optInt("sessionStart", -1)
       val last = e.optInt("sessionLast", -1)
-      val time =
+      val periods =
         if (start > 0 && last > 0) {
           val end = start + last - 1
           "第$start-${end}节"
@@ -154,21 +167,28 @@ object TodayWidgetData {
             ""
           }
         }
+      val sortOrder =
+        when {
+          start > 0 -> start
+          else -> minSessionStart(e.optJSONArray("sessionList")) ?: Int.MAX_VALUE
+        }
 
       val eventId = e.optString("eventID").ifBlank { null }
       result.add(
         CourseItem(
           eventId = eventId,
           name = name,
-          location = location,
+          campus = campus,
+          classroom = classroom,
           teacher = teacher,
-          time = time,
+          periods = periods,
           indicatorColor = pickColor(name),
+          sortOrder = sortOrder,
         ),
       )
     }
 
-    result.sortBy { it.time }
+    result.sortWith(compareBy<CourseItem> { it.sortOrder }.thenBy { it.periods })
     return result
   }
 
@@ -230,10 +250,16 @@ object TodayWidgetData {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val userId = prefs.getString("${FLUTTER_PREFIX}account", null)?.takeIf { it.isNotBlank() } ?: return null
 
-    val lastTerm = prefs.getString("${FLUTTER_PREFIX}schedule_last_term_$userId", null)?.takeIf { it.isNotBlank() } ?: return null
-    val lastWeek = prefs.getString("${FLUTTER_PREFIX}schedule_last_week_$userId", null)?.takeIf { it.isNotBlank() } ?: return null
+    val term =
+      prefs.getString("$KEY_WIDGET_TERM_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_TERM_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: return null
+    val week =
+      prefs.getString("$KEY_WIDGET_WEEK_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_WEEK_PREFIX$userId", null)?.takeIf { it.isNotBlank() }
+        ?: return null
 
-    val scheduleKey = "${FLUTTER_PREFIX}schedule_${userId}_${lastTerm}_$lastWeek"
+    val scheduleKey = "${FLUTTER_PREFIX}schedule_${userId}_${term}_$week"
     val jsonStr = prefs.getString(scheduleKey, null) ?: return null
 
     return try {
@@ -336,6 +362,56 @@ object TodayWidgetData {
       sb.append(v)
     }
     return sb.toString()
+  }
+
+  private fun minSessionStart(arr: JSONArray?): Int? {
+    if (arr == null || arr.length() == 0) return null
+    var min: Int? = null
+    for (i in 0 until arr.length()) {
+      val v = arr.optInt(i, -1)
+      if (v <= 0) continue
+      if (min == null || v < min) min = v
+    }
+    return min
+  }
+
+  private fun splitCampusAndClassroom(raw: String): Pair<String, String> {
+    val s = raw.trim()
+    if (s.isBlank()) return " " to " "
+
+    val lines = s.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+    if (lines.size >= 2) {
+      return lines[0] to lines[1]
+    }
+
+    val campusIdx = s.indexOf("校区")
+    if (campusIdx >= 0) {
+      val campus = s.substring(0, campusIdx + 2).trim().ifBlank { " " }
+      val classroom =
+        s.substring(campusIdx + 2)
+          .trim()
+          .trimStart(' ', '-', '—', '－', '·', '•', '：', ':')
+          .ifBlank { " " }
+      return campus to classroom
+    }
+
+    val wsParts = s.split(Regex("\\s+"), limit = 2)
+    if (wsParts.size == 2) {
+      val campus = wsParts[0].trim().ifBlank { " " }
+      val classroom = wsParts[1].trim().ifBlank { " " }
+      return campus to classroom
+    }
+
+    val splitChars = charArrayOf('-', '—', '－', '·', '•', '|', '/', '\\')
+    for (i in 1 until s.length - 1) {
+      if (splitChars.contains(s[i])) {
+        val campus = s.substring(0, i).trim().ifBlank { " " }
+        val classroom = s.substring(i + 1).trim().ifBlank { " " }
+        return campus to classroom
+      }
+    }
+
+    return " " to s.ifBlank { " " }
   }
 
   private fun pickColor(seed: String): Int {

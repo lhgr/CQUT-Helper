@@ -187,7 +187,8 @@ class ScheduleCourseGrid extends StatelessWidget {
                   }
 
                   final int colorIndex =
-                      event.eventName.hashCode % colors.length;
+                      ((event.eventName ?? '').hashCode & 0x7fffffff) %
+                      colors.length;
                   final Color backgroundColor = colors[colorIndex];
                   final Color textColor =
                       textColors[colorIndex % textColors.length];

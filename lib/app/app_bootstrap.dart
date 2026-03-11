@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:cqut/manager/course_reminder_manager.dart';
+import 'package:cqut/manager/preview_cache_manager.dart';
 import 'package:cqut/manager/schedule_update_worker.dart';
 import 'package:cqut/manager/theme_manager.dart';
 import 'package:cqut/utils/app_logger.dart';
@@ -36,4 +37,5 @@ Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
   runApp(rootBuilder());
   unawaited(CourseReminderManager.sync());
   unawaited(ScheduleUpdateWorker.syncFromPreferences());
+  unawaited(PreviewCacheManager.cleanupIfNeeded());
 }

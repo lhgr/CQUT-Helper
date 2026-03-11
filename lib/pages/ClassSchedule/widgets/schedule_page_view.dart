@@ -15,52 +15,63 @@ class SchedulePageView extends StatelessWidget {
   final List<CampusTimeInfo>? timeInfoList;
 
   static const double _headerHeight = 50.0;
-  static const double _timeColumnWidth = 35.0; // Increased width for time labels
+  static const double _timeColumnWidth =
+      35.0; // Increased width for time labels
   static const double _sessionHeight = 60.0;
 
-  static const List<Color> _lightColors = [
-    Color(0xFFA8D8FF),
-    Color(0xFFB9FBC0),
-    Color(0xFFFFE29A),
-    Color(0xFFFFC6FF),
-    Color(0xFFFFADAD),
-    Color(0xFF9BF6FF),
-    Color(0xFFCAFFBF),
-    Color(0xFFBDB2FF),
-  ];
+  static const int _colorCount = 16;
+  static const double _goldenAngle = 137.508;
 
-  static const List<Color> _lightTextColors = [
-    Color(0xFF0B3D91),
-    Color(0xFF0F5132),
-    Color(0xFF7A4E00),
-    Color(0xFF5A189A),
-    Color(0xFF7B2C2C),
-    Color(0xFF006064),
-    Color(0xFF155724),
-    Color(0xFF2D1E8F),
-  ];
+  static List<Color> _buildCourseColors(
+    ColorScheme colorScheme,
+    Brightness brightness,
+  ) {
+    final bool isDark = brightness == Brightness.dark;
+    final double primaryHue = HSLColor.fromColor(colorScheme.primary).hue;
+    final double secondaryHue = HSLColor.fromColor(colorScheme.secondary).hue;
+    final double tertiaryHue = HSLColor.fromColor(colorScheme.tertiary).hue;
+    final double harmonyShiftA =
+        ((secondaryHue - primaryHue + 540) % 360) - 180;
+    final double harmonyShiftB = ((tertiaryHue - primaryHue + 540) % 360) - 180;
 
-  static final List<Color> _darkColors = [
-    Colors.blue.shade900,
-    Colors.green.shade900,
-    Colors.orange.shade900,
-    Colors.purple.shade900,
-    Colors.red.shade900,
-    Colors.teal.shade900,
-    Colors.pink.shade900,
-    Colors.indigo.shade900,
-  ];
+    return List.generate(_colorCount, (index) {
+      final double harmonyOffset = switch (index % 3) {
+        1 => harmonyShiftA * 0.22,
+        2 => harmonyShiftB * 0.22,
+        _ => 0.0,
+      };
+      final double hue =
+          (primaryHue + index * _goldenAngle + harmonyOffset) % 360;
+      final double saturationBase = isDark ? 0.50 : 0.60;
+      final double saturation = (saturationBase + (index % 4) * 0.05)
+          .clamp(0.48, 0.80)
+          .toDouble();
+      final List<double> lightnessPattern = isDark
+          ? const [0.22, 0.26, 0.20, 0.28]
+          : const [0.74, 0.68, 0.62, 0.70];
+      final double lightness = lightnessPattern[index % 4];
 
-  static final List<Color> _darkTextColors = [
-    Colors.blue.shade300,
-    Colors.green.shade300,
-    Colors.orange.shade300,
-    Colors.purple.shade300,
-    Colors.red.shade300,
-    Colors.teal.shade300,
-    Colors.pink.shade300,
-    Colors.indigo.shade300,
-  ];
+      final base = HSLColor.fromAHSL(1.0, hue, saturation, lightness).toColor();
+      return isDark ? Color.lerp(base, colorScheme.surface, 0.10)! : base;
+    });
+  }
+
+  static List<Color> _buildCourseTextColors(
+    List<Color> backgroundColors,
+    ColorScheme colorScheme,
+  ) {
+    return backgroundColors
+        .map((backgroundColor) {
+          final Brightness brightness = ThemeData.estimateBrightnessForColor(
+            backgroundColor,
+          );
+          if (brightness == Brightness.dark) {
+            return Color.lerp(Colors.white, colorScheme.onPrimary, 0.12)!;
+          }
+          return Color.lerp(Colors.black, colorScheme.onSurface, 0.45)!;
+        })
+        .toList(growable: false);
+  }
 
   const SchedulePageView({
     super.key,
@@ -76,6 +87,16 @@ class SchedulePageView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final courseColors = _buildCourseColors(
+      theme.colorScheme,
+      theme.brightness,
+    );
+    final courseTextColors = _buildCourseTextColors(
+      courseColors,
+      theme.colorScheme,
+    );
+
     return NotificationListener<OverscrollNotification>(
       onNotification: (notification) {
         if (notification.overscroll < 0) {
@@ -125,14 +146,8 @@ class SchedulePageView extends StatelessWidget {
                           events: data.eventList ?? [],
                           sessionHeight: _sessionHeight,
                           showWeekend: showWeekend,
-                          colors:
-                              Theme.of(context).brightness == Brightness.dark
-                                  ? _darkColors
-                                  : _lightColors,
-                          textColors:
-                              Theme.of(context).brightness == Brightness.dark
-                                  ? _darkTextColors
-                                  : _lightTextColors,
+                          colors: courseColors,
+                          textColors: courseTextColors,
                         ),
                       ),
                     ],

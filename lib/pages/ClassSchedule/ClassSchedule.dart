@@ -217,6 +217,11 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         onRefresh: () => _loadFromNetwork(
           weekNum: _weekList![_currentWeekIndex],
           yearTerm: _currentScheduleData?.yearTerm,
+          updateWidgetPins:
+              _actualCurrentWeekStr == null ||
+              _actualCurrentTermStr == null ||
+              (_weekList![_currentWeekIndex] == _actualCurrentWeekStr &&
+                  _currentScheduleData?.yearTerm == _actualCurrentTermStr),
         ),
         onSettings: _showScheduleSettingsSheetWrapper,
         onWeekPicker: _showWeekPickerSheet,

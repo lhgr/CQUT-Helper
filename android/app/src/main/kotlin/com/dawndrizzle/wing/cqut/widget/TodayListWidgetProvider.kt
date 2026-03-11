@@ -53,7 +53,8 @@ class TodayListWidgetProvider : AppWidgetProvider() {
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_today_list)
 
-      when (WidgetTheme.mode(context)) {
+      val themeMode = WidgetTheme.mode(context)
+      when (themeMode) {
         WidgetTheme.Mode.DARK -> {
           views.setInt(R.id.widget_card, "setBackgroundResource", R.drawable.widget_bg_dark)
           views.setTextColor(R.id.tv_schedule_name, WidgetTheme.primaryTextColor(true))
