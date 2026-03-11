@@ -195,6 +195,7 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
+      await _authApi.resetLoginContext();
       if (useSavedPassword) {
         await _authApi.loginWithEncrypted(
           account: account,
