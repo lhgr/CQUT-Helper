@@ -63,8 +63,21 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
   }
 
   void _returnToCurrentWeek() {
-    if (_actualCurrentWeekStr == null || _weekList == null) {
+    if (_actualCurrentWeekStr == null) {
       _loadFromNetwork();
+      return;
+    }
+
+    final actualTerm = _actualCurrentTermStr;
+    final currentTerm = _currentScheduleData?.yearTerm ?? _currentTerm;
+    if (actualTerm != null && currentTerm != actualTerm) {
+      _weekCache.clear();
+      _loadFromNetwork(weekNum: _actualCurrentWeekStr, yearTerm: actualTerm);
+      return;
+    }
+
+    if (_weekList == null) {
+      _loadFromNetwork(weekNum: _actualCurrentWeekStr, yearTerm: actualTerm);
       return;
     }
 
