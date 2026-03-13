@@ -197,6 +197,10 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       if (!_weekList!.contains(_actualCurrentWeekStr)) {
         showFab = true;
       }
+      if (_actualCurrentTermStr != null &&
+          _currentScheduleData?.yearTerm != _actualCurrentTermStr) {
+        showFab = true;
+      }
     }
 
     return Scaffold(
