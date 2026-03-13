@@ -123,6 +123,21 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
     );
   }
 
+  Future<Map<String, dynamic>?> _exportToAndroidDownloads({
+    required String srcPath,
+    required String fileName,
+    String? mimeType,
+  }) {
+    return _downloadsChannel.invokeMapMethod<String, dynamic>(
+      'exportToDownloads',
+      {
+        'srcPath': srcPath,
+        'fileName': _sanitizeFileName(fileName),
+        if (mimeType != null) 'mimeType': mimeType,
+      },
+    );
+  }
+
   Future<void> _downloadFile(GithubItem item) async {
     if (item.type == 'dir') {
       if (mounted) {
@@ -438,7 +453,7 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
     }
 
     try {
-      final dir = await _downloadManager.downloadFilesBatch(
+      final batch = await _downloadManager.downloadFilesBatch(
         files: files,
         concurrency: 3,
         cancelToken: cancelToken,
@@ -456,9 +471,33 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
 
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('已保存到：${dir.path}')));
+        final messenger = ScaffoldMessenger.of(context);
+        if (Platform.isAndroid) {
+          int exported = 0;
+          for (final path in batch.savedPaths) {
+            final fileName = path.split(Platform.pathSeparator).last;
+            final res = await _exportToAndroidDownloads(
+              srcPath: path,
+              fileName: fileName,
+            );
+            final savedPath = res?['path']?.toString();
+            if (savedPath != null && savedPath.isNotEmpty) {
+              exported++;
+              try {
+                await File(path).delete();
+              } catch (_) {}
+            }
+          }
+          if (!mounted) return;
+          if (exported > 0) {
+            messenger.showSnackBar(
+              SnackBar(content: Text('已保存到：/Download/CQUT-Helper/')),
+            );
+            _exitSelectionMode();
+            return;
+          }
+        }
+        messenger.showSnackBar(SnackBar(content: Text('已保存到：${batch.directory.path}')));
         _exitSelectionMode();
       }
     } catch (e) {
@@ -569,13 +608,10 @@ class _RepoBrowserPageState extends State<RepoBrowserPage> {
         final messenger = ScaffoldMessenger.of(context);
         if (Platform.isAndroid) {
           final fileName = zipPath.split(Platform.pathSeparator).last;
-          final res = await _downloadsChannel.invokeMapMethod<String, dynamic>(
-            'exportToDownloads',
-            {
-              'srcPath': zipPath,
-              'fileName': fileName,
-              'mimeType': 'application/zip',
-            },
+          final res = await _exportToAndroidDownloads(
+            srcPath: zipPath,
+            fileName: fileName,
+            mimeType: 'application/zip',
           );
           if (!mounted) return;
           final savedPath = res?['path']?.toString();
