@@ -1,22 +1,27 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:cqut/api/schedule/schedule_api.dart';
 import 'package:cqut/manager/cache_cleanup_manager.dart';
 import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut/manager/schedule_settings_manager.dart';
 import 'package:cqut/manager/schedule_update_manager.dart';
+import 'package:cqut/manager/schedule_update_worker.dart';
 import 'package:cqut/model/class_schedule_model.dart';
+import 'package:cqut/model/schedule_notice.dart';
 import 'package:cqut/model/schedule_week_change.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_app_bar.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_changes_sheet.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/schedule_notice_records_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_page_view.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/week_picker_sheet.dart';
 import 'package:cqut/utils/schedule_diff_utils.dart';
 import 'package:cqut/utils/schedule_fingerprint_utils.dart';
-import 'package:cqut/utils/schedule_update_range_utils.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:cqut/manager/schedule_update_intents.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 part 'class_schedule_actions.dart';
 part 'class_schedule_loading.dart';
@@ -63,7 +68,6 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     super.initState();
     _updateManager = ScheduleUpdateManager(
       controller: _controller,
-      settings: _settingsManager,
     );
     WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openChangesSheet.addListener(_onOpenChangesSheet);
@@ -218,6 +222,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         currentScheduleData: _currentScheduleData,
         nowInTeachingWeek: _nowInTeachingWeek,
         nowStatusLabel: _nowStatusLabel,
+        onNoticeRecords: _openTermNoticeRecords,
         onRefresh: () => _loadFromNetwork(
           weekNum: _weekList![_currentWeekIndex],
           yearTerm: _currentScheduleData?.yearTerm,

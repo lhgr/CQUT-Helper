@@ -48,42 +48,6 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       }
     }
 
-    if (_currentScheduleData != null && mounted) {
-      final current = _currentScheduleData!;
-      final wList = current.weekList;
-      final currentWeekStr = current.weekNum;
-      final term = current.yearTerm;
-      if (wList != null && currentWeekStr != null && term != null) {
-        final maxWeeksAhead = maxWeeksAheadForSchedule(
-          weekList: wList,
-          currentWeek: currentWeekStr,
-        );
-        final weeksAhead = _settingsManager.updateWeeksAhead.clamp(
-          0,
-          maxWeeksAhead,
-        );
-        final currentIndex = wList.indexOf(currentWeekStr);
-        if (currentIndex != -1) {
-          unawaited(
-            Future(() async {
-              for (int offset = 1; offset <= weeksAhead; offset++) {
-                if (!mounted) return;
-                final idx = currentIndex + offset;
-                if (idx < 0 || idx >= wList.length) continue;
-                await _controller.ensureWeekLoaded(
-                  wList[idx],
-                  term,
-                  forceRefresh: true,
-                );
-              }
-              if (!mounted) return;
-              _setState(() {});
-            }),
-          );
-        }
-      }
-    }
-
     await _consumePendingChangesIfAny();
 
     if (_currentScheduleData != null) {
@@ -101,15 +65,32 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         _showUpdateNotification(changes);
       }
     }
+    await _maybeShowBackgroundPollingGuide();
+  }
 
-    if (_currentScheduleData != null) {
-      unawaited(
-        _controller.refreshAllWeeksInForeground(
-          _currentScheduleData!,
-          interval: const Duration(seconds: 2),
+  Future<void> _maybeShowBackgroundPollingGuide() async {
+    if (!mounted) return;
+    if (_settingsManager.backgroundPollingEnabled) return;
+    final prefs = await SharedPreferences.getInstance();
+    final account = (prefs.getString('account') ?? '').trim();
+    final key = account.isEmpty
+        ? 'schedule_polling_guide_shown'
+        : 'schedule_polling_guide_shown_$account';
+    final shown = prefs.getBool(key) ?? false;
+    if (shown) return;
+    await prefs.setBool(key, true);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('如需自动更新课表，请在右上角设置中开启“定时轮询”功能'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: '去设置',
+          onPressed: _showScheduleSettingsSheetWrapper,
         ),
-      );
-    }
+      ),
+    );
   }
 
   void _processLoadedData(ScheduleData data, {bool isInitial = false}) {
@@ -131,7 +112,6 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         }
       }
     });
-    _configureUpdateTimer();
   }
 
   Future<ScheduleData?> _loadFromNetwork({
@@ -209,6 +189,5 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     await _settingsManager.load();
     if (!mounted) return;
     _setState(() {});
-    _configureUpdateTimer();
   }
 }

@@ -52,7 +52,6 @@ dependencies:
   firebase_analytics: ^12.1.1
   workmanager: ^0.6.0
   flutter_local_notifications: ^19.0.0
-  android_alarm_manager_plus: ^5.0.0
   pdfx: ^2.9.2
   video_player: ^2.10.1
   chewie: ^1.13.0
