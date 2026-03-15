@@ -8,6 +8,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   final ScheduleData? currentScheduleData;
   final bool? nowInTeachingWeek;
   final String? nowStatusLabel;
+  final VoidCallback onNoticeRecords;
   final VoidCallback onRefresh;
   final VoidCallback onSettings;
   final VoidCallback onWeekPicker;
@@ -21,6 +22,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.currentScheduleData,
     this.nowInTeachingWeek,
     this.nowStatusLabel,
+    required this.onNoticeRecords,
     required this.onRefresh,
     required this.onSettings,
     required this.onWeekPicker,
@@ -35,6 +37,11 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     return AppBar(
       scrolledUnderElevation: 0,
       backgroundColor: Theme.of(context).colorScheme.surface,
+      leading: IconButton(
+        onPressed: onNoticeRecords,
+        icon: const Icon(Icons.notifications_outlined),
+        tooltip: '调课记录',
+      ),
       actions: [
         IconButton(
           onPressed: loading ? null : onRefresh,

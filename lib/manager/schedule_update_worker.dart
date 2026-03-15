@@ -1,339 +1,159 @@
 import 'dart:convert';
-import 'dart:io';
-import 'dart:ui';
-
+import 'package:cqut/api/schedule/schedule_api.dart';
+import 'package:cqut/manager/schedule_notice_refresh_pipeline.dart';
+import 'package:cqut/model/class_schedule_model.dart';
+import 'package:cqut/model/schedule_week_change.dart';
+import 'package:cqut/utils/local_notifications.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
-import 'package:cqut/model/schedule_week_change.dart';
-import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
-import 'package:cqut/manager/course_reminder_manager.dart';
-import 'package:cqut/utils/app_logger.dart';
-import 'package:cqut/utils/local_notifications.dart';
-import 'package:cqut/utils/android_background_restrictions.dart';
-import 'package:cqut/utils/schedule_update_log.dart';
-import 'package:cqut/utils/schedule_update_range_utils.dart';
-
-const String _kPrefsKeyScheduleUpdateEnabled = 'schedule_update_enabled';
-const String _kPrefsKeyScheduleUpdateIntervalMinutes =
-    'schedule_update_interval_minutes';
-const String _kPrefsKeyScheduleUpdateSystemNotifyEnabled =
-    'schedule_update_system_notification_enabled';
-const String _kPrefsKeyAppLastActiveAt = 'app_last_active_at';
-const String _kPrefsKeyScheduleUpdateBgFailureStreak =
-    'schedule_update_bg_failure_streak_v1';
-const int _kScheduleUpdateBgFullScanIntervalMs = 12 * 60 * 60 * 1000;
-
-String _bgFullScanAtKey(String userId, String yearTerm) =>
-    'schedule_update_bg_full_scan_at_${userId}_$yearTerm';
-
 class ScheduleUpdateWorker {
-  static const String _prefsKeyPendingPrefix = 'schedule_pending_changes_';
+  static const String _taskName = 'schedule_notice_poll_task';
+  static const int _frequencyMinutes = 30;
 
-  static const String _taskName = 'schedule_update_check';
-  static const String _uniqueName = 'schedule_update_periodic';
-
-  static bool _initialized = false;
+  static String pendingKeyForUser(String userId) => 'schedule_pending_changes_$userId';
 
   static Future<void> initialize() async {
-    if (!Platform.isAndroid) return;
-    if (_initialized) return;
-    await Workmanager().initialize(callbackDispatcher);
-    _initialized = true;
+    await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
   }
 
   static Future<void> syncFromPreferences() async {
-    if (!Platform.isAndroid) return;
-    await initialize();
-
     final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_kPrefsKeyScheduleUpdateEnabled) ?? false;
-    if (!enabled) {
-      await Workmanager().cancelByUniqueName(_uniqueName);
+    final userId = (prefs.getString('account') ?? '').trim();
+    final encryptedPassword = (prefs.getString('encrypted_password') ?? '').trim();
+    final enabled = prefs.getBool('schedule_background_polling_enabled') ?? false;
+    if (!enabled || userId.isEmpty || encryptedPassword.isEmpty) {
+      await Workmanager().cancelByUniqueName(_taskName);
       return;
     }
-
-    await Workmanager().registerOneOffTask(
-      _uniqueName,
+    await Workmanager().registerPeriodicTask(
       _taskName,
+      _taskName,
+      frequency: const Duration(minutes: _frequencyMinutes),
       existingWorkPolicy: ExistingWorkPolicy.replace,
-      constraints: Constraints(networkType: NetworkType.connected),
-      initialDelay: Duration(minutes: 1),
+      constraints: Constraints(
+        networkType: NetworkType.connected,
+      ),
+      inputData: {
+        'userId': userId,
+        'encryptedPassword': encryptedPassword,
+      },
     );
   }
 
-  static String pendingKeyForUser(String userId) =>
-      '$_prefsKeyPendingPrefix$userId';
-}
+  @pragma('vm:entry-point')
+  static void callbackDispatcher() {
+    Workmanager().executeTask((task, inputData) async {
+      WidgetsFlutterBinding.ensureInitialized();
+      if (task != _taskName) return true;
+      if (_isDeepNight()) return true;
+      final userId = ((inputData?['userId'] ?? '').toString()).trim();
+      final encryptedPassword =
+          ((inputData?['encryptedPassword'] ?? '').toString()).trim();
+      if (userId.isEmpty || encryptedPassword.isEmpty) {
+        return true;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final currentAccount = (prefs.getString('account') ?? '').trim();
+      final currentPassword = (prefs.getString('encrypted_password') ?? '').trim();
+      if (currentAccount.isEmpty || currentPassword.isEmpty) {
+        await prefs.setString('account', userId);
+        await prefs.setString('encrypted_password', encryptedPassword);
+      }
 
-@pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    WidgetsFlutterBinding.ensureInitialized();
-    DartPluginRegistrant.ensureInitialized();
+      final scheduleApi = ScheduleApi();
+      ScheduleData? currentData;
+      try {
+        currentData = await scheduleApi.loadFromCache(userId: userId);
+      } catch (_) {}
+      if (currentData == null) {
+        try {
+          currentData = await scheduleApi.loadFromNetwork(
+            userId: userId,
+            encryptedPassword: encryptedPassword,
+            persistLastViewed: false,
+            updateWidgetPins: false,
+          );
+        } catch (_) {
+          return true;
+        }
+      }
+      if (currentData.yearTerm == null ||
+          currentData.yearTerm!.trim().isEmpty ||
+          currentData.weekList == null ||
+          currentData.weekList!.isEmpty) {
+        return true;
+      }
 
-    final startAt = DateTime.now();
-    final logDate = startAt.toIso8601String().split('T').first;
-    await AppLogger.I.init(
-      minLevel: LogLevel.info,
-      enableConsole: false,
-      enableFile: true,
-      fileName: 'cqut_$logDate.log',
-    );
-    AppLogger.I.info('ScheduleUpdate', 'background_task_start');
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_kPrefsKeyScheduleUpdateEnabled) ?? false;
-    if (!enabled) return true;
-
-    final userId = prefs.getString('account');
-    if (userId == null || userId.trim().isEmpty) return true;
-
-    final interval =
-        prefs.getInt(_kPrefsKeyScheduleUpdateIntervalMinutes) ?? 60;
-    final baseMinutes = interval < 15 ? 15 : interval;
-    final lastActiveAt = prefs.getInt(_kPrefsKeyAppLastActiveAt) ?? 0;
-
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final activeRecently =
-        lastActiveAt > 0 && nowMs - lastActiveAt <= 2 * 60 * 60 * 1000;
-
-    final batteryLevel = await AndroidBackgroundRestrictions.batteryLevel();
-    final powerSave = await AndroidBackgroundRestrictions.isPowerSaveMode();
-    final backgroundRestricted =
-        await AndroidBackgroundRestrictions.isBackgroundRestricted();
-    final lowRam = await AndroidBackgroundRestrictions.isLowRamDevice();
-    final unmetered = await AndroidBackgroundRestrictions.isUnmeteredNetwork();
-
-    int nextMinutes = baseMinutes;
-    final reasons = <String>[];
-    if (backgroundRestricted == true) {
-      nextMinutes = nextMinutes < 360 ? 360 : nextMinutes;
-      reasons.add('backgroundRestricted');
-    }
-    if (powerSave == true || (batteryLevel != null && batteryLevel <= 20)) {
-      nextMinutes = nextMinutes * 3;
-      reasons.add('powerSaveOrLowBattery');
-    }
-    if (!activeRecently) {
-      nextMinutes = nextMinutes * 2;
-      if (nextMinutes < 120) nextMinutes = 120;
-      reasons.add('inactiveRecently');
-    }
-    if (lowRam == true) {
-      nextMinutes = nextMinutes * 2;
-      reasons.add('lowRamDevice');
-    }
-    if (nextMinutes < 15) nextMinutes = 15;
-    if (nextMinutes > 24 * 60) nextMinutes = 24 * 60;
-
-    final controller = ScheduleController();
-    final cached = await controller.loadFromCache();
-    if (cached == null) {
-      await ScheduleUpdateLog.appendRun({
-        'at': DateTime.now().millisecondsSinceEpoch,
-        'type': 'background_no_cache',
-        'intervalBaseMin': baseMinutes,
-        'intervalNextMin': nextMinutes,
-        'reasons': reasons,
-        'unmetered': unmetered,
-        'batteryLevel': batteryLevel,
-        'powerSave': powerSave,
-        'backgroundRestricted': backgroundRestricted,
-        'activeRecently': activeRecently,
-      });
-      AppLogger.I.info(
-        'ScheduleUpdate',
-        'background_task_schedule',
-        fields: {
-          'nextMinutes': nextMinutes,
-          'reasons': reasons,
-          'note': 'no_cache',
+      final pipeline = ScheduleNoticeRefreshPipeline(
+        refreshWeek: (weekNum, yearTerm) async {
+          final raw = await scheduleApi.fetchRawWeekEvents(
+            userId: userId,
+            encryptedPassword: encryptedPassword,
+            weekNum: weekNum,
+            yearTerm: yearTerm,
+          );
+          await scheduleApi.saveScheduleJson(
+            userId: userId,
+            yearTerm: yearTerm,
+            weekNum: weekNum,
+            jsonStr: json.encode(raw),
+          );
         },
       );
-      await Workmanager().registerOneOffTask(
-        ScheduleUpdateWorker._uniqueName,
-        ScheduleUpdateWorker._taskName,
-        existingWorkPolicy: ExistingWorkPolicy.replace,
-        constraints: Constraints(networkType: NetworkType.connected),
-        initialDelay: Duration(minutes: nextMinutes),
-      );
-      return true;
-    }
 
-    final maxWeeksAhead = maxWeeksAheadForSchedule(
-      weekList: cached.weekList,
-      currentWeek: cached.weekNum,
-    );
-    final configuredWeeksAhead =
-        (prefs.getInt('schedule_update_weeks_ahead') ?? 1).clamp(
-          0,
-          maxWeeksAhead,
+      ScheduleNoticeRefreshResult result;
+      try {
+        result = await pipeline.run(
+          currentData: currentData,
+          headless: true,
         );
-    final systemNotify =
-        prefs.getBool(_kPrefsKeyScheduleUpdateSystemNotifyEnabled) ?? false;
-
-    int weeksAhead = configuredWeeksAhead;
-    if ((systemNotify || unmetered == true) &&
-        maxWeeksAhead > configuredWeeksAhead) {
-      final term = cached.yearTerm ?? '';
-      if (term.isNotEmpty) {
-        final key = _bgFullScanAtKey(userId, term);
-        final last = prefs.getInt(key) ?? 0;
-        final now = DateTime.now().millisecondsSinceEpoch;
-        if (last <= 0 || now - last >= _kScheduleUpdateBgFullScanIntervalMs) {
-          weeksAhead = maxWeeksAhead;
-          await prefs.setInt(key, now);
-          reasons.add('fullScan');
-        }
+      } catch (_) {
+        return true;
       }
-    }
 
-    final expectedWeeks = 1 + weeksAhead;
-    final failuresBefore = await ScheduleUpdateLog.failureCounter();
-    List<ScheduleWeekChange> changes = const <ScheduleWeekChange>[];
-    Object? runError;
-    StackTrace? runStack;
-    try {
-      changes = await controller.silentCheckRecentWeeksForChangesDetailed(
-        cached,
-        weeksAhead: weeksAhead,
+      if (result.apiClosed || result.changes.isEmpty) return true;
+
+      await _writePendingChanges(
+        prefs: prefs,
+        userId: userId,
+        yearTerm: currentData.yearTerm!.trim(),
+        changes: result.changes,
       );
-    } catch (e, st) {
-      runError = e;
-      runStack = st;
-      await ScheduleUpdateLog.appendFailure({
-        'at': DateTime.now().millisecondsSinceEpoch,
-        'scope': 'background_task',
-        'error': e.toString(),
-      });
-    }
-    final fetchedAt = DateTime.now().millisecondsSinceEpoch;
-    final failuresAfter = await ScheduleUpdateLog.failureCounter();
-    final failureDelta = failuresAfter - failuresBefore;
-    final hadFailures = runError != null || failureDelta > 0;
-    if (hadFailures) {
-      final streak =
-          (prefs.getInt(_kPrefsKeyScheduleUpdateBgFailureStreak) ?? 0) + 1;
-      await prefs.setInt(_kPrefsKeyScheduleUpdateBgFailureStreak, streak);
-      int retryMinutes = 15;
-      for (int i = 1; i < streak && retryMinutes < nextMinutes; i++) {
-        retryMinutes = retryMinutes * 2;
-      }
-      if (retryMinutes < nextMinutes) {
-        nextMinutes = retryMinutes;
-        reasons.add('failureRetry');
-        reasons.add('failureStreak=$streak');
-      } else {
-        reasons.add('failureStreak=$streak');
-      }
-    } else {
-      await prefs.setInt(_kPrefsKeyScheduleUpdateBgFailureStreak, 0);
-    }
-    if (runStack != null) {
-      AppLogger.I.warn(
-        'ScheduleUpdate',
-        'background_task_exception',
-        error: runError,
-        stackTrace: runStack,
-      );
-    }
-
-    if (systemNotify && changes.isNotEmpty) {
-      final first = changes.first;
-      final week = first.weekNum;
-      String labelForWeek() {
-        final currentWeek = cached.weekNum;
-        final wList = cached.weekList;
-        if (currentWeek != null && week == currentWeek) return '本周';
-        if (wList != null && currentWeek != null) {
-          final idx = wList.indexOf(week);
-          final cIdx = wList.indexOf(currentWeek);
-          if (idx != -1 && cIdx != -1 && idx == cIdx + 1) return '下周';
-        }
-        return '第$week周';
-      }
-
-      final brief = first.lines.isNotEmpty ? '：${first.brief}' : '';
+      final title = '课表更新提醒';
+      final body = '检测到 ${result.changes.length} 周存在调课变更';
       await LocalNotifications.showScheduleUpdate(
-        title: '课表更新提醒',
-        body: '${labelForWeek()}课表有更新$brief\n点击查看详情',
+        title: title,
+        body: body,
         payload: LocalNotifications.payloadScheduleUpdate,
       );
-    }
-
-    if (changes.isNotEmpty) {
-      final payload = <String, dynamic>{
-        'createdAt': fetchedAt,
-        'yearTerm': cached.yearTerm,
-        'changes': changes
-            .map(
-              (c) => <String, dynamic>{'weekNum': c.weekNum, 'lines': c.lines},
-            )
-            .toList(),
-      };
-
-      await prefs.setString(
-        ScheduleUpdateWorker.pendingKeyForUser(userId),
-        json.encode(payload),
-      );
-    }
-
-    final durationMs = DateTime.now().difference(startAt).inMilliseconds;
-    int bytes = 0;
-    for (final c in changes) {
-      for (final l in c.lines) {
-        bytes += l.length;
-      }
-    }
-
-    await ScheduleUpdateLog.appendRun({
-      'at': fetchedAt,
-      'type': 'background',
-      'weeksPlanned': expectedWeeks,
-      'weeksChanged': changes.length,
-      'hadFailures': hadFailures,
-      'failureDelta': failureDelta,
-      'linesBytes': bytes,
-      'durationMs': durationMs,
-      'unmetered': unmetered,
-      'batteryLevel': batteryLevel,
-      'powerSave': powerSave,
-      'backgroundRestricted': backgroundRestricted,
-      'activeRecently': activeRecently,
-      'intervalBaseMin': baseMinutes,
-      'intervalNextMin': nextMinutes,
-      'reasons': reasons,
+      return true;
     });
+  }
 
-    AppLogger.I.info(
-      'ScheduleUpdate',
-      'background_task_schedule',
-      fields: {
-        'nextMinutes': nextMinutes,
-        'reasons': reasons,
-        'hadFailures': hadFailures,
-        'weeksChanged': changes.length,
-      },
-    );
-    await Workmanager().registerOneOffTask(
-      ScheduleUpdateWorker._uniqueName,
-      ScheduleUpdateWorker._taskName,
-      existingWorkPolicy: ExistingWorkPolicy.replace,
-      constraints: Constraints(networkType: NetworkType.connected),
-      initialDelay: Duration(minutes: nextMinutes),
-    );
+  static bool _isDeepNight() {
+    final hour = DateTime.now().hour;
+    return hour >= 0 && hour < 7;
+  }
 
-    await CourseReminderManager.sync();
-    AppLogger.I.info(
-      'ScheduleUpdate',
-      'background_task_end',
-      fields: {
-        'hadFailures': hadFailures,
-        'weeksChanged': changes.length,
-        'nextMinutes': nextMinutes,
-      },
-    );
-    return true;
-  });
+  static Future<void> _writePendingChanges({
+    required SharedPreferences prefs,
+    required String userId,
+    required String yearTerm,
+    required List<ScheduleWeekChange> changes,
+  }) async {
+    final payload = json.encode({
+      'yearTerm': yearTerm,
+      'changes': changes
+          .map(
+            (e) => {
+              'weekNum': e.weekNum,
+              'lines': e.lines,
+            },
+          )
+          .toList(),
+    });
+    await prefs.setString(pendingKeyForUser(userId), payload);
+  }
 }

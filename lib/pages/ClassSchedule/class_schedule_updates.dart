@@ -88,11 +88,4 @@ extension _ClassScheduleUpdates on _ClassscheduleViewState {
     );
   }
 
-  void _configureUpdateTimer() {
-    _updateManager.startTimer(() => _currentScheduleData, (changes) {
-      if (mounted) {
-        _showUpdateNotification(changes);
-      }
-    });
-  }
 }

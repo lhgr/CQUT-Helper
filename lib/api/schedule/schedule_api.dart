@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:cqut/api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cqut/model/class_schedule_model.dart';
+import 'package:cqut/model/schedule_notice.dart';
 import 'package:cqut/utils/widget_updater.dart';
 
 class ScheduleApi {
@@ -116,6 +117,20 @@ class ScheduleApi {
   Future<List<CampusTimeInfo>> fetchCampusTimeInfo(String campusName) async {
     final list = await _apiService.course.fetchCampusTimeInfo(campusName);
     return list.map((e) => CampusTimeInfo.fromJson(e)).toList();
+  }
+
+  Future<ScheduleNoticePollData> fetchTermScheduleNotices({
+    required String userId,
+    required String encryptedPassword,
+    String envName = 'prod',
+    bool headless = true,
+  }) async {
+    return await _apiService.notice.fetchTermScheduleNotices(
+      username: userId,
+      encryptedPassword: encryptedPassword,
+      env: envName,
+      headless: headless,
+    );
   }
 
   Future<String?> getCampusName() async {

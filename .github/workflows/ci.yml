@@ -1,0 +1,58 @@
+name: Flutter CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Run tests with coverage
+        run: flutter test --coverage test
+
+      - name: Enforce coverage threshold
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("coverage/lcov.info")
+          if not path.exists():
+            raise SystemExit("coverage/lcov.info not found")
+
+          targets = (
+            "lib/manager/schedule_notice_refresh_pipeline.dart",
+            "lib/utils/schedule_notice_parser.dart",
+          )
+          lf = 0
+          lh = 0
+          current = ""
+          for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("SF:"):
+              current = line[3:].replace("\\", "/")
+              continue
+            if not any(current.endswith(target) for target in targets):
+              continue
+            if line.startswith("LF:"):
+              lf += int(line[3:])
+            elif line.startswith("LH:"):
+              lh += int(line[3:])
+
+          rate = 0.0 if lf == 0 else lh / lf
+          print(f"notice-pipeline coverage: {lh}/{lf} = {rate:.4%}")
+          if rate < 0.9:
+            raise SystemExit(f"Notice pipeline coverage below 90%: {rate:.2%}")
+          PY
