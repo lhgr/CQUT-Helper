@@ -73,6 +73,16 @@
                 <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name="com.dawndrizzle.wing.cqut.widget.WidgetAutoRefreshReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.dawndrizzle.wing.cqut.widget.AUTO_REFRESH" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <service
             android:name="com.dawndrizzle.wing.cqut.widget.CourseListWidgetService"
             android:exported="false"

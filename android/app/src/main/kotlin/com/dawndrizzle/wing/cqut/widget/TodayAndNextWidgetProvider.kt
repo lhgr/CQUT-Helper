@@ -17,6 +17,7 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
     appWidgetIds: IntArray,
   ) {
     updateAppWidgets(context, appWidgetManager, appWidgetIds)
+    WidgetAutoRefreshScheduler.schedule(context)
   }
 
   override fun onReceive(context: Context, intent: Intent) {
@@ -34,6 +35,7 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       val ids =
         appWidgetManager.getAppWidgetIds(ComponentName(context, TodayAndNextWidgetProvider::class.java))
       updateAppWidgets(context, appWidgetManager, ids)
+      WidgetAutoRefreshScheduler.schedule(context)
     }
 
     private fun updateAppWidgets(
