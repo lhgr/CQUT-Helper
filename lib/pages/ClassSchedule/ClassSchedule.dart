@@ -60,6 +60,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   // 用于周切换的 PageController
   PageController? _pageController;
   int _currentWeekIndex = 0; // 对应 weekList 的 0 基索引
+  bool _initialBootRequestPending = true;
+  bool _userChangedWeekDuringInitialBoot = false;
 
   DateTime? _lastMessageTime;
 

@@ -22,7 +22,8 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       _processLoadedData(cachedData, isInitial: true);
     }
 
-    final networkData = await _loadFromNetwork();
+    final networkData = await _loadFromNetwork(fromInitialBoot: true);
+    _initialBootRequestPending = false;
     if (cachedData != null && networkData != null && mounted) {
       final sameWeek = (cachedData.weekNum ?? '').trim().isNotEmpty &&
           (networkData.weekNum ?? '').trim().isNotEmpty &&
@@ -93,20 +94,40 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     );
   }
 
-  void _processLoadedData(ScheduleData data, {bool isInitial = false}) {
+  void _processLoadedData(
+    ScheduleData data, {
+    bool isInitial = false,
+    bool keepCurrentSelection = false,
+  }) {
     if (data.weekNum == null || data.weekList == null) return;
 
     _controller.processLoadedData(data);
 
     _setState(() {
-      _currentScheduleData = data;
-
       final newIndex = _controller.weekList!.indexOf(data.weekNum!);
+      final hasValidCurrentIndex =
+          _weekList != null &&
+          _currentWeekIndex >= 0 &&
+          _currentWeekIndex < _weekList!.length;
+
+      if (keepCurrentSelection && hasValidCurrentIndex) {
+        final selectedWeek = _weekList![_currentWeekIndex];
+        final selectedWeekInt = int.tryParse(selectedWeek) ?? -1;
+        _currentScheduleData = _weekCache[selectedWeekInt] ?? data;
+      } else {
+        _currentScheduleData = data;
+      }
+
       if (newIndex != -1) {
+        final targetIndex = keepCurrentSelection && hasValidCurrentIndex
+            ? _currentWeekIndex
+            : newIndex;
         if (_pageController == null) {
-          _currentWeekIndex = newIndex;
-          _pageController = PageController(initialPage: newIndex);
-        } else if (_currentWeekIndex != newIndex && !isInitial) {
+          _currentWeekIndex = targetIndex;
+          _pageController = PageController(initialPage: targetIndex);
+        } else if (_currentWeekIndex != newIndex &&
+            !isInitial &&
+            !keepCurrentSelection) {
           _currentWeekIndex = newIndex;
           _pageController!.jumpToPage(newIndex);
         }
@@ -118,6 +139,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     String? weekNum,
     String? yearTerm,
     bool updateWidgetPins = false,
+    bool fromInitialBoot = false,
   }) async {
     if (_controller.weekCache.containsKey(int.tryParse(weekNum ?? "") ?? -1)) {}
 
@@ -133,7 +155,11 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         updateWidgetPins: updateWidgetPins,
       );
 
-      _processLoadedData(data);
+      _processLoadedData(
+        data,
+        keepCurrentSelection:
+            fromInitialBoot && _userChangedWeekDuringInitialBoot,
+      );
       _schedulePrefetch(data);
 
       if (_controller.timeInfoList == null) {

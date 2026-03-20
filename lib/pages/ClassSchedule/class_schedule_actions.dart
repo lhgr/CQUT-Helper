@@ -2,6 +2,10 @@ part of 'ClassSchedule.dart';
 
 extension _ClassScheduleActions on _ClassscheduleViewState {
   void _onPageChanged(int index) {
+    if (_initialBootRequestPending) {
+      _userChangedWeekDuringInitialBoot = true;
+    }
+
     if (_weekList != null && index >= 0 && index < _weekList!.length) {
       FirebaseAnalytics.instance.logEvent(
         name: 'view_schedule_week',
