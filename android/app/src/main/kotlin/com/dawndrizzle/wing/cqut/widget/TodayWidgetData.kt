@@ -1,6 +1,7 @@
 package com.dawndrizzle.wing.cqut.widget
 
 import android.content.Context
+import android.text.format.DateUtils
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -31,6 +32,7 @@ object TodayWidgetData {
   private const val KEY_WIDGET_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_widget_term_"
   private const val KEY_LAST_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_last_week_"
   private const val KEY_LAST_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_last_term_"
+  private const val KEY_TIME_INFO_CACHE = "${FLUTTER_PREFIX}schedule_time_info_cache_v1"
 
   fun loadHeader(context: Context): Header {
     val calendar = Calendar.getInstance()
@@ -89,7 +91,20 @@ object TodayWidgetData {
       if (prev != null) targetData = prev
     }
 
-    return loadCoursesByWeekdayFromSchedule(targetData, targetWeekDay.coerceIn(1, 7).toString())
+    val courses = loadCoursesByWeekdayFromSchedule(targetData, targetWeekDay.coerceIn(1, 7).toString())
+    if (dayOffset != 0) return courses
+    return filterEndedCourses(context, targetData, courses)
+  }
+
+  fun nextRefreshAtMillis(context: Context): Long? {
+    val now = System.currentTimeMillis()
+    val candidates = mutableListOf<Long>()
+    candidates.add(nextDayRefreshAtMillis())
+    val nextCourseEnd = nextCourseEndAtMillisToday(context)
+    if (nextCourseEnd != null && nextCourseEnd > now) {
+      candidates.add(nextCourseEnd + DateUtils.MINUTE_IN_MILLIS)
+    }
+    return candidates.filter { it > now }.minOrNull()
   }
 
   private fun scheduleContainsSystemDate(data: JSONObject): Boolean {
@@ -426,5 +441,140 @@ object TodayWidgetData {
       )
     val idx = (seed.hashCode().ushr(1)) % palette.size
     return palette[idx]
+  }
+
+  private fun filterEndedCourses(
+    context: Context,
+    schedule: JSONObject,
+    courses: List<CourseItem>,
+  ): List<CourseItem> {
+    if (courses.isEmpty()) return courses
+    val sessionClockMap = loadSessionClockMap(context)
+    if (sessionClockMap.isEmpty()) return courses
+
+    val events = schedule.optJSONArray("eventList") ?: return courses
+    val todayWeekDay = toMondayBasedWeekday(Calendar.getInstance()).toString()
+    val nowMinutes = currentMinuteOfDay()
+    val endedEventIds = HashSet<String>()
+
+    for (i in 0 until events.length()) {
+      val event = events.optJSONObject(i) ?: continue
+      if (event.optString("weekDay", "") != todayWeekDay) continue
+      val eventId = event.optString("eventID", "").trim()
+      if (eventId.isEmpty()) continue
+      val sessionNums = sessionNumbersOfEvent(event)
+      if (sessionNums.isEmpty()) continue
+      val maxEndMinute =
+        sessionNums
+          .mapNotNull { sessionClockMap[it]?.second }
+          .maxOrNull() ?: continue
+      if (maxEndMinute <= nowMinutes) {
+        endedEventIds.add(eventId)
+      }
+    }
+    if (endedEventIds.isEmpty()) return courses
+    return courses.filterNot { item ->
+      val eventId = item.eventId?.trim().orEmpty()
+      eventId.isNotEmpty() && endedEventIds.contains(eventId)
+    }
+  }
+
+  private fun nextCourseEndAtMillisToday(context: Context): Long? {
+    val data = loadScheduleJsonObject(context) ?: return null
+    if (!scheduleContainsSystemDate(data)) return null
+    val sessionClockMap = loadSessionClockMap(context)
+    if (sessionClockMap.isEmpty()) return null
+
+    val events = data.optJSONArray("eventList") ?: return null
+    val todayWeekDay = toMondayBasedWeekday(Calendar.getInstance()).toString()
+    val now = System.currentTimeMillis()
+    var best: Long? = null
+
+    for (i in 0 until events.length()) {
+      val event = events.optJSONObject(i) ?: continue
+      if (event.optString("weekDay", "") != todayWeekDay) continue
+      val sessionNums = sessionNumbersOfEvent(event)
+      if (sessionNums.isEmpty()) continue
+      val maxEndMinute =
+        sessionNums
+          .mapNotNull { sessionClockMap[it]?.second }
+          .maxOrNull() ?: continue
+      val endAt = minuteOfDayToMillis(maxEndMinute)
+      if (endAt > now && (best == null || endAt < best!!)) {
+        best = endAt
+      }
+    }
+    return best
+  }
+
+  private fun loadSessionClockMap(context: Context): Map<Int, Pair<Int, Int>> {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val raw = prefs.getString(KEY_TIME_INFO_CACHE, null) ?: return emptyMap()
+    return try {
+      val decoded = JSONObject(raw)
+      val items = decoded.optJSONArray("items") ?: return emptyMap()
+      val result = HashMap<Int, Pair<Int, Int>>(items.length())
+      for (i in 0 until items.length()) {
+        val item = items.optJSONObject(i) ?: continue
+        val sessionNum = item.optInt("sessionNum", -1)
+        if (sessionNum <= 0) continue
+        val start = parseTimeToMinute(item.optString("startTime", "")) ?: continue
+        val end = parseTimeToMinute(item.optString("endTime", "")) ?: continue
+        result[sessionNum] = start to end
+      }
+      result
+    } catch (_: Exception) {
+      emptyMap()
+    }
+  }
+
+  private fun parseTimeToMinute(raw: String): Int? {
+    val m = Regex("""(\d{1,2})\s*[:：]\s*(\d{1,2})""").find(raw.trim()) ?: return null
+    val hour = m.groupValues[1].toIntOrNull() ?: return null
+    val minute = m.groupValues[2].toIntOrNull() ?: return null
+    if (hour !in 0..23 || minute !in 0..59) return null
+    return hour * 60 + minute
+  }
+
+  private fun sessionNumbersOfEvent(event: JSONObject): List<Int> {
+    val start = event.optInt("sessionStart", -1)
+    val last = event.optInt("sessionLast", -1)
+    if (start > 0 && last > 0) {
+      val end = start + last - 1
+      return (start..end).toList()
+    }
+    val arr = event.optJSONArray("sessionList") ?: return emptyList()
+    val result = ArrayList<Int>(arr.length())
+    for (i in 0 until arr.length()) {
+      val n = arr.optInt(i, -1)
+      if (n > 0) result.add(n)
+    }
+    return result
+  }
+
+  private fun currentMinuteOfDay(): Int {
+    val c = Calendar.getInstance()
+    return c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
+  }
+
+  private fun minuteOfDayToMillis(minuteOfDay: Int): Long {
+    val cal = Calendar.getInstance().apply {
+      set(Calendar.HOUR_OF_DAY, minuteOfDay / 60)
+      set(Calendar.MINUTE, minuteOfDay % 60)
+      set(Calendar.SECOND, 0)
+      set(Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
+  }
+
+  private fun nextDayRefreshAtMillis(): Long {
+    val cal = Calendar.getInstance().apply {
+      add(Calendar.DAY_OF_YEAR, 1)
+      set(Calendar.HOUR_OF_DAY, 0)
+      set(Calendar.MINUTE, 1)
+      set(Calendar.SECOND, 0)
+      set(Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
   }
 }

@@ -4,13 +4,18 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 
-class WidgetThemeChangedReceiver : BroadcastReceiver() {
+class WidgetAutoRefreshReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    if (intent.action != Intent.ACTION_CONFIGURATION_CHANGED) return
+    val action = intent.action ?: return
+    val shouldRefresh =
+      action == WidgetAutoRefreshScheduler.ACTION_AUTO_REFRESH ||
+        action == Intent.ACTION_DATE_CHANGED ||
+        action == Intent.ACTION_TIME_CHANGED ||
+        action == Intent.ACTION_TIMEZONE_CHANGED
+    if (!shouldRefresh) return
     TodayListWidgetProvider.updateAll(context)
     TodayAndNextWidgetProvider.updateAll(context)
     TodayCourseWidgetProvider.updateAll(context)
     WidgetAutoRefreshScheduler.schedule(context)
   }
 }
-
