@@ -30,6 +30,8 @@ class RepoFilePreviewPage extends StatefulWidget {
 
 class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
   final Dio _dio = Dio();
+  static const int _largePdfBytesThreshold = 20 * 1024 * 1024;
+  static const int _largePdfPagesThreshold = 80;
 
   late final _PreviewKind _kind;
   late final String _ext;
@@ -149,10 +151,28 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     final raw = _rawUri();
     if (raw == null) throw Exception('该文件没有可用的下载地址');
     final file = await _ensureLocalFile(raw);
-    final controller = PdfControllerPinch(
-      document: PdfDocument.openFile(file.path),
+    final fileBytes = await file.length();
+    final document = await PdfDocument.openFile(file.path);
+    final pagesCount = document.pagesCount;
+    final usePagedMode =
+        fileBytes >= _largePdfBytesThreshold ||
+        pagesCount >= _largePdfPagesThreshold;
+    if (usePagedMode) {
+      final controller = PdfController(document: Future.value(document));
+      return _PdfPreviewBundle(
+        pinchController: null,
+        pagedController: controller,
+        isPaged: true,
+        pagesCount: pagesCount,
+      );
+    }
+    final controller = PdfControllerPinch(document: Future.value(document));
+    return _PdfPreviewBundle(
+      pinchController: controller,
+      pagedController: null,
+      isPaged: false,
+      pagesCount: pagesCount,
     );
-    return _PdfPreviewBundle(controller: controller);
   }
 
   Future<File> _ensureLocalFile(Uri raw) async {
@@ -405,7 +425,12 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
           }
           final bundle = snapshot.data;
           if (bundle == null) return _buildError('加载失败');
-          return PdfViewPinch(controller: bundle.controller);
+          if (bundle.isPaged) {
+            return _buildPagedPdf(bundle);
+          }
+          final controller = bundle.pinchController;
+          if (controller == null) return _buildError('加载失败');
+          return PdfViewPinch(controller: controller);
         },
       );
     }
@@ -523,6 +548,63 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     );
   }
 
+  Widget _buildPagedPdf(_PdfPreviewBundle bundle) {
+    final controller = bundle.pagedController;
+    if (controller == null) return _buildError('加载失败');
+    return Column(
+      children: [
+        Expanded(child: PdfView(controller: controller)),
+        SafeArea(
+          top: false,
+          child: ValueListenableBuilder<int>(
+            valueListenable: controller.pageListenable,
+            builder: (context, page, child) {
+              final total = bundle.pagesCount;
+              final current = page < 1 ? 1 : (page > total ? total : page);
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: current > 1
+                          ? () async {
+                              await controller.previousPage(
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOut,
+                              );
+                            }
+                          : null,
+                      icon: const Icon(Icons.chevron_left),
+                      tooltip: '上一页',
+                    ),
+                    Expanded(
+                      child: Text(
+                        '$current / $total',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: current < total
+                          ? () async {
+                              await controller.nextPage(
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOut,
+                              );
+                            }
+                          : null,
+                      icon: const Icon(Icons.chevron_right),
+                      tooltip: '下一页',
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   String _fmtDuration(Duration d) {
     String two(int v) => v.toString().padLeft(2, '0');
     final h = d.inHours;
@@ -582,12 +664,21 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
 }
 
 class _PdfPreviewBundle {
-  final PdfControllerPinch controller;
+  final PdfControllerPinch? pinchController;
+  final PdfController? pagedController;
+  final bool isPaged;
+  final int pagesCount;
 
-  _PdfPreviewBundle({required this.controller});
+  _PdfPreviewBundle({
+    required this.pinchController,
+    required this.pagedController,
+    required this.isPaged,
+    required this.pagesCount,
+  });
 
   void dispose() {
-    controller.dispose();
+    pinchController?.dispose();
+    pagedController?.dispose();
   }
 }
 
