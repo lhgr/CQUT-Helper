@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:chewie/chewie.dart';
@@ -32,6 +34,9 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
   final Dio _dio = Dio();
   static const int _largePdfBytesThreshold = 20 * 1024 * 1024;
   static const int _largePdfPagesThreshold = 80;
+  static const int _largePdfMaxCachedPages = 6;
+  static const int _pdfSegmentBytes = 1024 * 1024;
+  static const int _pdfSegmentRetryTimes = 3;
 
   late final _PreviewKind _kind;
   late final String _ext;
@@ -40,6 +45,12 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
   Future<_VideoPreviewBundle>? _videoFuture;
   _AudioPreviewBundle? _audioBundle;
   WebViewController? _webViewController;
+  final Map<int, Uint8List> _pdfPageCache = <int, Uint8List>{};
+  final Queue<int> _pdfPageLru = Queue<int>();
+  final Map<int, Object> _pdfPageErrors = <int, Object>{};
+  final Map<int, Future<Uint8List>> _pdfPageTasks = <int, Future<Uint8List>>{};
+  PageController? _largePdfPageController;
+  int _largePdfCurrentPage = 1;
 
   @override
   void initState() {
@@ -67,6 +78,7 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     _audioBundle?.dispose();
     _videoFuture?.then((b) => b.dispose());
     _pdfFuture?.then((b) => b.dispose());
+    _largePdfPageController?.dispose();
     super.dispose();
   }
 
@@ -150,6 +162,7 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
   Future<_PdfPreviewBundle> _loadPdf() async {
     final raw = _rawUri();
     if (raw == null) throw Exception('该文件没有可用的下载地址');
+    _resetLargePdfCache();
     final file = await _ensureLocalFile(raw);
     final fileBytes = await file.length();
     final document = await PdfDocument.openFile(file.path);
@@ -158,10 +171,9 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
         fileBytes >= _largePdfBytesThreshold ||
         pagesCount >= _largePdfPagesThreshold;
     if (usePagedMode) {
-      final controller = PdfController(document: Future.value(document));
       return _PdfPreviewBundle(
         pinchController: null,
-        pagedController: controller,
+        document: document,
         isPaged: true,
         pagesCount: pagesCount,
       );
@@ -169,7 +181,7 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     final controller = PdfControllerPinch(document: Future.value(document));
     return _PdfPreviewBundle(
       pinchController: controller,
-      pagedController: null,
+      document: null,
       isPaged: false,
       pagesCount: pagesCount,
     );
@@ -201,6 +213,9 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     await downloader.downloadFileResumable(
       raw,
       file.path,
+      segmented: true,
+      segmentBytes: _pdfSegmentBytes,
+      retryTimesPerSegment: _pdfSegmentRetryTimes,
       onReceiveProgress: (r, t) {
         received = r;
         total = t;
@@ -227,6 +242,107 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
   }
 
   double? _downloadProgress;
+
+  void _resetLargePdfCache() {
+    _pdfPageCache.clear();
+    _pdfPageLru.clear();
+    _pdfPageErrors.clear();
+    _pdfPageTasks.clear();
+    _largePdfCurrentPage = 1;
+    _largePdfPageController?.dispose();
+    _largePdfPageController = null;
+  }
+
+  void _retryPdfLoad() {
+    if (_kind != _PreviewKind.pdf) return;
+    setState(() {
+      _downloadProgress = null;
+      _pdfFuture = _loadPdf();
+    });
+  }
+
+  Future<Uint8List> _ensurePdfPageImage(
+    _PdfPreviewBundle bundle,
+    int pageNumber, {
+    bool highPriority = false,
+  }) {
+    final cached = _pdfPageCache[pageNumber];
+    if (cached != null) return Future<Uint8List>.value(cached);
+    final running = _pdfPageTasks[pageNumber];
+    if (running != null) return running;
+    final document = bundle.document;
+    if (document == null) {
+      return Future<Uint8List>.error(Exception('文档不可用'));
+    }
+    _pdfPageErrors.remove(pageNumber);
+    final task = () async {
+      final page = await document.getPage(pageNumber);
+      try {
+        final scale = highPriority ? 2.0 : 1.4;
+        final width = page.width * scale;
+        final height = page.height * scale;
+        final image = await page.render(
+          width: width,
+          height: height,
+          format: PdfPageImageFormat.jpeg,
+          backgroundColor: '#FFFFFF',
+        );
+        final bytes = image?.bytes;
+        if (bytes == null || bytes.isEmpty) {
+          throw Exception('页面渲染结果为空');
+        }
+        if (mounted) {
+          setState(() {
+            _pdfPageCache[pageNumber] = bytes;
+            _pdfPageLru.remove(pageNumber);
+            _pdfPageLru.addLast(pageNumber);
+            while (_pdfPageLru.length > _largePdfMaxCachedPages) {
+              final victim = _pdfPageLru.removeFirst();
+              if (victim == _largePdfCurrentPage) {
+                _pdfPageLru.addLast(victim);
+                if (_pdfPageLru.length <= _largePdfMaxCachedPages) break;
+                continue;
+              }
+              _pdfPageCache.remove(victim);
+            }
+          });
+        }
+        return bytes;
+      } finally {
+        await page.close();
+      }
+    }();
+    _pdfPageTasks[pageNumber] = task;
+    task.then((_) {
+      _pdfPageTasks.remove(pageNumber);
+    }).catchError((error) {
+      _pdfPageTasks.remove(pageNumber);
+      if (mounted) {
+        setState(() {
+          _pdfPageErrors[pageNumber] = error;
+        });
+      }
+    });
+    return task;
+  }
+
+  Future<void> _prefetchAdjacentPdfPages(
+    _PdfPreviewBundle bundle,
+    int currentPage,
+  ) async {
+    final pages = bundle.pagesCount;
+    final candidates = <int>[
+      if (currentPage > 1) currentPage - 1,
+      if (currentPage < pages) currentPage + 1,
+    ];
+    for (final page in candidates) {
+      unawaited(
+        _ensurePdfPageImage(bundle, page).catchError((_) {
+          return Uint8List(0);
+        }),
+      );
+    }
+  }
 
   Future<_VideoPreviewBundle> _loadVideo() async {
     final raw = _rawUri();
@@ -421,15 +537,15 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
             );
           }
           if (snapshot.hasError) {
-            return _buildError(snapshot.error.toString());
+            return _buildError(snapshot.error.toString(), onRetry: _retryPdfLoad);
           }
           final bundle = snapshot.data;
-          if (bundle == null) return _buildError('加载失败');
+          if (bundle == null) return _buildError('加载失败', onRetry: _retryPdfLoad);
           if (bundle.isPaged) {
             return _buildPagedPdf(bundle);
           }
           final controller = bundle.pinchController;
-          if (controller == null) return _buildError('加载失败');
+          if (controller == null) return _buildError('加载失败', onRetry: _retryPdfLoad);
           return PdfViewPinch(controller: controller);
         },
       );
@@ -549,56 +665,207 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
   }
 
   Widget _buildPagedPdf(_PdfPreviewBundle bundle) {
-    final controller = bundle.pagedController;
-    if (controller == null) return _buildError('加载失败');
+    final document = bundle.document;
+    if (document == null) return _buildError('加载失败', onRetry: _retryPdfLoad);
+    final pages = bundle.pagesCount;
+    _largePdfPageController ??= PageController(
+      initialPage: (_largePdfCurrentPage - 1).clamp(0, pages - 1),
+    );
+    unawaited(
+      _ensurePdfPageImage(bundle, _largePdfCurrentPage, highPriority: true)
+          .catchError((_) {
+            return Uint8List(0);
+          }),
+    );
+    unawaited(_prefetchAdjacentPdfPages(bundle, _largePdfCurrentPage));
     return Column(
       children: [
-        Expanded(child: PdfView(controller: controller)),
-        SafeArea(
-          top: false,
-          child: ValueListenableBuilder<int>(
-            valueListenable: controller.pageListenable,
-            builder: (context, page, child) {
-              final total = bundle.pagesCount;
-              final current = page < 1 ? 1 : (page > total ? total : page);
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: current > 1
-                          ? () async {
-                              await controller.previousPage(
-                                duration: const Duration(milliseconds: 180),
-                                curve: Curves.easeOut,
-                              );
-                            }
-                          : null,
-                      icon: const Icon(Icons.chevron_left),
-                      tooltip: '上一页',
-                    ),
-                    Expanded(
-                      child: Text(
-                        '$current / $total',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: current < total
-                          ? () async {
-                              await controller.nextPage(
-                                duration: const Duration(milliseconds: 180),
-                                curve: Curves.easeOut,
-                              );
-                            }
-                          : null,
-                      icon: const Icon(Icons.chevron_right),
-                      tooltip: '下一页',
-                    ),
-                  ],
-                ),
+        Expanded(
+          child: PageView.builder(
+            controller: _largePdfPageController,
+            itemCount: pages,
+            onPageChanged: (index) {
+              _largePdfCurrentPage = index + 1;
+              if (mounted) {
+                setState(() {});
+              }
+              unawaited(
+                _ensurePdfPageImage(
+                  bundle,
+                  _largePdfCurrentPage,
+                  highPriority: true,
+                ).catchError((_) {
+                  return Uint8List(0);
+                }),
+              );
+              unawaited(
+                _prefetchAdjacentPdfPages(bundle, _largePdfCurrentPage),
               );
             },
+            itemBuilder: (context, index) {
+              final page = index + 1;
+              final cached = _pdfPageCache[page];
+              if (cached != null && cached.isNotEmpty) {
+                return InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Center(
+                    child: Image.memory(
+                      cached,
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                );
+              }
+              final pageError = _pdfPageErrors[page];
+              if (pageError != null) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, size: 40),
+                        const SizedBox(height: 12),
+                        Text('第 $page 页加载失败'),
+                        const SizedBox(height: 8),
+                        Text(
+                          pageError.toString(),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          onPressed: () {
+                            setState(() {
+                              _pdfPageErrors.remove(page);
+                              _pdfPageTasks.remove(page);
+                              _pdfPageCache.remove(page);
+                              _pdfPageLru.remove(page);
+                            });
+                            unawaited(
+                              _ensurePdfPageImage(
+                                bundle,
+                                page,
+                                highPriority: true,
+                              ).catchError((_) {
+                                return Uint8List(0);
+                              }),
+                            );
+                          },
+                          child: const Text('重试本页'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return FutureBuilder<Uint8List>(
+                future: _ensurePdfPageImage(
+                  bundle,
+                  page,
+                  highPriority: page == _largePdfCurrentPage,
+                ),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: CircularProgressIndicator(),
+                          ),
+                          const SizedBox(height: 10),
+                          Text('正在渲染第 $page 页'),
+                        ],
+                      ),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: FilledButton(
+                        onPressed: () {
+                          setState(() {
+                            _pdfPageErrors.remove(page);
+                            _pdfPageTasks.remove(page);
+                          });
+                          unawaited(
+                            _ensurePdfPageImage(
+                              bundle,
+                              page,
+                              highPriority: true,
+                            ).catchError((_) {
+                              return Uint8List(0);
+                            }),
+                          );
+                        },
+                        child: const Text('重试本页'),
+                      ),
+                    );
+                  }
+                  final bytes = snapshot.data;
+                  if (bytes == null || bytes.isEmpty) {
+                    return const Center(child: Text('页面为空'));
+                  }
+                  return InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 4,
+                    child: Center(
+                      child: Image.memory(
+                        bytes,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: _largePdfCurrentPage > 1
+                      ? () {
+                          _largePdfPageController?.previousPage(
+                            duration: const Duration(milliseconds: 160),
+                            curve: Curves.easeOut,
+                          );
+                        }
+                      : null,
+                  icon: const Icon(Icons.chevron_left),
+                  tooltip: '上一页',
+                ),
+                Expanded(
+                  child: Text(
+                    '$_largePdfCurrentPage / $pages',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                IconButton(
+                  onPressed: _largePdfCurrentPage < pages
+                      ? () {
+                          _largePdfPageController?.nextPage(
+                            duration: const Duration(milliseconds: 160),
+                            curve: Curves.easeOut,
+                          );
+                        }
+                      : null,
+                  icon: const Icon(Icons.chevron_right),
+                  tooltip: '下一页',
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -635,7 +902,7 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     );
   }
 
-  Widget _buildError(String message) {
+  Widget _buildError(String message, {VoidCallback? onRetry}) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -652,9 +919,21 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
               style: TextStyle(color: Theme.of(context).colorScheme.outline),
             ),
             SizedBox(height: 16),
-            FilledButton(
-              onPressed: _openGithubOriginal,
-              child: Text('前往 GitHub 查看'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FilledButton(
+                  onPressed: _openGithubOriginal,
+                  child: Text('前往 GitHub 查看'),
+                ),
+                if (onRetry != null) ...[
+                  SizedBox(width: 12),
+                  FilledButton.tonal(
+                    onPressed: onRetry,
+                    child: Text('重试'),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
@@ -665,20 +944,20 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
 
 class _PdfPreviewBundle {
   final PdfControllerPinch? pinchController;
-  final PdfController? pagedController;
+  final PdfDocument? document;
   final bool isPaged;
   final int pagesCount;
 
   _PdfPreviewBundle({
     required this.pinchController,
-    required this.pagedController,
+    required this.document,
     required this.isPaged,
     required this.pagesCount,
   });
 
   void dispose() {
     pinchController?.dispose();
-    pagedController?.dispose();
+    unawaited(document?.close());
   }
 }
 
