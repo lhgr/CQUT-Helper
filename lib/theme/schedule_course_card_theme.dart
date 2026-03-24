@@ -221,8 +221,7 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
     return adjusted.toColor();
   }
 
-  static double _channelToLinear(int channel) {
-    final value = channel / 255.0;
+  static double _channelToLinear(double value) {
     if (value <= 0.03928) {
       return value / 12.92;
     }
@@ -230,9 +229,9 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
   }
 
   static double _relativeLuminance(Color color) {
-    final r = _channelToLinear(color.red);
-    final g = _channelToLinear(color.green);
-    final b = _channelToLinear(color.blue);
+    final r = _channelToLinear(color.r);
+    final g = _channelToLinear(color.g);
+    final b = _channelToLinear(color.b);
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
