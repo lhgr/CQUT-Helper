@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cqut/model/class_schedule_model.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/schedule_course_card.dart';
 
 class ScheduleCourseGrid extends StatelessWidget {
   final List<EventItem> events;
   final double sessionHeight;
   final int sessionCount;
-  final List<Color> colors;
-  final List<Color> textColors;
+  final List<Color> backgroundColors;
+  final List<Color> borderColors;
+  final List<Color> titleColors;
+  final List<Color> descriptionColors;
+  final List<Color> buttonColors;
   final bool showWeekend;
 
   const ScheduleCourseGrid({
@@ -14,17 +18,59 @@ class ScheduleCourseGrid extends StatelessWidget {
     required this.events,
     this.sessionHeight = 60.0,
     this.sessionCount = 12,
-    required this.colors,
-    required this.textColors,
+    required this.backgroundColors,
+    required this.borderColors,
+    required this.titleColors,
+    required this.descriptionColors,
+    required this.buttonColors,
     this.showWeekend = true,
   });
 
-  void _showCourseDetail(BuildContext context, EventItem event) {
+  String _buildCourseKey(EventItem event) {
+    final eventId = event.eventID ?? '';
+    final name = event.eventName ?? '';
+    final address = event.address ?? '';
+    final teacher = event.memberName ?? '';
+    return '$eventId|$name|$address|$teacher';
+  }
+
+  int _safeIndex(int index) {
+    if (backgroundColors.isEmpty) {
+      return 0;
+    }
+    return index % backgroundColors.length;
+  }
+
+  Color _onButtonColor(Color color) {
+    const white = Colors.white;
+    const black = Colors.black;
+    final onWhite = _contrastRatio(color, white);
+    final onBlack = _contrastRatio(color, black);
+    return onWhite >= onBlack ? white : black;
+  }
+
+  double _contrastRatio(Color a, Color b) {
+    final la = a.computeLuminance();
+    final lb = b.computeLuminance();
+    final lighter = la > lb ? la : lb;
+    final darker = la > lb ? lb : la;
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  void _showCourseDetail(
+    BuildContext context,
+    EventItem event,
+    int colorIndex,
+  ) {
+    final safeIndex = _safeIndex(colorIndex);
+    final buttonColor = buttonColors[safeIndex];
+    final onButtonColor = _onButtonColor(buttonColor);
+    final titleColor = titleColors[safeIndex];
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          icon: Icon(Icons.school_outlined),
+          icon: Icon(Icons.school_outlined, color: titleColor),
           title: Text(
             event.eventName ?? "课程详情",
             style: Theme.of(context).textTheme.titleLarge,
@@ -61,7 +107,11 @@ class ScheduleCourseGrid extends StatelessWidget {
             ],
           ),
           actions: [
-            TextButton(
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: buttonColor,
+                foregroundColor: onButtonColor,
+              ),
               onPressed: () => Navigator.of(context).pop(),
               child: const Text("关闭"),
             ),
@@ -115,10 +165,22 @@ class ScheduleCourseGrid extends StatelessWidget {
         final double totalHeight = sessionHeight * sessionCount;
         final visibleEvents = showWeekend
             ? events
-            : events.where((event) {
-                final weekDay = int.tryParse(event.weekDay ?? '1') ?? 1;
-                return weekDay >= 1 && weekDay <= 5;
-              }).toList(growable: false);
+            : events
+                  .where((event) {
+                    final weekDay = int.tryParse(event.weekDay ?? '1') ?? 1;
+                    return weekDay >= 1 && weekDay <= 5;
+                  })
+                  .toList(growable: false);
+        final Map<String, int> courseColorIndexMap = {};
+        int nextColorIndex = 0;
+        for (final event in visibleEvents) {
+          final key = _buildCourseKey(event);
+          courseColorIndexMap.putIfAbsent(key, () {
+            final index = nextColorIndex % backgroundColors.length;
+            nextColorIndex++;
+            return index;
+          });
+        }
 
         return SizedBox(
           height: totalHeight,
@@ -186,75 +248,26 @@ class ScheduleCourseGrid extends StatelessWidget {
                     return const SizedBox.shrink();
                   }
 
-                  final int colorIndex =
-                      ((event.eventName ?? '').hashCode & 0x7fffffff) %
-                      colors.length;
-                  final Color backgroundColor = colors[colorIndex];
-                  final Color textColor =
-                      textColors[colorIndex % textColors.length];
+                  final key = _buildCourseKey(event);
+                  final int colorIndex = courseColorIndexMap[key] ?? 0;
+                  final safeIndex = _safeIndex(colorIndex);
+                  final Color backgroundColor = backgroundColors[safeIndex];
+                  final Color borderColor = borderColors[safeIndex];
+                  final Color titleColor = titleColors[safeIndex];
+                  final Color descriptionColor = descriptionColors[safeIndex];
 
                   return Positioned(
                     left: dayIndex * dayWidth,
                     top: (start - 1) * sessionHeight,
                     width: dayWidth,
                     height: duration * sessionHeight,
-                    child: GestureDetector(
-                      onTap: () => _showCourseDetail(context, event),
-                      child: Container(
-                        margin: const EdgeInsets.all(1),
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: backgroundColor,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withAlpha(13),
-                              blurRadius: 4,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              event.eventName ?? "",
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: textColor,
-                                  ),
-                              maxLines: 3,
-                              overflow: TextOverflow.visible,
-                            ),
-                            const SizedBox(height: 2),
-                            Flexible(
-                              child: Text(
-                                "@${event.address}",
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(
-                                      fontSize: 9,
-                                      color: textColor.withAlpha(204),
-                                    ),
-                                maxLines: null,
-                                overflow: TextOverflow.visible,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              event.memberName ?? "",
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    fontSize: 9,
-                                    color: textColor.withAlpha(204),
-                                  ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
+                    child: ScheduleCourseCard(
+                      event: event,
+                      backgroundColor: backgroundColor,
+                      borderColor: borderColor,
+                      titleColor: titleColor,
+                      descriptionColor: descriptionColor,
+                      onTap: () => _showCourseDetail(context, event, safeIndex),
                     ),
                   );
                 }),
