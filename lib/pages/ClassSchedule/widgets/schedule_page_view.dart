@@ -19,58 +19,40 @@ class SchedulePageView extends StatelessWidget {
       35.0; // Increased width for time labels
   static const double _sessionHeight = 60.0;
 
-  static const int _colorCount = 16;
-  static const double _goldenAngle = 137.508;
+  static const List<Color> _courseColors = [
+    Color(0xFFE6F4FF),
+    Color(0xFFFDEBDD),
+    Color(0xFFDEFBF7),
+    Color(0xFFEEEDFF),
+    Color(0xFFFCEBCD),
+    Color(0xFFFFEFF0),
+    Color(0xFFFFEEF8),
+    Color(0xFFE2F9F3),
+    Color(0xFFFFF9C9),
+    Color(0xFFFAEDFF),
+    Color(0xFFF4F2FD),
+  ];
 
-  static List<Color> _buildCourseColors(
-    ColorScheme colorScheme,
-    Brightness brightness,
-  ) {
-    final bool isDark = brightness == Brightness.dark;
-    final double primaryHue = HSLColor.fromColor(colorScheme.primary).hue;
-    final double secondaryHue = HSLColor.fromColor(colorScheme.secondary).hue;
-    final double tertiaryHue = HSLColor.fromColor(colorScheme.tertiary).hue;
-    final double harmonyShiftA =
-        ((secondaryHue - primaryHue + 540) % 360) - 180;
-    final double harmonyShiftB = ((tertiaryHue - primaryHue + 540) % 360) - 180;
+  static const List<Color> _courseDarkerColors = [
+    Color(0xFF00A8FF),
+    Color(0xFFFF7F50),
+    Color(0xFF00CEC9),
+    Color(0xFFA55EEA),
+    Color(0xFFFFB142),
+    Color(0xFFFF4757),
+    Color(0xFFFF6B81),
+    Color(0xFF00D2D3),
+    Color(0xFFFFDD59),
+    Color(0xFFCD84F1),
+    Color(0xFF7D5FFF),
+  ];
 
-    return List.generate(_colorCount, (index) {
-      final double harmonyOffset = switch (index % 3) {
-        1 => harmonyShiftA * 0.22,
-        2 => harmonyShiftB * 0.22,
-        _ => 0.0,
-      };
-      final double hue =
-          (primaryHue + index * _goldenAngle + harmonyOffset) % 360;
-      final double saturationBase = isDark ? 0.50 : 0.60;
-      final double saturation = (saturationBase + (index % 4) * 0.05)
-          .clamp(0.48, 0.80)
-          .toDouble();
-      final List<double> lightnessPattern = isDark
-          ? const [0.22, 0.26, 0.20, 0.28]
-          : const [0.74, 0.68, 0.62, 0.70];
-      final double lightness = lightnessPattern[index % 4];
-
-      final base = HSLColor.fromAHSL(1.0, hue, saturation, lightness).toColor();
-      return isDark ? Color.lerp(base, colorScheme.surface, 0.10)! : base;
-    });
+  static List<Color> _buildCourseColors() {
+    return _courseColors;
   }
 
-  static List<Color> _buildCourseTextColors(
-    List<Color> backgroundColors,
-    ColorScheme colorScheme,
-  ) {
-    return backgroundColors
-        .map((backgroundColor) {
-          final Brightness brightness = ThemeData.estimateBrightnessForColor(
-            backgroundColor,
-          );
-          if (brightness == Brightness.dark) {
-            return Color.lerp(Colors.white, colorScheme.onPrimary, 0.12)!;
-          }
-          return Color.lerp(Colors.black, colorScheme.onSurface, 0.45)!;
-        })
-        .toList(growable: false);
+  static List<Color> _buildCourseTextColors() {
+    return _courseDarkerColors;
   }
 
   const SchedulePageView({
@@ -87,15 +69,8 @@ class SchedulePageView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final courseColors = _buildCourseColors(
-      theme.colorScheme,
-      theme.brightness,
-    );
-    final courseTextColors = _buildCourseTextColors(
-      courseColors,
-      theme.colorScheme,
-    );
+    final courseColors = _buildCourseColors();
+    final courseTextColors = _buildCourseTextColors();
 
     return NotificationListener<OverscrollNotification>(
       onNotification: (notification) {
