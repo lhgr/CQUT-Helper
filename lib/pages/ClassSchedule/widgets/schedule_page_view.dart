@@ -2,6 +2,7 @@ import 'package:cqut/model/class_schedule_model.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_course_grid.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_header.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_time_column.dart';
+import 'package:cqut/theme/schedule_course_card_theme.dart';
 import 'package:flutter/material.dart';
 
 class SchedulePageView extends StatelessWidget {
@@ -19,42 +20,6 @@ class SchedulePageView extends StatelessWidget {
       35.0; // Increased width for time labels
   static const double _sessionHeight = 60.0;
 
-  static const List<Color> _courseColors = [
-    Color(0xFFE6F4FF),
-    Color(0xFFFDEBDD),
-    Color(0xFFDEFBF7),
-    Color(0xFFEEEDFF),
-    Color(0xFFFCEBCD),
-    Color(0xFFFFEFF0),
-    Color(0xFFFFEEF8),
-    Color(0xFFE2F9F3),
-    Color(0xFFFFF9C9),
-    Color(0xFFFAEDFF),
-    Color(0xFFF4F2FD),
-  ];
-
-  static const List<Color> _courseDarkerColors = [
-    Color(0xFF00A8FF),
-    Color(0xFFFF7F50),
-    Color(0xFF00CEC9),
-    Color(0xFFA55EEA),
-    Color(0xFFFFB142),
-    Color(0xFFFF4757),
-    Color(0xFFFF6B81),
-    Color(0xFF00D2D3),
-    Color(0xFFFFDD59),
-    Color(0xFFCD84F1),
-    Color(0xFF7D5FFF),
-  ];
-
-  static List<Color> _buildCourseColors() {
-    return _courseColors;
-  }
-
-  static List<Color> _buildCourseTextColors() {
-    return _courseDarkerColors;
-  }
-
   const SchedulePageView({
     super.key,
     required this.pageController,
@@ -69,8 +34,11 @@ class SchedulePageView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final courseColors = _buildCourseColors();
-    final courseTextColors = _buildCourseTextColors();
+    final cardTheme =
+        Theme.of(context).extension<ScheduleCourseCardTheme>() ??
+        (Theme.of(context).brightness == Brightness.dark
+            ? ScheduleCourseCardTheme.dark()
+            : ScheduleCourseCardTheme.light());
 
     return NotificationListener<OverscrollNotification>(
       onNotification: (notification) {
@@ -121,8 +89,11 @@ class SchedulePageView extends StatelessWidget {
                           events: data.eventList ?? [],
                           sessionHeight: _sessionHeight,
                           showWeekend: showWeekend,
-                          colors: courseColors,
-                          textColors: courseTextColors,
+                          backgroundColors: cardTheme.backgrounds,
+                          borderColors: cardTheme.borders,
+                          titleColors: cardTheme.titleColors,
+                          descriptionColors: cardTheme.descriptionColors,
+                          buttonColors: cardTheme.buttonColors,
                         ),
                       ),
                     ],
