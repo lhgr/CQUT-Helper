@@ -32,8 +32,6 @@ class RepoFilePreviewPage extends StatefulWidget {
 
 class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
   final Dio _dio = Dio();
-  static const int _largePdfBytesThreshold = 20 * 1024 * 1024;
-  static const int _largePdfPagesThreshold = 80;
   static const int _largePdfMaxCachedPages = 6;
   static const int _pdfSegmentBytes = 1024 * 1024;
   static const int _pdfSegmentRetryTimes = 3;
@@ -164,25 +162,12 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     if (raw == null) throw Exception('该文件没有可用的下载地址');
     _resetLargePdfCache();
     final file = await _ensureLocalFile(raw);
-    final fileBytes = await file.length();
     final document = await PdfDocument.openFile(file.path);
     final pagesCount = document.pagesCount;
-    final usePagedMode =
-        fileBytes >= _largePdfBytesThreshold ||
-        pagesCount >= _largePdfPagesThreshold;
-    if (usePagedMode) {
-      return _PdfPreviewBundle(
-        pinchController: null,
-        document: document,
-        isPaged: true,
-        pagesCount: pagesCount,
-      );
-    }
-    final controller = PdfControllerPinch(document: Future.value(document));
     return _PdfPreviewBundle(
-      pinchController: controller,
-      document: null,
-      isPaged: false,
+      pinchController: null,
+      document: document,
+      isPaged: true,
       pagesCount: pagesCount,
     );
   }
@@ -261,6 +246,90 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
     });
   }
 
+  Future<void> _showPdfPageJumpDialog(int totalPages) async {
+    if (totalPages <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('当前文档页数异常，暂不可跳转')));
+      return;
+    }
+    var inputValue = _largePdfCurrentPage.toString();
+    final target = await showDialog<int>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('跳转页码'),
+          content: TextFormField(
+            initialValue: inputValue,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(hintText: '请输入 1 - $totalPages'),
+            onChanged: (value) {
+              inputValue = value;
+            },
+            onFieldSubmitted: (value) {
+              final page = int.tryParse(value.trim());
+              Navigator.of(context).pop(page);
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final page = int.tryParse(inputValue.trim());
+                Navigator.of(context).pop(page);
+              },
+              child: const Text('跳转'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || target == null) return;
+    final page = target;
+    if (page < 1 || page > totalPages) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('页码范围应为 1 - $totalPages')));
+      return;
+    }
+    _jumpToPdfPage(page, totalPages);
+  }
+
+  void _jumpToPdfPage(int page, int totalPages) {
+    if (page < 1 || page > totalPages) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('页码范围应为 1 - $totalPages')));
+      return;
+    }
+    final controller = _largePdfPageController;
+    if (controller == null || !controller.hasClients) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('页面尚未就绪，请稍后重试')));
+      return;
+    }
+    controller
+        .animateToPage(
+          page - 1,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        )
+        .catchError((_) {
+          if (!mounted) {
+            return;
+          }
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('跳转失败，请重试')));
+        });
+  }
+
   Future<Uint8List> _ensurePdfPageImage(
     _PdfPreviewBundle bundle,
     int pageNumber, {
@@ -313,16 +382,18 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
       }
     }();
     _pdfPageTasks[pageNumber] = task;
-    task.then((_) {
-      _pdfPageTasks.remove(pageNumber);
-    }).catchError((error) {
-      _pdfPageTasks.remove(pageNumber);
-      if (mounted) {
-        setState(() {
-          _pdfPageErrors[pageNumber] = error;
+    task
+        .then((_) {
+          _pdfPageTasks.remove(pageNumber);
+        })
+        .catchError((error) {
+          _pdfPageTasks.remove(pageNumber);
+          if (mounted) {
+            setState(() {
+              _pdfPageErrors[pageNumber] = error;
+            });
+          }
         });
-      }
-    });
     return task;
   }
 
@@ -537,16 +608,16 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
             );
           }
           if (snapshot.hasError) {
-            return _buildError(snapshot.error.toString(), onRetry: _retryPdfLoad);
+            return _buildError(
+              snapshot.error.toString(),
+              onRetry: _retryPdfLoad,
+            );
           }
           final bundle = snapshot.data;
-          if (bundle == null) return _buildError('加载失败', onRetry: _retryPdfLoad);
-          if (bundle.isPaged) {
-            return _buildPagedPdf(bundle);
+          if (bundle == null) {
+            return _buildError('加载失败', onRetry: _retryPdfLoad);
           }
-          final controller = bundle.pinchController;
-          if (controller == null) return _buildError('加载失败', onRetry: _retryPdfLoad);
-          return PdfViewPinch(controller: controller);
+          return _buildPagedPdf(bundle);
         },
       );
     }
@@ -672,10 +743,13 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
       initialPage: (_largePdfCurrentPage - 1).clamp(0, pages - 1),
     );
     unawaited(
-      _ensurePdfPageImage(bundle, _largePdfCurrentPage, highPriority: true)
-          .catchError((_) {
-            return Uint8List(0);
-          }),
+      _ensurePdfPageImage(
+        bundle,
+        _largePdfCurrentPage,
+        highPriority: true,
+      ).catchError((_) {
+        return Uint8List(0);
+      }),
     );
     unawaited(_prefetchAdjacentPdfPages(bundle, _largePdfCurrentPage));
     return Column(
@@ -683,6 +757,7 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
         Expanded(
           child: PageView.builder(
             controller: _largePdfPageController,
+            scrollDirection: Axis.vertical,
             itemCount: pages,
             onPageChanged: (index) {
               _largePdfCurrentPage = index + 1;
@@ -706,15 +781,11 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
               final page = index + 1;
               final cached = _pdfPageCache[page];
               if (cached != null && cached.isNotEmpty) {
-                return InteractiveViewer(
-                  minScale: 1,
-                  maxScale: 4,
-                  child: Center(
-                    child: Image.memory(
-                      cached,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                    ),
+                return Center(
+                  child: Image.memory(
+                    cached,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
                   ),
                 );
               }
@@ -812,15 +883,11 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
                   if (bytes == null || bytes.isEmpty) {
                     return const Center(child: Text('页面为空'));
                   }
-                  return InteractiveViewer(
-                    minScale: 1,
-                    maxScale: 4,
-                    child: Center(
-                      child: Image.memory(
-                        bytes,
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                      ),
+                  return Center(
+                    child: Image.memory(
+                      bytes,
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
                     ),
                   );
                 },
@@ -834,35 +901,16 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
             child: Row(
               children: [
-                IconButton(
-                  onPressed: _largePdfCurrentPage > 1
-                      ? () {
-                          _largePdfPageController?.previousPage(
-                            duration: const Duration(milliseconds: 160),
-                            curve: Curves.easeOut,
-                          );
-                        }
-                      : null,
-                  icon: const Icon(Icons.chevron_left),
-                  tooltip: '上一页',
-                ),
                 Expanded(
                   child: Text(
                     '$_largePdfCurrentPage / $pages',
                     textAlign: TextAlign.center,
                   ),
                 ),
-                IconButton(
-                  onPressed: _largePdfCurrentPage < pages
-                      ? () {
-                          _largePdfPageController?.nextPage(
-                            duration: const Duration(milliseconds: 160),
-                            curve: Curves.easeOut,
-                          );
-                        }
-                      : null,
-                  icon: const Icon(Icons.chevron_right),
-                  tooltip: '下一页',
+                TextButton.icon(
+                  onPressed: () => _showPdfPageJumpDialog(pages),
+                  icon: const Icon(Icons.find_in_page_outlined),
+                  label: const Text('跳转'),
                 ),
               ],
             ),
@@ -928,10 +976,7 @@ class _RepoFilePreviewPageState extends State<RepoFilePreviewPage> {
                 ),
                 if (onRetry != null) ...[
                   SizedBox(width: 12),
-                  FilledButton.tonal(
-                    onPressed: onRetry,
-                    child: Text('重试'),
-                  ),
+                  FilledButton.tonal(onPressed: onRetry, child: Text('重试')),
                 ],
               ],
             ),
