@@ -73,7 +73,8 @@ object TodayWidgetData {
   }
 
   fun loadCoursesByDayOffset(context: Context, dayOffset: Int): List<CourseItem> {
-    val data = loadScheduleJsonObject(context) ?: return emptyList()
+    val data = loadScheduleJsonObject(context)
+    if (data == null) return emptyList()
     if (!scheduleContainsSystemDate(data)) return emptyList()
     val baseWeekDay = toMondayBasedWeekday(Calendar.getInstance())
 
@@ -452,30 +453,90 @@ object TodayWidgetData {
     val sessionClockMap = loadSessionClockMap(context)
     if (sessionClockMap.isEmpty()) return courses
 
-    val events = schedule.optJSONArray("eventList") ?: return courses
     val todayWeekDay = toMondayBasedWeekday(Calendar.getInstance()).toString()
     val nowMinutes = currentMinuteOfDay()
+    return filterEndedCoursesByClockMap(schedule, courses, sessionClockMap, todayWeekDay, nowMinutes)
+  }
+
+  internal fun filterEndedCoursesByClockMap(
+    schedule: JSONObject,
+    courses: List<CourseItem>,
+    sessionClockMap: Map<Int, Pair<Int, Int>>,
+    targetWeekDay: String,
+    nowMinutes: Int,
+  ): List<CourseItem> {
+    if (courses.isEmpty()) return courses
+    if (sessionClockMap.isEmpty()) return courses
+    if (nowMinutes < 0) return courses
+
+    val events = schedule.optJSONArray("eventList") ?: return courses
     val endedEventIds = HashSet<String>()
+    val endedFallbackKeys = HashSet<String>()
 
     for (i in 0 until events.length()) {
       val event = events.optJSONObject(i) ?: continue
-      if (event.optString("weekDay", "") != todayWeekDay) continue
+      if (event.optString("weekDay", "") != targetWeekDay) continue
       val eventId = event.optString("eventID", "").trim()
-      if (eventId.isEmpty()) continue
       val sessionNums = sessionNumbersOfEvent(event)
       if (sessionNums.isEmpty()) continue
-      val maxEndMinute =
-        sessionNums
-          .mapNotNull { sessionClockMap[it]?.second }
-          .maxOrNull() ?: continue
-      if (maxEndMinute <= nowMinutes) {
-        endedEventIds.add(eventId)
+      var maxEndMinute: Int? = null
+      var hasInvalidSession = false
+      for (sessionNum in sessionNums) {
+        val clock = sessionClockMap[sessionNum]
+        if (clock == null) {
+          hasInvalidSession = true
+          break
+        }
+        if (maxEndMinute == null || clock.second > maxEndMinute!!) {
+          maxEndMinute = clock.second
+        }
+      }
+      if (hasInvalidSession || maxEndMinute == null) continue
+      if (maxEndMinute < nowMinutes) {
+        if (eventId.isNotEmpty()) {
+          endedEventIds.add(eventId)
+        } else {
+          val fallbackKey = fallbackCourseKey(event, sessionNums)
+          if (fallbackKey != null) endedFallbackKeys.add(fallbackKey)
+        }
       }
     }
-    if (endedEventIds.isEmpty()) return courses
+    if (endedEventIds.isEmpty() && endedFallbackKeys.isEmpty()) return courses
     return courses.filterNot { item ->
       val eventId = item.eventId?.trim().orEmpty()
-      eventId.isNotEmpty() && endedEventIds.contains(eventId)
+      if (eventId.isNotEmpty()) {
+        endedEventIds.contains(eventId)
+      } else {
+        val fallbackKey = fallbackCourseKey(item.name, item.periods)
+        fallbackKey != null && endedFallbackKeys.contains(fallbackKey)
+      }
+    }
+  }
+
+  private fun fallbackCourseKey(event: JSONObject, sessionNums: List<Int>): String? {
+    val name = event.optString("eventName", "").ifBlank { "课程" }
+    val periods = periodsTextFromSessionNumbers(sessionNums) ?: return null
+    return fallbackCourseKey(name, periods)
+  }
+
+  private fun fallbackCourseKey(name: String, periods: String): String? {
+    val normalizedName = name.trim().ifBlank { "课程" }
+    val normalizedPeriods = periods.trim()
+    if (normalizedPeriods.isEmpty()) return null
+    return "$normalizedName|$normalizedPeriods"
+  }
+
+  private fun periodsTextFromSessionNumbers(sessionNums: List<Int>): String? {
+    if (sessionNums.isEmpty()) return null
+    val nums = sessionNums.filter { it > 0 }.distinct().sorted()
+    if (nums.isEmpty()) return null
+    val isContinuous = nums.last() - nums.first() + 1 == nums.size
+    return if (isContinuous && nums.size > 1) {
+      "第${nums.first()}-${nums.last()}节"
+    } else if (nums.size == 1) {
+      "第${nums.first()}-${nums.first()}节"
+    } else {
+      "第${nums.joinToString(",")}节"
     }
   }
 
@@ -509,7 +570,8 @@ object TodayWidgetData {
 
   private fun loadSessionClockMap(context: Context): Map<Int, Pair<Int, Int>> {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    val raw = prefs.getString(KEY_TIME_INFO_CACHE, null) ?: return emptyMap()
+    val raw = prefs.getString(KEY_TIME_INFO_CACHE, null)
+    if (raw.isNullOrBlank()) return emptyMap()
     return try {
       val decoded = JSONObject(raw)
       val items = decoded.optJSONArray("items") ?: return emptyMap()
@@ -519,7 +581,8 @@ object TodayWidgetData {
         val sessionNum = item.optInt("sessionNum", -1)
         if (sessionNum <= 0) continue
         val start = parseTimeToMinute(item.optString("startTime", "")) ?: continue
-        val end = parseTimeToMinute(item.optString("endTime", "")) ?: continue
+        val endRaw = parseTimeToMinute(item.optString("endTime", "")) ?: continue
+        val end = if (endRaw < start) endRaw + 24 * 60 else endRaw
         result[sessionNum] = start to end
       }
       result
