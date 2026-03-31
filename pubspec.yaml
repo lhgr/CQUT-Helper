@@ -57,6 +57,8 @@ dependencies:
   chewie: ^1.13.0
   audioplayers: ^6.6.0
   webview_flutter: ^4.13.1
+  image_picker: ^1.2.0
+  flutter_image_compress: ^2.4.0
 
 dev_dependencies:
   flutter_test:

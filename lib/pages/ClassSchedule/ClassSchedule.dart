@@ -9,6 +9,8 @@ import 'package:cqut/manager/schedule_update_worker.dart';
 import 'package:cqut/model/class_schedule_model.dart';
 import 'package:cqut/model/schedule_notice.dart';
 import 'package:cqut/model/schedule_week_change.dart';
+import 'package:cqut/pages/ClassSchedule/course_notebook_page.dart';
+import 'package:cqut/pages/ClassSchedule/course_overview_page.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_app_bar.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_changes_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_notice_records_sheet.dart';
@@ -224,6 +226,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         currentScheduleData: _currentScheduleData,
         nowInTeachingWeek: _nowInTeachingWeek,
         nowStatusLabel: _nowStatusLabel,
+        onCourseOverview: _openCourseOverview,
         onNoticeRecords: _openTermNoticeRecords,
         onRefresh: () => _loadFromNetwork(
           weekNum: _weekList![_currentWeekIndex],
@@ -248,6 +251,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         currentWeekIndex: _currentWeekIndex,
         timeInfoList:
             _settingsManager.timeInfoEnabled ? _controller.timeInfoList : null,
+        onTapCourse: _openCourseNotebookByEvent,
       ),
     );
   }
