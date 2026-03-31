@@ -22,7 +22,8 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       _processLoadedData(cachedData, isInitial: true);
     }
 
-    final networkData = await _loadFromNetwork();
+    final networkData = await _loadFromNetwork(fromInitialBoot: true);
+    _initialBootRequestPending = false;
     if (cachedData != null && networkData != null && mounted) {
       final sameWeek = (cachedData.weekNum ?? '').trim().isNotEmpty &&
           (networkData.weekNum ?? '').trim().isNotEmpty &&
@@ -48,42 +49,6 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       }
     }
 
-    if (_currentScheduleData != null && mounted) {
-      final current = _currentScheduleData!;
-      final wList = current.weekList;
-      final currentWeekStr = current.weekNum;
-      final term = current.yearTerm;
-      if (wList != null && currentWeekStr != null && term != null) {
-        final maxWeeksAhead = maxWeeksAheadForSchedule(
-          weekList: wList,
-          currentWeek: currentWeekStr,
-        );
-        final weeksAhead = _settingsManager.updateWeeksAhead.clamp(
-          0,
-          maxWeeksAhead,
-        );
-        final currentIndex = wList.indexOf(currentWeekStr);
-        if (currentIndex != -1) {
-          unawaited(
-            Future(() async {
-              for (int offset = 1; offset <= weeksAhead; offset++) {
-                if (!mounted) return;
-                final idx = currentIndex + offset;
-                if (idx < 0 || idx >= wList.length) continue;
-                await _controller.ensureWeekLoaded(
-                  wList[idx],
-                  term,
-                  forceRefresh: true,
-                );
-              }
-              if (!mounted) return;
-              _setState(() {});
-            }),
-          );
-        }
-      }
-    }
-
     await _consumePendingChangesIfAny();
 
     if (_currentScheduleData != null) {
@@ -101,43 +66,80 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         _showUpdateNotification(changes);
       }
     }
-
-    if (_currentScheduleData != null) {
-      unawaited(
-        _controller.refreshAllWeeksInForeground(
-          _currentScheduleData!,
-          interval: const Duration(seconds: 2),
-        ),
-      );
-    }
+    await _maybeShowBackgroundPollingGuide();
   }
 
-  void _processLoadedData(ScheduleData data, {bool isInitial = false}) {
+  Future<void> _maybeShowBackgroundPollingGuide() async {
+    if (!mounted) return;
+    if (_settingsManager.backgroundPollingEnabled) return;
+    final prefs = await SharedPreferences.getInstance();
+    final account = (prefs.getString('account') ?? '').trim();
+    final key = account.isEmpty
+        ? 'schedule_polling_guide_shown'
+        : 'schedule_polling_guide_shown_$account';
+    final shown = prefs.getBool(key) ?? false;
+    if (shown) return;
+    await prefs.setBool(key, true);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('如需自动更新课表，请在右上角设置中开启“定时轮询”功能'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: '去设置',
+          onPressed: _showScheduleSettingsSheetWrapper,
+        ),
+      ),
+    );
+  }
+
+  void _processLoadedData(
+    ScheduleData data, {
+    bool isInitial = false,
+    bool keepCurrentSelection = false,
+  }) {
     if (data.weekNum == null || data.weekList == null) return;
 
     _controller.processLoadedData(data);
 
     _setState(() {
-      _currentScheduleData = data;
-
       final newIndex = _controller.weekList!.indexOf(data.weekNum!);
+      final hasValidCurrentIndex =
+          _weekList != null &&
+          _currentWeekIndex >= 0 &&
+          _currentWeekIndex < _weekList!.length;
+
+      if (keepCurrentSelection && hasValidCurrentIndex) {
+        final selectedWeek = _weekList![_currentWeekIndex];
+        final selectedWeekInt = int.tryParse(selectedWeek) ?? -1;
+        _currentScheduleData = _weekCache[selectedWeekInt] ?? data;
+      } else {
+        _currentScheduleData = data;
+      }
+
       if (newIndex != -1) {
+        final targetIndex = keepCurrentSelection && hasValidCurrentIndex
+            ? _currentWeekIndex
+            : newIndex;
         if (_pageController == null) {
-          _currentWeekIndex = newIndex;
-          _pageController = PageController(initialPage: newIndex);
-        } else if (_currentWeekIndex != newIndex && !isInitial) {
+          _currentWeekIndex = targetIndex;
+          _pageController = PageController(initialPage: targetIndex);
+        } else if (_currentWeekIndex != newIndex &&
+            !isInitial &&
+            !keepCurrentSelection) {
           _currentWeekIndex = newIndex;
           _pageController!.jumpToPage(newIndex);
         }
       }
     });
-    _configureUpdateTimer();
   }
 
   Future<ScheduleData?> _loadFromNetwork({
     String? weekNum,
     String? yearTerm,
     bool updateWidgetPins = false,
+    bool fromInitialBoot = false,
   }) async {
     if (_controller.weekCache.containsKey(int.tryParse(weekNum ?? "") ?? -1)) {}
 
@@ -153,7 +155,11 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         updateWidgetPins: updateWidgetPins,
       );
 
-      _processLoadedData(data);
+      _processLoadedData(
+        data,
+        keepCurrentSelection:
+            fromInitialBoot && _userChangedWeekDuringInitialBoot,
+      );
       _schedulePrefetch(data);
 
       if (_controller.timeInfoList == null) {
@@ -209,6 +215,5 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     await _settingsManager.load();
     if (!mounted) return;
     _setState(() {});
-    _configureUpdateTimer();
   }
 }

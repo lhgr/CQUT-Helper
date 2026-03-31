@@ -1,66 +1,21 @@
-import 'dart:async';
 import 'dart:convert';
+import 'package:cqut/manager/schedule_notice_refresh_pipeline.dart';
 import 'package:cqut/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut/model/class_schedule_model.dart';
 import 'package:cqut/model/schedule_week_change.dart';
-import 'package:cqut/manager/schedule_update_worker.dart';
 import 'package:cqut/manager/schedule_update_intents.dart';
-import 'package:cqut/utils/schedule_update_range_utils.dart';
+import 'package:cqut/utils/schedule_notice_metrics.dart';
 import 'package:cqut/utils/schedule_update_log.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'schedule_settings_manager.dart';
 
 class ScheduleUpdateManager {
   final ScheduleController controller;
-  final ScheduleSettingsManager settings;
-  Timer? _timer;
-  Timer? _retryTimer;
   bool _checkInFlight = false;
-  int _retryBackoffMinutes = 0;
-  ScheduleData? Function()? _currentDataGetter;
-  Function(List<ScheduleWeekChange>)? _onChangesFound;
+  static const String _pendingKeyPrefix = 'schedule_pending_changes_';
 
-  ScheduleUpdateManager({required this.controller, required this.settings});
+  ScheduleUpdateManager({required this.controller});
 
-  void dispose() {
-    stopTimer();
-  }
-
-  void startTimer(
-    ScheduleData? Function() currentDataGetter,
-    Function(List<ScheduleWeekChange>) onChangesFound,
-  ) {
-    stopTimer();
-    _currentDataGetter = currentDataGetter;
-    _onChangesFound = onChangesFound;
-    if (!settings.updateEnabled || settings.updateIntervalMinutes < 1) return;
-
-    _timer = Timer.periodic(Duration(minutes: settings.updateIntervalMinutes), (
-      _,
-    ) async {
-      final currentData = currentDataGetter();
-      if (currentData == null) return;
-      final result = await _checkForUpdatesInternal(
-        currentData,
-        runType: 'foreground_timer',
-      );
-      final changes = result.changes;
-      if (changes.isNotEmpty) {
-        onChangesFound(changes);
-      }
-      _handleRetryAfterRun(result.hadFailures, currentData);
-    });
-  }
-
-  void stopTimer() {
-    _timer?.cancel();
-    _timer = null;
-    _retryTimer?.cancel();
-    _retryTimer = null;
-    _retryBackoffMinutes = 0;
-    _currentDataGetter = null;
-    _onChangesFound = null;
-  }
+  void dispose() {}
 
   Future<List<ScheduleWeekChange>> checkForUpdates(
     ScheduleData currentData,
@@ -73,7 +28,14 @@ class ScheduleUpdateManager {
   }
 
   Future<
-    ({List<ScheduleWeekChange> changes, bool hadFailures, int failureDelta})
+    ({
+      List<ScheduleWeekChange> changes,
+      bool hadFailures,
+      int failureDelta,
+      bool apiClosed,
+      int changedNotices,
+      int affectedWeeks,
+    })
   >
   _checkForUpdatesInternal(
     ScheduleData currentData, {
@@ -84,29 +46,38 @@ class ScheduleUpdateManager {
         changes: const <ScheduleWeekChange>[],
         hadFailures: false,
         failureDelta: 0,
+        apiClosed: false,
+        changedNotices: 0,
+        affectedWeeks: 0,
       );
     }
     _checkInFlight = true;
     final startAt = DateTime.now();
     final failuresBefore = await ScheduleUpdateLog.failureCounter();
     List<ScheduleWeekChange> changes = const <ScheduleWeekChange>[];
+    int changedNotices = 0;
+    int affectedWeeks = 0;
+    bool apiClosed = false;
     Object? error;
     StackTrace? stackTrace;
-    int weeksAhead = 0;
-    int weeksPlanned = 1;
     int failureDelta = 0;
     bool hadFailures = false;
     try {
-      final maxWeeksAhead = maxWeeksAheadForSchedule(
-        weekList: currentData.weekList,
-        currentWeek: currentData.weekNum,
+      final pipeline = ScheduleNoticeRefreshPipeline(
+        refreshWeek: (weekNum, yearTerm) {
+          return controller.ensureWeekLoaded(
+            weekNum,
+            yearTerm,
+            forceRefresh: true,
+            updateLastViewed: false,
+          );
+        },
       );
-      weeksAhead = settings.updateWeeksAhead.clamp(0, maxWeeksAhead);
-      weeksPlanned = 1 + weeksAhead;
-      changes = await controller.silentCheckRecentWeeksForChangesDetailed(
-        currentData,
-        weeksAhead: weeksAhead,
-      );
+      final result = await pipeline.run(currentData: currentData);
+      changes = result.changes;
+      changedNotices = result.changedNoticeCount;
+      affectedWeeks = result.affectedWeeks.length;
+      apiClosed = result.apiClosed;
       if (changes.isNotEmpty) {
         ScheduleUpdateIntents.requestScheduleUpdated();
       }
@@ -121,16 +92,32 @@ class ScheduleUpdateManager {
     } finally {
       final failuresAfter = await ScheduleUpdateLog.failureCounter();
       failureDelta = failuresAfter - failuresBefore;
-      hadFailures = error != null || failureDelta > 0;
+      hadFailures = !apiClosed && (error != null || failureDelta > 0);
       final durationMs = DateTime.now().difference(startAt).inMilliseconds;
+      final metricText = await ScheduleNoticeMetrics.record(
+        ScheduleNoticeMetricsRecord(
+          runType: runType,
+          success: !hadFailures && !apiClosed,
+          degraded: false,
+          apiClosed: apiClosed,
+          changeCount: changedNotices,
+          affectedWeeks: affectedWeeks,
+          durationMs: durationMs,
+          failureStreak: 0,
+        ),
+      );
       await ScheduleUpdateLog.appendRun({
         'at': DateTime.now().millisecondsSinceEpoch,
         'type': runType,
-        'weeksPlanned': weeksPlanned,
+        'pollType': 'notice',
+        'changedNotices': changedNotices,
+        'affectedWeeks': affectedWeeks,
         'weeksChanged': changes.length,
+        'apiClosed': apiClosed,
         'durationMs': durationMs,
         'hadFailures': hadFailures,
         'failureDelta': failureDelta,
+        'metricsProm': metricText,
       });
       if (stackTrace != null) {
         await ScheduleUpdateLog.appendRun({
@@ -146,37 +133,10 @@ class ScheduleUpdateManager {
       changes: changes,
       hadFailures: hadFailures,
       failureDelta: failureDelta,
+      apiClosed: apiClosed,
+      changedNotices: changedNotices,
+      affectedWeeks: affectedWeeks,
     );
-  }
-
-  void _handleRetryAfterRun(bool hadFailures, ScheduleData currentData) {
-    if (!hadFailures) {
-      _retryBackoffMinutes = 0;
-      _retryTimer?.cancel();
-      _retryTimer = null;
-      return;
-    }
-    if (!settings.updateEnabled || settings.updateIntervalMinutes < 1) return;
-    if (_retryTimer != null) return;
-    final base = settings.updateIntervalMinutes;
-    final next = _retryBackoffMinutes <= 0 ? 5 : (_retryBackoffMinutes * 2);
-    _retryBackoffMinutes = next > base ? base : next;
-    _retryTimer = Timer(Duration(minutes: _retryBackoffMinutes), () async {
-      _retryTimer = null;
-      final getter = _currentDataGetter;
-      final onChangesFound = _onChangesFound;
-      if (getter == null || onChangesFound == null) return;
-      final fresh = getter();
-      if (fresh == null) return;
-      final result = await _checkForUpdatesInternal(
-        fresh,
-        runType: 'foreground_retry',
-      );
-      if (result.changes.isNotEmpty) {
-        onChangesFound(result.changes);
-      }
-      _handleRetryAfterRun(result.hadFailures, fresh);
-    });
   }
 
   Future<({String? yearTerm, List<ScheduleWeekChange> changes})>
@@ -187,7 +147,7 @@ class ScheduleUpdateManager {
       return (yearTerm: null, changes: const <ScheduleWeekChange>[]);
     }
 
-    final key = ScheduleUpdateWorker.pendingKeyForUser(userId);
+    final key = '$_pendingKeyPrefix$userId';
     final raw = prefs.getString(key);
     if (raw == null || raw.trim().isEmpty) {
       return (yearTerm: null, changes: const <ScheduleWeekChange>[]);

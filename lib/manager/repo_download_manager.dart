@@ -128,13 +128,14 @@ class RepoDownloadManager {
     );
   }
 
-  Future<Directory> downloadFilesBatch({
+  Future<RepoBatchDownloadResult> downloadFilesBatch({
     required List<GithubItem> files,
     int concurrency = 3,
     ValueChanged<RepoBatchDownloadProgress>? onProgress,
     CancelToken? cancelToken,
   }) async {
     final appDir = await resolveAppDownloadDir();
+    final savedPaths = <String>[];
 
     final items = files.where((e) => e.type != 'dir').toList();
     int done = 0;
@@ -175,6 +176,7 @@ class RepoDownloadManager {
           savePath,
           cancelToken: cancelToken,
         );
+        savedPaths.add(savePath);
         done++;
       } finally {
         active--;
@@ -186,7 +188,10 @@ class RepoDownloadManager {
     report(active: 0);
     await Future.wait(List.generate(effectiveConcurrency, (_) => runNext()));
     report(active: 0);
-    return appDir;
+    return RepoBatchDownloadResult(
+      directory: appDir,
+      savedPaths: List.unmodifiable(savedPaths),
+    );
   }
 
   Future<String> downloadItemsAsZip({
@@ -560,4 +565,14 @@ class _RepoFileEntry {
   final String relativePath;
 
   const _RepoFileEntry({required this.item, required this.relativePath});
+}
+
+class RepoBatchDownloadResult {
+  final Directory directory;
+  final List<String> savedPaths;
+
+  const RepoBatchDownloadResult({
+    required this.directory,
+    required this.savedPaths,
+  });
 }

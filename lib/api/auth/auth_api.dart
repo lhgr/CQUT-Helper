@@ -107,12 +107,15 @@ Y/akVmYNtghKZzz6jwIDAQAB
       },
     );
 
-    // 检查业务层面的错误
-    if (res1.data is Map<String, dynamic>) {
-      final data = res1.data as Map<String, dynamic>;
-      if (data['code'] == -1) {
-        throw Exception(data['msg'] ?? '登录失败');
-      }
+    if (res1.data is! Map<String, dynamic>) {
+      throw Exception('登录失败：登录接口返回格式异常');
+    }
+
+    final data = res1.data as Map<String, dynamic>;
+    final code = data['code'];
+    final msg = data['msg']?.toString();
+    if (code != 200 || msg != '登录成功！') {
+      throw Exception(msg ?? '登录失败');
     }
 
     if (res1.statusCode == null || res1.statusCode! >= 400) {

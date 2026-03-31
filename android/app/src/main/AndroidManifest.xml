@@ -1,8 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
@@ -75,29 +74,21 @@
                 <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name="com.dawndrizzle.wing.cqut.widget.WidgetAutoRefreshReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.dawndrizzle.wing.cqut.widget.AUTO_REFRESH" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <service
             android:name="com.dawndrizzle.wing.cqut.widget.CourseListWidgetService"
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
 
-        <receiver
-            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmBroadcastReceiver"
-            android:exported="false" />
-        <receiver
-            android:name="dev.fluttercommunity.plus.androidalarmmanager.RebootBroadcastReceiver"
-            android:enabled="false"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
-            </intent-filter>
-        </receiver>
-        <service
-            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService"
-            android:permission="android.permission.BIND_JOB_SERVICE"
-            android:exported="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

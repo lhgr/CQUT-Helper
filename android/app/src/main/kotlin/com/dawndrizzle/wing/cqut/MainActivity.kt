@@ -245,16 +245,41 @@ class MainActivity : FlutterActivity() {
           }
 
           "openBatteryOptimizationSettings" -> {
-            val ok = tryStart(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-            if (ok) {
-              result.success(true)
-            } else {
+            val intents = mutableListOf<Intent>()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+              intents.add(
+                Intent(
+                  Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                  Uri.parse("package:$packageName"),
+                ),
+              )
+            }
+            intents.add(
+              Intent().setComponent(
+                ComponentName(
+                  "com.miui.powerkeeper",
+                  "com.miui.powerkeeper.ui.HiddenAppsConfigActivity",
+                ),
+              ).putExtra("package_name", packageName)
+                .putExtra("package_label", applicationInfo.loadLabel(packageManager).toString()),
+            )
+            intents.add(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+
+            var ok = false
+            for (i in intents) {
+              if (tryStart(i)) {
+                ok = true
+                break
+              }
+            }
+            if (!ok) {
               val fallback = Intent(
                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:$packageName"),
               )
-              result.success(tryStart(fallback))
+              ok = tryStart(fallback)
             }
+            result.success(ok)
           }
 
           "openAppDetailsSettings" -> {

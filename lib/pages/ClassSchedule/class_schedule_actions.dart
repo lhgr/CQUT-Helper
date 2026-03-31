@@ -2,6 +2,10 @@ part of 'ClassSchedule.dart';
 
 extension _ClassScheduleActions on _ClassscheduleViewState {
   void _onPageChanged(int index) {
+    if (_initialBootRequestPending) {
+      _userChangedWeekDuringInitialBoot = true;
+    }
+
     if (_weekList != null && index >= 0 && index < _weekList!.length) {
       FirebaseAnalytics.instance.logEvent(
         name: 'view_schedule_week',
@@ -63,8 +67,21 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
   }
 
   void _returnToCurrentWeek() {
-    if (_actualCurrentWeekStr == null || _weekList == null) {
+    if (_actualCurrentWeekStr == null) {
       _loadFromNetwork();
+      return;
+    }
+
+    final actualTerm = _actualCurrentTermStr;
+    final currentTerm = _currentScheduleData?.yearTerm ?? _currentTerm;
+    if (actualTerm != null && currentTerm != actualTerm) {
+      _weekCache.clear();
+      _loadFromNetwork(weekNum: _actualCurrentWeekStr, yearTerm: actualTerm);
+      return;
+    }
+
+    if (_weekList == null) {
+      _loadFromNetwork(weekNum: _actualCurrentWeekStr, yearTerm: actualTerm);
       return;
     }
 
@@ -119,42 +136,172 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     _pageController?.jumpToPage(idx);
   }
 
-  void _showScheduleSettingsSheetWrapper() {
-    final maxWeeksAhead = maxWeeksAheadForSchedule(
-      weekList:
-          _currentScheduleData?.weekList ?? _updateManager.controller.weekList,
-      currentWeek: _currentScheduleData?.weekNum ??
-          _updateManager.controller.actualCurrentWeekStr,
+  String _normalizeCourseName(String? raw) {
+    final value = (raw ?? '').trim();
+    if (value.isEmpty) {
+      return '未命名课程';
+    }
+    return value;
+  }
+
+  String _buildCourseTimeText(EventItem event) {
+    final dayLabel = _weekDayLabel(event.weekDay);
+    final start = int.tryParse(event.sessionStart ?? '');
+    final last = int.tryParse(event.sessionLast ?? '');
+    final sessionText = (start != null && last != null)
+        ? '${event.sessionStart}-${start + last - 1}节'
+        : '节次未知';
+    final weekCover = (event.weekCover ?? '').trim();
+    final timeParts = <String>[
+      if (dayLabel.isNotEmpty) dayLabel,
+      sessionText,
+    ];
+    if (weekCover.isEmpty) {
+      return timeParts.join(' ');
+    }
+    return '$weekCover · ${timeParts.join(' ')}';
+  }
+
+  String _weekDayLabel(String? raw) {
+    const labels = <int, String>{
+      1: '周一',
+      2: '周二',
+      3: '周三',
+      4: '周四',
+      5: '周五',
+      6: '周六',
+      7: '周日',
+    };
+    final day = int.tryParse((raw ?? '').trim());
+    if (day == null) {
+      return '';
+    }
+    return labels[day] ?? '';
+  }
+
+  int _buildCourseTimeSortValue(EventItem event) {
+    final day = int.tryParse((event.weekDay ?? '').trim()) ?? 9;
+    final sessionStart = int.tryParse((event.sessionStart ?? '').trim()) ?? 99;
+    return day * 100 + sessionStart;
+  }
+
+  String _buildAggregatedCourseTimeText(List<EventItem> events) {
+    final sorted = List<EventItem>.from(events)
+      ..sort((a, b) => _buildCourseTimeSortValue(a).compareTo(_buildCourseTimeSortValue(b)));
+    final seen = <String>{};
+    final result = <String>[];
+    for (final event in sorted) {
+      final text = _buildCourseTimeText(event);
+      if (seen.add(text)) {
+        result.add(text);
+      }
+    }
+    return result.join('；');
+  }
+
+  void _openCourseNotebookByEvent(EventItem event) {
+    final name = _normalizeCourseName(event.eventName);
+    final subtitleParts = <String>[
+      if ((event.memberName ?? '').trim().isNotEmpty)
+        '教师：${event.memberName!.trim()}',
+      if ((event.address ?? '').trim().isNotEmpty) '教室：${event.address!.trim()}',
+      _buildCourseTimeText(event),
+    ];
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CourseNotebookPage(
+          courseName: name,
+          yearTerm: _currentScheduleData?.yearTerm,
+          subtitle: subtitleParts.join(' · '),
+        ),
+      ),
     );
+  }
+
+  void _openCourseOverview() {
+    final currentData = _currentScheduleData;
+    if (currentData == null) {
+      return;
+    }
+    _controller.prefetchAllWeeksInBackground(currentData, () {
+      if (mounted) {
+        _setState(() {});
+      }
+    });
+    final grouped = <String, List<EventItem>>{};
+    final weeks = _weekCache.values.toList()
+      ..sort((a, b) {
+        final wa = int.tryParse(a.weekNum ?? '') ?? 0;
+        final wb = int.tryParse(b.weekNum ?? '') ?? 0;
+        return wa.compareTo(wb);
+      });
+    for (final weekData in weeks) {
+      final events = weekData.eventList ?? const <EventItem>[];
+      for (final event in events) {
+        final name = _normalizeCourseName(event.eventName);
+        grouped.putIfAbsent(name, () => <EventItem>[]).add(event);
+      }
+    }
+    final map = <String, CourseOverviewItem>{};
+    grouped.forEach((name, events) {
+      final first = events.first;
+      map[name] = CourseOverviewItem(
+        courseName: name,
+        teacher: first.memberName,
+        address: first.address,
+        timeText: _buildAggregatedCourseTimeText(events),
+      );
+    });
+    final courses = map.values.toList()
+      ..sort((a, b) => a.courseName.compareTo(b.courseName));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CourseOverviewPage(
+          yearTerm: _currentScheduleData?.yearTerm,
+          courses: courses,
+          onTapCourse: (item) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => CourseNotebookPage(
+                  courseName: item.courseName,
+                  yearTerm: _currentScheduleData?.yearTerm,
+                  subtitle: [
+                    item.timeText,
+                    if ((item.address ?? '').trim().isNotEmpty)
+                      '教室：${item.address!.trim()}',
+                    if ((item.teacher ?? '').trim().isNotEmpty)
+                      '教师：${item.teacher!.trim()}',
+                  ].join(' · '),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showScheduleSettingsSheetWrapper() {
     showScheduleSettingsSheet(
       context,
-      initialWeeksAhead: _settingsManager.updateWeeksAhead,
       initialShowWeekend: _settingsManager.showWeekend,
       initialTimeInfoEnabled: _settingsManager.timeInfoEnabled,
-      initialUpdateEnabled: _settingsManager.updateEnabled,
-      initialUpdateIntervalMinutes: _settingsManager.updateIntervalMinutes,
       initialUpdateShowDiff: _settingsManager.updateShowDiff,
-      initialSystemNotifyEnabled: _settingsManager.updateSystemNotifyEnabled,
-      maxWeeksAhead: maxWeeksAhead,
+      initialBackgroundPollingEnabled: _settingsManager.backgroundPollingEnabled,
       onSave:
           ({
-            required weeksAhead,
             required showWeekend,
             required timeInfoEnabled,
-            required updateEnabled,
-            required updateIntervalMinutes,
             required updateShowDiff,
-            required systemNotifyEnabled,
+            required backgroundPollingEnabled,
           }) async {
             await _settingsManager.save(
               showWeekend: showWeekend,
               timeInfoEnabled: timeInfoEnabled,
-              updateWeeksAhead: weeksAhead,
-              updateEnabled: updateEnabled,
-              updateIntervalMinutes: updateIntervalMinutes,
               updateShowDiff: updateShowDiff,
-              updateSystemNotifyEnabled: systemNotifyEnabled,
+              backgroundPollingEnabled: backgroundPollingEnabled,
             );
+            await ScheduleUpdateWorker.syncFromPreferences();
             if (mounted) {
               _setState(() {});
             }
@@ -167,8 +314,145 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
                 }),
               );
             }
-            _configureUpdateTimer();
           },
     );
+  }
+
+  Future<void> _openTermNoticeRecords() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = (prefs.getString('account') ?? '').trim();
+    final encryptedPassword = (prefs.getString('encrypted_password') ?? '').trim();
+    final yearTerm = (_currentScheduleData?.yearTerm ?? '').trim();
+    final cache = _loadNoticeCache(
+      prefs: prefs,
+      userId: userId,
+      yearTerm: yearTerm,
+    );
+
+    Future<ScheduleNoticePollData> Function()? onRefresh;
+    if (userId.isNotEmpty && encryptedPassword.isNotEmpty) {
+      onRefresh = () async {
+        final result = await ScheduleApi().fetchTermScheduleNotices(
+          userId: userId,
+          encryptedPassword: encryptedPassword,
+        );
+        await _saveNoticeCache(
+          prefs: prefs,
+          userId: userId,
+          yearTerm: yearTerm,
+          data: result,
+        );
+        return result;
+      };
+    } else if (cache.notices.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('未读取到账号凭证，请重新登录后再试'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    showScheduleNoticeRecordsSheet(
+      context,
+      yearTerm: yearTerm,
+      initialNotices: cache.notices,
+      initialGeneratedAt: cache.generatedAt,
+      onRefresh: onRefresh,
+    );
+  }
+
+  ({String generatedAt, List<ScheduleNotice> notices}) _loadNoticeCache({
+    required SharedPreferences prefs,
+    required String userId,
+    required String yearTerm,
+  }) {
+    if (userId.isEmpty) {
+      return (generatedAt: '', notices: const <ScheduleNotice>[]);
+    }
+    final raw = prefs.getString(_noticeCacheKey(userId, yearTerm));
+    if (raw == null || raw.trim().isEmpty) {
+      return (generatedAt: '', notices: const <ScheduleNotice>[]);
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        return (generatedAt: '', notices: const <ScheduleNotice>[]);
+      }
+      final generatedAt = (decoded['generatedAt'] ?? '').toString();
+      final listRaw = decoded['notices'];
+      if (listRaw is! List) {
+        return (generatedAt: generatedAt, notices: const <ScheduleNotice>[]);
+      }
+      final notices = <ScheduleNotice>[];
+      for (final item in listRaw) {
+        if (item is! Map) continue;
+        notices.add(
+          ScheduleNotice(
+            noticeId: (item['noticeId'] ?? '').toString(),
+            status: (item['status'] ?? '').toString(),
+            publishedAt: (item['publishedAt'] ?? '').toString(),
+            title: (item['title'] ?? '').toString(),
+            content: (item['content'] ?? '').toString(),
+            courseName: _asNullableText(item['courseName']),
+            teacher: _asNullableText(item['teacher']),
+            originalTime: _asNullableText(item['originalTime']),
+            originalClassroom: _asNullableText(item['originalClassroom']),
+            adjustedTime: _asNullableText(item['adjustedTime']),
+            adjustedClassroom: _asNullableText(item['adjustedClassroom']),
+          ),
+        );
+      }
+      notices.sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
+      return (generatedAt: generatedAt, notices: notices);
+    } catch (_) {
+      return (generatedAt: '', notices: const <ScheduleNotice>[]);
+    }
+  }
+
+  Future<void> _saveNoticeCache({
+    required SharedPreferences prefs,
+    required String userId,
+    required String yearTerm,
+    required ScheduleNoticePollData data,
+  }) async {
+    if (userId.isEmpty) return;
+    final payload = <String, dynamic>{
+      'generatedAt': data.generatedAt,
+      'notices': data.notices
+          .map(
+            (e) => <String, dynamic>{
+              'noticeId': e.noticeId,
+              'status': e.status,
+              'publishedAt': e.publishedAt,
+              'title': e.title,
+              'content': e.content,
+              'courseName': e.courseName,
+              'teacher': e.teacher,
+              'originalTime': e.originalTime,
+              'originalClassroom': e.originalClassroom,
+              'adjustedTime': e.adjustedTime,
+              'adjustedClassroom': e.adjustedClassroom,
+            },
+          )
+          .toList(),
+    };
+    await prefs.setString(
+      _noticeCacheKey(userId, yearTerm),
+      jsonEncode(payload),
+    );
+  }
+
+  String _noticeCacheKey(String userId, String yearTerm) {
+    final termKey = yearTerm.trim().isEmpty ? 'current' : yearTerm.trim();
+    return 'schedule_notice_records_cache_${userId}_$termKey';
+  }
+
+  String? _asNullableText(dynamic value) {
+    final text = (value ?? '').toString().trim();
+    return text.isEmpty ? null : text;
   }
 }
