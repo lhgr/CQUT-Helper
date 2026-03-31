@@ -64,62 +64,57 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   }
 
   Future<bool> _ensureBackgroundPollingPermissions(BuildContext context) async {
-    final ignored =
-        await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
-    if (ignored != true) {
-      await AndroidBackgroundRestrictions.requestIgnoreBatteryOptimizations();
-      final after =
-          await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
-      if (after != true) {
-        if (!context.mounted) return false;
-        final proceed =
-            await showDialog<bool>(
-              context: context,
-              builder: (context) {
-                return AlertDialog(
-                  title: Text('需要忽略电池优化'),
-                  content: Text('后台轮询需要忽略电池优化，请先授权后再开启。'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: Text('取消'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: Text('去设置'),
-                    ),
-                  ],
-                );
-              },
-            ) ??
-            false;
-        if (!proceed) return false;
-        await AndroidBackgroundRestrictions.openBatteryOptimizationSettings();
-        if (!context.mounted) return false;
-        final confirmed =
-            await showDialog<bool>(
-              context: context,
-              builder: (context) {
-                return AlertDialog(
-                  title: Text('授权确认'),
-                  content: Text('完成忽略电池优化后，点击“已完成”。'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: Text('取消'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: Text('已完成'),
-                    ),
-                  ],
-                );
-              },
-            ) ??
-            false;
-        if (!confirmed) return false;
-      }
+    if (!context.mounted) return false;
+    final proceed =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text('需要忽略电池优化'),
+              content: Text('后台轮询需要忽略电池优化，请先授权后再开启。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text('去设置'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+    if (!proceed) return false;
+    final opened =
+        await AndroidBackgroundRestrictions.requestIgnoreBatteryOptimizations();
+    if (!opened) {
+      await AndroidBackgroundRestrictions.openBatteryOptimizationSettings();
     }
+    if (!context.mounted) return false;
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text('授权确认'),
+              content: Text('完成忽略电池优化后，点击“已完成”。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text('已完成'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+    if (!confirmed) return false;
 
     if (!context.mounted) return false;
     final openAutoStart =
