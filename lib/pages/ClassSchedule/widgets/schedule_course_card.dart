@@ -8,6 +8,7 @@ class ScheduleCourseCard extends StatelessWidget {
   final Color titleColor;
   final Color descriptionColor;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   const ScheduleCourseCard({
     super.key,
@@ -17,12 +18,14 @@ class ScheduleCourseCard extends StatelessWidget {
     required this.titleColor,
     required this.descriptionColor,
     required this.onTap,
+    required this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         margin: const EdgeInsets.all(1),
         padding: const EdgeInsets.all(2),

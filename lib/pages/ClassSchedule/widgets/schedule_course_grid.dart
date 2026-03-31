@@ -12,6 +12,7 @@ class ScheduleCourseGrid extends StatelessWidget {
   final List<Color> descriptionColors;
   final List<Color> buttonColors;
   final bool showWeekend;
+  final ValueChanged<EventItem> onTapCourse;
 
   const ScheduleCourseGrid({
     super.key,
@@ -23,6 +24,7 @@ class ScheduleCourseGrid extends StatelessWidget {
     required this.titleColors,
     required this.descriptionColors,
     required this.buttonColors,
+    required this.onTapCourse,
     this.showWeekend = true,
   });
 
@@ -66,6 +68,11 @@ class ScheduleCourseGrid extends StatelessWidget {
     final buttonColor = buttonColors[safeIndex];
     final onButtonColor = _onButtonColor(buttonColor);
     final titleColor = titleColors[safeIndex];
+    final sessionStart = int.tryParse(event.sessionStart ?? '');
+    final sessionLast = int.tryParse(event.sessionLast ?? '');
+    final sessionText = (sessionStart != null && sessionLast != null)
+        ? '${event.sessionStart}-${sessionStart + sessionLast - 1}节'
+        : '未知';
     showDialog(
       context: context,
       builder: (context) {
@@ -102,7 +109,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                 context,
                 Icons.access_time,
                 "节次",
-                "${event.sessionStart}-${int.parse(event.sessionStart!) + int.parse(event.sessionLast!) - 1}节",
+                sessionText,
               ),
             ],
           ),
@@ -267,7 +274,9 @@ class ScheduleCourseGrid extends StatelessWidget {
                       borderColor: borderColor,
                       titleColor: titleColor,
                       descriptionColor: descriptionColor,
-                      onTap: () => _showCourseDetail(context, event, safeIndex),
+                      onTap: () => onTapCourse(event),
+                      onLongPress: () =>
+                          _showCourseDetail(context, event, safeIndex),
                     ),
                   );
                 }),

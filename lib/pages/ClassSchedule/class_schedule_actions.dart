@@ -136,6 +136,151 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     _pageController?.jumpToPage(idx);
   }
 
+  String _normalizeCourseName(String? raw) {
+    final value = (raw ?? '').trim();
+    if (value.isEmpty) {
+      return '未命名课程';
+    }
+    return value;
+  }
+
+  String _buildCourseTimeText(EventItem event) {
+    final dayLabel = _weekDayLabel(event.weekDay);
+    final start = int.tryParse(event.sessionStart ?? '');
+    final last = int.tryParse(event.sessionLast ?? '');
+    final sessionText = (start != null && last != null)
+        ? '${event.sessionStart}-${start + last - 1}节'
+        : '节次未知';
+    final weekCover = (event.weekCover ?? '').trim();
+    final timeParts = <String>[
+      if (dayLabel.isNotEmpty) dayLabel,
+      sessionText,
+    ];
+    if (weekCover.isEmpty) {
+      return timeParts.join(' ');
+    }
+    return '$weekCover · ${timeParts.join(' ')}';
+  }
+
+  String _weekDayLabel(String? raw) {
+    const labels = <int, String>{
+      1: '周一',
+      2: '周二',
+      3: '周三',
+      4: '周四',
+      5: '周五',
+      6: '周六',
+      7: '周日',
+    };
+    final day = int.tryParse((raw ?? '').trim());
+    if (day == null) {
+      return '';
+    }
+    return labels[day] ?? '';
+  }
+
+  int _buildCourseTimeSortValue(EventItem event) {
+    final day = int.tryParse((event.weekDay ?? '').trim()) ?? 9;
+    final sessionStart = int.tryParse((event.sessionStart ?? '').trim()) ?? 99;
+    return day * 100 + sessionStart;
+  }
+
+  String _buildAggregatedCourseTimeText(List<EventItem> events) {
+    final sorted = List<EventItem>.from(events)
+      ..sort((a, b) => _buildCourseTimeSortValue(a).compareTo(_buildCourseTimeSortValue(b)));
+    final seen = <String>{};
+    final result = <String>[];
+    for (final event in sorted) {
+      final text = _buildCourseTimeText(event);
+      if (seen.add(text)) {
+        result.add(text);
+      }
+    }
+    return result.join('；');
+  }
+
+  void _openCourseNotebookByEvent(EventItem event) {
+    final name = _normalizeCourseName(event.eventName);
+    final subtitleParts = <String>[
+      if ((event.memberName ?? '').trim().isNotEmpty)
+        '教师：${event.memberName!.trim()}',
+      if ((event.address ?? '').trim().isNotEmpty) '教室：${event.address!.trim()}',
+      _buildCourseTimeText(event),
+    ];
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CourseNotebookPage(
+          courseName: name,
+          yearTerm: _currentScheduleData?.yearTerm,
+          subtitle: subtitleParts.join(' · '),
+        ),
+      ),
+    );
+  }
+
+  void _openCourseOverview() {
+    final currentData = _currentScheduleData;
+    if (currentData == null) {
+      return;
+    }
+    _controller.prefetchAllWeeksInBackground(currentData, () {
+      if (mounted) {
+        _setState(() {});
+      }
+    });
+    final grouped = <String, List<EventItem>>{};
+    final weeks = _weekCache.values.toList()
+      ..sort((a, b) {
+        final wa = int.tryParse(a.weekNum ?? '') ?? 0;
+        final wb = int.tryParse(b.weekNum ?? '') ?? 0;
+        return wa.compareTo(wb);
+      });
+    for (final weekData in weeks) {
+      final events = weekData.eventList ?? const <EventItem>[];
+      for (final event in events) {
+        final name = _normalizeCourseName(event.eventName);
+        grouped.putIfAbsent(name, () => <EventItem>[]).add(event);
+      }
+    }
+    final map = <String, CourseOverviewItem>{};
+    grouped.forEach((name, events) {
+      final first = events.first;
+      map[name] = CourseOverviewItem(
+        courseName: name,
+        teacher: first.memberName,
+        address: first.address,
+        timeText: _buildAggregatedCourseTimeText(events),
+      );
+    });
+    final courses = map.values.toList()
+      ..sort((a, b) => a.courseName.compareTo(b.courseName));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CourseOverviewPage(
+          yearTerm: _currentScheduleData?.yearTerm,
+          courses: courses,
+          onTapCourse: (item) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => CourseNotebookPage(
+                  courseName: item.courseName,
+                  yearTerm: _currentScheduleData?.yearTerm,
+                  subtitle: [
+                    item.timeText,
+                    if ((item.address ?? '').trim().isNotEmpty)
+                      '教室：${item.address!.trim()}',
+                    if ((item.teacher ?? '').trim().isNotEmpty)
+                      '教师：${item.teacher!.trim()}',
+                  ].join(' · '),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   void _showScheduleSettingsSheetWrapper() {
     showScheduleSettingsSheet(
       context,
