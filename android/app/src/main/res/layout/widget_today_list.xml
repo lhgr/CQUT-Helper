@@ -56,11 +56,13 @@
             android:layout_height="match_parent"
             android:layout_marginTop="8dp"
             android:layout_below="@+id/rl_title"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:gravity="center"
             android:textSize="14sp"
             android:textColor="@color/widget_secondary_text"
             android:lineSpacingExtra="8dp"
             android:textAlignment="center"
-            android:text="今日暂无课程" />
+            android:text="暂无课程" />
     </RelativeLayout>
 </FrameLayout>
