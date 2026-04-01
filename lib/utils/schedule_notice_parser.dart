@@ -28,7 +28,10 @@ class ScheduleNoticeImpact {
   factory ScheduleNoticeImpact.fromJson(Map<String, dynamic> json) {
     Set<String> stringSet(dynamic raw) {
       if (raw is! List) return <String>{};
-      return raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toSet();
+      return raw
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toSet();
     }
 
     return ScheduleNoticeImpact(
@@ -42,8 +45,12 @@ class ScheduleNoticeImpact {
 }
 
 class ScheduleNoticeParser {
-  static final RegExp _weekReg = RegExp(r'第\s*(\d{1,2})(?:\s*[-~到至]\s*(\d{1,2}))?\s*周');
-  static final RegExp _sessionReg = RegExp(r'第\s*(\d{1,2})(?:\s*[-~到至]\s*(\d{1,2}))?\s*节');
+  static final RegExp _weekReg = RegExp(
+    r'第\s*(\d{1,2})(?:\s*[-~到至]\s*(\d{1,2}))?\s*周',
+  );
+  static final RegExp _sessionReg = RegExp(
+    r'第\s*(\d{1,2})(?:\s*[-~到至]\s*(\d{1,2}))?\s*节',
+  );
   static final RegExp _classReg = RegExp(r'([0-9A-Za-z\u4e00-\u9fa5]{2,20}班)');
 
   static ScheduleNoticeImpact parseImpact(ScheduleNotice notice) {
@@ -59,10 +66,7 @@ class ScheduleNoticeParser {
       notice.content,
       notice.title,
     ];
-    final classSources = <String>[
-      notice.content,
-      notice.title,
-    ];
+    final classSources = <String>[notice.content, notice.title];
 
     final weeks = _parseWeeks(weekSources);
     final session = _parseSession(sessionSources);
@@ -72,7 +76,7 @@ class ScheduleNoticeParser {
 
     final course = notice.courseName ?? '未知课程';
     final teacher = notice.teacher ?? '未知教师';
-    final line = '[$className][$session]$course($teacher)';
+    final line = '[$session]$course($teacher)';
 
     return ScheduleNoticeImpact(
       noticeId: notice.noticeId,
