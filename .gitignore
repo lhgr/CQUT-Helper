@@ -56,3 +56,5 @@ workers
 .env
 docs
 test
+
+FastAPI/__pycache__/
