@@ -36,10 +36,11 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    const double sideSlotWidth = 144;
     return AppBar(
       scrolledUnderElevation: 0,
       backgroundColor: Theme.of(context).colorScheme.surface,
-      leadingWidth: 108,
+      leadingWidth: sideSlotWidth,
       leading: Padding(
         padding: const EdgeInsets.only(left: 8),
         child: TextButton(
@@ -48,19 +49,27 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
         ),
       ),
       actions: [
-        IconButton(
-          onPressed: onNoticeRecords,
-          icon: const Icon(Icons.notifications_outlined),
-          tooltip: '调课记录',
-        ),
-        IconButton(
-          onPressed: loading ? null : onRefresh,
-          icon: const Icon(Icons.refresh),
-        ),
-        IconButton(
-          onPressed: onSettings,
-          icon: const Icon(Icons.tune),
-          tooltip: '课表设置',
+        SizedBox(
+          width: sideSlotWidth,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                onPressed: onNoticeRecords,
+                icon: const Icon(Icons.notifications_outlined),
+                tooltip: '调课记录',
+              ),
+              IconButton(
+                onPressed: loading ? null : onRefresh,
+                icon: const Icon(Icons.refresh),
+              ),
+              IconButton(
+                onPressed: onSettings,
+                icon: const Icon(Icons.tune),
+                tooltip: '课表设置',
+              ),
+            ],
+          ),
         ),
       ],
       title: Column(
