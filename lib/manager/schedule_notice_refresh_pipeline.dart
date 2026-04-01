@@ -109,6 +109,26 @@ class ScheduleNoticeRefreshPipeline {
       }
     }
 
+    final isFirstSnapshot =
+        previousNotices.isEmpty &&
+        (previous['updatedAt'] == null || previous['updatedAt'] == 0);
+    if (isFirstSnapshot) {
+      final initialState = <String, dynamic>{
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+        'generatedAt': pollData.generatedAt,
+        'notices': currentNotices,
+      };
+      await prefs.setString(stateKey, json.encode(initialState));
+      return ScheduleNoticeRefreshResult(
+        changes: const <ScheduleWeekChange>[],
+        changedNoticeCount: 0,
+        affectedWeeks: const <String>{},
+        affectedKeys: const <String>{},
+        apiClosed: false,
+        generatedAt: pollData.generatedAt,
+      );
+    }
+
     final removedIds = previousNotices.keys
         .where((id) => !currentNotices.containsKey(id))
         .toList(growable: false);
