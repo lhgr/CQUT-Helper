@@ -141,10 +141,6 @@ class _ScheduleNoticeRecordsSheetBodyState
                       title: Text(n.title.isEmpty ? '调课通知' : n.title),
                       subtitle: Text(subtitleParts.join('\n')),
                       isThreeLine: true,
-                      trailing: Text(
-                        n.status.isEmpty ? '-' : n.status,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
                     );
                   },
                 ),
