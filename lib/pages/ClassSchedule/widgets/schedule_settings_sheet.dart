@@ -46,6 +46,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   bool? _connectivityOk;
   String _connectivityMessage = '';
   int? _connectivityElapsedMs;
+  bool _noticeConfigExpanded = false;
   bool confirmDialogOpen = false;
   bool _allowPop = false;
 
@@ -62,9 +63,15 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     timeInfoEnabled = widget.initialTimeInfoEnabled;
     showDiff = widget.initialUpdateShowDiff;
     backgroundPollingEnabled = widget.initialBackgroundPollingEnabled;
-    noticeApiBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
-      widget.initialNoticeApiBaseUrl,
-    );
+    final normalizedInitialBaseUrl =
+        ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
+          widget.initialNoticeApiBaseUrl,
+        );
+    noticeApiBaseUrl =
+        normalizedInitialBaseUrl ==
+            ScheduleSettingsManager.officialNoticeApiBaseUrl
+        ? ''
+        : normalizedInitialBaseUrl;
     _noticeApiController = TextEditingController(text: noticeApiBaseUrl);
     _noticeApiController.addListener(() {
       final next = _noticeApiController.text.trim();
@@ -100,7 +107,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   }
 
   String? _validateNoticeApiBaseUrl(String value) {
-    if (value.trim().isEmpty) return '请输入域名';
+    if (value.trim().isEmpty) return null;
     if (!ScheduleSettingsManager.isValidNoticeApiBaseUrl(value)) {
       return '请输入合法域名，例如 https://mydomain.com';
     }
@@ -236,15 +243,28 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     return done;
   }
 
+  Future<void> _onBackgroundPollingSwitchChanged(bool value) async {
+    if (value && !backgroundPollingEnabled) {
+      final ok = await _ensureBackgroundPollingPermissions(context);
+      if (!ok) return;
+    }
+    setState(() {
+      backgroundPollingEnabled = value;
+      if (!value) {
+        _noticeConfigExpanded = false;
+      }
+    });
+  }
+
   Future<bool> saveSettings() async {
     final error = _validateNoticeApiBaseUrl(noticeApiBaseUrl);
     if (error != null) {
       setState(() {
         _noticeApiError = error;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error), behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
+      );
       return false;
     }
     final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
@@ -381,23 +401,32 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                       });
                     },
                   ),
-                  SwitchListTile(
+                  ListTile(
                     title: Text('启用后台定时轮询'),
                     subtitle: Text('后台定时检查调课通知并更新受影响周课表'),
-                    value: backgroundPollingEnabled,
-                    onChanged: (value) async {
-                      if (value && !backgroundPollingEnabled) {
-                        final ok = await _ensureBackgroundPollingPermissions(
-                          context,
-                        );
-                        if (!ok) return;
-                      }
+                    onTap: () {
+                      if (!backgroundPollingEnabled) return;
                       setState(() {
-                        backgroundPollingEnabled = value;
+                        _noticeConfigExpanded = !_noticeConfigExpanded;
                       });
                     },
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (backgroundPollingEnabled)
+                          Icon(
+                            _noticeConfigExpanded
+                                ? Icons.expand_less
+                                : Icons.expand_more,
+                          ),
+                        Switch(
+                          value: backgroundPollingEnabled,
+                          onChanged: _onBackgroundPollingSwitchChanged,
+                        ),
+                      ],
+                    ),
                   ),
-                  if (backgroundPollingEnabled)
+                  if (backgroundPollingEnabled && _noticeConfigExpanded)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Column(
@@ -409,8 +438,9 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                             textInputAction: TextInputAction.done,
                             decoration: InputDecoration(
                               labelText: '调课信息接口域名',
-                              hintText: ScheduleSettingsManager.officialNoticeApiBaseUrl,
-                              helperText: '仅支持 http/https 域名，不包含路径',
+                              hintText: ScheduleSettingsManager
+                                  .officialNoticeApiBaseUrl,
+                              helperText: '留空使用官方域名；仅支持 http/https 且不包含路径',
                               errorText: _noticeApiError,
                             ),
                           ),
@@ -421,7 +451,9 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                                 onPressed: _testingConnectivity
                                     ? null
                                     : _testConnectivity,
-                                child: Text(_testingConnectivity ? '测试中...' : '测试连通性'),
+                                child: Text(
+                                  _testingConnectivity ? '测试中...' : '测试连通性',
+                                ),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
