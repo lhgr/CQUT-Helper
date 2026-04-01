@@ -1,0 +1,6 @@
+fastapi>=0.110
+pydantic>=2.6
+requests>=2.31
+urllib3>=2.2
+playwright>=1.43
+uvicorn>=0.29
