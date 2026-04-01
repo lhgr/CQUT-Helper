@@ -14,6 +14,7 @@ class ScheduleUpdateWorker {
   static const String _immediateTaskUniqueName =
       'schedule_notice_poll_task_immediate';
   static const int _frequencyMinutes = 30;
+  static bool _loggerReady = false;
 
   static String pendingKeyForUser(String userId) =>
       'schedule_pending_changes_$userId';
@@ -64,6 +65,7 @@ class ScheduleUpdateWorker {
   static void callbackDispatcher() {
     Workmanager().executeTask((task, inputData) async {
       WidgetsFlutterBinding.ensureInitialized();
+      await _ensureLoggerReady();
       Future<bool> done() async {
         await AppLogger.I.flush();
         return true;
@@ -224,6 +226,20 @@ class ScheduleUpdateWorker {
       );
       return done();
     });
+  }
+
+  static Future<void> _ensureLoggerReady() async {
+    if (_loggerReady) return;
+    try {
+      final logDate = DateTime.now().toIso8601String().split('T').first;
+      await AppLogger.I.init(
+        minLevel: LogLevel.info,
+        enableConsole: true,
+        enableFile: true,
+        fileName: 'cqut_$logDate.log',
+      );
+      _loggerReady = true;
+    } catch (_) {}
   }
 
   static bool _isDeepNight() {
