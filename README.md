@@ -10,11 +10,11 @@
 
 ## ✨ 主要功能
 
-- **📅 课程表**：展示每周课程,添加桌面小部件后不打开应用也能看到课程信息。
-- **👤 个人中心**：实现"本科课表(测试)"中的[getUserInfo](https://timetable-cfc.cqut.edu.cn/api/courseSchedule/getUserInfo)接口,可以便捷查看个人信息。
-- **🎨 个性化主题**：支持 Material 3 动态取色(Dynamic Color)，界面随心而动。
-- **🚀 自动更新**：实现"本科课表(测试)"中的[listWeekEvents](https://timetable-cfc.cqut.edu.cn/api/courseSchedule/listWeekEvents)接口,自动请求并更新课表数据。
-- **📂 开源浏览**：实现简单的 GitHub 仓库浏览器,用于浏览[Royfor12](https://github.com/Royfor12)的[CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)仓库,获得课程资料。
+- **课程表**：展示每周课程,添加桌面小部件后不打开应用也能看到课程信息。
+- **个人中心**：实现"本科课表(测试)"中的[getUserInfo](https://timetable-cfc.cqut.edu.cn/api/courseSchedule/getUserInfo)接口,可以便捷查看个人信息。
+- **个性化主题**：支持 Material 3 动态取色(Dynamic Color)，界面随心而动。
+- **自动获取**：实现"本科课表(测试)"中的[listWeekEvents](https://timetable-cfc.cqut.edu.cn/api/courseSchedule/listWeekEvents)接口,自动请求课表数据。
+- **开源浏览**：实现简单的 GitHub 仓库浏览器,用于浏览[Royfor12](https://github.com/Royfor12)的[CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)仓库,获得课程资料。
   > 本功能仅提供对[CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)仓库的浏览和下载服务，所有内容版权归原作者所有，遵循[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh)协议。本软件不对内容进行修改、存储或商业利用。
 
 ## 📱 下载安装
@@ -33,12 +33,13 @@
 
 尊重并保护用户的个人隐私：
 
-1. **核心数据本地化**：用户账号、密码（加密后）和课表详情等核心隐私数据**默认仅存储在本地设备**。仅在使用“调课通知”功能时，由于该接口存在应用端无法完成的加密参数，才会将账号与加密后的密码发送至服务端进行处理，以获取调课信息。相关实现代码见 [jwxt_automation.py](FastAPI/jwxt_automation.py)。
-  >注意：该服务端仅用于调课通知处理，不会存储任何个人隐私信息。
-  >如您仍有隐私顾虑，可自行部署 [jwxt_automation.py 服务器文件](FastAPI/jwxt_automation.py) 到自己的服务器，并在课程表设置的“启用后台定时轮询”中配置您的域名。
+1. **核心数据本地化**：用户账号、密码（加密后）和课表详情等核心隐私数据**默认仅存储在本地设备**。仅在使用“调课通知”功能时，由于该接口存在应用端无法完成的加密参数，才会将账号与加密后的密码发送至服务端进行处理，以获取调课信息。相关实现代码见 [jwxt\_automation.py](FastAPI/jwxt_automation.py)。
 
-2. **统计分析**：为了优化用户体验和修复 Bug，本项目集成了 **Firebase Analytics**。它仅收集**匿名**的使用数据（如崩溃日志、功能点击次数），**不包含**任何个人身份信息。
-3. **权限使用**：应用仅在必要时请求所需权限，并明确告知使用目的。
+> 注意：该服务端仅用于调课通知处理，不会存储任何个人隐私信息。
+> 如您仍有隐私顾虑，可自行部署 [jwxt\_automation.py 服务器文件](FastAPI/jwxt_automation.py) 到自己的服务器，并在课程表设置的“启用后台定时轮询”中配置您的域名。
+
+1. **统计分析**：为了优化用户体验和修复 Bug，本项目集成了 **Firebase Analytics**。它仅收集**匿名**的使用数据（如崩溃日志、功能点击次数），**不包含**任何个人身份信息。
+2. **权限使用**：应用仅在必要时请求所需权限，并明确告知使用目的。
 
 ## ⚠️ 开发说明
 
