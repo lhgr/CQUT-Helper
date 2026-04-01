@@ -10,6 +10,8 @@ void showWeekPicker({
   required int currentWeekIndex,
   required Function(int) onWeekSelected,
 }) {
+  const double _weekItemExtent = 56;
+  final initialOffset = (currentWeekIndex * _weekItemExtent).toDouble();
   showModalBottomSheet(
     context: context,
     builder: (BuildContext context) {
@@ -26,6 +28,8 @@ void showWeekPicker({
             ),
             Expanded(
               child: ListView.builder(
+                controller: ScrollController(initialScrollOffset: initialOffset),
+                itemExtent: _weekItemExtent,
                 itemCount: weekList.length,
                 itemBuilder: (context, index) {
                   final week = weekList[index];
