@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:cqut/api/notice/notice_api.dart';
+import 'package:cqut/manager/schedule_settings_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:cqut/utils/android_background_restrictions.dart';
@@ -8,11 +10,13 @@ class ScheduleSettingsSheet extends StatefulWidget {
   final bool initialTimeInfoEnabled;
   final bool initialUpdateShowDiff;
   final bool initialBackgroundPollingEnabled;
+  final String initialNoticeApiBaseUrl;
   final Function({
     required bool showWeekend,
     required bool timeInfoEnabled,
     required bool updateShowDiff,
     required bool backgroundPollingEnabled,
+    required String noticeApiBaseUrl,
   })
   onSave;
 
@@ -22,6 +26,7 @@ class ScheduleSettingsSheet extends StatefulWidget {
     required this.initialTimeInfoEnabled,
     required this.initialUpdateShowDiff,
     required this.initialBackgroundPollingEnabled,
+    required this.initialNoticeApiBaseUrl,
     required this.onSave,
   });
 
@@ -34,6 +39,13 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   late bool timeInfoEnabled;
   late bool showDiff;
   late bool backgroundPollingEnabled;
+  late TextEditingController _noticeApiController;
+  late String noticeApiBaseUrl;
+  String? _noticeApiError;
+  bool _testingConnectivity = false;
+  bool? _connectivityOk;
+  String _connectivityMessage = '';
+  int? _connectivityElapsedMs;
   bool confirmDialogOpen = false;
   bool _allowPop = false;
 
@@ -41,6 +53,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   late bool _baselineTimeInfoEnabled;
   late bool _baselineShowDiff;
   late bool _baselineBackgroundPollingEnabled;
+  late String _baselineNoticeApiBaseUrl;
 
   @override
   void initState() {
@@ -49,18 +62,76 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     timeInfoEnabled = widget.initialTimeInfoEnabled;
     showDiff = widget.initialUpdateShowDiff;
     backgroundPollingEnabled = widget.initialBackgroundPollingEnabled;
+    noticeApiBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
+      widget.initialNoticeApiBaseUrl,
+    );
+    _noticeApiController = TextEditingController(text: noticeApiBaseUrl);
+    _noticeApiController.addListener(() {
+      final next = _noticeApiController.text.trim();
+      setState(() {
+        noticeApiBaseUrl = next;
+        _noticeApiError = _validateNoticeApiBaseUrl(next);
+      });
+    });
+    _noticeApiError = _validateNoticeApiBaseUrl(noticeApiBaseUrl);
 
     _baselineShowWeekend = showWeekend;
     _baselineTimeInfoEnabled = timeInfoEnabled;
     _baselineShowDiff = showDiff;
     _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
+    _baselineNoticeApiBaseUrl = noticeApiBaseUrl;
+  }
+
+  @override
+  void dispose() {
+    _noticeApiController.dispose();
+    super.dispose();
   }
 
   bool hasUnsavedChanges() {
     return showWeekend != _baselineShowWeekend ||
         timeInfoEnabled != _baselineTimeInfoEnabled ||
         showDiff != _baselineShowDiff ||
-        backgroundPollingEnabled != _baselineBackgroundPollingEnabled;
+        backgroundPollingEnabled != _baselineBackgroundPollingEnabled ||
+        ScheduleSettingsManager.normalizeNoticeApiBaseUrl(noticeApiBaseUrl) !=
+            ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
+              _baselineNoticeApiBaseUrl,
+            );
+  }
+
+  String? _validateNoticeApiBaseUrl(String value) {
+    if (value.trim().isEmpty) return '请输入域名';
+    if (!ScheduleSettingsManager.isValidNoticeApiBaseUrl(value)) {
+      return '请输入合法域名，例如 https://mydomain.com';
+    }
+    return null;
+  }
+
+  Future<void> _testConnectivity() async {
+    final error = _validateNoticeApiBaseUrl(noticeApiBaseUrl);
+    if (error != null) {
+      setState(() {
+        _noticeApiError = error;
+        _connectivityOk = false;
+        _connectivityElapsedMs = null;
+        _connectivityMessage = '请先修正域名格式';
+      });
+      return;
+    }
+    setState(() {
+      _testingConnectivity = true;
+      _connectivityMessage = '正在检测连通性...';
+      _connectivityElapsedMs = null;
+      _connectivityOk = null;
+    });
+    final result = await NoticeApi.testConnectivity(noticeApiBaseUrl);
+    if (!mounted) return;
+    setState(() {
+      _testingConnectivity = false;
+      _connectivityOk = result.success;
+      _connectivityElapsedMs = result.elapsedMs;
+      _connectivityMessage = result.message;
+    });
   }
 
   Future<bool> _ensureBackgroundPollingPermissions(BuildContext context) async {
@@ -166,6 +237,19 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   }
 
   Future<bool> saveSettings() async {
+    final error = _validateNoticeApiBaseUrl(noticeApiBaseUrl);
+    if (error != null) {
+      setState(() {
+        _noticeApiError = error;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error), behavior: SnackBarBehavior.floating));
+      return false;
+    }
+    final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
+      noticeApiBaseUrl,
+    );
     unawaited(
       FirebaseAnalytics.instance.logEvent(
         name: 'schedule_toggle_show_weekend',
@@ -178,6 +262,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       timeInfoEnabled: timeInfoEnabled,
       updateShowDiff: showDiff,
       backgroundPollingEnabled: backgroundPollingEnabled,
+      noticeApiBaseUrl: normalizedBaseUrl,
     );
 
     if (mounted) {
@@ -186,6 +271,8 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         _baselineTimeInfoEnabled = timeInfoEnabled;
         _baselineShowDiff = showDiff;
         _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
+        noticeApiBaseUrl = normalizedBaseUrl;
+        _baselineNoticeApiBaseUrl = normalizedBaseUrl;
       });
     }
 
@@ -310,6 +397,54 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                       });
                     },
                   ),
+                  if (backgroundPollingEnabled)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: _noticeApiController,
+                            keyboardType: TextInputType.url,
+                            textInputAction: TextInputAction.done,
+                            decoration: InputDecoration(
+                              labelText: '调课信息接口域名',
+                              hintText: ScheduleSettingsManager.officialNoticeApiBaseUrl,
+                              helperText: '仅支持 http/https 域名，不包含路径',
+                              errorText: _noticeApiError,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              FilledButton.tonal(
+                                onPressed: _testingConnectivity
+                                    ? null
+                                    : _testConnectivity,
+                                child: Text(_testingConnectivity ? '测试中...' : '测试连通性'),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _connectivityMessage.isEmpty
+                                      ? '输入后可测试 /health 接口连通性'
+                                      : _connectivityElapsedMs == null
+                                      ? _connectivityMessage
+                                      : '$_connectivityMessage（${_connectivityElapsedMs}ms）',
+                                  style: TextStyle(
+                                    color: _connectivityOk == null
+                                        ? Theme.of(context).hintColor
+                                        : _connectivityOk == true
+                                        ? Colors.green
+                                        : Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
@@ -351,11 +486,13 @@ void showScheduleSettingsSheet(
   required bool initialTimeInfoEnabled,
   required bool initialUpdateShowDiff,
   required bool initialBackgroundPollingEnabled,
+  required String initialNoticeApiBaseUrl,
   required Function({
     required bool showWeekend,
     required bool timeInfoEnabled,
     required bool updateShowDiff,
     required bool backgroundPollingEnabled,
+    required String noticeApiBaseUrl,
   })
   onSave,
 }) {
@@ -370,6 +507,7 @@ void showScheduleSettingsSheet(
         initialTimeInfoEnabled: initialTimeInfoEnabled,
         initialUpdateShowDiff: initialUpdateShowDiff,
         initialBackgroundPollingEnabled: initialBackgroundPollingEnabled,
+        initialNoticeApiBaseUrl: initialNoticeApiBaseUrl,
         onSave: onSave,
       );
     },
