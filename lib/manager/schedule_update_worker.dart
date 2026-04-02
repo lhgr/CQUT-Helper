@@ -18,7 +18,7 @@ class ScheduleUpdateWorker {
   static const String _taskName = 'schedule_notice_poll_task';
   static const String _immediateTaskUniqueName =
       'schedule_notice_poll_task_immediate';
-  static const int _frequencyMinutes = 30;
+  static const int _frequencyMinutes = 60;
   static bool _loggerReady = false;
 
   static String pendingKeyForUser(String userId) =>
