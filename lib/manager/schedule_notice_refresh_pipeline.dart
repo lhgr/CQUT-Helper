@@ -45,6 +45,17 @@ class ScheduleNoticeRefreshPipeline {
     String envName = 'prod',
     bool headless = true,
   }) async {
+    final nowHour = DateTime.now().hour;
+    if (nowHour >= 0 && nowHour < 7) {
+      return const ScheduleNoticeRefreshResult(
+        changes: <ScheduleWeekChange>[],
+        changedNoticeCount: 0,
+        affectedWeeks: <String>{},
+        affectedKeys: <String>{},
+        apiClosed: true,
+        generatedAt: '',
+      );
+    }
     final yearTerm = (currentData.yearTerm ?? '').trim();
     final weekList = currentData.weekList ?? const <String>[];
     if (yearTerm.isEmpty || weekList.isEmpty) {

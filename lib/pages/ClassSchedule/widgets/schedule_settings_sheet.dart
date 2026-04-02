@@ -4,6 +4,7 @@ import 'package:cqut/manager/schedule_settings_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:cqut/utils/android_background_restrictions.dart';
+import 'package:cqut/utils/local_notifications.dart';
 
 class ScheduleSettingsSheet extends StatefulWidget {
   final bool initialShowWeekend;
@@ -247,6 +248,16 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     if (value && !backgroundPollingEnabled) {
       final ok = await _ensureBackgroundPollingPermissions(context);
       if (!ok) return;
+      final granted = await LocalNotifications.ensurePermission();
+      if (!mounted) return;
+      if (!granted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('未授予系统通知权限，检测到调课变更时可能无法弹出系统通知'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
     setState(() {
       backgroundPollingEnabled = value;
