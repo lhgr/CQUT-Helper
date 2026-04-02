@@ -9,6 +9,11 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
+@pragma('vm:entry-point')
+void scheduleUpdateCallbackDispatcher() {
+  ScheduleUpdateWorker.callbackDispatcher();
+}
+
 class ScheduleUpdateWorker {
   static const String _taskName = 'schedule_notice_poll_task';
   static const String _immediateTaskUniqueName =
@@ -20,7 +25,10 @@ class ScheduleUpdateWorker {
       'schedule_pending_changes_$userId';
 
   static Future<void> initialize() async {
-    await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+    await Workmanager().initialize(
+      scheduleUpdateCallbackDispatcher,
+      isInDebugMode: false,
+    );
   }
 
   static Future<void> syncFromPreferences() async {
@@ -30,9 +38,25 @@ class ScheduleUpdateWorker {
         .trim();
     final enabled =
         prefs.getBool('schedule_background_polling_enabled') ?? false;
+    await _recordSyncState(
+      status: 'sync_start',
+      fields: {
+        'enabled': enabled,
+        'hasUserId': userId.isNotEmpty,
+        'hasPassword': encryptedPassword.isNotEmpty,
+      },
+    );
     if (!enabled || userId.isEmpty || encryptedPassword.isEmpty) {
       await Workmanager().cancelByUniqueName(_taskName);
       await Workmanager().cancelByUniqueName(_immediateTaskUniqueName);
+      await _recordSyncState(
+        status: 'sync_cancelled',
+        fields: {
+          'enabled': enabled,
+          'hasUserId': userId.isNotEmpty,
+          'hasPassword': encryptedPassword.isNotEmpty,
+        },
+      );
       return;
     }
     await Workmanager().registerPeriodicTask(
@@ -59,6 +83,10 @@ class ScheduleUpdateWorker {
         'trigger': 'one_off',
       },
     );
+    await _recordSyncState(
+      status: 'sync_registered',
+      fields: {'frequencyMinutes': _frequencyMinutes},
+    );
   }
 
   @pragma('vm:entry-point')
@@ -66,7 +94,18 @@ class ScheduleUpdateWorker {
     Workmanager().executeTask((task, inputData) async {
       WidgetsFlutterBinding.ensureInitialized();
       await _ensureLoggerReady();
-      Future<bool> done() async {
+      final trigger = ((inputData?['trigger'] ?? 'unknown').toString()).trim();
+      await _recordWorkerState(status: 'started', trigger: trigger, task: task);
+      Future<bool> done({
+        required String status,
+        Map<String, Object?> fields = const {},
+      }) async {
+        await _recordWorkerState(
+          status: status,
+          trigger: trigger,
+          task: task,
+          fields: fields,
+        );
         await AppLogger.I.flush();
         return true;
       }
@@ -77,9 +116,8 @@ class ScheduleUpdateWorker {
           'skip unknown task',
           fields: {'task': task},
         );
-        return done();
+        return done(status: 'skip_unknown_task');
       }
-      final trigger = ((inputData?['trigger'] ?? 'unknown').toString()).trim();
       AppLogger.I.info(
         'ScheduleUpdateWorker',
         'heartbeat task started',
@@ -91,7 +129,7 @@ class ScheduleUpdateWorker {
           'skip deep night window',
           fields: {'trigger': trigger},
         );
-        return done();
+        return done(status: 'skip_deep_night');
       }
       final userId = ((inputData?['userId'] ?? '').toString()).trim();
       final encryptedPassword =
@@ -102,7 +140,7 @@ class ScheduleUpdateWorker {
           'skip missing task credentials',
           fields: {'trigger': trigger},
         );
-        return done();
+        return done(status: 'skip_missing_credentials');
       }
       final prefs = await SharedPreferences.getInstance();
       final currentAccount = (prefs.getString('account') ?? '').trim();
@@ -147,7 +185,10 @@ class ScheduleUpdateWorker {
             stackTrace: st,
             fields: {'trigger': trigger},
           );
-          return done();
+          return done(
+            status: 'load_network_failed',
+            fields: {'error': e.toString()},
+          );
         }
       }
       if (currentData.yearTerm == null ||
@@ -159,7 +200,7 @@ class ScheduleUpdateWorker {
           'skip invalid schedule data',
           fields: {'trigger': trigger},
         );
-        return done();
+        return done(status: 'skip_invalid_schedule_data');
       }
 
       final pipeline = ScheduleNoticeRefreshPipeline(
@@ -190,7 +231,7 @@ class ScheduleUpdateWorker {
           stackTrace: st,
           fields: {'trigger': trigger},
         );
-        return done();
+        return done(status: 'pipeline_failed', fields: {'error': e.toString()});
       }
 
       if (result.apiClosed || result.changes.isEmpty) {
@@ -203,7 +244,13 @@ class ScheduleUpdateWorker {
             'changes': result.changes.length,
           },
         );
-        return done();
+        return done(
+          status: result.apiClosed ? 'api_closed' : 'no_changes',
+          fields: {
+            'apiClosed': result.apiClosed,
+            'changes': result.changes.length,
+          },
+        );
       }
 
       await _writePendingChanges(
@@ -224,7 +271,10 @@ class ScheduleUpdateWorker {
         'heartbeat task detected schedule changes',
         fields: {'trigger': trigger, 'changes': result.changes.length},
       );
-      return done();
+      return done(
+        status: 'changes_detected',
+        fields: {'changes': result.changes.length},
+      );
     });
   }
 
@@ -239,6 +289,44 @@ class ScheduleUpdateWorker {
         fileName: 'cqut_$logDate.log',
       );
       _loggerReady = true;
+    } catch (_) {}
+  }
+
+  static Future<void> _recordWorkerState({
+    required String status,
+    required String trigger,
+    required String task,
+    Map<String, Object?> fields = const {},
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'schedule_background_poll_last_state',
+        json.encode({
+          'at': DateTime.now().toIso8601String(),
+          'status': status,
+          'trigger': trigger,
+          'task': task,
+          'fields': fields,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  static Future<void> _recordSyncState({
+    required String status,
+    Map<String, Object?> fields = const {},
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'schedule_background_poll_sync_state',
+        json.encode({
+          'at': DateTime.now().toIso8601String(),
+          'status': status,
+          'fields': fields,
+        }),
+      );
     } catch (_) {}
   }
 

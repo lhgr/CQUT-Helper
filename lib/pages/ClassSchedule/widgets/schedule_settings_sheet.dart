@@ -11,7 +11,7 @@ class ScheduleSettingsSheet extends StatefulWidget {
   final bool initialUpdateShowDiff;
   final bool initialBackgroundPollingEnabled;
   final String initialNoticeApiBaseUrl;
-  final Function({
+  final Future<void> Function({
     required bool showWeekend,
     required bool timeInfoEnabled,
     required bool updateShowDiff,
@@ -277,7 +277,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       ),
     );
 
-    widget.onSave(
+    await widget.onSave(
       showWeekend: showWeekend,
       timeInfoEnabled: timeInfoEnabled,
       updateShowDiff: showDiff,
@@ -519,7 +519,7 @@ void showScheduleSettingsSheet(
   required bool initialUpdateShowDiff,
   required bool initialBackgroundPollingEnabled,
   required String initialNoticeApiBaseUrl,
-  required Function({
+  required Future<void> Function({
     required bool showWeekend,
     required bool timeInfoEnabled,
     required bool updateShowDiff,
