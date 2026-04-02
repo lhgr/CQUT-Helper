@@ -152,10 +152,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
         ? '${event.sessionStart}-${start + last - 1}节'
         : '节次未知';
     final weekCover = (event.weekCover ?? '').trim();
-    final timeParts = <String>[
-      if (dayLabel.isNotEmpty) dayLabel,
-      sessionText,
-    ];
+    final timeParts = <String>[if (dayLabel.isNotEmpty) dayLabel, sessionText];
     if (weekCover.isEmpty) {
       return timeParts.join(' ');
     }
@@ -187,7 +184,11 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
 
   String _buildAggregatedCourseTimeText(List<EventItem> events) {
     final sorted = List<EventItem>.from(events)
-      ..sort((a, b) => _buildCourseTimeSortValue(a).compareTo(_buildCourseTimeSortValue(b)));
+      ..sort(
+        (a, b) => _buildCourseTimeSortValue(
+          a,
+        ).compareTo(_buildCourseTimeSortValue(b)),
+      );
     final seen = <String>{};
     final result = <String>[];
     for (final event in sorted) {
@@ -204,7 +205,8 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     final subtitleParts = <String>[
       if ((event.memberName ?? '').trim().isNotEmpty)
         '教师：${event.memberName!.trim()}',
-      if ((event.address ?? '').trim().isNotEmpty) '教室：${event.address!.trim()}',
+      if ((event.address ?? '').trim().isNotEmpty)
+        '教室：${event.address!.trim()}',
       _buildCourseTimeText(event),
     ];
     Navigator.of(context).push(
@@ -287,7 +289,8 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       initialShowWeekend: _settingsManager.showWeekend,
       initialTimeInfoEnabled: _settingsManager.timeInfoEnabled,
       initialUpdateShowDiff: _settingsManager.updateShowDiff,
-      initialBackgroundPollingEnabled: _settingsManager.backgroundPollingEnabled,
+      initialBackgroundPollingEnabled:
+          _settingsManager.backgroundPollingEnabled,
       initialNoticeApiBaseUrl: _settingsManager.noticeApiBaseUrl,
       onSave:
           ({
@@ -312,7 +315,9 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
               final loaded = await _controller.loadTimeInfoFromCacheIfAny();
               if (loaded && mounted) _setState(() {});
               unawaited(
-                _controller.refreshTimeInfoIfEnabled(force: true).then((changed) {
+                _controller.refreshTimeInfoIfEnabled(force: true).then((
+                  changed,
+                ) {
                   if (changed && mounted) _setState(() {});
                 }),
               );
@@ -324,8 +329,11 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
   Future<void> _openTermNoticeRecords() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = (prefs.getString('account') ?? '').trim();
-    final encryptedPassword = (prefs.getString('encrypted_password') ?? '').trim();
+    final encryptedPassword = (prefs.getString('encrypted_password') ?? '')
+        .trim();
     final yearTerm = (_currentScheduleData?.yearTerm ?? '').trim();
+    final nowHour = DateTime.now().hour;
+    final deepNight = nowHour >= 0 && nowHour < 7;
     final cache = _loadNoticeCache(
       prefs: prefs,
       userId: userId,
@@ -333,7 +341,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     );
 
     Future<ScheduleNoticePollData> Function()? onRefresh;
-    if (userId.isNotEmpty && encryptedPassword.isNotEmpty) {
+    if (userId.isNotEmpty && encryptedPassword.isNotEmpty && !deepNight) {
       onRefresh = () async {
         final result = await ScheduleApi().fetchTermScheduleNotices(
           userId: userId,
@@ -347,6 +355,21 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
         );
         return result;
       };
+    } else if (deepNight) {
+      final day = DateTime.now().toIso8601String().split('T').first;
+      final noticeTipKey =
+          'schedule_notice_deep_night_tip_shown_${userId.isEmpty ? 'anon' : userId}_$day';
+      final shown = prefs.getBool(noticeTipKey) ?? false;
+      if (!shown) {
+        await prefs.setBool(noticeTipKey, true);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('由于学校接口限制，在0:00-7:00时会关闭请求服务'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } else if (cache.notices.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
