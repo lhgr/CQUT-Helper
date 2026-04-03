@@ -10,7 +10,7 @@ class ScheduleSettingsManager {
       'schedule_notice_api_base_url';
   static const String officialNoticeApiBaseUrl = 'https://notice.dawndrizzle.top';
 
-  bool showWeekend = true;
+  bool showWeekend = false;
   bool timeInfoEnabled = true;
   bool updateShowDiff = true;
   bool backgroundPollingEnabled = false;
@@ -59,7 +59,7 @@ class ScheduleSettingsManager {
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    showWeekend = prefs.getBool(_prefsKeyShowWeekend) ?? true;
+    showWeekend = prefs.getBool(_prefsKeyShowWeekend) ?? false;
     timeInfoEnabled = prefs.getBool(_prefsKeyTimeInfoEnabled) ?? true;
     updateShowDiff = prefs.getBool(_prefsKeyUpdateShowDiff) ?? true;
     backgroundPollingEnabled =
