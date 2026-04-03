@@ -44,11 +44,18 @@ private class CourseListRemoteViewsFactory(
     val item = items.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_today_list_item)
     val dark = WidgetTheme.isDark(context)
+    val primary = WidgetTheme.primaryTextColor(dark)
+    val secondary = WidgetTheme.secondaryTextColor(dark)
     views.setInt(
       R.id.ll_content,
       "setBackgroundResource",
       if (dark) R.drawable.widget_item_bg_dark else R.drawable.widget_item_bg,
     )
+    views.setTextColor(R.id.tv_course_name, primary)
+    views.setTextColor(R.id.tv_campus, secondary)
+    views.setTextColor(R.id.tv_classroom, secondary)
+    views.setTextColor(R.id.tv_teacher, secondary)
+    views.setTextColor(R.id.tv_periods, secondary)
 
     if (item == null) {
       views.setTextViewText(R.id.tv_course_name, "")

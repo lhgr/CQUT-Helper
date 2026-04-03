@@ -67,10 +67,16 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
       val dark = WidgetTheme.isDark(context)
+      val primary = WidgetTheme.primaryTextColor(dark)
+      val secondary = WidgetTheme.secondaryTextColor(dark)
       views.setImageViewResource(
         R.id.iv_appwidget,
         if (dark) R.drawable.appwidget_bg_dark else R.drawable.appwidget_bg,
       )
+      views.setTextColor(R.id.tv_schedule_name, primary)
+      views.setTextColor(R.id.tv_date, primary)
+      views.setTextColor(R.id.tv_week_count, secondary)
+      views.setTextColor(android.R.id.empty, secondary)
 
       val dayOffset = getDayOffset(context, appWidgetId)
       val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
