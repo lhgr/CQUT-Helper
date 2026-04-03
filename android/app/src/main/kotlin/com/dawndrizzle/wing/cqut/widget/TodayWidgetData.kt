@@ -101,9 +101,9 @@ object TodayWidgetData {
     val now = System.currentTimeMillis()
     val candidates = mutableListOf<Long>()
     candidates.add(nextDayRefreshAtMillis())
-    val nextCourseEnd = nextCourseEndAtMillisToday(context)
-    if (nextCourseEnd != null && nextCourseEnd > now) {
-      candidates.add(nextCourseEnd + DateUtils.MINUTE_IN_MILLIS)
+    val nextCourseStart = nextCourseStartAtMillisToday(context)
+    if (nextCourseStart != null && nextCourseStart > now) {
+      candidates.add(nextCourseStart)
     }
     return candidates.filter { it > now }.minOrNull()
   }
@@ -470,8 +470,8 @@ object TodayWidgetData {
     if (nowMinutes < 0) return courses
 
     val events = schedule.optJSONArray("eventList") ?: return courses
-    val endedEventIds = HashSet<String>()
-    val endedFallbackKeys = HashSet<String>()
+    val startedEventIds = HashSet<String>()
+    val startedFallbackKeys = HashSet<String>()
 
     for (i in 0 until events.length()) {
       val event = events.optJSONObject(i) ?: continue
@@ -479,7 +479,7 @@ object TodayWidgetData {
       val eventId = event.optString("eventID", "").trim()
       val sessionNums = sessionNumbersOfEvent(event)
       if (sessionNums.isEmpty()) continue
-      var maxEndMinute: Int? = null
+      var minStartMinute: Int? = null
       var hasInvalidSession = false
       for (sessionNum in sessionNums) {
         val clock = sessionClockMap[sessionNum]
@@ -487,28 +487,28 @@ object TodayWidgetData {
           hasInvalidSession = true
           break
         }
-        if (maxEndMinute == null || clock.second > maxEndMinute!!) {
-          maxEndMinute = clock.second
+        if (minStartMinute == null || clock.first < minStartMinute!!) {
+          minStartMinute = clock.first
         }
       }
-      if (hasInvalidSession || maxEndMinute == null) continue
-      if (maxEndMinute < nowMinutes) {
+      if (hasInvalidSession || minStartMinute == null) continue
+      if (minStartMinute <= nowMinutes) {
         if (eventId.isNotEmpty()) {
-          endedEventIds.add(eventId)
+          startedEventIds.add(eventId)
         } else {
           val fallbackKey = fallbackCourseKey(event, sessionNums)
-          if (fallbackKey != null) endedFallbackKeys.add(fallbackKey)
+          if (fallbackKey != null) startedFallbackKeys.add(fallbackKey)
         }
       }
     }
-    if (endedEventIds.isEmpty() && endedFallbackKeys.isEmpty()) return courses
+    if (startedEventIds.isEmpty() && startedFallbackKeys.isEmpty()) return courses
     return courses.filterNot { item ->
       val eventId = item.eventId?.trim().orEmpty()
       if (eventId.isNotEmpty()) {
-        endedEventIds.contains(eventId)
+        startedEventIds.contains(eventId)
       } else {
         val fallbackKey = fallbackCourseKey(item.name, item.periods)
-        fallbackKey != null && endedFallbackKeys.contains(fallbackKey)
+        fallbackKey != null && startedFallbackKeys.contains(fallbackKey)
       }
     }
   }
@@ -540,7 +540,7 @@ object TodayWidgetData {
     }
   }
 
-  private fun nextCourseEndAtMillisToday(context: Context): Long? {
+  private fun nextCourseStartAtMillisToday(context: Context): Long? {
     val data = loadScheduleJsonObject(context) ?: return null
     if (!scheduleContainsSystemDate(data)) return null
     val sessionClockMap = loadSessionClockMap(context)
@@ -556,13 +556,13 @@ object TodayWidgetData {
       if (event.optString("weekDay", "") != todayWeekDay) continue
       val sessionNums = sessionNumbersOfEvent(event)
       if (sessionNums.isEmpty()) continue
-      val maxEndMinute =
+      val minStartMinute =
         sessionNums
-          .mapNotNull { sessionClockMap[it]?.second }
-          .maxOrNull() ?: continue
-      val endAt = minuteOfDayToMillis(maxEndMinute)
-      if (endAt > now && (best == null || endAt < best!!)) {
-        best = endAt
+          .mapNotNull { sessionClockMap[it]?.first }
+          .minOrNull() ?: continue
+      val startAt = minuteOfDayToMillis(minStartMinute)
+      if (startAt > now && (best == null || startAt < best!!)) {
+        best = startAt
       }
     }
     return best
