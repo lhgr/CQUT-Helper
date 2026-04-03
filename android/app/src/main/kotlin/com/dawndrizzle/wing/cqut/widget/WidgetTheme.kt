@@ -4,31 +4,8 @@ import android.content.Context
 import android.content.res.Configuration
 
 object WidgetTheme {
-  private const val PREFS_NAME = "FlutterSharedPreferences"
-  private const val FLUTTER_PREFIX = "flutter."
-  private const val KEY_THEME_MODE = "${FLUTTER_PREFIX}theme_mode"
-
-  enum class Mode {
-    SYSTEM,
-    LIGHT,
-    DARK,
-  }
-
-  fun mode(context: Context): Mode {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    return when (prefs.getString(KEY_THEME_MODE, null)) {
-      "ThemeMode.dark" -> Mode.DARK
-      "ThemeMode.light" -> Mode.LIGHT
-      else -> Mode.SYSTEM
-    }
-  }
-
   fun isDark(context: Context): Boolean {
-    return when (mode(context)) {
-      Mode.DARK -> true
-      Mode.LIGHT -> false
-      Mode.SYSTEM -> isSystemDark(context)
-    }
+    return isSystemDark(context)
   }
 
   private fun isSystemDark(context: Context): Boolean {
