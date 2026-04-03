@@ -54,8 +54,9 @@ class ThemeManager extends ChangeNotifier {
     }
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_themeModeKey, mode.toString());
-    await WidgetUpdater.updateTodayWidget();
+    final modeText = mode.toString();
+    await prefs.setString(_themeModeKey, modeText);
+    await WidgetUpdater.updateTodayWidget(themeMode: modeText);
   }
 
   Future<void> setSystemColor(bool isSystem) async {

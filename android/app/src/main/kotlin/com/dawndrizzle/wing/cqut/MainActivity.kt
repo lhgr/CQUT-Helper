@@ -145,6 +145,11 @@ class MainActivity : FlutterActivity() {
       .setMethodCallHandler { call, result ->
         when (call.method) {
           "updateTodayWidget" -> {
+            val mode = call.argument<String>("themeMode")
+            if (!mode.isNullOrBlank()) {
+              val prefs = applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+              prefs.edit().putString("flutter.theme_mode", mode).commit()
+            }
             TodayListWidgetProvider.updateAll(applicationContext)
             TodayAndNextWidgetProvider.updateAll(applicationContext)
             TodayCourseWidgetProvider.updateAll(applicationContext)

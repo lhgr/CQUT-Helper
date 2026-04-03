@@ -56,11 +56,18 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       val views = RemoteViews(context.packageName, R.layout.widget_today_and_next)
 
       val dark = WidgetTheme.isDark(context)
+      val primary = WidgetTheme.primaryTextColor(dark)
+      val secondary = WidgetTheme.secondaryTextColor(dark)
       views.setInt(
         R.id.widget_card,
         "setBackgroundResource",
         if (dark) R.drawable.widget_bg_dark else R.drawable.widget_bg,
       )
+      views.setTextColor(R.id.tv_schedule_name, primary)
+      views.setTextColor(R.id.tv_date, secondary)
+      views.setTextColor(R.id.tv_week_count, secondary)
+      views.setTextColor(R.id.empty, secondary)
+      views.setTextColor(R.id.empty_next_day, secondary)
 
       val header = TodayWidgetData.loadHeader(context)
       val weekCount = TodayWidgetData.loadWeekCountText(context)
