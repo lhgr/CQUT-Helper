@@ -17,6 +17,7 @@ object TodayWidgetData {
 
   data class CourseItem(
     val eventId: String?,
+    val courseKey: String,
     val name: String,
     val campus: String,
     val classroom: String,
@@ -33,6 +34,22 @@ object TodayWidgetData {
   private const val KEY_LAST_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_last_week_"
   private const val KEY_LAST_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_last_term_"
   private const val KEY_TIME_INFO_CACHE = "${FLUTTER_PREFIX}schedule_time_info_cache_v1"
+  private const val KEY_COURSE_COLOR_MAP_PREFIX = "${FLUTTER_PREFIX}schedule_course_color_map_v1_"
+  private const val ANONYMOUS_SCOPE = "anonymous"
+  private val COURSE_TITLE_COLORS =
+    intArrayOf(
+      0xFF1473A3.toInt(),
+      0xFFAC3E15.toInt(),
+      0xFF0F7B78.toInt(),
+      0xFF621EA4.toInt(),
+      0xFF915D12.toInt(),
+      0xFFAC1522.toInt(),
+      0xFFAC152C.toInt(),
+      0xFF0F7A7B.toInt(),
+      0xFF846C10.toInt(),
+      0xFF781CA6.toInt(),
+      0xFF3215AC.toInt(),
+    )
 
   fun loadHeader(context: Context): Header {
     val calendar = Calendar.getInstance()
@@ -92,7 +109,7 @@ object TodayWidgetData {
       if (prev != null) targetData = prev
     }
 
-    val courses = loadCoursesByWeekdayFromSchedule(targetData, targetWeekDay.coerceIn(1, 7).toString())
+    val courses = loadCoursesByWeekdayFromSchedule(context, targetData, targetWeekDay.coerceIn(1, 7).toString())
     if (dayOffset != 0) return courses
     return filterEndedCourses(context, targetData, courses)
   }
@@ -155,8 +172,9 @@ object TodayWidgetData {
     }
   }
 
-  fun loadCoursesByWeekdayFromSchedule(data: JSONObject, weekDay: String): List<CourseItem> {
+  fun loadCoursesByWeekdayFromSchedule(context: Context, data: JSONObject, weekDay: String): List<CourseItem> {
     val events = data.optJSONArray("eventList") ?: return emptyList()
+    val courseColorMap = loadCourseColorIndexMap(context)
     val result = ArrayList<CourseItem>(events.length())
 
     for (i in 0 until events.length()) {
@@ -164,10 +182,15 @@ object TodayWidgetData {
       val eWeekDay = e.optString("weekDay", "")
       if (eWeekDay != weekDay) continue
 
-      val name = e.optString("eventName", "").ifBlank { "课程" }
-      val location = e.optString("address", "").trim()
+      val rawEventId = e.optString("eventID", "")
+      val rawName = e.optString("eventName", "")
+      val rawAddress = e.optString("address", "")
+      val rawTeacher = e.optString("memberName", "")
+      val courseKey = buildCourseColorKey(rawEventId, rawName, rawAddress, rawTeacher)
+      val name = rawName.ifBlank { "课程" }
+      val location = rawAddress.trim()
       val (campus, classroom) = splitCampusAndClassroom(location)
-      val teacher = e.optString("memberName", "").ifBlank { " " }
+      val teacher = rawTeacher.ifBlank { " " }
 
       val start = e.optInt("sessionStart", -1)
       val last = e.optInt("sessionLast", -1)
@@ -189,16 +212,18 @@ object TodayWidgetData {
           else -> minSessionStart(e.optJSONArray("sessionList")) ?: Int.MAX_VALUE
         }
 
-      val eventId = e.optString("eventID").ifBlank { null }
+      val eventId = rawEventId.ifBlank { null }
+      val colorIndex = courseColorMap[courseKey] ?: fallbackColorIndex(courseKey)
       result.add(
         CourseItem(
           eventId = eventId,
+          courseKey = courseKey,
           name = name,
           campus = campus,
           classroom = classroom,
           teacher = teacher,
           periods = periods,
-          indicatorColor = pickColor(name),
+          indicatorColor = colorByIndex(colorIndex),
           sortOrder = sortOrder,
         ),
       )
@@ -212,7 +237,7 @@ object TodayWidgetData {
     val data = loadScheduleJsonObject(context) ?: return emptyList()
     val todayWeekDay = toMondayBasedWeekday(Calendar.getInstance()).toString()
 
-    return loadCoursesByWeekdayFromSchedule(data, todayWeekDay)
+    return loadCoursesByWeekdayFromSchedule(context, data, todayWeekDay)
   }
 
   private data class TodayInfo(
@@ -430,18 +455,41 @@ object TodayWidgetData {
     return " " to s.ifBlank { " " }
   }
 
-  private fun pickColor(seed: String): Int {
-    val palette =
-      intArrayOf(
-        0xFFE57373.toInt(),
-        0xFFF06292.toInt(),
-        0xFFBA68C8.toInt(),
-        0xFF64B5F6.toInt(),
-        0xFF4DB6AC.toInt(),
-        0xFFFFB74D.toInt(),
-      )
-    val idx = (seed.hashCode().ushr(1)) % palette.size
-    return palette[idx]
+  private fun loadCourseColorIndexMap(context: Context): Map<String, Int> {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty().ifEmpty { ANONYMOUS_SCOPE }
+    val term =
+      prefs.getString("$KEY_WIDGET_TERM_PREFIX$account", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_TERM_PREFIX$account", null)?.takeIf { it.isNotBlank() }
+        ?: return emptyMap()
+    val raw = prefs.getString("$KEY_COURSE_COLOR_MAP_PREFIX$account|$term", null) ?: return emptyMap()
+    return try {
+      val obj = JSONObject(raw)
+      val result = HashMap<String, Int>(obj.length())
+      val keys = obj.keys()
+      while (keys.hasNext()) {
+        val key = keys.next()
+        result[key] = obj.optInt(key, 0)
+      }
+      result
+    } catch (_: Exception) {
+      emptyMap()
+    }
+  }
+
+  private fun buildCourseColorKey(eventId: String, eventName: String, address: String, teacher: String): String {
+    return "$eventId|$eventName|$address|$teacher"
+  }
+
+  private fun fallbackColorIndex(courseKey: String): Int {
+    if (COURSE_TITLE_COLORS.isEmpty()) return 0
+    return (courseKey.hashCode().ushr(1)) % COURSE_TITLE_COLORS.size
+  }
+
+  private fun colorByIndex(index: Int): Int {
+    if (COURSE_TITLE_COLORS.isEmpty()) return 0xFF3F51B5.toInt()
+    val safeIndex = ((index % COURSE_TITLE_COLORS.size) + COURSE_TITLE_COLORS.size) % COURSE_TITLE_COLORS.size
+    return COURSE_TITLE_COLORS[safeIndex]
   }
 
   private fun filterEndedCourses(

@@ -161,13 +161,6 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     return '第$week周';
   }
 
-  void _jumpToWeek(String week) {
-    if (_weekList == null) return;
-    final idx = _weekList!.indexOf(week);
-    if (idx == -1) return;
-    _pageController?.jumpToPage(idx);
-  }
-
   void _showScheduleSettingsSheetWrapper() {
     showScheduleSettingsSheet(
       context,
