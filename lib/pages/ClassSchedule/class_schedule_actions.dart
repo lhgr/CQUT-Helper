@@ -66,6 +66,38 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     );
   }
 
+  void _openSemesterCourseListPage() {
+    final yearTerm = (_currentScheduleData?.yearTerm ?? '').trim();
+    if (yearTerm.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('当前学期信息不可用'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    final events = <EventItem>[];
+    for (final data in _weekCache.values) {
+      if ((data.yearTerm ?? '').trim() != yearTerm) continue;
+      final list = data.eventList;
+      if (list == null || list.isEmpty) continue;
+      events.addAll(list);
+    }
+    if (events.isEmpty) {
+      final fallback = _currentScheduleData?.eventList;
+      if (fallback != null && fallback.isNotEmpty) {
+        events.addAll(fallback);
+      }
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            SemesterCourseListPage(yearTerm: yearTerm, events: events),
+      ),
+    );
+  }
+
   void _returnToCurrentWeek() {
     if (_actualCurrentWeekStr == null) {
       _loadFromNetwork();

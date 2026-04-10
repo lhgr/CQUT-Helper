@@ -41,8 +41,9 @@ data class WidgetThemeResolution(
 object WidgetThemePolicy {
   fun parseMode(raw: String?): WidgetThemeMode {
     return when (raw?.trim()) {
-      "ThemeMode.light" -> WidgetThemeMode.LIGHT
-      "ThemeMode.dark" -> WidgetThemeMode.DARK
+      "light", "ThemeMode.light" -> WidgetThemeMode.LIGHT
+      "dark", "ThemeMode.dark" -> WidgetThemeMode.DARK
+      "system", "ThemeMode.system" -> WidgetThemeMode.SYSTEM
       else -> WidgetThemeMode.SYSTEM
     }
   }
@@ -56,17 +57,28 @@ object WidgetThemePolicy {
     return when (mode) {
       WidgetThemeMode.DARK -> true
       WidgetThemeMode.LIGHT -> false
-      WidgetThemeMode.SYSTEM -> {
-        if (transitionPending && lastDark != null) {
-          lastDark
-        } else {
-          systemDark
-        }
-      }
+      WidgetThemeMode.SYSTEM -> systemDark
     }
   }
 
   fun buildPalette(mode: WidgetThemeMode, dark: Boolean): WidgetVisualPalette {
+    if (mode == WidgetThemeMode.SYSTEM) {
+      return WidgetVisualPalette(
+        mode = mode,
+        dark = dark,
+        backgroundRes = com.dawndrizzle.wing.cqut.R.drawable.widget_bg,
+        backgroundColor = if (dark) 0xFF1E1E1E.toInt() else 0xFFFFFFFF.toInt(),
+        itemBackgroundRes = com.dawndrizzle.wing.cqut.R.drawable.widget_item_bg,
+        imageBackgroundRes = com.dawndrizzle.wing.cqut.R.drawable.appwidget_bg,
+        primaryText = if (dark) 0xFFB0B0B0.toInt() else 0xFF111111.toInt(),
+        secondaryText = if (dark) 0xFFB0B0B0.toInt() else 0xFF666666.toInt(),
+        accent = 0xFF3F51B5.toInt(),
+        divider = if (dark) 0x33FFFFFF.toInt() else 0x1A111111.toInt(),
+        border = if (dark) 0x33FFFFFF.toInt() else 0x1A111111.toInt(),
+        icon = if (dark) 0xFFE0E0E0.toInt() else 0xFF666666.toInt(),
+        transitionOverlay = if (dark) 0x33FFFFFF.toInt() else 0x22000000.toInt(),
+      )
+    }
     return if (dark) {
       WidgetVisualPalette(
         mode = mode,
@@ -75,7 +87,7 @@ object WidgetThemePolicy {
         backgroundColor = 0xFF1E1E1E.toInt(),
         itemBackgroundRes = com.dawndrizzle.wing.cqut.R.drawable.widget_item_bg_dark,
         imageBackgroundRes = com.dawndrizzle.wing.cqut.R.drawable.appwidget_bg_dark,
-        primaryText = 0xFFFFFFFF.toInt(),
+        primaryText = 0xFFB0B0B0.toInt(),
         secondaryText = 0xFFB0B0B0.toInt(),
         accent = 0xFF3F51B5.toInt(),
         divider = 0x33FFFFFF.toInt(),
@@ -87,10 +99,10 @@ object WidgetThemePolicy {
       WidgetVisualPalette(
         mode = mode,
         dark = false,
-        backgroundRes = com.dawndrizzle.wing.cqut.R.drawable.widget_bg,
+        backgroundRes = com.dawndrizzle.wing.cqut.R.drawable.widget_bg_light,
         backgroundColor = 0xFFFFFFFF.toInt(),
-        itemBackgroundRes = com.dawndrizzle.wing.cqut.R.drawable.widget_item_bg,
-        imageBackgroundRes = com.dawndrizzle.wing.cqut.R.drawable.appwidget_bg,
+        itemBackgroundRes = com.dawndrizzle.wing.cqut.R.drawable.widget_item_bg_light,
+        imageBackgroundRes = com.dawndrizzle.wing.cqut.R.drawable.appwidget_bg_light,
         primaryText = 0xFF111111.toInt(),
         secondaryText = 0xFF666666.toInt(),
         accent = 0xFF3F51B5.toInt(),

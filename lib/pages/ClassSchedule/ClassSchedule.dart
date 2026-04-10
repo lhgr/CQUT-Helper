@@ -14,6 +14,7 @@ import 'package:cqut/pages/ClassSchedule/widgets/schedule_inline_notice_panel.da
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_notice_records_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_page_view.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
+import 'package:cqut/pages/ClassSchedule/semester_course_list_page.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/week_picker_sheet.dart';
 import 'package:cqut/utils/schedule_diff_utils.dart';
@@ -69,9 +70,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   @override
   void initState() {
     super.initState();
-    _updateManager = ScheduleUpdateManager(
-      controller: _controller,
-    );
+    _updateManager = ScheduleUpdateManager(controller: _controller);
     WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openChangesSheet.addListener(_onOpenChangesSheet);
     ScheduleUpdateIntents.scheduleUpdated.addListener(_onScheduleUpdated);
@@ -238,6 +237,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         onSettings: _showScheduleSettingsSheetWrapper,
         onWeekPicker: _showWeekPickerSheet,
         onTermPicker: _showTermPickerSheet,
+        onSemesterCourses: _openSemesterCourseListPage,
       ),
       body: Column(
         children: [
@@ -256,8 +256,9 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               showWeekend: _settingsManager.showWeekend,
               onBoundaryMessage: _showBoundaryMessage,
               currentWeekIndex: _currentWeekIndex,
-              timeInfoList:
-                  _settingsManager.timeInfoEnabled ? _controller.timeInfoList : null,
+              timeInfoList: _settingsManager.timeInfoEnabled
+                  ? _controller.timeInfoList
+                  : null,
             ),
           ),
         ],

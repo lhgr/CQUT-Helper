@@ -10,6 +10,9 @@ import android.net.Uri
 import android.widget.RemoteViews
 import com.dawndrizzle.wing.cqut.R
 
+private const val ACTION_UI_MODE_CHANGED = "android.intent.action.UI_MODE_CHANGED"
+private const val ACTION_APPWIDGET_UPDATE_OPTIONS = "android.appwidget.action.APPWIDGET_UPDATE_OPTIONS"
+
 class TodayCourseWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(
     context: Context,
@@ -23,6 +26,12 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     super.onReceive(context, intent)
     when (intent.action) {
       ACTION_REFRESH -> WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
+      Intent.ACTION_CONFIGURATION_CHANGED ->
+        WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
+      ACTION_UI_MODE_CHANGED ->
+        WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
+      ACTION_APPWIDGET_UPDATE_OPTIONS ->
+        WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
       ACTION_TOGGLE_DAY -> {
         val appWidgetId =
           intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
@@ -33,6 +42,16 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         }
       }
     }
+  }
+
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: android.os.Bundle,
+  ) {
+    super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
   }
 
   companion object {
@@ -68,20 +87,23 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
       val palette = theme.palette
-      views.setImageViewResource(
-        R.id.iv_appwidget,
-        palette.imageBackgroundRes,
-      )
-      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
-      views.setTextColor(R.id.tv_date, palette.primaryText)
-      views.setTextColor(R.id.tv_week_count, palette.secondaryText)
-      views.setTextColor(R.id.tv_week, palette.accent)
-      views.setTextColor(R.id.empty_text, palette.secondaryText)
-      views.setInt(R.id.iv_next, "setColorFilter", palette.icon)
-      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
+      val systemManaged = theme.mode == WidgetThemeMode.SYSTEM
+      if (!systemManaged) {
+        views.setImageViewResource(
+          R.id.iv_appwidget,
+          palette.imageBackgroundRes,
+        )
+        views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
+        views.setTextColor(R.id.tv_date, palette.primaryText)
+        views.setTextColor(R.id.tv_week_count, palette.secondaryText)
+        views.setTextColor(R.id.tv_week, palette.accent)
+        views.setTextColor(R.id.empty_text, palette.secondaryText)
+        views.setInt(R.id.iv_next, "setColorFilter", palette.icon)
+        views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
+      }
       views.setViewVisibility(
         R.id.theme_transition_overlay,
-        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
+        if (!systemManaged && theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
       )
 
       val dayOffset = getDayOffset(context, appWidgetId)

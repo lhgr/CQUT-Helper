@@ -14,6 +14,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onSettings;
   final VoidCallback onWeekPicker;
   final VoidCallback onTermPicker;
+  final VoidCallback onSemesterCourses;
 
   const ScheduleAppBar({
     super.key,
@@ -28,6 +29,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onSettings,
     required this.onWeekPicker,
     required this.onTermPicker,
+    required this.onSemesterCourses,
   });
 
   @override
@@ -80,6 +82,33 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     return AppBar(
       toolbarHeight: _appBarHeight,
       titleSpacing: 0,
+      leadingWidth: sideSlotWidth,
+      leading: SizedBox(
+        width: sideSlotWidth,
+        child: Padding(
+          padding: const EdgeInsets.only(left: sideHorizontalPadding),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: onSemesterCourses,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 24),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: Text(
+                '本学期课程',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ),
+        ),
+      ),
       scrolledUnderElevation: 0,
       backgroundColor: Theme.of(context).colorScheme.surface,
       actions: [

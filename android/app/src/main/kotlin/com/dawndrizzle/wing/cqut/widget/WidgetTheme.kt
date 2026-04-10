@@ -1,7 +1,9 @@
 package com.dawndrizzle.wing.cqut.widget
 
+import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
+import android.util.Log
 
 object WidgetTheme {
   private const val PREFS_STATE = "WidgetThemeState"
@@ -19,10 +21,15 @@ object WidgetTheme {
     val pending = prefs.getBoolean(KEY_PENDING, false)
 
     val mode = WidgetThemePolicy.parseMode(readThemeMode(context))
-    val dark = WidgetThemePolicy.resolveDark(mode, isSystemDark(context), pending, lastDark)
+    val systemDark = isSystemDark(context)
+    val dark = WidgetThemePolicy.resolveDark(mode, systemDark, pending, lastDark)
     val signature = WidgetThemePolicy.signature(mode, dark)
     val shouldAnimate = WidgetThemePolicy.shouldAnimate(trigger, lastSignature, signature)
     val palette = WidgetThemePolicy.ensureConsistent(WidgetThemePolicy.buildPalette(mode, dark))
+    Log.d(
+      "WidgetTheme",
+      "resolve trigger=$trigger savedMode=${readThemeMode(context)} mode=$mode systemDark=$systemDark dark=$dark lastSignature=$lastSignature",
+    )
 
     prefs.edit()
       .putString(KEY_LAST_SIGNATURE, signature)
@@ -50,6 +57,10 @@ object WidgetTheme {
   }
 
   private fun isSystemDark(context: Context): Boolean {
+    val uiModeManager = context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+    val settingMode = uiModeManager?.nightMode
+    if (settingMode == UiModeManager.MODE_NIGHT_YES) return true
+    if (settingMode == UiModeManager.MODE_NIGHT_NO) return false
     val nightModeFlags = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
     return nightModeFlags == Configuration.UI_MODE_NIGHT_YES
   }

@@ -64,10 +64,11 @@
             android:lineSpacingExtra="8dp"
             android:textAlignment="center"
             android:text="暂无课程" />
-        <View
+        <ImageView
             android:id="@+id/theme_transition_overlay"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:src="@android:color/transparent"
             android:background="#00000000"
             android:visibility="gone" />
     </RelativeLayout>

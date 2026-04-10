@@ -87,6 +87,7 @@ class SchedulePageView extends StatelessWidget {
                       Expanded(
                         child: ScheduleCourseGrid(
                           events: data.eventList ?? [],
+                          yearTerm: data.yearTerm ?? '',
                           sessionHeight: _sessionHeight,
                           showWeekend: showWeekend,
                           backgroundColors: cardTheme.backgrounds,

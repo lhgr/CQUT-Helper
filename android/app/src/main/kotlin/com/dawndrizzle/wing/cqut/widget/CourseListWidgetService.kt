@@ -43,17 +43,21 @@ private class CourseListRemoteViewsFactory(
   override fun getViewAt(position: Int): RemoteViews {
     val item = items.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_today_list_item)
-    val palette = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH).palette
-    views.setInt(
-      R.id.ll_content,
-      "setBackgroundResource",
-      palette.itemBackgroundRes,
-    )
-    views.setTextColor(R.id.tv_course_name, palette.primaryText)
-    views.setTextColor(R.id.tv_campus, palette.secondaryText)
-    views.setTextColor(R.id.tv_classroom, palette.secondaryText)
-    views.setTextColor(R.id.tv_teacher, palette.secondaryText)
-    views.setTextColor(R.id.tv_periods, palette.secondaryText)
+    val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+    val palette = theme.palette
+    val systemManaged = theme.mode == WidgetThemeMode.SYSTEM
+    if (!systemManaged) {
+      views.setInt(
+        R.id.ll_content,
+        "setBackgroundResource",
+        palette.itemBackgroundRes,
+      )
+      views.setTextColor(R.id.tv_course_name, palette.primaryText)
+      views.setTextColor(R.id.tv_campus, palette.secondaryText)
+      views.setTextColor(R.id.tv_classroom, palette.secondaryText)
+      views.setTextColor(R.id.tv_teacher, palette.secondaryText)
+      views.setTextColor(R.id.tv_periods, palette.secondaryText)
+    }
 
     if (item == null) {
       views.setTextViewText(R.id.tv_course_name, "")

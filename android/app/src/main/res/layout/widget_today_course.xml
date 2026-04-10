@@ -116,10 +116,11 @@
                     android:textAlignment="center" />
             </LinearLayout>
         </RelativeLayout>
-        <View
+        <ImageView
             android:id="@+id/theme_transition_overlay"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:src="@android:color/transparent"
             android:background="#00000000"
             android:visibility="gone" />
     </FrameLayout>
