@@ -40,6 +40,8 @@ class ScheduleNoticeRefreshPipeline {
   String _stateKey(String userId, String yearTerm) =>
       'schedule_notice_state_${userId}_$yearTerm';
 
+  String _loginMarkerKey(String userId) => 'schedule_notice_login_marker_$userId';
+
   Future<ScheduleNoticeRefreshResult> run({
     required ScheduleData currentData,
     String envName = 'prod',
@@ -103,6 +105,7 @@ class ScheduleNoticeRefreshPipeline {
     }
 
     final stateKey = _stateKey(userId, yearTerm);
+    final loginMarker = prefs.getInt(_loginMarkerKey(userId)) ?? 0;
     final previous = _loadState(prefs.getString(stateKey));
     final previousNotices = previous['notices'] as Map<String, dynamic>;
     final currentNotices = <String, Map<String, dynamic>>{};
@@ -120,13 +123,14 @@ class ScheduleNoticeRefreshPipeline {
       }
     }
 
+    final previousLoginMarker = (previous['loginMarker'] as num?)?.toInt() ?? 0;
     final isFirstSnapshot =
-        previousNotices.isEmpty &&
-        (previous['updatedAt'] == null || previous['updatedAt'] == 0);
+        previousNotices.isEmpty || previousLoginMarker != loginMarker;
     if (isFirstSnapshot) {
       final initialState = <String, dynamic>{
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
         'generatedAt': pollData.generatedAt,
+        'loginMarker': loginMarker,
         'notices': currentNotices,
       };
       await prefs.setString(stateKey, json.encode(initialState));
@@ -192,6 +196,7 @@ class ScheduleNoticeRefreshPipeline {
     final newState = <String, dynamic>{
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
       'generatedAt': pollData.generatedAt,
+      'loginMarker': loginMarker,
       'notices': currentNotices,
     };
     await prefs.setString(stateKey, json.encode(newState));

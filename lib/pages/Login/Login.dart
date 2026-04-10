@@ -98,6 +98,10 @@ class _LoginPageState extends State<LoginPage> {
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('account', account);
+      await prefs.setInt(
+        'schedule_notice_login_marker_$account',
+        DateTime.now().millisecondsSinceEpoch,
+      );
       if (useSavedPassword) {
         await prefs.setString('encrypted_password', _savedEncryptedPassword!);
       } else {
