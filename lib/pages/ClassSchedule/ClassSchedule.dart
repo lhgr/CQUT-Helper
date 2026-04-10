@@ -10,7 +10,7 @@ import 'package:cqut/model/class_schedule_model.dart';
 import 'package:cqut/model/schedule_notice.dart';
 import 'package:cqut/model/schedule_week_change.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_app_bar.dart';
-import 'package:cqut/pages/ClassSchedule/widgets/schedule_changes_sheet.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/schedule_inline_notice_panel.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_notice_records_sheet.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_page_view.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
@@ -64,6 +64,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   bool _userChangedWeekDuringInitialBoot = false;
 
   DateTime? _lastMessageTime;
+  List<String> _inlineNoticeMessages = const <String>[];
 
   @override
   void initState() {
@@ -238,16 +239,28 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         onWeekPicker: _showWeekPickerSheet,
         onTermPicker: _showTermPickerSheet,
       ),
-      body: SchedulePageView(
-        pageController: _pageController,
-        onPageChanged: _onPageChanged,
-        weekList: _weekList!,
-        weekCache: _weekCache,
-        showWeekend: _settingsManager.showWeekend,
-        onBoundaryMessage: _showBoundaryMessage,
-        currentWeekIndex: _currentWeekIndex,
-        timeInfoList:
-            _settingsManager.timeInfoEnabled ? _controller.timeInfoList : null,
+      body: Column(
+        children: [
+          if (_inlineNoticeMessages.isNotEmpty)
+            ScheduleInlineNoticePanel(
+              notices: _inlineNoticeMessages,
+              onDismissOne: _dismissInlineNoticeAt,
+              onDismissAll: _clearInlineNotices,
+            ),
+          Expanded(
+            child: SchedulePageView(
+              pageController: _pageController,
+              onPageChanged: _onPageChanged,
+              weekList: _weekList!,
+              weekCache: _weekCache,
+              showWeekend: _settingsManager.showWeekend,
+              onBoundaryMessage: _showBoundaryMessage,
+              currentWeekIndex: _currentWeekIndex,
+              timeInfoList:
+                  _settingsManager.timeInfoEnabled ? _controller.timeInfoList : null,
+            ),
+          ),
+        ],
       ),
     );
   }

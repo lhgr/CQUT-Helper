@@ -48,6 +48,7 @@ class ScheduleNoticeParser {
   static final RegExp _weekReg = RegExp(
     r'第\s*(\d{1,2})(?:\s*[-~到至]\s*(\d{1,2}))?\s*周',
   );
+  static final RegExp _weekdayReg = RegExp(r'(星期[一二三四五六日天]|周[一二三四五六日天])');
   static final RegExp _sessionReg = RegExp(
     r'第\s*(\d{1,2})(?:\s*[-~到至]\s*(\d{1,2}))?\s*节',
   );
@@ -74,9 +75,7 @@ class ScheduleNoticeParser {
     final normalizedWeeks = weeks.isEmpty ? <String>{'0'} : weeks;
     final keys = normalizedWeeks.map((w) => '$w-$className-$session').toSet();
 
-    final course = notice.courseName ?? '未知课程';
-    final teacher = notice.teacher ?? '未知教师';
-    final line = '[$session]$course($teacher)';
+    final line = _buildNoticeLine(notice);
 
     return ScheduleNoticeImpact(
       noticeId: notice.noticeId,
@@ -85,6 +84,39 @@ class ScheduleNoticeParser {
       keys: keys,
       line: line,
     );
+  }
+
+  static String _buildNoticeLine(ScheduleNotice notice) {
+    final course = (notice.courseName ?? '').trim().isEmpty
+        ? '未知课程'
+        : notice.courseName!.trim();
+    final from = _parseTimeSlot(notice.originalTime ?? '');
+    final to = _parseTimeSlot(notice.adjustedTime ?? '');
+    if (from == null || to == null) {
+      return '调课通知信息不完整：**$course**课程（请在调课记录中查看详情）';
+    }
+    return '第${from.week}周${from.weekday}${from.session}节的**$course**课程调课到第${to.week}周${to.weekday}${to.session}节';
+  }
+
+  static ({String week, String weekday, String session})? _parseTimeSlot(
+    String raw,
+  ) {
+    final text = raw.trim();
+    if (text.isEmpty) return null;
+    final weekMatch = _weekReg.firstMatch(text);
+    final weekdayMatch = _weekdayReg.firstMatch(text);
+    final sessionMatch = _sessionReg.firstMatch(text);
+    final week = (weekMatch?.group(1) ?? '').trim();
+    final weekday = (weekdayMatch?.group(1) ?? '').trim().replaceFirst('周', '星期');
+    final sessionStart = (sessionMatch?.group(1) ?? '').trim();
+    final sessionEnd = (sessionMatch?.group(2) ?? '').trim();
+    if (week.isEmpty || weekday.isEmpty || sessionStart.isEmpty) {
+      return null;
+    }
+    final session = sessionEnd.isEmpty
+        ? '第$sessionStart'
+        : '第$sessionStart-$sessionEnd';
+    return (week: week, weekday: weekday, session: session);
   }
 
   static Set<String> _parseWeeks(List<String> sources) {

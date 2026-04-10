@@ -1,16 +1,6 @@
 part of 'ClassSchedule.dart';
 
 extension _ClassScheduleUpdates on _ClassscheduleViewState {
-  void _showScheduleChangesSheet(List<ScheduleWeekChange> changes) {
-    showScheduleChangesSheet(
-      context: context,
-      changes: changes,
-      onJumpToWeek: _jumpToWeek,
-      currentScheduleData: _currentScheduleData,
-      weekList: _weekList,
-    );
-  }
-
   void _onOpenChangesSheet() {
     final token = ScheduleUpdateIntents.openChangesSheet.value;
     if (token == _lastOpenChangesToken) return;
@@ -22,8 +12,6 @@ extension _ClassScheduleUpdates on _ClassscheduleViewState {
     final pending = await _updateManager.checkPendingChanges();
     final changes = pending.changes;
     if (changes.isEmpty || !mounted) return false;
-
-    final first = changes.first;
 
     Future<void> refreshWeeks() async {
       final payloadTerm = pending.yearTerm;
@@ -47,45 +35,81 @@ extension _ClassScheduleUpdates on _ClassscheduleViewState {
 
     if (autoOpen) {
       await refreshWeeks();
-      if (_settingsManager.updateShowDiff) {
-        _showScheduleChangesSheet(changes);
-      } else {
-        _jumpToWeek(first.weekNum);
-      }
-      return true;
+    } else {
+      unawaited(refreshWeeks());
     }
-
-    unawaited(refreshWeeks());
     _showUpdateNotification(changes);
     return true;
   }
 
   void _showUpdateNotification(List<ScheduleWeekChange> changes) {
+    if (!mounted || changes.isEmpty) return;
+    final hasScheduleNotice = changes.any(
+      (c) => c.lines.any((line) => line.contains('调课到')),
+    );
+    if (hasScheduleNotice) {
+      final messages = _buildInlineNoticeMessages(changes);
+      if (messages.isNotEmpty) {
+        _setState(() {
+          _inlineNoticeMessages = messages;
+        });
+      }
+    }
     final first = changes.first;
-    final showDiff = _settingsManager.updateShowDiff;
-    final brief = showDiff && first.lines.isNotEmpty ? '：${first.brief}' : '';
-    final msg = changes.length == 1
-        ? '${_labelForWeek(first.weekNum)}课表有更新$brief'
-        : '${_labelForWeek(first.weekNum)}等${changes.length}周课表有更新$brief';
+    final msg = hasScheduleNotice
+        ? (changes.length == 1
+              ? '${_labelForWeek(first.weekNum)}检测到调课'
+              : '${_labelForWeek(first.weekNum)}等${changes.length}周检测到调课')
+        : (changes.length == 1
+              ? '${_labelForWeek(first.weekNum)}课表有更新'
+              : '${_labelForWeek(first.weekNum)}等${changes.length}周课表有更新');
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        action: SnackBarAction(
-          label: showDiff ? '详情' : '查看',
-          onPressed: () {
-            if (!mounted) return;
-            if (showDiff) {
-              _showScheduleChangesSheet(changes);
-            } else {
-              _jumpToWeek(first.weekNum);
-            }
-          },
-        ),
         duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
+  List<String> _buildInlineNoticeMessages(List<ScheduleWeekChange> changes) {
+    if (!_settingsManager.updateShowDiff) {
+      return changes
+          .map((c) => '${_labelForWeek(c.weekNum)}检测到调课，请在“调课记录”查看详情')
+          .toList();
+    }
+    final messages = <String>[];
+    for (final change in changes) {
+      if (change.lines.isEmpty) {
+        messages.add('${_labelForWeek(change.weekNum)}调课信息不完整，请在“调课记录”查看详情');
+        continue;
+      }
+      for (final raw in change.lines) {
+        final line = raw.trim();
+        if (line.isEmpty) continue;
+        if (!line.contains('调课到') || !line.contains('**')) {
+          messages.add('${_labelForWeek(change.weekNum)}调课信息格式异常：$line');
+          continue;
+        }
+        messages.add(line);
+      }
+    }
+    return messages.toSet().toList();
+  }
+
+  void _dismissInlineNoticeAt(int index) {
+    if (index < 0 || index >= _inlineNoticeMessages.length) return;
+    final next = List<String>.from(_inlineNoticeMessages)..removeAt(index);
+    _setState(() {
+      _inlineNoticeMessages = next;
+    });
+  }
+
+  void _clearInlineNotices() {
+    if (_inlineNoticeMessages.isEmpty) return;
+    _setState(() {
+      _inlineNoticeMessages = const <String>[];
+    });
+  }
 }
