@@ -146,13 +146,18 @@ class MainActivity : FlutterActivity() {
         when (call.method) {
           "updateTodayWidget" -> {
             val mode = call.argument<String>("themeMode")
+            val trigger = call.argument<String>("trigger")
             if (!mode.isNullOrBlank()) {
               val prefs = applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
               prefs.edit().putString("flutter.theme_mode", mode).commit()
             }
-            TodayListWidgetProvider.updateAll(applicationContext)
-            TodayAndNextWidgetProvider.updateAll(applicationContext)
-            TodayCourseWidgetProvider.updateAll(applicationContext)
+            val syncTrigger =
+              if (!mode.isNullOrBlank() || trigger == "app_theme_changed" || trigger == "init") {
+                com.dawndrizzle.wing.cqut.widget.WidgetThemeTrigger.APP_THEME_CHANGED
+              } else {
+                com.dawndrizzle.wing.cqut.widget.WidgetThemeTrigger.DATA_REFRESH
+              }
+            com.dawndrizzle.wing.cqut.widget.WidgetThemeSyncDispatcher.dispatch(applicationContext, syncTrigger)
             result.success(null)
           }
 

@@ -43,19 +43,17 @@ private class CourseListRemoteViewsFactory(
   override fun getViewAt(position: Int): RemoteViews {
     val item = items.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_today_list_item)
-    val dark = WidgetTheme.isDark(context)
-    val primary = WidgetTheme.primaryTextColor(dark)
-    val secondary = WidgetTheme.secondaryTextColor(dark)
+    val palette = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH).palette
     views.setInt(
       R.id.ll_content,
       "setBackgroundResource",
-      if (dark) R.drawable.widget_item_bg_dark else R.drawable.widget_item_bg,
+      palette.itemBackgroundRes,
     )
-    views.setTextColor(R.id.tv_course_name, primary)
-    views.setTextColor(R.id.tv_campus, secondary)
-    views.setTextColor(R.id.tv_classroom, secondary)
-    views.setTextColor(R.id.tv_teacher, secondary)
-    views.setTextColor(R.id.tv_periods, secondary)
+    views.setTextColor(R.id.tv_course_name, palette.primaryText)
+    views.setTextColor(R.id.tv_campus, palette.secondaryText)
+    views.setTextColor(R.id.tv_classroom, palette.secondaryText)
+    views.setTextColor(R.id.tv_teacher, palette.secondaryText)
+    views.setTextColor(R.id.tv_periods, palette.secondaryText)
 
     if (item == null) {
       views.setTextViewText(R.id.tv_course_name, "")

@@ -16,35 +16,35 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
     appWidgetManager: AppWidgetManager,
     appWidgetIds: IntArray,
   ) {
-    updateAppWidgets(context, appWidgetManager, appWidgetIds)
-    WidgetAutoRefreshScheduler.schedule(context)
+    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.INITIALIZATION)
   }
 
   override fun onReceive(context: Context, intent: Intent) {
     super.onReceive(context, intent)
     if (intent.action == ACTION_REFRESH) {
-      updateAll(context)
+      WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
     }
   }
 
   companion object {
     const val ACTION_REFRESH = "com.dawndrizzle.wing.cqut.widget.TODAY_AND_NEXT_REFRESH"
 
-    fun updateAll(context: Context) {
+    fun updateAll(context: Context, theme: WidgetThemeResolution? = null) {
       val appWidgetManager = AppWidgetManager.getInstance(context)
       val ids =
         appWidgetManager.getAppWidgetIds(ComponentName(context, TodayAndNextWidgetProvider::class.java))
-      updateAppWidgets(context, appWidgetManager, ids)
-      WidgetAutoRefreshScheduler.schedule(context)
+      updateAppWidgets(context, appWidgetManager, ids, theme)
     }
 
     private fun updateAppWidgets(
       context: Context,
       appWidgetManager: AppWidgetManager,
       appWidgetIds: IntArray,
+      theme: WidgetThemeResolution? = null,
     ) {
+      val resolvedTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
       for (appWidgetId in appWidgetIds) {
-        updateAppWidget(context, appWidgetManager, appWidgetId)
+        updateAppWidget(context, appWidgetManager, appWidgetId, resolvedTheme)
       }
     }
 
@@ -52,22 +52,28 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       context: Context,
       appWidgetManager: AppWidgetManager,
       appWidgetId: Int,
+      theme: WidgetThemeResolution,
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_today_and_next)
 
-      val dark = WidgetTheme.isDark(context)
-      val primary = WidgetTheme.primaryTextColor(dark)
-      val secondary = WidgetTheme.secondaryTextColor(dark)
+      val palette = theme.palette
       views.setInt(
         R.id.widget_card,
         "setBackgroundResource",
-        if (dark) R.drawable.widget_bg_dark else R.drawable.widget_bg,
+        palette.backgroundRes,
       )
-      views.setTextColor(R.id.tv_schedule_name, primary)
-      views.setTextColor(R.id.tv_date, secondary)
-      views.setTextColor(R.id.tv_week_count, secondary)
-      views.setTextColor(R.id.empty, secondary)
-      views.setTextColor(R.id.empty_next_day, secondary)
+      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
+      views.setTextColor(R.id.tv_date, palette.secondaryText)
+      views.setTextColor(R.id.tv_week, palette.accent)
+      views.setTextColor(R.id.tv_week_count, palette.secondaryText)
+      views.setTextColor(R.id.empty, palette.secondaryText)
+      views.setTextColor(R.id.empty_next_day, palette.secondaryText)
+      views.setInt(R.id.vertical_divider, "setBackgroundColor", palette.divider)
+      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
+      views.setViewVisibility(
+        R.id.theme_transition_overlay,
+        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
+      )
 
       val header = TodayWidgetData.loadHeader(context)
       val weekCount = TodayWidgetData.loadWeekCountText(context)

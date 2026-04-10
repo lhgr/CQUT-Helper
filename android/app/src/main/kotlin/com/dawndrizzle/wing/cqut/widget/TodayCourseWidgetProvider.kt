@@ -16,21 +16,20 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     appWidgetManager: AppWidgetManager,
     appWidgetIds: IntArray,
   ) {
-    updateAppWidgets(context, appWidgetManager, appWidgetIds)
-    WidgetAutoRefreshScheduler.schedule(context)
+    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.INITIALIZATION)
   }
 
   override fun onReceive(context: Context, intent: Intent) {
     super.onReceive(context, intent)
     when (intent.action) {
-      ACTION_REFRESH -> updateAll(context)
+      ACTION_REFRESH -> WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
       ACTION_TOGGLE_DAY -> {
         val appWidgetId =
           intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
         if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
           toggleDayOffset(context, appWidgetId)
         } else {
-          updateAll(context)
+          WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
         }
       }
     }
@@ -41,21 +40,22 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     const val ACTION_TOGGLE_DAY = "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_TOGGLE_DAY"
     private const val PREFS_NAME = "TodayCourseWidgetPrefs"
 
-    fun updateAll(context: Context) {
+    fun updateAll(context: Context, theme: WidgetThemeResolution? = null) {
       val appWidgetManager = AppWidgetManager.getInstance(context)
       val ids =
         appWidgetManager.getAppWidgetIds(ComponentName(context, TodayCourseWidgetProvider::class.java))
-      updateAppWidgets(context, appWidgetManager, ids)
-      WidgetAutoRefreshScheduler.schedule(context)
+      updateAppWidgets(context, appWidgetManager, ids, theme)
     }
 
     private fun updateAppWidgets(
       context: Context,
       appWidgetManager: AppWidgetManager,
       appWidgetIds: IntArray,
+      theme: WidgetThemeResolution? = null,
     ) {
+      val resolvedTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
       for (appWidgetId in appWidgetIds) {
-        updateAppWidget(context, appWidgetManager, appWidgetId)
+        updateAppWidget(context, appWidgetManager, appWidgetId, resolvedTheme)
       }
     }
 
@@ -63,20 +63,26 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       context: Context,
       appWidgetManager: AppWidgetManager,
       appWidgetId: Int,
+      theme: WidgetThemeResolution,
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
-      val dark = WidgetTheme.isDark(context)
-      val primary = WidgetTheme.primaryTextColor(dark)
-      val secondary = WidgetTheme.secondaryTextColor(dark)
+      val palette = theme.palette
       views.setImageViewResource(
         R.id.iv_appwidget,
-        if (dark) R.drawable.appwidget_bg_dark else R.drawable.appwidget_bg,
+        palette.imageBackgroundRes,
       )
-      views.setTextColor(R.id.tv_schedule_name, primary)
-      views.setTextColor(R.id.tv_date, primary)
-      views.setTextColor(R.id.tv_week_count, secondary)
-      views.setTextColor(android.R.id.empty, secondary)
+      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
+      views.setTextColor(R.id.tv_date, palette.primaryText)
+      views.setTextColor(R.id.tv_week_count, palette.secondaryText)
+      views.setTextColor(R.id.tv_week, palette.accent)
+      views.setTextColor(R.id.empty_text, palette.secondaryText)
+      views.setInt(R.id.iv_next, "setColorFilter", palette.icon)
+      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
+      views.setViewVisibility(
+        R.id.theme_transition_overlay,
+        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
+      )
 
       val dayOffset = getDayOffset(context, appWidgetId)
       val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
@@ -143,7 +149,8 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       prefs.edit().putInt("dayOffset_$appWidgetId", next).apply()
 
       val appWidgetManager = AppWidgetManager.getInstance(context)
-      updateAppWidget(context, appWidgetManager, appWidgetId)
+      val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      updateAppWidget(context, appWidgetManager, appWidgetId, theme)
       WidgetAutoRefreshScheduler.schedule(context)
     }
   }

@@ -13,9 +13,6 @@ class WidgetAutoRefreshReceiver : BroadcastReceiver() {
         action == Intent.ACTION_TIME_CHANGED ||
         action == Intent.ACTION_TIMEZONE_CHANGED
     if (!shouldRefresh) return
-    TodayListWidgetProvider.updateAll(context)
-    TodayAndNextWidgetProvider.updateAll(context)
-    TodayCourseWidgetProvider.updateAll(context)
-    WidgetAutoRefreshScheduler.schedule(context)
+    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
   }
 }
