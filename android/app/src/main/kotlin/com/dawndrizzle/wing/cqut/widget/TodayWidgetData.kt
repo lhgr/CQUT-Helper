@@ -182,15 +182,12 @@ object TodayWidgetData {
       val eWeekDay = e.optString("weekDay", "")
       if (eWeekDay != weekDay) continue
 
-      val rawEventId = e.optString("eventID", "")
       val rawName = e.optString("eventName", "")
-      val rawAddress = e.optString("address", "")
-      val rawTeacher = e.optString("memberName", "")
-      val courseKey = buildCourseColorKey(rawEventId, rawName, rawAddress, rawTeacher)
+      val courseKey = buildCourseColorKey(rawName)
       val name = rawName.ifBlank { "课程" }
-      val location = rawAddress.trim()
+      val location = e.optString("address", "").trim()
       val (campus, classroom) = splitCampusAndClassroom(location)
-      val teacher = rawTeacher.ifBlank { " " }
+      val teacher = e.optString("memberName", "").ifBlank { " " }
 
       val start = e.optInt("sessionStart", -1)
       val last = e.optInt("sessionLast", -1)
@@ -212,7 +209,7 @@ object TodayWidgetData {
           else -> minSessionStart(e.optJSONArray("sessionList")) ?: Int.MAX_VALUE
         }
 
-      val eventId = rawEventId.ifBlank { null }
+      val eventId = e.optString("eventID", "").ifBlank { null }
       val colorIndex = courseColorMap[courseKey] ?: fallbackColorIndex(courseKey)
       result.add(
         CourseItem(
@@ -477,8 +474,9 @@ object TodayWidgetData {
     }
   }
 
-  private fun buildCourseColorKey(eventId: String, eventName: String, address: String, teacher: String): String {
-    return "$eventId|$eventName|$address|$teacher"
+  private fun buildCourseColorKey(eventName: String): String {
+    val normalized = eventName.trim()
+    return if (normalized.isEmpty()) "未命名课程" else normalized
   }
 
   private fun fallbackColorIndex(courseKey: String): Int {

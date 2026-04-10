@@ -11,6 +11,11 @@ class CourseColorAssignmentManager {
   static const String _prefsKeyPrefix = 'schedule_course_color_map_v1';
   static const String _anonymousScope = 'anonymous';
 
+  static String buildCourseNameKey(String? courseName) {
+    final normalized = (courseName ?? '').trim();
+    return normalized.isEmpty ? '未命名课程' : normalized;
+  }
+
   final Map<String, Map<String, int>> _cacheByScope = {};
   final Set<String> _loadedScopes = {};
   String? _accountCache;
@@ -26,6 +31,13 @@ class CourseColorAssignmentManager {
     final scope = await _buildScope(term);
     final scopedMap = await _ensureScopeLoaded(scope);
     var changed = false;
+    final legacyKeys = scopedMap.keys.where(_isLegacyCourseKey).toList(growable: false);
+    if (legacyKeys.isNotEmpty) {
+      for (final key in legacyKeys) {
+        scopedMap.remove(key);
+      }
+      changed = true;
+    }
     final usedColors = scopedMap.values.toSet();
 
     for (final key in courseKeys) {
@@ -107,5 +119,11 @@ class CourseColorAssignmentManager {
       }
     }
     return assignedCount % paletteSize;
+  }
+
+  bool _isLegacyCourseKey(String key) {
+    final normalized = key.trim();
+    if (normalized.isEmpty) return false;
+    return '|'.allMatches(normalized).length >= 3;
   }
 }

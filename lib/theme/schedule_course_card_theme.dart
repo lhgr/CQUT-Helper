@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 @immutable
 class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
-  static const double _darkBackgroundLightnessFactor = 0.88;
-  static const double _darkBorderLightnessFactor = 0.80;
+  static const double _darkBackgroundLightnessFactor = 0.9;
+  static const double _darkBorderLightnessFactor = 0.2;
   static const double _darkTitleLightnessFactor = 0.78;
   static const double _darkDescriptionLightnessFactor = 0.78;
   static const double _darkButtonLightnessFactor = 0.78;
@@ -22,6 +22,16 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
     Color(0xFFFFF9C9),
     Color(0xFFFAEDFF),
     Color(0xFFF4F2FD),
+    Color(0xFFE6E6FF),
+    Color(0xFFEEFDDD),
+    Color(0xFFEADEFB),
+    Color(0xFFFFEFED),
+    Color(0xFFCDF2FC),
+    Color(0xFFEFFFFF),
+    Color(0xFFEEFFFF),
+    Color(0xFFF9F5E2),
+    Color(0xFFEDF0FF),
+    Color(0xFFF2F4FD),
   ];
 
   static const List<Color> _lightTitleColors = [
@@ -36,6 +46,16 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
     Color(0xFF846C10),
     Color(0xFF781CA6),
     Color(0xFF3215AC),
+    Color(0xFF1426A3),
+    Color(0xFF80AC15),
+    Color(0xFF480F7B),
+    Color(0xFFA4671E),
+    Color(0xFF127B91),
+    Color(0xFF15ACA8),
+    Color(0xFF1568AC),
+    Color(0xFF717B0F),
+    Color(0xFF1C3CA6),
+    Color(0xFF152EAC),
   ];
 
   final List<Color> backgrounds;

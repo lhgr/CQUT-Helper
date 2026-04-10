@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cqut/manager/course_color_assignment_manager.dart';
 import 'package:cqut/model/class_schedule_model.dart';
 import 'package:cqut/pages/ClassSchedule/widgets/schedule_course_card.dart';
+import 'package:cqut/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 
 class ScheduleCourseGrid extends StatefulWidget {
   final List<EventItem> events;
@@ -60,11 +61,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
   }
 
   String _buildCourseKey(EventItem event) {
-    final eventId = event.eventID ?? '';
-    final name = event.eventName ?? '';
-    final address = event.address ?? '';
-    final teacher = event.memberName ?? '';
-    return '$eventId|$name|$address|$teacher';
+    return CourseColorAssignmentManager.buildCourseNameKey(event.eventName);
   }
 
   int _safeIndex(int index) {
@@ -97,117 +94,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
     });
   }
 
-  Color _onButtonColor(Color color) {
-    const white = Colors.white;
-    const black = Colors.black;
-    final onWhite = _contrastRatio(color, white);
-    final onBlack = _contrastRatio(color, black);
-    return onWhite >= onBlack ? white : black;
-  }
-
-  double _contrastRatio(Color a, Color b) {
-    final la = a.computeLuminance();
-    final lb = b.computeLuminance();
-    final lighter = la > lb ? la : lb;
-    final darker = la > lb ? lb : la;
-    return (lighter + 0.05) / (darker + 0.05);
-  }
-
-  void _showCourseDetail(
-    BuildContext context,
-    EventItem event,
-    int colorIndex,
-  ) {
-    final safeIndex = _safeIndex(colorIndex);
-    final buttonColor = widget.buttonColors[safeIndex];
-    final onButtonColor = _onButtonColor(buttonColor);
-    final sessionStart = int.tryParse(event.sessionStart ?? '');
-    final sessionLast = int.tryParse(event.sessionLast ?? '');
-    final sessionText = (sessionStart != null && sessionLast != null)
-        ? '${event.sessionStart}-${sessionStart + sessionLast - 1}节'
-        : '未知';
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(
-            event.eventName ?? "课程详情",
-            style: Theme.of(context).textTheme.titleLarge,
-            textAlign: TextAlign.center,
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildDetailRow(
-                context,
-                Icons.room_outlined,
-                "教室",
-                event.address,
-              ),
-              _buildDetailRow(
-                context,
-                Icons.person_outline,
-                "教师",
-                event.memberName,
-              ),
-              _buildDetailRow(
-                context,
-                Icons.calendar_today_outlined,
-                "周次",
-                event.weekCover,
-              ),
-              _buildDetailRow(context, Icons.access_time, "节次", sessionText),
-            ],
-          ),
-          actions: [
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: buttonColor,
-                foregroundColor: onButtonColor,
-              ),
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text("关闭"),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildDetailRow(
-    BuildContext context,
-    IconData icon,
-    String label,
-    String? value,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                ),
-                Text(
-                  value ?? "未知",
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+  List<EventItem> _eventsWithSameCourseName(EventItem target) {
+    final key = _buildCourseKey(target);
+    return widget.events.where((event) => _buildCourseKey(event) == key).toList(growable: false);
   }
 
   @override
@@ -314,7 +203,14 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       borderColor: borderColor,
                       titleColor: titleColor,
                       descriptionColor: descriptionColor,
-                      onTap: () => _showCourseDetail(context, event, safeIndex),
+                      onTap: () {
+                        showCourseDetailDialog(
+                          context,
+                          courseName: key,
+                          events: _eventsWithSameCourseName(event),
+                          closeButtonColor: widget.buttonColors[safeIndex],
+                        );
+                      },
                     ),
                   );
                 }),
