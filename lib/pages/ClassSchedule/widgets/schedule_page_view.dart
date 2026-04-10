@@ -14,7 +14,6 @@ class SchedulePageView extends StatelessWidget {
   final Function(String) onBoundaryMessage;
   final int currentWeekIndex;
   final List<CampusTimeInfo>? timeInfoList;
-  final ValueChanged<EventItem> onTapCourse;
 
   static const double _headerHeight = 50.0;
   static const double _timeColumnWidth =
@@ -30,7 +29,6 @@ class SchedulePageView extends StatelessWidget {
     required this.showWeekend,
     required this.onBoundaryMessage,
     required this.currentWeekIndex,
-    required this.onTapCourse,
     this.timeInfoList,
   });
 
@@ -96,7 +94,6 @@ class SchedulePageView extends StatelessWidget {
                           titleColors: cardTheme.titleColors,
                           descriptionColors: cardTheme.descriptionColors,
                           buttonColors: cardTheme.buttonColors,
-                          onTapCourse: onTapCourse,
                         ),
                       ),
                     ],

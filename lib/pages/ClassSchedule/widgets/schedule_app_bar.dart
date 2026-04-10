@@ -9,7 +9,6 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   final ScheduleData? currentScheduleData;
   final bool? nowInTeachingWeek;
   final String? nowStatusLabel;
-  final VoidCallback onCourseOverview;
   final VoidCallback onNoticeRecords;
   final VoidCallback onRefresh;
   final VoidCallback onSettings;
@@ -24,7 +23,6 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.currentScheduleData,
     this.nowInTeachingWeek,
     this.nowStatusLabel,
-    required this.onCourseOverview,
     required this.onNoticeRecords,
     required this.onRefresh,
     required this.onSettings,
@@ -37,7 +35,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double sideSlotWidth = 132;
+    const double sideSlotWidth = 116;
     const double sideHorizontalPadding = 12;
     const double pickerButtonGap = 2;
     Widget buildPickerButton({
@@ -84,22 +82,6 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       titleSpacing: 0,
       scrolledUnderElevation: 0,
       backgroundColor: Theme.of(context).colorScheme.surface,
-      leadingWidth: sideSlotWidth,
-      leading: Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton(
-          onPressed: onCourseOverview,
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.only(
-              left: sideHorizontalPadding,
-              right: 8,
-            ),
-            minimumSize: const Size(0, 36),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: const Text('本学期课程'),
-        ),
-      ),
       actions: [
         SizedBox(
           width: sideSlotWidth,

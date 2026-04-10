@@ -58,3 +58,5 @@ docs
 test
 
 FastAPI/__pycache__/
+
+APIs/

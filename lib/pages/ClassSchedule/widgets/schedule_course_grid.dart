@@ -12,7 +12,6 @@ class ScheduleCourseGrid extends StatelessWidget {
   final List<Color> descriptionColors;
   final List<Color> buttonColors;
   final bool showWeekend;
-  final ValueChanged<EventItem> onTapCourse;
 
   const ScheduleCourseGrid({
     super.key,
@@ -24,7 +23,6 @@ class ScheduleCourseGrid extends StatelessWidget {
     required this.titleColors,
     required this.descriptionColors,
     required this.buttonColors,
-    required this.onTapCourse,
     this.showWeekend = true,
   });
 
@@ -274,9 +272,7 @@ class ScheduleCourseGrid extends StatelessWidget {
                       borderColor: borderColor,
                       titleColor: titleColor,
                       descriptionColor: descriptionColor,
-                      onTap: () => onTapCourse(event),
-                      onLongPress: () =>
-                          _showCourseDetail(context, event, safeIndex),
+                      onTap: () => _showCourseDetail(context, event, safeIndex),
                     ),
                   );
                 }),
