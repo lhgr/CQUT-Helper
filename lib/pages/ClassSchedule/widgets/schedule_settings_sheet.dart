@@ -1,0 +1,908 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import '../../../utils/android_background_restrictions.dart';
+import '../../../utils/local_notifications.dart';
+import 'package:cqut/manager/schedule_update_worker.dart';
+import 'package:cqut/manager/course_reminder_manager.dart';
+import 'package:cqut/utils/course_reminder_planner.dart';
+
+class ScheduleSettingsSheet extends StatefulWidget {
+  final int initialWeeksAhead;
+  final bool initialShowWeekend;
+  final bool initialTimeInfoEnabled;
+  final bool initialUpdateEnabled;
+  final int initialUpdateIntervalMinutes;
+  final bool initialUpdateShowDiff;
+  final bool initialSystemNotifyEnabled;
+  final int maxWeeksAhead;
+  final Function({
+    required int weeksAhead,
+    required bool showWeekend,
+    required bool timeInfoEnabled,
+    required bool updateEnabled,
+    required int updateIntervalMinutes,
+    required bool updateShowDiff,
+    required bool systemNotifyEnabled,
+  })
+  onSave;
+
+  const ScheduleSettingsSheet({
+    super.key,
+    required this.initialWeeksAhead,
+    required this.initialShowWeekend,
+    required this.initialTimeInfoEnabled,
+    required this.initialUpdateEnabled,
+    required this.initialUpdateIntervalMinutes,
+    required this.initialUpdateShowDiff,
+    required this.initialSystemNotifyEnabled,
+    required this.maxWeeksAhead,
+    required this.onSave,
+  });
+
+  static const String prefsKeyShowWeekend = 'schedule_show_weekend';
+  static const String prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
+  static const String prefsKeyUpdateWeeksAhead = 'schedule_update_weeks_ahead';
+  static const String prefsKeyUpdateEnabled = 'schedule_update_enabled';
+  static const String prefsKeyUpdateIntervalMinutes =
+      'schedule_update_interval_minutes';
+  static const String prefsKeyUpdateShowDiff = 'schedule_update_show_diff';
+  static const String prefsKeyUpdateSystemNotifyEnabled =
+      'schedule_update_system_notification_enabled';
+
+  @override
+  State<ScheduleSettingsSheet> createState() => _ScheduleSettingsSheetState();
+}
+
+class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
+  late int weeksAhead;
+  late bool showWeekend;
+  late bool timeInfoEnabled;
+  late bool updateEnabled;
+  late int intervalMinutes;
+  late bool showDiff;
+  late bool systemNotifyEnabled;
+  bool confirmDialogOpen = false;
+  bool _allowPop = false;
+
+  late int _baselineWeeksAhead;
+  late bool _baselineShowWeekend;
+  late bool _baselineTimeInfoEnabled;
+  late bool _baselineUpdateEnabled;
+  late int _baselineIntervalMinutes;
+  late bool _baselineShowDiff;
+  late bool _baselineSystemNotifyEnabled;
+
+  CourseReminderSettings? _baselineCourseSettings;
+  bool courseReminderEnabled = false;
+  int courseAdvanceMinutes = 10;
+  bool courseAutoSound = false;
+  CourseReminderSoundMode courseSoundMode = CourseReminderSoundMode.vibrate;
+
+  @override
+  void initState() {
+    super.initState();
+    weeksAhead = widget.initialWeeksAhead.clamp(0, widget.maxWeeksAhead);
+    showWeekend = widget.initialShowWeekend;
+    timeInfoEnabled = widget.initialTimeInfoEnabled;
+    updateEnabled = widget.initialUpdateEnabled;
+    intervalMinutes = widget.initialUpdateIntervalMinutes;
+    showDiff = widget.initialUpdateShowDiff;
+    systemNotifyEnabled = widget.initialSystemNotifyEnabled;
+
+    _baselineWeeksAhead = weeksAhead;
+    _baselineShowWeekend = showWeekend;
+    _baselineTimeInfoEnabled = timeInfoEnabled;
+    _baselineUpdateEnabled = updateEnabled;
+    _baselineIntervalMinutes = intervalMinutes;
+    _baselineShowDiff = showDiff;
+    _baselineSystemNotifyEnabled = systemNotifyEnabled;
+
+    _loadCourseReminderSettings();
+  }
+
+  Future<void> _loadCourseReminderSettings() async {
+    final s = await CourseReminderManager.loadSettings();
+    if (!mounted) return;
+    setState(() {
+      _baselineCourseSettings = s;
+      courseReminderEnabled = s.enabled;
+      courseAdvanceMinutes = s.advanceMinutes;
+      courseAutoSound = s.autoSwitchSoundMode;
+      courseSoundMode = s.soundMode;
+    });
+  }
+
+  bool hasUnsavedChanges() {
+    final baseCourse = _baselineCourseSettings;
+    return weeksAhead != _baselineWeeksAhead ||
+        showWeekend != _baselineShowWeekend ||
+        timeInfoEnabled != _baselineTimeInfoEnabled ||
+        updateEnabled != _baselineUpdateEnabled ||
+        intervalMinutes != _baselineIntervalMinutes ||
+        showDiff != _baselineShowDiff ||
+        systemNotifyEnabled != _baselineSystemNotifyEnabled ||
+        (baseCourse != null &&
+            (courseReminderEnabled != baseCourse.enabled ||
+                courseAdvanceMinutes != baseCourse.advanceMinutes ||
+                courseAutoSound != baseCourse.autoSwitchSoundMode ||
+                courseSoundMode != baseCourse.soundMode));
+  }
+
+  String _formatIntervalLabel(int minutes) {
+    if (minutes <= 0) return '未设置';
+    if (minutes % 60 == 0) {
+      final h = minutes ~/ 60;
+      return h == 1 ? '每 1 小时' : '每 $h 小时';
+    }
+    return '每 $minutes 分钟';
+  }
+
+  double? _estimateDailyRequests({
+    required int weeksAhead,
+    required int intervalMinutes,
+  }) {
+    if (intervalMinutes <= 0) return null;
+    final perDayRuns = 1440 / intervalMinutes;
+    return (1 + weeksAhead) * perDayRuns;
+  }
+
+  Future<bool> _confirmHighFrequencyIfNeeded({
+    required BuildContext context,
+    required int weeksAhead,
+    required int intervalMinutes,
+  }) async {
+    final est = _estimateDailyRequests(
+      weeksAhead: weeksAhead,
+      intervalMinutes: intervalMinutes,
+    );
+    final risky = intervalMinutes < 15 || (est != null && est >= 200);
+    if (!risky) return true;
+
+    final detail = <String>[
+      if (intervalMinutes < 15) '后台定时检查系统通常要求间隔不少于 15 分钟',
+      if (est != null) '按当前设置，预计每天约 ${est.toStringAsFixed(0)} 次课表接口请求',
+      '请求过于频繁可能导致耗电增加、流量增加，且可能触发学校系统的风控限制',
+    ].join('\n');
+
+    final proceed =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text('请求频率风险提示'),
+              content: Text(detail),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text('启用'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!proceed) return false;
+    if (!context.mounted) return false;
+
+    final disclaimer = <String>[
+      detail,
+      '',
+      '请注意：',
+      '1. 频繁请求可能导致耗电/流量增加，且可能触发学校系统风控（如账号被限制、请求被拒绝等）。',
+      '2. 由此产生的任何直接或间接损失（包括但不限于账号限制、数据异常等）由用户自行承担。',
+    ].join('\n');
+
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text('风险提醒'),
+              content: Text(disclaimer),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text('返回修改'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text('我已知悉'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+    return confirmed;
+  }
+
+  Future<bool> _confirmEnableScheduleUpdate(BuildContext context) async {
+    final manufacturer = await AndroidBackgroundRestrictions.manufacturer();
+    bool? ignoringBattery =
+        await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
+    bool? backgroundRestricted =
+        await AndroidBackgroundRestrictions.isBackgroundRestricted();
+    if (!context.mounted) return false;
+
+    String batteryLabel() {
+      if (ignoringBattery == null) return '未知';
+      return ignoringBattery! ? '已忽略' : '未忽略';
+    }
+
+    String restrictedLabel() {
+      if (backgroundRestricted == null) return '未知';
+      return backgroundRestricted! ? '已限制' : '未限制';
+    }
+
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return StatefulBuilder(
+              builder: (context, setDialogState) {
+                Future<void> refresh() async {
+                  final b =
+                      await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
+                  final r =
+                      await AndroidBackgroundRestrictions.isBackgroundRestricted();
+                  if (!context.mounted) return;
+                  setDialogState(() {
+                    ignoringBattery = b;
+                    backgroundRestricted = r;
+                  });
+                }
+
+                return AlertDialog(
+                  title: Text('提示'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '请允许CQUT-Helper的自启动并忽略“电池优化”，否则可能无法正常唤醒课表定时检查。\n'
+                          '若使用的是国产定制 UI，你还需要在系统设置中进行相应修改。',
+                        ),
+                        if (manufacturer != null) ...[
+                          SizedBox(height: 8),
+                          Text('设备：$manufacturer'),
+                        ],
+                        SizedBox(height: 12),
+                        Text('电池优化：${batteryLabel()}'),
+                        SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton.tonal(
+                              onPressed: () async {
+                                await AndroidBackgroundRestrictions.requestIgnoreBatteryOptimizations();
+                                await refresh();
+                              },
+                              child: Text('去忽略电池优化'),
+                            ),
+                            OutlinedButton(
+                              onPressed: () async {
+                                await AndroidBackgroundRestrictions.openBatteryOptimizationSettings();
+                                await refresh();
+                              },
+                              child: Text('电池优化设置'),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 12),
+                        Text('后台限制：${restrictedLabel()}'),
+                        SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton.tonal(
+                              onPressed: () async {
+                                await AndroidBackgroundRestrictions.openAutoStartSettings();
+                                await refresh();
+                              },
+                              child: Text('打开自启动设置'),
+                            ),
+                            OutlinedButton(
+                              onPressed: () async {
+                                await AndroidBackgroundRestrictions.openAppDetailsSettings();
+                                await refresh();
+                              },
+                              child: Text('应用详情'),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 8),
+                        Text('自启动权限无法在所有设备上可靠自动检测，请在系统设置中确认已允许。'),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text('取消'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text('继续启用'),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ) ??
+        false;
+
+    return ok;
+  }
+
+  Future<int?> _askIntervalMinutes(BuildContext context, int initial) async {
+    final controller = TextEditingController(text: initial.toString());
+    final value = await showDialog<int?>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('设置检查间隔（分钟）'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(hintText: '例如 60（最小 15）'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final v = int.tryParse(controller.text.trim());
+                Navigator.pop(context, v);
+              },
+              child: Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+    if (value == null) return null;
+    if (value < 15) return 15;
+    return value;
+  }
+
+  String _formatAdvanceMinutes(int minutes) {
+    final v = minutes.clamp(1, 120);
+    return '提前 $v 分钟';
+  }
+
+  Future<int?> _askCourseAdvanceMinutes(
+    BuildContext context,
+    int initial,
+  ) async {
+    final options = <int>[5, 10, 15, 20, 30, 45, 60];
+    final current = initial.clamp(1, 120);
+    return await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Text('选择提前提醒时间', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              ...options.map((m) {
+                return ListTile(
+                  title: Text(
+                    _formatAdvanceMinutes(m),
+                    textAlign: TextAlign.center,
+                  ),
+                  selected: m == current,
+                  onTap: () => Navigator.pop(context, m),
+                );
+              }),
+              if (!options.contains(current))
+                ListTile(
+                  title: Text(
+                    _formatAdvanceMinutes(current),
+                    textAlign: TextAlign.center,
+                  ),
+                  selected: true,
+                  onTap: () => Navigator.pop(context, current),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<bool> saveSettings() async {
+    if (updateEnabled && intervalMinutes < 15) {
+      intervalMinutes = 15;
+    }
+    if (updateEnabled) {
+      final ok = await _confirmHighFrequencyIfNeeded(
+        context: context,
+        weeksAhead: weeksAhead,
+        intervalMinutes: intervalMinutes,
+      );
+      if (!ok) return false;
+    }
+
+    if (updateEnabled && systemNotifyEnabled) {
+      final ok = await LocalNotifications.ensurePermission();
+      if (!ok) {
+        systemNotifyEnabled = false;
+        if (mounted) {
+          await showDialog<void>(
+            context: context,
+            builder: (context) {
+              return AlertDialog(
+                title: Text('通知权限未授予'),
+                content: Text('未授予通知权限，将无法发送系统通知提醒。你仍可使用应用内提示。'),
+                actions: [
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('知道了'),
+                  ),
+                ],
+              );
+            },
+          );
+        }
+      }
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(ScheduleSettingsSheet.prefsKeyShowWeekend, showWeekend);
+    await prefs.setBool(
+      ScheduleSettingsSheet.prefsKeyTimeInfoEnabled,
+      timeInfoEnabled,
+    );
+    await prefs.setInt(
+      ScheduleSettingsSheet.prefsKeyUpdateWeeksAhead,
+      weeksAhead,
+    );
+    await prefs.setBool(
+      ScheduleSettingsSheet.prefsKeyUpdateEnabled,
+      updateEnabled,
+    );
+    await prefs.setInt(
+      ScheduleSettingsSheet.prefsKeyUpdateIntervalMinutes,
+      intervalMinutes,
+    );
+    await prefs.setBool(ScheduleSettingsSheet.prefsKeyUpdateShowDiff, showDiff);
+    await prefs.setBool(
+      ScheduleSettingsSheet.prefsKeyUpdateSystemNotifyEnabled,
+      systemNotifyEnabled,
+    );
+
+    final savedCourseSettings = CourseReminderSettings(
+      enabled: courseReminderEnabled,
+      advanceMinutes: courseAdvanceMinutes.clamp(1, 120),
+      autoSwitchSoundMode: courseAutoSound,
+      soundMode: courseSoundMode,
+      daysAhead: 2,
+    );
+    await CourseReminderManager.saveSettings(savedCourseSettings);
+
+    unawaited(
+      FirebaseAnalytics.instance.logEvent(
+        name: 'schedule_toggle_show_weekend',
+        parameters: {'value': showWeekend ? 1 : 0},
+      ),
+    );
+
+    widget.onSave(
+      weeksAhead: weeksAhead,
+      showWeekend: showWeekend,
+      timeInfoEnabled: timeInfoEnabled,
+      updateEnabled: updateEnabled,
+      updateIntervalMinutes: intervalMinutes,
+      updateShowDiff: showDiff,
+      systemNotifyEnabled: systemNotifyEnabled,
+    );
+
+    try {
+      await ScheduleUpdateWorker.syncFromPreferences();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('后台同步失败: $e')));
+      }
+    }
+    try {
+      await CourseReminderManager.sync();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('课程提醒同步失败: $e')));
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _baselineWeeksAhead = weeksAhead;
+        _baselineShowWeekend = showWeekend;
+        _baselineTimeInfoEnabled = timeInfoEnabled;
+        _baselineUpdateEnabled = updateEnabled;
+        _baselineIntervalMinutes = intervalMinutes;
+        _baselineShowDiff = showDiff;
+        _baselineSystemNotifyEnabled = systemNotifyEnabled;
+
+        _baselineCourseSettings = savedCourseSettings;
+        courseAdvanceMinutes = savedCourseSettings.advanceMinutes;
+      });
+    }
+
+    return true;
+  }
+
+  void _requestClose() {
+    if (!mounted) return;
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+    });
+  }
+
+  Future<void> maybeConfirmAndClose() async {
+    if (confirmDialogOpen) return;
+    if (!hasUnsavedChanges()) {
+      _requestClose();
+      return;
+    }
+
+    confirmDialogOpen = true;
+    try {
+      if (!mounted) return;
+      final shouldSave = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text('未保存的更改'),
+            content: Text('是否保存课表设置的修改？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text('不保存'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text('保存'),
+              ),
+            ],
+          );
+        },
+      );
+      if (shouldSave == null) return;
+
+      if (shouldSave) {
+        final ok = await saveSettings();
+        if (!ok) return;
+      }
+
+      _requestClose();
+    } finally {
+      confirmDialogOpen = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final est = _estimateDailyRequests(
+      weeksAhead: weeksAhead,
+      intervalMinutes: intervalMinutes,
+    );
+
+    String weeksLabel() {
+      if (weeksAhead == 0) return '仅本周';
+      return '本周 + 未来 $weeksAhead 周';
+    }
+
+    final showRisk =
+        updateEnabled && (intervalMinutes < 15 || (est != null && est >= 200));
+
+    return PopScope(
+      canPop: _allowPop || !hasUnsavedChanges(),
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        maybeConfirmAndClose();
+      },
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    title: Text('显示周末'),
+                    subtitle: Text('关闭后仅显示周一到周五'),
+                    value: showWeekend,
+                    onChanged: (value) {
+                      setState(() {
+                        showWeekend = value;
+                      });
+                    },
+                  ),
+                  SwitchListTile(
+                    title: Text('显示上课时间'),
+                    subtitle: Text('关闭后将不会展示课程时间'),
+                    value: timeInfoEnabled,
+                    onChanged: (value) {
+                      setState(() {
+                        timeInfoEnabled = value;
+                      });
+                    },
+                  ),
+                  ListTile(
+                    title: Text('课表更新检查范围'),
+                    subtitle: Text(
+                      widget.maxWeeksAhead == 0
+                          ? '本学期周数不足'
+                          : '${weeksLabel()}（上限：未来 ${widget.maxWeeksAhead} 周）',
+                    ),
+                  ),
+                  if (widget.maxWeeksAhead > 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Slider(
+                        min: 0,
+                        max: widget.maxWeeksAhead.toDouble(),
+                        value: weeksAhead.toDouble(),
+                        divisions: widget.maxWeeksAhead,
+                        label: weeksLabel(),
+                        onChanged: (v) {
+                          setState(() {
+                            weeksAhead = v.round();
+                          });
+                        },
+                      ),
+                    ),
+                  SwitchListTile(
+                    title: Text('启用定时检查'),
+                    subtitle: Text('定期静默检查课表是否变化'),
+                    value: updateEnabled,
+                    onChanged: (value) async {
+                      if (value && !updateEnabled) {
+                        final ok = await _confirmEnableScheduleUpdate(context);
+                        if (!ok) return;
+                        if (!mounted) return;
+                      }
+                      setState(() {
+                        updateEnabled = value;
+                        if (updateEnabled && intervalMinutes < 15) {
+                          intervalMinutes = 15;
+                        }
+                      });
+                      if (value) {
+                        if (!mounted) return;
+                        await showDialog<void>(
+                          context: this.context,
+                          builder: (context) {
+                            return AlertDialog(
+                              title: Text('提示'),
+                              content: Text(
+                                '由于系统限制，后台请求间隔可能不会严格按照检查间隔进行，可能会延迟几分钟甚至更久。',
+                              ),
+                              actions: [
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: Text('知道了'),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      }
+                    },
+                  ),
+                  ListTile(
+                    title: Text('检查间隔'),
+                    subtitle: Text(
+                      updateEnabled
+                          ? _formatIntervalLabel(intervalMinutes)
+                          : '未启用',
+                    ),
+                    enabled: updateEnabled,
+                    onTap: !updateEnabled
+                        ? null
+                        : () async {
+                            final v = await _askIntervalMinutes(
+                              context,
+                              intervalMinutes,
+                            );
+                            if (v == null) return;
+                            setState(() {
+                              intervalMinutes = v;
+                            });
+                          },
+                  ),
+                  SwitchListTile(
+                    title: Text('变更提示显示详情'),
+                    subtitle: Text('提示具体变化课程以及变化详情'),
+                    value: showDiff,
+                    onChanged: (value) {
+                      setState(() {
+                        showDiff = value;
+                      });
+                    },
+                  ),
+                  SwitchListTile(
+                    title: Text('系统通知提醒'),
+                    subtitle: Text('在后台也发送系统通知提醒'),
+                    value: systemNotifyEnabled,
+                    onChanged: !updateEnabled
+                        ? null
+                        : (value) {
+                            setState(() {
+                              systemNotifyEnabled = value;
+                            });
+                          },
+                  ),
+                  const Divider(height: 16),
+                  ListTile(
+                    title: Text('上课提醒'),
+                    subtitle: Text('课程开始前自动提醒，可选自动静音/振动'),
+                  ),
+                  SwitchListTile(
+                    title: Text('启用上课提醒'),
+                    subtitle: Text('按课表时间自动推送提醒通知'),
+                    value: courseReminderEnabled,
+                    onChanged: (value) async {
+                      if (value && !courseReminderEnabled) {
+                        final ok = await LocalNotifications.ensurePermission();
+                        if (!ok) {
+                          if (!context.mounted) return;
+                          await showDialog<void>(
+                            context: context,
+                            builder: (context) {
+                              return AlertDialog(
+                                title: Text('通知权限未授予'),
+                                content: Text('未授予通知权限，将无法发送上课提醒。'),
+                                actions: [
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: Text('知道了'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                          return;
+                        }
+                      }
+                      setState(() {
+                        courseReminderEnabled = value;
+                      });
+                    },
+                  ),
+                  ListTile(
+                    title: Text('提前提醒时间'),
+                    subtitle: Text(_formatAdvanceMinutes(courseAdvanceMinutes)),
+                    enabled: courseReminderEnabled,
+                    onTap: !courseReminderEnabled
+                        ? null
+                        : () async {
+                            final v = await _askCourseAdvanceMinutes(
+                              context,
+                              courseAdvanceMinutes,
+                            );
+                            if (v == null) return;
+                            setState(() {
+                              courseAdvanceMinutes = v;
+                            });
+                          },
+                  ),
+                  if (showRisk)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Text(
+                        est == null
+                            ? '当前设置可能导致请求频繁'
+                            : '当前设置预计每天约 ${est.toStringAsFixed(0)} 次请求，可能触发风控或增加耗电',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: maybeConfirmAndClose,
+                            child: Text('取消'),
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () async {
+                              final ok = await saveSettings();
+                              if (!ok) return;
+                              if (!context.mounted) return;
+                              _requestClose();
+                            },
+                            child: Text('保存'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void showScheduleSettingsSheet(
+  BuildContext context, {
+  required int initialWeeksAhead,
+  required bool initialShowWeekend,
+  required bool initialTimeInfoEnabled,
+  required bool initialUpdateEnabled,
+  required int initialUpdateIntervalMinutes,
+  required bool initialUpdateShowDiff,
+  required bool initialSystemNotifyEnabled,
+  required int maxWeeksAhead,
+  required Function({
+    required int weeksAhead,
+    required bool showWeekend,
+    required bool timeInfoEnabled,
+    required bool updateEnabled,
+    required int updateIntervalMinutes,
+    required bool updateShowDiff,
+    required bool systemNotifyEnabled,
+  })
+  onSave,
+}) {
+  showModalBottomSheet(
+    context: context,
+    useRootNavigator: true,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (context) {
+      return ScheduleSettingsSheet(
+        initialWeeksAhead: initialWeeksAhead,
+        initialShowWeekend: initialShowWeekend,
+        initialTimeInfoEnabled: initialTimeInfoEnabled,
+        initialUpdateEnabled: initialUpdateEnabled,
+        initialUpdateIntervalMinutes: initialUpdateIntervalMinutes,
+        initialUpdateShowDiff: initialUpdateShowDiff,
+        initialSystemNotifyEnabled: initialSystemNotifyEnabled,
+        maxWeeksAhead: maxWeeksAhead,
+        onSave: onSave,
+      );
+    },
+  );
+}

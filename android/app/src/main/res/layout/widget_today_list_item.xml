@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ll_item"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+    <ImageView
+        android:id="@+id/iv_indicator"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:src="@drawable/appwidget_bg" />
+    <LinearLayout
+        android:id="@+id/ll_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:background="@drawable/widget_item_bg"
+        android:padding="8dp"
+        android:orientation="vertical">
+        <TextView
+            android:id="@+id/tv_course_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/widget_primary_text"
+            android:textSize="14dp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:singleLine="true" />
+        <TextView
+            android:id="@+id/tv_campus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12dp"
+            android:textColor="@color/widget_secondary_text"
+            android:maxLines="1"
+            android:singleLine="true" />
+        <TextView
+            android:id="@+id/tv_classroom"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12dp"
+            android:textColor="@color/widget_secondary_text"
+            android:maxLines="1"
+            android:singleLine="true" />
+        <TextView
+            android:id="@+id/tv_teacher"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12dp"
+            android:textColor="@color/widget_secondary_text"
+            android:maxLines="1"
+            android:singleLine="true" />
+        <TextView
+            android:id="@+id/tv_periods"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12dp"
+            android:textColor="@color/widget_secondary_text"
+            android:maxLines="1"
+            android:singleLine="true" />
+    </LinearLayout>
+</LinearLayout>

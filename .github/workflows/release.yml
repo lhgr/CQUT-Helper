@@ -1,0 +1,141 @@
+name: Build and Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for release'
+        required: true
+        default: 'v0.0.0'
+      skip_release:
+        description: 'Skip creating release?'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    
+    env:
+      TZ: Asia/Shanghai
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check tag matches pubspec version
+        env:
+          DISPATCH_TAG_NAME: ${{ github.event.inputs.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          content = Path("pubspec.yaml").read_text(encoding="utf-8")
+          match = re.search(r"^version:\s*([0-9A-Za-z\.\-]+)\+(\d+)\s*$", content, re.M)
+          if not match:
+            raise SystemExit("pubspec.yaml missing version like x.y.z+N")
+
+          pub_version = match.group(1)
+
+          ref_type = os.environ.get("GITHUB_REF_TYPE", "")
+          ref_name = os.environ.get("GITHUB_REF_NAME", "")
+          dispatch_tag = os.environ.get("DISPATCH_TAG_NAME", "") or ""
+
+          tag = ref_name if ref_type == "tag" else dispatch_tag
+          tag = tag.strip()
+          if tag.startswith("v"):
+            tag = tag[1:]
+          tag = tag.split("+", 1)[0]
+
+          if not tag:
+            print("::error ::No tag found (expected tag push or workflow_dispatch tag_name).")
+            raise SystemExit(1)
+
+          if pub_version != tag:
+            print(f"::error ::pubspec.yaml version ({pub_version}) does not match tag ({tag}). (+build part ignored)")
+            raise SystemExit(1)
+
+          print(f"pubspec.yaml version matches tag: {pub_version}")
+          PY
+      
+      - name: Setup Timezone
+        run: |
+          sudo timedatectl set-timezone Asia/Shanghai
+          date
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Decode Firebase Options
+        env:
+          FIREBASE_OPTIONS_BASE64: ${{ secrets.FIREBASE_OPTIONS_BASE64 }}
+        run: |
+          echo $FIREBASE_OPTIONS_BASE64 | base64 -d > lib/firebase_options.dart
+
+      - name: Decode Google Services Json
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          echo $GOOGLE_SERVICES_JSON_BASE64 | base64 -d > android/app/google-services.json
+      
+      - name: Check Files
+        run: |
+          ls -l android/app/google-services.json || echo "google-services.json NOT FOUND"
+          ls -l lib/firebase_options.dart || echo "firebase_options.dart NOT FOUND"
+      
+      - name: Resolve Build Version
+        id: version
+        run: |
+          python3 - <<'PY' >> $GITHUB_OUTPUT
+          import re
+          from pathlib import Path
+          content = Path("pubspec.yaml").read_text(encoding="utf-8")
+          match = re.search(r"^version:\s*([0-9A-Za-z\.\-]+)\+(\d+)\s*$", content, re.M)
+          if not match:
+            raise SystemExit("pubspec.yaml missing version like x.y.z+N")
+          build_name = match.group(1)
+          build_number = int(match.group(2)) + 1
+          print(f"build_name={build_name}")
+          print(f"build_number={build_number}")
+          PY
+        
+      - name: Build Fat APK (Universal)
+        run: |
+          flutter build apk --release --build-name ${{ steps.version.outputs.build_name }} --build-number ${{ steps.version.outputs.build_number }}
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
+        
+      - name: Build Split APKs
+        run: flutter build apk --release --split-per-abi --build-name ${{ steps.version.outputs.build_name }} --build-number ${{ steps.version.outputs.build_number }}
+        
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: |
+          (startsWith(github.ref, 'refs/tags/') || 
+          github.event_name == 'workflow_dispatch') &&
+          (github.event_name != 'workflow_dispatch' || github.event.inputs.skip_release == 'false')
+        with:
+          tag_name: ${{ github.ref_name || github.event.inputs.tag_name }}
+          name: Release ${{ github.ref_name || github.event.inputs.tag_name }}
+          files: |
+            build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          generate_release_notes: true
+          # 设置为 true，这样发布后会是草稿状态，你可以手动编辑 Release 说明后再正式发布
+          draft: true
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
