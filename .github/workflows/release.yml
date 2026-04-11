@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -108,18 +109,60 @@ jobs:
           if not match:
             raise SystemExit("pubspec.yaml missing version like x.y.z+N")
           build_name = match.group(1)
-          build_number = int(match.group(2)) + 1
+          build_number = int(match.group(2))
+          next_build_number = build_number + 1
           print(f"build_name={build_name}")
           print(f"build_number={build_number}")
+          print(f"next_pubspec_version={build_name}+{next_build_number}")
           PY
+
+      - name: Validate Build Number Increment
+        uses: actions/github-script@v7
+        env:
+          CURRENT_BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const name = "LAST_SUCCESS_BUILD_NUMBER";
+            const current = Number(process.env.CURRENT_BUILD_NUMBER);
+            if (!Number.isFinite(current)) {
+              core.setFailed(`Invalid current build number: ${process.env.CURRENT_BUILD_NUMBER}`);
+              return;
+            }
+
+            let previous = null;
+            try {
+              const res = await github.rest.actions.getRepoVariable({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name
+              });
+              previous = Number(res.data.value);
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
+            if (previous !== null && !Number.isFinite(previous)) {
+              core.setFailed(`Stored ${name} is invalid: ${previous}`);
+              return;
+            }
+
+            if (previous !== null && Number.isFinite(previous) && current <= previous) {
+              core.setFailed(`Build number must be strictly increasing. current=${current}, previous=${previous}`);
+              return;
+            }
+
+            core.info(`Build number check passed. current=${current}, previous=${previous ?? "none"}`);
         
       - name: Build Fat APK (Universal)
         run: |
-          flutter build apk --release --build-name ${{ steps.version.outputs.build_name }} --build-number ${{ steps.version.outputs.build_number }}
+          flutter build apk --release --build-name=${{ steps.version.outputs.build_name }} --build-number=${{ steps.version.outputs.build_number }}
           mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
         
       - name: Build Split APKs
-        run: flutter build apk --release --split-per-abi --build-name ${{ steps.version.outputs.build_name }} --build-number ${{ steps.version.outputs.build_number }}
+        run: flutter build apk --release --split-per-abi --build-name=${{ steps.version.outputs.build_name }} --build-number=${{ steps.version.outputs.build_number }}
         
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -135,7 +178,78 @@ jobs:
             build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
             build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           generate_release_notes: true
-          # 设置为 true，这样发布后会是草稿状态，你可以手动编辑 Release 说明后再正式发布
           draft: true
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Record Successful Build Number
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          CURRENT_BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const name = "LAST_SUCCESS_BUILD_NUMBER";
+            const value = String(process.env.CURRENT_BUILD_NUMBER);
+
+            try {
+              await github.rest.actions.getRepoVariable({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name
+              });
+              await github.rest.actions.updateRepoVariable({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name,
+                value
+              });
+              core.info(`Updated ${name}=${value}`);
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+              await github.rest.actions.createRepoVariable({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name,
+                value
+              });
+              core.info(`Created ${name}=${value}`);
+            }
+
+      - name: Commit and Push Next pubspec Version to dev
+        if: success()
+        env:
+          TARGET_VERSION: ${{ steps.version.outputs.next_pubspec_version }}
+          TARGET_BRANCH: dev
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "${TARGET_BRANCH}"
+          git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          target_version = os.environ["TARGET_VERSION"]
+          path = Path("pubspec.yaml")
+          content = path.read_text(encoding="utf-8")
+          updated = re.sub(
+              r"^version:\s*[0-9A-Za-z\.\-]+\+\d+\s*$",
+              f"version: {target_version}",
+              content,
+              count=1,
+              flags=re.M,
+          )
+          path.write_text(updated, encoding="utf-8")
+          PY
+          if git diff --quiet -- pubspec.yaml; then
+            echo "pubspec.yaml version already up to date on ${TARGET_BRANCH}"
+            exit 0
+          fi
+          git add pubspec.yaml
+          git commit -m "ci: bump version to ${TARGET_VERSION}"
+          git push origin "HEAD:${TARGET_BRANCH}"
