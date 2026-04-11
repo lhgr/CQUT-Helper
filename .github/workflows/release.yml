@@ -227,6 +227,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git ls-remote --exit-code --heads origin "${TARGET_BRANCH}" > /dev/null; then
+            echo "::error ::Target branch '${TARGET_BRANCH}' does not exist on origin. Cannot write back bumped pubspec version."
+            exit 1
+          fi
           git fetch origin "${TARGET_BRANCH}"
           git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
           python3 - <<'PY'
