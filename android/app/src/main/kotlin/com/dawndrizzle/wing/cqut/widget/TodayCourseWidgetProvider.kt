@@ -87,23 +87,20 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
       val palette = theme.palette
-      val systemManaged = theme.mode == WidgetThemeMode.SYSTEM
-      if (!systemManaged) {
-        views.setImageViewResource(
-          R.id.iv_appwidget,
-          palette.imageBackgroundRes,
-        )
-        views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
-        views.setTextColor(R.id.tv_date, palette.primaryText)
-        views.setTextColor(R.id.tv_week_count, palette.secondaryText)
-        views.setTextColor(R.id.tv_week, palette.accent)
-        views.setTextColor(R.id.empty_text, palette.secondaryText)
-        views.setInt(R.id.iv_next, "setColorFilter", palette.icon)
-        views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
-      }
+      views.setImageViewResource(
+        R.id.iv_appwidget,
+        palette.imageBackgroundRes,
+      )
+      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
+      views.setTextColor(R.id.tv_date, palette.primaryText)
+      views.setTextColor(R.id.tv_week_count, palette.secondaryText)
+      views.setTextColor(R.id.tv_week, palette.accent)
+      views.setTextColor(R.id.empty_text, palette.secondaryText)
+      views.setInt(R.id.iv_next, "setColorFilter", palette.icon)
+      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
       views.setViewVisibility(
         R.id.theme_transition_overlay,
-        if (!systemManaged && theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
+        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
       )
 
       val dayOffset = getDayOffset(context, appWidgetId)

@@ -76,22 +76,19 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       val views = RemoteViews(context.packageName, R.layout.widget_today_list)
 
       val palette = theme.palette
-      val systemManaged = theme.mode == WidgetThemeMode.SYSTEM
-      if (!systemManaged) {
-        views.setInt(
-          R.id.widget_card,
-          "setBackgroundResource",
-          palette.backgroundRes,
-        )
-        views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
-        views.setTextColor(R.id.tv_date, palette.secondaryText)
-        views.setTextColor(R.id.tv_week, palette.accent)
-        views.setTextColor(R.id.empty, palette.secondaryText)
-        views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
-      }
+      views.setInt(
+        R.id.widget_card,
+        "setBackgroundResource",
+        palette.backgroundRes,
+      )
+      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
+      views.setTextColor(R.id.tv_date, palette.secondaryText)
+      views.setTextColor(R.id.tv_week, palette.accent)
+      views.setTextColor(R.id.empty, palette.secondaryText)
+      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
       views.setViewVisibility(
         R.id.theme_transition_overlay,
-        if (!systemManaged && theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
+        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
       )
 
       val header = TodayWidgetData.loadHeader(context)
