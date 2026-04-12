@@ -9,7 +9,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart'
     show FlutterError, debugPrint, kDebugMode, kProfileMode, kReleaseMode;
-import 'package:cqut/utils/local_notifications.dart';
+import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';

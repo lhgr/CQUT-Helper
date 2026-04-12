@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'package:cqut/api/notice/notice_api.dart';
-import 'package:cqut/api/schedule/schedule_api.dart';
-import 'package:cqut/model/class_schedule_model.dart';
-import 'package:cqut/model/schedule_notice.dart';
-import 'package:cqut/model/schedule_week_change.dart';
-import 'package:cqut/utils/schedule_notice_parser.dart';
+import 'package:cqut_helper/api/notice/notice_api.dart';
+import 'package:cqut_helper/api/schedule/schedule_api.dart';
+import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/model/schedule_notice.dart';
+import 'package:cqut_helper/model/schedule_week_change.dart';
+import 'package:cqut_helper/utils/schedule_notice_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ScheduleNoticeRefreshResult {

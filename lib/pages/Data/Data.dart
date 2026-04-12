@@ -1,12 +1,12 @@
-import 'package:cqut/pages/Data/repo_browser.dart';
-import 'package:cqut/pages/Data/repo_file_preview.dart';
-import 'package:cqut/manager/cache_cleanup_manager.dart';
-import 'package:cqut/manager/favorites_manager.dart';
-import 'package:cqut/model/github_item.dart';
+import 'package:cqut_helper/pages/Data/repo_browser.dart';
+import 'package:cqut_helper/pages/Data/repo_file_preview.dart';
+import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
+import 'package:cqut_helper/manager/favorites_manager.dart';
+import 'package:cqut_helper/model/github_item.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cqut/utils/github_proxy.dart';
+import 'package:cqut_helper/utils/github_proxy.dart';
 
 class DataView extends StatefulWidget {
   const DataView({super.key});

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:cqut/utils/app_logger.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ScheduleUpdateLog {

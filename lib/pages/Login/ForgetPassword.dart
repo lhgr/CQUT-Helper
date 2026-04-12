@@ -1,4 +1,4 @@
-import 'package:cqut/api/auth/forget_password_api.dart';
+import 'package:cqut_helper/api/auth/forget_password_api.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 

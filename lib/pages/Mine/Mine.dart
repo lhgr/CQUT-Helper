@@ -1,5 +1,5 @@
-import 'package:cqut/api/api_service.dart';
-import 'package:cqut/manager/cache_cleanup_manager.dart';
+import 'package:cqut_helper/api/api_service.dart';
+import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
 import 'package:flutter/material.dart';
 
 import 'mine_menu_section.dart';

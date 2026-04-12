@@ -6,10 +6,10 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:chewie/chewie.dart';
-import 'package:cqut/manager/preview_cache_manager.dart';
-import 'package:cqut/manager/resumable_downloader.dart';
-import 'package:cqut/model/github_item.dart';
-import 'package:cqut/utils/github_proxy.dart';
+import 'package:cqut_helper/manager/preview_cache_manager.dart';
+import 'package:cqut_helper/manager/resumable_downloader.dart';
+import 'package:cqut_helper/model/github_item.dart';
+import 'package:cqut_helper/utils/github_proxy.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';

@@ -1,4 +1,4 @@
-import 'package:cqut/manager/theme_manager.dart';
+import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:flutter/material.dart';
 
 Future<void> showThemeSettingsSheet(BuildContext context) {

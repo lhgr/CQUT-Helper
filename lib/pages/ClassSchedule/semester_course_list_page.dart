@@ -1,7 +1,7 @@
-import 'package:cqut/manager/course_color_assignment_manager.dart';
-import 'package:cqut/model/class_schedule_model.dart';
-import 'package:cqut/pages/ClassSchedule/widgets/course_detail_dialog.dart';
-import 'package:cqut/theme/schedule_course_card_theme.dart';
+import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
+import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
+import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:flutter/material.dart';
 
 class SemesterCourseListPage extends StatefulWidget {

@@ -1,8 +1,8 @@
-import 'package:cqut/model/class_schedule_model.dart';
-import 'package:cqut/pages/ClassSchedule/widgets/schedule_course_grid.dart';
-import 'package:cqut/pages/ClassSchedule/widgets/schedule_header.dart';
-import 'package:cqut/pages/ClassSchedule/widgets/schedule_time_column.dart';
-import 'package:cqut/theme/schedule_course_card_theme.dart';
+import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_grid.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_header.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_time_column.dart';
+import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:flutter/material.dart';
 
 class SchedulePageView extends StatelessWidget {

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:cqut/api/api_service.dart';
+import 'package:cqut_helper/api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class MineNotLoggedInException implements Exception {

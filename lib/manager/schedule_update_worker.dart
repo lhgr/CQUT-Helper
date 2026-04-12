@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'package:cqut/api/schedule/schedule_api.dart';
-import 'package:cqut/manager/schedule_notice_refresh_pipeline.dart';
-import 'package:cqut/model/class_schedule_model.dart';
-import 'package:cqut/model/schedule_week_change.dart';
-import 'package:cqut/utils/app_logger.dart';
-import 'package:cqut/utils/local_notifications.dart';
+import 'package:cqut_helper/api/schedule/schedule_api.dart';
+import 'package:cqut_helper/manager/schedule_notice_refresh_pipeline.dart';
+import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/model/schedule_week_change.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';

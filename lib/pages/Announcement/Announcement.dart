@@ -1,5 +1,5 @@
-import 'package:cqut/manager/announcement_manager.dart';
-import 'package:cqut/model/announcement_model.dart';
+import 'package:cqut_helper/manager/announcement_manager.dart';
+import 'package:cqut_helper/model/announcement_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
