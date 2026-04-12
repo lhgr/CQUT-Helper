@@ -425,11 +425,12 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (backgroundPollingEnabled)
-                          Icon(
-                            _noticeConfigExpanded
-                                ? Icons.expand_less
-                                : Icons.expand_more,
+                          Container(
+                            width: 1,
+                            height: 20,
+                            color: Theme.of(context).dividerColor,
                           ),
+                        if (backgroundPollingEnabled) const SizedBox(width: 10),
                         Switch(
                           value: backgroundPollingEnabled,
                           onChanged: _onBackgroundPollingSwitchChanged,
