@@ -21,32 +21,37 @@ void showCourseDetailDialog(
     builder: (dialogContext) {
       final buttonColor = closeButtonColor;
       final onButtonColor = buttonColor == null ? null : _onButtonColor(buttonColor);
+      final screenWidth = MediaQuery.sizeOf(dialogContext).width;
+      final dialogWidth = (screenWidth - 48).clamp(280.0, 360.0);
       return AlertDialog(
         title: Text(
           normalizedName,
           style: Theme.of(dialogContext).textTheme.titleLarge,
           textAlign: TextAlign.center,
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildDetailRow(dialogContext, Icons.person_outline, "教师", teachers.join("、")),
-              _buildDetailRow(dialogContext, Icons.room_outlined, "教室", classrooms.join("、")),
-              _buildDetailRow(
-                dialogContext,
-                Icons.calendar_today_outlined,
-                "周次",
-                weekCovers.join("、"),
-              ),
-              _buildDetailRow(
-                dialogContext,
-                Icons.access_time,
-                "节次",
-                sessions.map((e) => e.text).join('\n'),
-              ),
-            ],
+        content: SizedBox(
+          width: dialogWidth,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDetailRow(dialogContext, Icons.person_outline, "教师", teachers.join("、")),
+                _buildDetailRow(dialogContext, Icons.room_outlined, "教室", classrooms.join("、")),
+                _buildDetailRow(
+                  dialogContext,
+                  Icons.calendar_today_outlined,
+                  "周次",
+                  weekCovers.join("、"),
+                ),
+                _buildDetailRow(
+                  dialogContext,
+                  Icons.access_time,
+                  "节次",
+                  sessions.map((e) => e.text).join('\n'),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
