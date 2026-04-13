@@ -74,11 +74,13 @@ class ScheduleNotice {
 
 class ScheduleNoticePollData {
   final String env;
+  final String yearTerm;
   final String generatedAt;
   final List<ScheduleNotice> notices;
 
   const ScheduleNoticePollData({
     required this.env,
+    required this.yearTerm,
     required this.generatedAt,
     required this.notices,
   });

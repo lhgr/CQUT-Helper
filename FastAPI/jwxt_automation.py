@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 
 import requests
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
@@ -35,13 +35,21 @@ def build_env_config(env_name: str) -> EnvConfig:
     raise ValueError(f"Unsupported env: {env_name}")
 
 
-def get_semester_range(reference: datetime) -> Tuple[datetime, datetime]:
-    year = reference.year
-    if 2 <= reference.month <= 8:
-        return datetime(year, 2, 1), datetime(year, 8, 31, 23, 59, 59)
-    if reference.month >= 9:
-        return datetime(year, 9, 1), datetime(year + 1, 1, 31, 23, 59, 59)
-    return datetime(year - 1, 9, 1), datetime(year, 1, 31, 23, 59, 59)
+def parse_year_term_range(year_term: str) -> Tuple[datetime, datetime]:
+    normalized = (year_term or "").strip()
+    m = re.fullmatch(r"(\d{4})-(\d{4})-([12])", normalized)
+    if not m:
+        raise ValueError("year_term格式错误，应为YYYY-YYYY-1或YYYY-YYYY-2")
+
+    start_year = int(m.group(1))
+    end_year = int(m.group(2))
+    term_index = int(m.group(3))
+    if end_year != start_year + 1:
+        raise ValueError("year_term学年不合法，结束学年应等于开始学年+1")
+
+    if term_index == 1:
+        return datetime(start_year, 9, 1), datetime(end_year, 1, 31, 23, 59, 59)
+    return datetime(end_year, 2, 1), datetime(end_year, 8, 31, 23, 59, 59)
 
 
 def parse_notice_fields(text: str) -> Dict[str, Optional[str]]:
@@ -384,12 +392,11 @@ console.log(JSON.stringify({{signedUrl: __lastUrl}}));
 def merge_and_filter_term_notices(
     pending_items: List[Dict[str, Any]],
     read_items: List[Dict[str, Any]],
-    reference: Optional[datetime] = None,
+    year_term: str,
 ) -> List[Dict[str, Any]]:
     merged = pending_items + read_items
     merged.sort(key=lambda x: x.get("cjsj", ""))
-    ref = reference or datetime.now()
-    start, end = get_semester_range(ref)
+    start, end = parse_year_term_range(year_term)
     results: List[Dict[str, Any]] = []
     for item in merged:
         title = item.get("xxbt", "") or ""
@@ -425,6 +432,7 @@ def merge_and_filter_term_notices(
 def run_pipeline(
     username: str,
     encrypted_password: str,
+    year_term: str,
     env_name: str,
     headless: bool = True,
 ) -> Dict[str, Any]:
@@ -437,10 +445,11 @@ def run_pipeline(
     client.capture_signed_urls(headless=headless)
     pending = client.fetch_all_by_kind("pending")
     read = client.fetch_all_by_kind("read")
-    notices = merge_and_filter_term_notices(pending, read)
+    notices = merge_and_filter_term_notices(pending, read, year_term=year_term)
 
     result = {
         "env": env_name,
+        "year_term": year_term,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "signed_urls": client.signed_urls,
         "counts": {
@@ -456,8 +465,16 @@ def run_pipeline(
 class PipelineRequest(BaseModel):
     username: str = Field(..., min_length=1)
     encrypted_password: str = Field(..., min_length=1)
+    year_term: str = Field(..., pattern=r"^\d{4}-\d{4}-[12]$")
     env: str = Field(default="prod", pattern="^(dev|test|prod)$")
     headless: bool = True
+
+    @field_validator("year_term")
+    @classmethod
+    def validate_year_term(cls, value: str) -> str:
+        normalized = value.strip()
+        parse_year_term_range(normalized)
+        return normalized
 
 
 app = FastAPI(title="JWXT Automation API", version="1.0.0")
@@ -474,6 +491,7 @@ def fetch_term_schedule_notices(payload: PipelineRequest) -> Dict[str, Any]:
         result = run_pipeline(
             username=payload.username,
             encrypted_password=payload.encrypted_password,
+            year_term=payload.year_term,
             env_name=payload.env,
             headless=payload.headless,
         )

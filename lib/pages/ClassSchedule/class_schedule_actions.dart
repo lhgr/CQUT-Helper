@@ -216,11 +216,23 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     );
 
     Future<ScheduleNoticePollData> Function()? onRefresh;
+    if (yearTerm.isEmpty && userId.isNotEmpty && encryptedPassword.isNotEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('当前学期信息不可用，无法拉取调课通知'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     if (userId.isNotEmpty && encryptedPassword.isNotEmpty && !deepNight) {
       onRefresh = () async {
         final result = await ScheduleApi().fetchTermScheduleNotices(
           userId: userId,
           encryptedPassword: encryptedPassword,
+          yearTerm: yearTerm,
         );
         await _saveNoticeCache(
           prefs: prefs,

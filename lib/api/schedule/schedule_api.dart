@@ -122,12 +122,14 @@ class ScheduleApi {
   Future<ScheduleNoticePollData> fetchTermScheduleNotices({
     required String userId,
     required String encryptedPassword,
+    required String yearTerm,
     String envName = 'prod',
     bool headless = true,
   }) async {
     return await _apiService.notice.fetchTermScheduleNotices(
       username: userId,
       encryptedPassword: encryptedPassword,
+      yearTerm: yearTerm,
       env: envName,
       headless: headless,
     );

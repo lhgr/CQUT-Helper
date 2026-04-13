@@ -29,13 +29,16 @@ class ScheduleNoticeRefreshPipeline {
   final ScheduleApi scheduleApi;
   final Future<void> Function(String weekNum, String yearTerm) refreshWeek;
   final Future<SharedPreferences> Function() prefsProvider;
+  final DateTime Function() nowProvider;
 
   ScheduleNoticeRefreshPipeline({
     required this.refreshWeek,
     ScheduleApi? scheduleApi,
     Future<SharedPreferences> Function()? prefsProvider,
+    DateTime Function()? nowProvider,
   }) : scheduleApi = scheduleApi ?? ScheduleApi(),
-       prefsProvider = prefsProvider ?? SharedPreferences.getInstance;
+       prefsProvider = prefsProvider ?? SharedPreferences.getInstance,
+       nowProvider = nowProvider ?? DateTime.now;
 
   String _stateKey(String userId, String yearTerm) =>
       'schedule_notice_state_${userId}_$yearTerm';
@@ -47,7 +50,8 @@ class ScheduleNoticeRefreshPipeline {
     String envName = 'prod',
     bool headless = true,
   }) async {
-    final nowHour = DateTime.now().hour;
+    final now = nowProvider();
+    final nowHour = now.hour;
     if (nowHour >= 0 && nowHour < 7) {
       return const ScheduleNoticeRefreshResult(
         changes: <ScheduleWeekChange>[],
@@ -70,6 +74,9 @@ class ScheduleNoticeRefreshPipeline {
         generatedAt: '',
       );
     }
+    if (!RegExp(r'^\d{4}-\d{4}-[12]$').hasMatch(yearTerm)) {
+      throw ArgumentError.value(yearTerm, 'yearTerm', '学期格式错误，应为YYYY-YYYY-1/2');
+    }
 
     final prefs = await prefsProvider();
     final userId = (prefs.getString('account') ?? '').trim();
@@ -90,6 +97,7 @@ class ScheduleNoticeRefreshPipeline {
       pollData = await scheduleApi.fetchTermScheduleNotices(
         userId: userId,
         encryptedPassword: encryptedPassword,
+        yearTerm: yearTerm,
         envName: envName,
         headless: headless,
       );
@@ -102,6 +110,10 @@ class ScheduleNoticeRefreshPipeline {
         apiClosed: true,
         generatedAt: '',
       );
+    }
+    final polledYearTerm = pollData.yearTerm.trim();
+    if (polledYearTerm.isNotEmpty && polledYearTerm != yearTerm) {
+      throw StateError('调课通知轮询学期不一致: current=$yearTerm, polled=$polledYearTerm');
     }
 
     final stateKey = _stateKey(userId, yearTerm);
