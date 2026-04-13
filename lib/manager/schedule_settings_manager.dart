@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ScheduleSettingsManager {
   static const String _prefsKeyShowWeekend = 'schedule_show_weekend';
   static const String _prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
-  static const String _prefsKeyUpdateShowDiff = 'schedule_update_show_diff';
   static const String _prefsKeyBackgroundPollingEnabled =
       'schedule_background_polling_enabled';
   static const String _prefsKeyNoticeApiBaseUrl =
@@ -12,7 +11,6 @@ class ScheduleSettingsManager {
 
   bool showWeekend = false;
   bool timeInfoEnabled = true;
-  bool updateShowDiff = true;
   bool backgroundPollingEnabled = false;
   String noticeApiBaseUrl = officialNoticeApiBaseUrl;
 
@@ -61,7 +59,6 @@ class ScheduleSettingsManager {
     final prefs = await SharedPreferences.getInstance();
     showWeekend = prefs.getBool(_prefsKeyShowWeekend) ?? false;
     timeInfoEnabled = prefs.getBool(_prefsKeyTimeInfoEnabled) ?? true;
-    updateShowDiff = prefs.getBool(_prefsKeyUpdateShowDiff) ?? true;
     backgroundPollingEnabled =
         prefs.getBool(_prefsKeyBackgroundPollingEnabled) ?? false;
     final savedBaseUrl = prefs.getString(_prefsKeyNoticeApiBaseUrl) ?? '';
@@ -73,20 +70,18 @@ class ScheduleSettingsManager {
   Future<void> save({
     required bool showWeekend,
     required bool timeInfoEnabled,
-    required bool updateShowDiff,
     required bool backgroundPollingEnabled,
     required String noticeApiBaseUrl,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     this.showWeekend = showWeekend;
     this.timeInfoEnabled = timeInfoEnabled;
-    this.updateShowDiff = updateShowDiff;
     this.backgroundPollingEnabled = backgroundPollingEnabled;
     this.noticeApiBaseUrl = normalizeNoticeApiBaseUrl(noticeApiBaseUrl);
 
     await prefs.setBool(_prefsKeyShowWeekend, showWeekend);
     await prefs.setBool(_prefsKeyTimeInfoEnabled, timeInfoEnabled);
-    await prefs.setBool(_prefsKeyUpdateShowDiff, updateShowDiff);
+    await prefs.remove('schedule_update_show_diff');
     await prefs.setBool(
       _prefsKeyBackgroundPollingEnabled,
       backgroundPollingEnabled,

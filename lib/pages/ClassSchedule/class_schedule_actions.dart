@@ -166,7 +166,6 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       context,
       initialShowWeekend: _settingsManager.showWeekend,
       initialTimeInfoEnabled: _settingsManager.timeInfoEnabled,
-      initialUpdateShowDiff: _settingsManager.updateShowDiff,
       initialBackgroundPollingEnabled:
           _settingsManager.backgroundPollingEnabled,
       initialNoticeApiBaseUrl: _settingsManager.noticeApiBaseUrl,
@@ -174,14 +173,12 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
           ({
             required showWeekend,
             required timeInfoEnabled,
-            required updateShowDiff,
             required backgroundPollingEnabled,
             required noticeApiBaseUrl,
           }) async {
             await _settingsManager.save(
               showWeekend: showWeekend,
               timeInfoEnabled: timeInfoEnabled,
-              updateShowDiff: updateShowDiff,
               backgroundPollingEnabled: backgroundPollingEnabled,
               noticeApiBaseUrl: noticeApiBaseUrl,
             );

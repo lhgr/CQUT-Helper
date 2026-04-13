@@ -74,11 +74,6 @@ extension _ClassScheduleUpdates on _ClassscheduleViewState {
   }
 
   List<String> _buildInlineNoticeMessages(List<ScheduleWeekChange> changes) {
-    if (!_settingsManager.updateShowDiff) {
-      return changes
-          .map((c) => '${_labelForWeek(c.weekNum)}检测到调课，请在“调课记录”查看详情')
-          .toList();
-    }
     final messages = <String>[];
     for (final change in changes) {
       if (change.lines.isEmpty) {
