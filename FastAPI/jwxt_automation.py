@@ -10,7 +10,12 @@ from urllib.parse import urljoin
 
 import requests
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator
+try:
+    # pydantic v2
+    from pydantic import BaseModel, Field, field_validator
+except ImportError:
+    # pydantic v1 fallback
+    from pydantic import BaseModel, Field, validator as field_validator
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
@@ -466,8 +471,16 @@ class PipelineRequest(BaseModel):
     username: str = Field(..., min_length=1)
     encrypted_password: str = Field(..., min_length=1)
     year_term: str = Field(..., pattern=r"^\d{4}-\d{4}-[12]$")
-    env: str = Field(default="prod", pattern="^(dev|test|prod)$")
+    env: str = Field(default="prod")
     headless: bool = True
+
+    @field_validator("env")
+    @classmethod
+    def validate_env(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"dev", "test", "prod"}:
+            raise ValueError("env必须是dev、test或prod")
+        return normalized
 
     @field_validator("year_term")
     @classmethod
