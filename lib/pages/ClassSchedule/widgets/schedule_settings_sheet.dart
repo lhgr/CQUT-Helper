@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'package:cqut/api/notice/notice_api.dart';
-import 'package:cqut/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/api/notice/notice_api.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:cqut/utils/android_background_restrictions.dart';
-import 'package:cqut/utils/local_notifications.dart';
+import 'package:cqut_helper/utils/android_background_restrictions.dart';
+import 'package:cqut_helper/utils/local_notifications.dart';
 
 class ScheduleSettingsSheet extends StatefulWidget {
   final bool initialShowWeekend;
@@ -425,11 +425,12 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (backgroundPollingEnabled)
-                          Icon(
-                            _noticeConfigExpanded
-                                ? Icons.expand_less
-                                : Icons.expand_more,
+                          Container(
+                            width: 1,
+                            height: 20,
+                            color: Theme.of(context).dividerColor,
                           ),
+                        if (backgroundPollingEnabled) const SizedBox(width: 10),
                         Switch(
                           value: backgroundPollingEnabled,
                           onChanged: _onBackgroundPollingSwitchChanged,

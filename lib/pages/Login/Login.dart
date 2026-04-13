@@ -1,5 +1,5 @@
-import 'package:cqut/api/auth/auth_api.dart';
-import 'package:cqut/pages/Login/ForgetPassword.dart';
+import 'package:cqut_helper/api/auth/auth_api.dart';
+import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';

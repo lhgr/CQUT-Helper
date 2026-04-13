@@ -1,5 +1,5 @@
-import 'package:cqut/manager/cache_cleanup_manager.dart';
-import 'package:cqut/utils/app_logger.dart';
+import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 
 class ClearCachePage extends StatefulWidget {

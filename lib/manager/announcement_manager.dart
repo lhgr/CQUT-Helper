@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:cqut/api/api_service.dart';
-import 'package:cqut/model/announcement_model.dart';
+import 'package:cqut_helper/api/api_service.dart';
+import 'package:cqut_helper/model/announcement_model.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';

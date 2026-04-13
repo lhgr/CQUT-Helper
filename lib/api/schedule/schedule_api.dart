@@ -1,9 +1,9 @@
 import 'dart:convert';
-import 'package:cqut/api/api_service.dart';
+import 'package:cqut_helper/api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cqut/model/class_schedule_model.dart';
-import 'package:cqut/model/schedule_notice.dart';
-import 'package:cqut/utils/widget_updater.dart';
+import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/model/schedule_notice.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 
 class ScheduleApi {
   final ApiService _apiService = ApiService();

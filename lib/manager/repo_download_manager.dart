@@ -3,9 +3,9 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:archive/archive_io.dart';
-import 'package:cqut/api/github/github_api.dart';
-import 'package:cqut/model/github_item.dart';
-import 'package:cqut/utils/app_logger.dart';
+import 'package:cqut_helper/api/github/github_api.dart';
+import 'package:cqut_helper/model/github_item.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';

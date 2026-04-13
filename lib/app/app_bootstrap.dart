@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:cqut/manager/preview_cache_manager.dart';
-import 'package:cqut/manager/schedule_update_worker.dart';
-import 'package:cqut/manager/theme_manager.dart';
-import 'package:cqut/utils/app_logger.dart';
-import 'package:cqut/utils/local_notifications.dart';
+import 'package:cqut_helper/manager/preview_cache_manager.dart';
+import 'package:cqut_helper/manager/schedule_update_worker.dart';
+import 'package:cqut_helper/manager/theme_manager.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';

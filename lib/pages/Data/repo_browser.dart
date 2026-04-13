@@ -1,15 +1,15 @@
 import 'dart:io';
 
-import 'package:cqut/api/github/github_api.dart';
-import 'package:cqut/manager/repo_download_manager.dart';
-import 'package:cqut/manager/cache_cleanup_manager.dart';
-import 'package:cqut/manager/favorites_manager.dart';
-import 'package:cqut/model/github_item.dart';
-import 'package:cqut/pages/Data/repo_file_preview.dart';
+import 'package:cqut_helper/api/github/github_api.dart';
+import 'package:cqut_helper/manager/repo_download_manager.dart';
+import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
+import 'package:cqut_helper/manager/favorites_manager.dart';
+import 'package:cqut_helper/model/github_item.dart';
+import 'package:cqut_helper/pages/Data/repo_file_preview.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cqut/utils/github_proxy.dart';
+import 'package:cqut_helper/utils/github_proxy.dart';
 
 class RepoBrowserPage extends StatefulWidget {
   final String path;

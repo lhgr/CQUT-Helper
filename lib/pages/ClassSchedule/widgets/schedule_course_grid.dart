@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cqut/manager/course_color_assignment_manager.dart';
-import 'package:cqut/model/class_schedule_model.dart';
-import 'package:cqut/pages/ClassSchedule/widgets/schedule_course_card.dart';
-import 'package:cqut/pages/ClassSchedule/widgets/course_detail_dialog.dart';
+import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
+import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 
 class ScheduleCourseGrid extends StatefulWidget {
   final List<EventItem> events;

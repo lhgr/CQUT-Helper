@@ -1,14 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cqut/utils/app_logger.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:cqut/manager/preview_cache_manager.dart';
+import 'package:cqut_helper/manager/preview_cache_manager.dart';
 
 enum AppCacheType { timetable, userInfo, imageCache, favorites, logs, preview }
 

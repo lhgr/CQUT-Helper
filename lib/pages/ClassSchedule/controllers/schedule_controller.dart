@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cqut/model/class_schedule_model.dart';
-import 'package:cqut/model/schedule_week_change.dart';
-import 'package:cqut/api/schedule/schedule_api.dart';
-import 'package:cqut/utils/app_logger.dart';
-import 'package:cqut/utils/retry_utils.dart';
-import 'package:cqut/utils/schedule_diff_utils.dart';
-import 'package:cqut/utils/schedule_date.dart';
-import 'package:cqut/utils/schedule_fingerprint_utils.dart';
-import 'package:cqut/utils/schedule_update_log.dart';
+import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/model/schedule_week_change.dart';
+import 'package:cqut_helper/api/schedule/schedule_api.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/retry_utils.dart';
+import 'package:cqut_helper/utils/schedule_diff_utils.dart';
+import 'package:cqut_helper/utils/schedule_date.dart';
+import 'package:cqut_helper/utils/schedule_fingerprint_utils.dart';
+import 'package:cqut_helper/utils/schedule_update_log.dart';
 
 class ScheduleController {
   final ScheduleApi _service;

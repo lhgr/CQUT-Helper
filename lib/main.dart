@@ -1,5 +1,5 @@
-import 'package:cqut/routes/Routes.dart';
-import 'package:cqut/app/app_bootstrap.dart';
+import 'package:cqut_helper/routes/Routes.dart';
+import 'package:cqut_helper/app/app_bootstrap.dart';
 import 'package:flutter/material.dart';
 
 void main() async {

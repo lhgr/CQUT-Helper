@@ -1,5 +1,5 @@
 import 'package:cookie_jar/cookie_jar.dart';
-import 'package:cqut/utils/app_logger.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 

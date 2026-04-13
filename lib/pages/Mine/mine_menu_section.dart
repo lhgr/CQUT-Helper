@@ -1,5 +1,5 @@
-import 'package:cqut/manager/update_manager.dart';
-import 'package:cqut/pages/Mine/ClearCache.dart';
+import 'package:cqut_helper/manager/update_manager.dart';
+import 'package:cqut_helper/pages/Mine/ClearCache.dart';
 import 'package:flutter/material.dart';
 
 import 'mine_about_dialog.dart';

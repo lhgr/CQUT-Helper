@@ -1,4 +1,4 @@
-import 'package:cqut/model/schedule_notice.dart';
+import 'package:cqut_helper/model/schedule_notice.dart';
 
 class ScheduleNoticeImpact {
   final String noticeId;

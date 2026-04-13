@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
-import 'package:cqut/model/class_schedule_model.dart';
+import 'package:cqut_helper/model/class_schedule_model.dart';
 
 String scheduleFingerprintFromWeekJsonMap(Map<String, dynamic> jsonMap) {
   final eventsRaw = jsonMap['eventList'];

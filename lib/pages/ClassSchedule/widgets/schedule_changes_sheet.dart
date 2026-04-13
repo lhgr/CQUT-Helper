@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cqut/model/class_schedule_model.dart';
-import 'package:cqut/model/schedule_week_change.dart';
+import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/model/schedule_week_change.dart';
 
 void showScheduleChangesSheet({
   required BuildContext context,

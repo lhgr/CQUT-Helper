@@ -1,6 +1,6 @@
-import 'package:cqut/model/schedule_notice.dart';
-import 'package:cqut/manager/schedule_settings_manager.dart';
-import 'package:cqut/utils/app_logger.dart';
+import 'package:cqut_helper/model/schedule_notice.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:dio/dio.dart';
 
 class NoticeApiForbiddenException implements Exception {

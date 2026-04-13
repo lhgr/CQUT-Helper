@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
-import 'package:cqut/model/update_model.dart';
-import 'package:cqut/utils/github_proxy.dart';
-import 'package:cqut/utils/app_logger.dart';
+import 'package:cqut_helper/model/update_model.dart';
+import 'package:cqut_helper/utils/github_proxy.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 
 class UpdateApi {
   static const String _tag = 'UpdateApi';

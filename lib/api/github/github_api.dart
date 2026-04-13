@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
-import 'package:cqut/model/github_item.dart';
-import 'package:cqut/utils/github_proxy.dart';
-import 'package:cqut/utils/app_logger.dart';
+import 'package:cqut_helper/model/github_item.dart';
+import 'package:cqut_helper/utils/github_proxy.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 
 class GithubApi {
   static const String _baseUrl = 'https://api.github.com';

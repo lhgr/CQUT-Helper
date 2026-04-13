@@ -1,9 +1,9 @@
-import 'package:cqut/api/api_service.dart';
-import 'package:cqut/model/update_model.dart';
+import 'package:cqut_helper/api/api_service.dart';
+import 'package:cqut_helper/model/update_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:cqut/utils/github_proxy.dart';
+import 'package:cqut_helper/utils/github_proxy.dart';
 
 class UpdateManager {
   static final UpdateManager _instance = UpdateManager._internal();

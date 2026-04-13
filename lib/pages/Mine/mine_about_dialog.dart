@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:cqut/utils/github_proxy.dart';
+import 'package:cqut_helper/utils/github_proxy.dart';
 
 Future<void> showMineAboutDialog(BuildContext context) async {
   final packageInfo = await PackageInfo.fromPlatform();
