@@ -9,13 +9,11 @@ import 'package:cqut_helper/utils/local_notifications.dart';
 class ScheduleSettingsSheet extends StatefulWidget {
   final bool initialShowWeekend;
   final bool initialTimeInfoEnabled;
-  final bool initialUpdateShowDiff;
   final bool initialBackgroundPollingEnabled;
   final String initialNoticeApiBaseUrl;
   final Future<void> Function({
     required bool showWeekend,
     required bool timeInfoEnabled,
-    required bool updateShowDiff,
     required bool backgroundPollingEnabled,
     required String noticeApiBaseUrl,
   })
@@ -25,7 +23,6 @@ class ScheduleSettingsSheet extends StatefulWidget {
     super.key,
     required this.initialShowWeekend,
     required this.initialTimeInfoEnabled,
-    required this.initialUpdateShowDiff,
     required this.initialBackgroundPollingEnabled,
     required this.initialNoticeApiBaseUrl,
     required this.onSave,
@@ -38,7 +35,6 @@ class ScheduleSettingsSheet extends StatefulWidget {
 class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   late bool showWeekend;
   late bool timeInfoEnabled;
-  late bool showDiff;
   late bool backgroundPollingEnabled;
   late TextEditingController _noticeApiController;
   late String noticeApiBaseUrl;
@@ -53,7 +49,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
   late bool _baselineShowWeekend;
   late bool _baselineTimeInfoEnabled;
-  late bool _baselineShowDiff;
   late bool _baselineBackgroundPollingEnabled;
   late String _baselineNoticeApiBaseUrl;
 
@@ -62,7 +57,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     super.initState();
     showWeekend = widget.initialShowWeekend;
     timeInfoEnabled = widget.initialTimeInfoEnabled;
-    showDiff = widget.initialUpdateShowDiff;
     backgroundPollingEnabled = widget.initialBackgroundPollingEnabled;
     final normalizedInitialBaseUrl =
         ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
@@ -85,7 +79,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
     _baselineShowWeekend = showWeekend;
     _baselineTimeInfoEnabled = timeInfoEnabled;
-    _baselineShowDiff = showDiff;
     _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
     _baselineNoticeApiBaseUrl = noticeApiBaseUrl;
   }
@@ -99,7 +92,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   bool hasUnsavedChanges() {
     return showWeekend != _baselineShowWeekend ||
         timeInfoEnabled != _baselineTimeInfoEnabled ||
-        showDiff != _baselineShowDiff ||
         backgroundPollingEnabled != _baselineBackgroundPollingEnabled ||
         ScheduleSettingsManager.normalizeNoticeApiBaseUrl(noticeApiBaseUrl) !=
             ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
@@ -291,7 +283,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     await widget.onSave(
       showWeekend: showWeekend,
       timeInfoEnabled: timeInfoEnabled,
-      updateShowDiff: showDiff,
       backgroundPollingEnabled: backgroundPollingEnabled,
       noticeApiBaseUrl: normalizedBaseUrl,
     );
@@ -300,7 +291,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       setState(() {
         _baselineShowWeekend = showWeekend;
         _baselineTimeInfoEnabled = timeInfoEnabled;
-        _baselineShowDiff = showDiff;
         _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
         noticeApiBaseUrl = normalizedBaseUrl;
         _baselineNoticeApiBaseUrl = normalizedBaseUrl;
@@ -399,16 +389,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                     onChanged: (value) {
                       setState(() {
                         timeInfoEnabled = value;
-                      });
-                    },
-                  ),
-                  SwitchListTile(
-                    title: Text('变更提示显示详情'),
-                    subtitle: Text('提示具体变化课程以及变化详情'),
-                    value: showDiff,
-                    onChanged: (value) {
-                      setState(() {
-                        showDiff = value;
                       });
                     },
                   ),
@@ -528,13 +508,11 @@ void showScheduleSettingsSheet(
   BuildContext context, {
   required bool initialShowWeekend,
   required bool initialTimeInfoEnabled,
-  required bool initialUpdateShowDiff,
   required bool initialBackgroundPollingEnabled,
   required String initialNoticeApiBaseUrl,
   required Future<void> Function({
     required bool showWeekend,
     required bool timeInfoEnabled,
-    required bool updateShowDiff,
     required bool backgroundPollingEnabled,
     required String noticeApiBaseUrl,
   })
@@ -549,7 +527,6 @@ void showScheduleSettingsSheet(
       return ScheduleSettingsSheet(
         initialShowWeekend: initialShowWeekend,
         initialTimeInfoEnabled: initialTimeInfoEnabled,
-        initialUpdateShowDiff: initialUpdateShowDiff,
         initialBackgroundPollingEnabled: initialBackgroundPollingEnabled,
         initialNoticeApiBaseUrl: initialNoticeApiBaseUrl,
         onSave: onSave,

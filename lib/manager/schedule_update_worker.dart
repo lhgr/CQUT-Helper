@@ -19,10 +19,53 @@ class ScheduleUpdateWorker {
   static const String _immediateTaskUniqueName =
       'schedule_notice_poll_task_immediate';
   static const int _frequencyMinutes = 60;
+  static const String _lastViewedWeekKeyPrefix = 'schedule_last_week_';
+  static const String _lastViewedTermKeyPrefix = 'schedule_last_term_';
+  static const String _widgetWeekKeyPrefix = 'schedule_widget_week_';
+  static const String _widgetTermKeyPrefix = 'schedule_widget_term_';
   static bool _loggerReady = false;
 
   static String pendingKeyForUser(String userId) =>
       'schedule_pending_changes_$userId';
+
+  static String _lastViewedWeekKey(String userId) =>
+      '$_lastViewedWeekKeyPrefix$userId';
+
+  static String _lastViewedTermKey(String userId) =>
+      '$_lastViewedTermKeyPrefix$userId';
+
+  static String _widgetWeekKey(String userId) => '$_widgetWeekKeyPrefix$userId';
+
+  static String _widgetTermKey(String userId) => '$_widgetTermKeyPrefix$userId';
+
+  static bool _isValidTerm(String value) =>
+      RegExp(r'^\d{4}-\d{4}-[12]$').hasMatch(value.trim());
+
+  static String _normalizeWeek(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return '1';
+    if (!RegExp(r'^\d+$').hasMatch(raw)) return '1';
+    return raw;
+  }
+
+  @visibleForTesting
+  static ({String? yearTerm, String weekNum}) resolvePollingTarget({
+    required SharedPreferences prefs,
+    required String userId,
+  }) {
+    final lastTerm = (prefs.getString(_lastViewedTermKey(userId)) ?? '').trim();
+    final widgetTerm = (prefs.getString(_widgetTermKey(userId)) ?? '').trim();
+    // 后台轮询以“当前学期”（学期选择中的标记）为准，优先读取 widget 锚点。
+    final selectedTerm = _isValidTerm(widgetTerm)
+        ? widgetTerm
+        : (_isValidTerm(lastTerm) ? lastTerm : null);
+    final lastWeek = (prefs.getString(_lastViewedWeekKey(userId)) ?? '').trim();
+    final widgetWeek = (prefs.getString(_widgetWeekKey(userId)) ?? '').trim();
+    final selectedWeek = _normalizeWeek(
+      widgetWeek.isNotEmpty ? widgetWeek : lastWeek,
+    );
+    return (yearTerm: selectedTerm, weekNum: selectedWeek);
+  }
 
   static Future<void> initialize() async {
     await Workmanager().initialize(
@@ -153,8 +196,18 @@ class ScheduleUpdateWorker {
 
       final scheduleApi = ScheduleApi();
       ScheduleData? currentData;
+      final pollingTarget = resolvePollingTarget(prefs: prefs, userId: userId);
+      final preferredTerm = (pollingTarget.yearTerm ?? '').trim();
+      final preferredWeek = pollingTarget.weekNum.trim();
       try {
-        currentData = await scheduleApi.loadFromCache(userId: userId);
+        if (preferredTerm.isNotEmpty) {
+          currentData = await scheduleApi.loadFromCache(
+            userId: userId,
+            weekNum: preferredWeek,
+            yearTerm: preferredTerm,
+          );
+        }
+        currentData ??= await scheduleApi.loadFromCache(userId: userId);
       } catch (e, st) {
         AppLogger.I.warn(
           'ScheduleUpdateWorker',
@@ -168,12 +221,18 @@ class ScheduleUpdateWorker {
         AppLogger.I.info(
           'ScheduleUpdateWorker',
           'cache miss fallback to network',
-          fields: {'trigger': trigger},
+          fields: {
+            'trigger': trigger,
+            'preferredTerm': preferredTerm,
+            'preferredWeek': preferredWeek,
+          },
         );
         try {
           currentData = await scheduleApi.loadFromNetwork(
             userId: userId,
             encryptedPassword: encryptedPassword,
+            weekNum: preferredWeek,
+            yearTerm: preferredTerm.isEmpty ? null : preferredTerm,
             persistLastViewed: false,
             updateWidgetPins: false,
           );
@@ -201,6 +260,25 @@ class ScheduleUpdateWorker {
           fields: {'trigger': trigger},
         );
         return done(status: 'skip_invalid_schedule_data');
+      }
+      if (preferredTerm.isNotEmpty &&
+          currentData.yearTerm!.trim() != preferredTerm) {
+        AppLogger.I.warn(
+          'ScheduleUpdateWorker',
+          'polling term mismatch',
+          fields: {
+            'trigger': trigger,
+            'preferredTerm': preferredTerm,
+            'currentTerm': currentData.yearTerm!.trim(),
+          },
+        );
+        return done(
+          status: 'skip_term_mismatch',
+          fields: {
+            'preferredTerm': preferredTerm,
+            'currentTerm': currentData.yearTerm!.trim(),
+          },
+        );
       }
 
       final pipeline = ScheduleNoticeRefreshPipeline(

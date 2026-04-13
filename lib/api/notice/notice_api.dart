@@ -104,9 +104,14 @@ class NoticeApi {
   Future<ScheduleNoticePollData> fetchTermScheduleNotices({
     required String username,
     required String encryptedPassword,
+    required String yearTerm,
     String env = 'prod',
     bool headless = true,
   }) async {
+    final normalizedYearTerm = yearTerm.trim();
+    if (!RegExp(r'^\d{4}-\d{4}-[12]$').hasMatch(normalizedYearTerm)) {
+      throw ArgumentError.value(yearTerm, 'yearTerm', '学期格式应为YYYY-YYYY-1/2');
+    }
     final customBaseUrl = await ScheduleSettingsManager.loadNoticeApiBaseUrl();
     final candidates = <String>[
       customBaseUrl,
@@ -125,6 +130,7 @@ class NoticeApi {
             data: {
               'username': username,
               'encrypted_password': encryptedPassword,
+              'year_term': normalizedYearTerm,
               'env': env,
               'headless': headless,
             },
@@ -141,6 +147,15 @@ class NoticeApi {
             throw Exception('调课通知数据缺失');
           }
           final envName = (payload['env'] ?? env).toString().trim();
+          final responseYearTerm = (payload['year_term'] ?? '')
+              .toString()
+              .trim();
+          if (responseYearTerm.isNotEmpty &&
+              responseYearTerm != normalizedYearTerm) {
+            throw StateError(
+              '调课通知学期不一致: request=$normalizedYearTerm, response=$responseYearTerm',
+            );
+          }
           final generatedAt = (payload['generated_at'] ?? '').toString().trim();
           final rawNotices = payload['term_schedule_notices'];
           final notices = <ScheduleNotice>[];
@@ -164,6 +179,9 @@ class NoticeApi {
           }
           return ScheduleNoticePollData(
             env: envName,
+            yearTerm: responseYearTerm.isEmpty
+                ? normalizedYearTerm
+                : responseYearTerm,
             generatedAt: generatedAt,
             notices: notices,
           );
