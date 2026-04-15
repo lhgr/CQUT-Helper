@@ -9,7 +9,7 @@
         android:padding="12dp"
         android:background="@drawable/widget_bg"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="match_parent">
         <RelativeLayout
             android:id="@+id/rl_title"
             android:layout_width="match_parent"
@@ -77,18 +77,19 @@
         <LinearLayout
             android:orientation="horizontal"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_marginTop="4dp"
-            android:layout_below="@+id/ll_title">
+            android:layout_below="@+id/ll_title"
+            android:layout_alignParentBottom="true">
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1">
                 <ListView
                     android:id="@+id/lv_course"
                     android:scrollbars="none"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:divider="@android:color/transparent"
                     android:dividerHeight="8dp" />
                 <TextView
@@ -97,11 +98,8 @@
                     android:id="@+id/empty"
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
-                    android:paddingTop="8dp"
-                    android:paddingBottom="8dp"
-                    android:minHeight="72dp"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:textColor="@color/widget_secondary_text"
                     android:text="暂无课程"
                     android:lineSpacingExtra="8dp"
@@ -117,13 +115,13 @@
                 android:background="@color/widget_divider" />
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1">
                 <ListView
                     android:id="@+id/lv_course_next_day"
                     android:scrollbars="none"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:divider="@android:color/transparent"
                     android:dividerHeight="8dp" />
                 <TextView
@@ -132,11 +130,8 @@
                     android:id="@+id/empty_next_day"
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
-                    android:paddingTop="8dp"
-                    android:paddingBottom="8dp"
-                    android:minHeight="72dp"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:textColor="@color/widget_secondary_text"
                     android:text="暂无课程"
                     android:lineSpacingExtra="8dp"

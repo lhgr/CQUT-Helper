@@ -7,7 +7,7 @@
         android:id="@+id/widget_card"
         android:layout_gravity="center"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="match_parent">
         <ImageView
             android:id="@+id/iv_appwidget_pic_bg"
             android:background="@drawable/appwidget_bg"
@@ -25,7 +25,7 @@
             android:id="@+id/rl_appwidget"
             android:padding="12dp"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="match_parent">
             <RelativeLayout
                 android:id="@+id/rl_title"
                 android:layout_width="match_parent"
@@ -90,13 +90,14 @@
             <ListView
                 android:id="@+id/lv_course"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_below="@+id/rl_title"
+                android:layout_alignParentBottom="true"
                 android:divider="@null" />
             <LinearLayout
                 android:id="@android:id/empty"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_below="@+id/rl_title"
                 android:layout_alignParentBottom="true"
                 android:layout_alignParentStart="true"

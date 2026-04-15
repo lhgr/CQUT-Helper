@@ -9,11 +9,12 @@
         android:padding="12dp"
         android:background="@drawable/widget_bg"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="match_parent">
         <RelativeLayout
             android:id="@+id/rl_title"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp">
             <TextView
                 android:id="@+id/tv_schedule_name"
                 android:layout_width="wrap_content"
@@ -44,9 +45,9 @@
         <ListView
             android:id="@+id/lv_course"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_height="match_parent"
             android:layout_below="@+id/rl_title"
+            android:layout_alignParentBottom="true"
             android:divider="@android:color/transparent"
             android:dividerHeight="8dp"
             android:scrollbars="none" />
@@ -54,8 +55,8 @@
             android:id="@+id/empty"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_marginTop="8dp"
             android:layout_below="@+id/rl_title"
+            android:layout_alignParentBottom="true"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:gravity="center"
