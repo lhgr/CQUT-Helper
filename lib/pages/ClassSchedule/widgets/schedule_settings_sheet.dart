@@ -42,6 +42,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   bool _testingConnectivity = false;
   bool? _connectivityOk;
   String _connectivityMessage = '';
+  String _sheetNoticeMessage = '';
   int? _connectivityElapsedMs;
   bool _noticeConfigExpanded = false;
   bool confirmDialogOpen = false;
@@ -243,12 +244,13 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       final granted = await LocalNotifications.ensurePermission();
       if (!mounted) return;
       if (!granted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('未授予系统通知权限，检测到调课变更时可能无法弹出系统通知'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        setState(() {
+          _sheetNoticeMessage = '未授予系统通知权限，检测到调课变更时可能无法弹出系统通知';
+        });
+      } else {
+        setState(() {
+          _sheetNoticeMessage = '';
+        });
       }
     }
     setState(() {
@@ -264,10 +266,8 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     if (error != null) {
       setState(() {
         _noticeApiError = error;
+        _sheetNoticeMessage = error;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
-      );
       return false;
     }
     final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
@@ -294,6 +294,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
         noticeApiBaseUrl = normalizedBaseUrl;
         _baselineNoticeApiBaseUrl = normalizedBaseUrl;
+        _sheetNoticeMessage = '';
       });
     }
 
@@ -372,6 +373,25 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (_sheetNoticeMessage.trim().isNotEmpty)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _sheetNoticeMessage,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ),
                   SwitchListTile(
                     title: Text('显示周末'),
                     subtitle: Text('关闭后仅显示周一到周五'),
