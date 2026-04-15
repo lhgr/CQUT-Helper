@@ -22,32 +22,8 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       _processLoadedData(cachedData, isInitial: true);
     }
 
-    final networkData = await _loadFromNetwork(fromInitialBoot: true);
+    await _loadFromNetwork(fromInitialBoot: true);
     _initialBootRequestPending = false;
-    if (cachedData != null && networkData != null && mounted) {
-      final sameWeek = (cachedData.weekNum ?? '').trim().isNotEmpty &&
-          (networkData.weekNum ?? '').trim().isNotEmpty &&
-          cachedData.weekNum!.trim() == networkData.weekNum!.trim();
-      final sameTerm = (cachedData.yearTerm ?? '').trim().isNotEmpty &&
-          (networkData.yearTerm ?? '').trim().isNotEmpty &&
-          cachedData.yearTerm!.trim() == networkData.yearTerm!.trim();
-      if (sameWeek && sameTerm) {
-        final beforeFp = scheduleFingerprintFromScheduleData(cachedData);
-        final afterFp = scheduleFingerprintFromScheduleData(networkData);
-        if (beforeFp != afterFp) {
-          var lines = diffScheduleWeekLines(before: cachedData, after: networkData);
-          if (lines.isEmpty) {
-            lines = const <String>['课表内容有更新'];
-          }
-          _showUpdateNotification([
-            ScheduleWeekChange(
-              weekNum: networkData.weekNum!.trim(),
-              lines: lines,
-            ),
-          ]);
-        }
-      }
-    }
 
     await _consumePendingChangesIfAny();
 
@@ -64,9 +40,45 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       if (!mounted) return;
       if (changes.isNotEmpty) {
         _showUpdateNotification(changes);
+      } else {
+        await _runSilentFallbackSync(_currentScheduleData!);
+        if (!mounted) return;
       }
+      _scheduleSilentForegroundFullRefresh(_currentScheduleData!);
     }
     await _maybeShowBackgroundPollingGuide();
+  }
+
+  Future<void> _runSilentFallbackSync(ScheduleData currentData) async {
+    final silentChanges = await _controller.silentCheckRecentWeeksForChangesDetailed(
+      currentData,
+    );
+    if (!mounted || silentChanges.isEmpty) return;
+    _syncCurrentWeekFromCache();
+  }
+
+  void _scheduleSilentForegroundFullRefresh(ScheduleData currentData) {
+    unawaited(
+      _controller
+          .refreshAllWeeksInForeground(currentData)
+          .then((_) {
+            if (!mounted) return;
+            _syncCurrentWeekFromCache();
+          })
+          .catchError((_) {}),
+    );
+  }
+
+  void _syncCurrentWeekFromCache() {
+    if (!mounted || _weekList == null) return;
+    if (_currentWeekIndex < 0 || _currentWeekIndex >= _weekList!.length) return;
+    final week = _weekList![_currentWeekIndex];
+    final wInt = int.tryParse(week) ?? 0;
+    final refreshed = _weekCache[wInt];
+    if (refreshed == null) return;
+    _setState(() {
+      _currentScheduleData = refreshed;
+    });
   }
 
   Future<void> _maybeShowBackgroundPollingGuide() async {

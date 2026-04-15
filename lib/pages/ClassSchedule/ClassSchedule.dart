@@ -17,8 +17,6 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_settings_sheet.
 import 'package:cqut_helper/pages/ClassSchedule/semester_course_list_page.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/week_picker_sheet.dart';
-import 'package:cqut_helper/utils/schedule_diff_utils.dart';
-import 'package:cqut_helper/utils/schedule_fingerprint_utils.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
