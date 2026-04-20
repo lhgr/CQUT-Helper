@@ -20,6 +20,33 @@ class ThemeManager extends ChangeNotifier {
   bool get isSystemColor => _isSystemColor;
   Color get customColor => _customColor;
 
+  String _persistedModeValue(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return 'light';
+      case ThemeMode.dark:
+        return 'dark';
+      case ThemeMode.system:
+        return 'system';
+    }
+  }
+
+  ThemeMode _parsePersistedMode(String? raw) {
+    switch (raw) {
+      case 'light':
+      case 'ThemeMode.light':
+        return ThemeMode.light;
+      case 'dark':
+      case 'ThemeMode.dark':
+        return ThemeMode.dark;
+      case 'system':
+      case 'ThemeMode.system':
+        return ThemeMode.system;
+      default:
+        return ThemeMode.system;
+    }
+  }
+
   String _widgetModeValue(ThemeMode mode) {
     switch (mode) {
       case ThemeMode.light:
@@ -34,12 +61,7 @@ class ThemeManager extends ChangeNotifier {
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final savedMode = prefs.getString(_themeModeKey);
-    if (savedMode != null) {
-      _themeMode = ThemeMode.values.firstWhere(
-        (e) => e.toString() == savedMode,
-        orElse: () => ThemeMode.system,
-      );
-    }
+    _themeMode = _parsePersistedMode(savedMode);
 
     _isSystemColor = prefs.getBool(_isSystemColorKey) ?? true;
     final savedColor = prefs.getInt(_customColorKey);
@@ -64,13 +86,13 @@ class ThemeManager extends ChangeNotifier {
       return;
     }
     _themeMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    final modeText = _persistedModeValue(mode);
+    await prefs.setString(_themeModeKey, modeText);
     if (kDebugMode) {
       debugPrint('ThemeManager: notifying listeners. New mode: $_themeMode');
     }
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    final modeText = mode.toString();
-    await prefs.setString(_themeModeKey, modeText);
     await WidgetUpdater.updateTodayWidget(
       themeMode: _widgetModeValue(mode),
       trigger: 'app_theme_changed',
