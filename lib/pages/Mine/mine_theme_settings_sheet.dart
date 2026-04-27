@@ -31,8 +31,13 @@ class ThemeSettingsSheet extends StatelessWidget {
               groupValue: currentMode,
               onChanged: (value) {
                 if (value != null) {
-                  ThemeManager().setThemeMode(value);
-                  Navigator.pop(context);
+                  final navigator = Navigator.of(context);
+                  () async {
+                    await ThemeManager().setThemeMode(value);
+                    if (navigator.mounted) {
+                      navigator.pop();
+                    }
+                  }();
                 }
               },
               child: Column(

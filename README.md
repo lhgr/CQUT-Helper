@@ -15,6 +15,7 @@
 - [⚠️ 开发说明](#development)
 - [📚 参考资料](#references)
 - [🎉 特别感谢](#thanks)
+- [👀 访问统计](#VisitorCount)
 
 <a id="features"></a>
 ## ✨ 主要功能
@@ -74,6 +75,13 @@
 
 - [CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)
   感谢各位上传的资料，~~屡次救我狗命~~。
+
+<a id="VisitorCount"></a>
+## 👀 访问统计
+
+<p align="center">
+  <img src="https://count.getloli.com/@DawnDrizzle?name=DawnDrizzle&theme=minecraft" alt="Visitor Count" />
+</p>
 
 ---
 

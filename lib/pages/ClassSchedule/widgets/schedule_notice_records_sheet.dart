@@ -6,6 +6,7 @@ void showScheduleNoticeRecordsSheet(
   required String yearTerm,
   required List<ScheduleNotice> initialNotices,
   String initialGeneratedAt = '',
+  String tipMessage = '',
   Future<ScheduleNoticePollData> Function()? onRefresh,
 }) {
   showModalBottomSheet(
@@ -18,6 +19,7 @@ void showScheduleNoticeRecordsSheet(
         yearTerm: yearTerm,
         initialNotices: initialNotices,
         initialGeneratedAt: initialGeneratedAt,
+        tipMessage: tipMessage,
         onRefresh: onRefresh,
       );
     },
@@ -28,12 +30,14 @@ class _ScheduleNoticeRecordsSheetBody extends StatefulWidget {
   final String yearTerm;
   final List<ScheduleNotice> initialNotices;
   final String initialGeneratedAt;
+  final String tipMessage;
   final Future<ScheduleNoticePollData> Function()? onRefresh;
 
   const _ScheduleNoticeRecordsSheetBody({
     required this.yearTerm,
     required this.initialNotices,
     required this.initialGeneratedAt,
+    required this.tipMessage,
     required this.onRefresh,
   });
 
@@ -47,6 +51,7 @@ class _ScheduleNoticeRecordsSheetBodyState
   late List<ScheduleNotice> _notices;
   late String _generatedAt;
   bool _refreshing = false;
+  String _refreshErrorMessage = '';
 
   @override
   void initState() {
@@ -69,15 +74,13 @@ class _ScheduleNoticeRecordsSheetBodyState
       setState(() {
         _notices = notices;
         _generatedAt = result.generatedAt;
+        _refreshErrorMessage = '';
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('获取最新调课记录失败：$e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      setState(() {
+        _refreshErrorMessage = '获取最新调课记录失败：$e';
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -89,7 +92,9 @@ class _ScheduleNoticeRecordsSheetBodyState
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.yearTerm.trim().isEmpty ? '当前学期' : '${widget.yearTerm} 学期';
+    final title = widget.yearTerm.trim().isEmpty
+        ? '当前学期'
+        : '${widget.yearTerm} 学期';
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -104,8 +109,8 @@ class _ScheduleNoticeRecordsSheetBodyState
                 _refreshing
                     ? '正在获取最新数据...'
                     : _generatedAt.trim().isEmpty
-                        ? '共 ${_notices.length} 条'
-                        : '共 ${_notices.length} 条 · 同步于 $_generatedAt',
+                    ? '共 ${_notices.length} 条'
+                    : '共 ${_notices.length} 条 · 同步于 $_generatedAt',
               ),
               trailing: IconButton(
                 onPressed: _refreshing ? null : _refresh,
@@ -114,12 +119,38 @@ class _ScheduleNoticeRecordsSheetBodyState
               ),
             ),
             const Divider(height: 1),
-            if (_notices.isEmpty)
-              const Expanded(
-                child: Center(
-                  child: Text('暂无调课记录'),
+            if (widget.tipMessage.trim().isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
                 ),
-              )
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Text(
+                  widget.tipMessage,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            if (_refreshErrorMessage.trim().isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                color: Theme.of(context).colorScheme.errorContainer,
+                child: Text(
+                  _refreshErrorMessage,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            if (_notices.isEmpty)
+              const Expanded(child: Center(child: Text('暂无调课记录')))
             else
               Expanded(
                 child: ListView.separated(

@@ -209,6 +209,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     final yearTerm = (_currentScheduleData?.yearTerm ?? '').trim();
     final nowHour = DateTime.now().hour;
     final deepNight = nowHour >= 0 && nowHour < 7;
+    var sheetTipMessage = '';
     final cache = _loadNoticeCache(
       prefs: prefs,
       userId: userId,
@@ -249,13 +250,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       final shown = prefs.getBool(noticeTipKey) ?? false;
       if (!shown) {
         await prefs.setBool(noticeTipKey, true);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('由于学校接口限制，在0:00-7:00时会关闭请求服务'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        sheetTipMessage = '由于学校接口限制，在0:00-7:00时会关闭请求服务';
       }
     } else if (cache.notices.isEmpty) {
       if (!mounted) return;
@@ -274,6 +269,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       yearTerm: yearTerm,
       initialNotices: cache.notices,
       initialGeneratedAt: cache.generatedAt,
+      tipMessage: sheetTipMessage,
       onRefresh: onRefresh,
     );
   }
