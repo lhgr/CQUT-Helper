@@ -1,21 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-enum _PollingVerifyLevel { success, warning, error }
-
-class _PollingVerifyResult {
-  final _PollingVerifyLevel level;
-  final String message;
-
-  const _PollingVerifyResult({required this.level, required this.message});
-}
 
 class ScheduleSettingsSheet extends StatefulWidget {
   final bool initialShowWeekend;
@@ -44,7 +33,6 @@ class ScheduleSettingsSheet extends StatefulWidget {
 }
 
 class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
-  static const String _pollEnabledAtKey = 'schedule_background_poll_enabled_at';
   late bool showWeekend;
   late bool timeInfoEnabled;
   late bool backgroundPollingEnabled;
@@ -55,7 +43,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   bool? _connectivityOk;
   String _connectivityMessage = '';
   String _sheetNoticeMessage = '';
-  _PollingVerifyLevel _sheetNoticeLevel = _PollingVerifyLevel.error;
   int? _connectivityElapsedMs;
   bool _noticeConfigExpanded = false;
   bool confirmDialogOpen = false;
@@ -250,92 +237,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     return done;
   }
 
-  String _syncFailureReason(String status, Map<String, dynamic> fields) {
-    if (status == 'sync_cancelled') {
-      final hasUserId = fields['hasUserId'] == true;
-      final hasPassword = fields['hasPassword'] == true;
-      final enabled = fields['enabled'] == true;
-      if (!enabled) return '开关状态未保存成功，请重试';
-      if (!hasUserId || !hasPassword) return '账号凭证缺失，请重新登录后再开启';
-      return '后台任务已被取消，请重试';
-    }
-    if (status == 'sync_start') return '后台任务仍在注册中，请稍后再试';
-    if (status == 'sync_register_failed') return '后台任务注册失败，请稍后重试';
-    return '后台任务注册未完成（$status）';
-  }
-
-  Future<_PollingVerifyResult> _verifyBackgroundPollingEnabled() async {
-    final batteryIgnored =
-        await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
-    if (batteryIgnored == false) {
-      return const _PollingVerifyResult(
-        level: _PollingVerifyLevel.error,
-        message: '后台定时轮询未成功开启：未忽略电池优化。',
-      );
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    final syncRaw =
-        prefs.getString('schedule_background_poll_sync_state') ?? '';
-    if (syncRaw.trim().isEmpty) {
-      return const _PollingVerifyResult(
-        level: _PollingVerifyLevel.error,
-        message: '后台定时轮询未成功开启：未检测到任务注册状态。',
-      );
-    }
-
-    Map<String, dynamic>? syncState;
-    try {
-      final decoded = json.decode(syncRaw);
-      if (decoded is Map<String, dynamic>) {
-        syncState = decoded;
-      }
-    } catch (_) {}
-
-    if (syncState == null) {
-      return const _PollingVerifyResult(
-        level: _PollingVerifyLevel.error,
-        message: '后台定时轮询未成功开启：任务注册状态解析失败。',
-      );
-    }
-
-    final syncStatus = (syncState['status'] ?? '').toString().trim();
-    final syncFields = (syncState['fields'] is Map<String, dynamic>)
-        ? syncState['fields'] as Map<String, dynamic>
-        : <String, dynamic>{};
-    if (syncStatus != 'sync_registered') {
-      return _PollingVerifyResult(
-        level: _PollingVerifyLevel.error,
-        message: '后台定时轮询未成功开启：${_syncFailureReason(syncStatus, syncFields)}。',
-      );
-    }
-
-    final notificationGranted =
-        await LocalNotifications.hasPermission() == true;
-    final restricted =
-        await AndroidBackgroundRestrictions.isBackgroundRestricted() == true;
-
-    final notices = <String>[];
-    if (!notificationGranted) {
-      notices.add('通知权限未开启，可能收不到变更提醒');
-    }
-    if (restricted) {
-      notices.add('系统检测到后台受限，轮询稳定性可能受影响');
-    }
-
-    if (notices.isEmpty) {
-      return const _PollingVerifyResult(
-        level: _PollingVerifyLevel.success,
-        message: '后台定时轮询已成功开启。',
-      );
-    }
-
-    return _PollingVerifyResult(
-      level: _PollingVerifyLevel.success,
-      message: '后台定时轮询已成功开启（${notices.join('；')}）。',
-    );
-  }
-
   Future<void> _onBackgroundPollingSwitchChanged(bool value) async {
     if (value && !backgroundPollingEnabled) {
       final ok = await _ensureBackgroundPollingPermissions(context);
@@ -344,8 +245,11 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       if (!mounted) return;
       if (!granted) {
         setState(() {
-          _sheetNoticeLevel = _PollingVerifyLevel.warning;
-          _sheetNoticeMessage = '通知权限未开启，检测到调课变更时可能无法弹出系统通知';
+          _sheetNoticeMessage = '未授予系统通知权限，检测到调课变更时可能无法弹出系统通知';
+        });
+      } else {
+        setState(() {
+          _sheetNoticeMessage = '';
         });
       }
     }
@@ -353,7 +257,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       backgroundPollingEnabled = value;
       if (!value) {
         _noticeConfigExpanded = false;
-        _sheetNoticeMessage = '';
       }
     });
   }
@@ -363,7 +266,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     if (error != null) {
       setState(() {
         _noticeApiError = error;
-        _sheetNoticeLevel = _PollingVerifyLevel.error;
         _sheetNoticeMessage = error;
       });
       return false;
@@ -385,32 +287,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       noticeApiBaseUrl: normalizedBaseUrl,
     );
 
-    final toggledOnThisSave =
-        !_baselineBackgroundPollingEnabled && backgroundPollingEnabled;
-    final prefs = await SharedPreferences.getInstance();
-
-    _PollingVerifyResult? verifyResult;
-    if (backgroundPollingEnabled) {
-      verifyResult = await _verifyBackgroundPollingEnabled();
-      if (verifyResult.level == _PollingVerifyLevel.error) {
-        backgroundPollingEnabled = false;
-        await widget.onSave(
-          showWeekend: showWeekend,
-          timeInfoEnabled: timeInfoEnabled,
-          backgroundPollingEnabled: false,
-          noticeApiBaseUrl: normalizedBaseUrl,
-        );
-        await prefs.remove(_pollEnabledAtKey);
-      } else if (toggledOnThisSave) {
-        await prefs.setString(
-          _pollEnabledAtKey,
-          DateTime.now().toIso8601String(),
-        );
-      }
-    } else {
-      await prefs.remove(_pollEnabledAtKey);
-    }
-
     if (mounted) {
       setState(() {
         _baselineShowWeekend = showWeekend;
@@ -418,31 +294,11 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
         noticeApiBaseUrl = normalizedBaseUrl;
         _baselineNoticeApiBaseUrl = normalizedBaseUrl;
-        _sheetNoticeLevel = verifyResult?.level ?? _sheetNoticeLevel;
-        _sheetNoticeMessage = verifyResult?.message ?? '';
+        _sheetNoticeMessage = '';
       });
     }
 
-    if (mounted && verifyResult != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(verifyResult.message),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-
     return true;
-  }
-
-  bool _shouldAutoCloseAfterSave() {
-    if (_sheetNoticeLevel == _PollingVerifyLevel.error &&
-        _sheetNoticeMessage.trim().isNotEmpty) {
-      return false;
-    }
-    if (!backgroundPollingEnabled) return true;
-    return _sheetNoticeLevel == _PollingVerifyLevel.success;
   }
 
   void _requestClose() {
@@ -490,9 +346,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         if (!ok) return;
       }
 
-      if (_shouldAutoCloseAfterSave()) {
-        _requestClose();
-      }
+      _requestClose();
     } finally {
       confirmDialogOpen = false;
     }
@@ -528,24 +382,13 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                         vertical: 10,
                       ),
                       decoration: BoxDecoration(
-                        color: _sheetNoticeLevel == _PollingVerifyLevel.success
-                            ? Theme.of(context).colorScheme.primaryContainer
-                            : _sheetNoticeLevel == _PollingVerifyLevel.warning
-                            ? Theme.of(context).colorScheme.tertiaryContainer
-                            : Theme.of(context).colorScheme.errorContainer,
+                        color: Theme.of(context).colorScheme.errorContainer,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         _sheetNoticeMessage,
                         style: TextStyle(
-                          color:
-                              _sheetNoticeLevel == _PollingVerifyLevel.success
-                              ? Theme.of(context).colorScheme.onPrimaryContainer
-                              : _sheetNoticeLevel == _PollingVerifyLevel.warning
-                              ? Theme.of(
-                                  context,
-                                ).colorScheme.onTertiaryContainer
-                              : Theme.of(context).colorScheme.onErrorContainer,
+                          color: Theme.of(context).colorScheme.onErrorContainer,
                         ),
                       ),
                     ),
@@ -663,9 +506,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                               final ok = await saveSettings();
                               if (!ok) return;
                               if (!context.mounted) return;
-                              if (_shouldAutoCloseAfterSave()) {
-                                _requestClose();
-                              }
+                              _requestClose();
                             },
                             child: Text('保存'),
                           ),
