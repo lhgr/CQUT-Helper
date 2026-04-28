@@ -1,3 +1,4 @@
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
@@ -32,7 +33,18 @@ Future<void> showMineAboutDialog(BuildContext context) async {
           await FirebaseAnalytics.instance.logEvent(name: 'about_us_developer_click');
           const urlString = 'https://github.com/lhgr';
           if (!await GithubProxy.launchExternalUrlString(urlString)) {
-            debugPrint('Could not launch $urlString');
+            AppLogger.I.event(
+              LogLevel.warn,
+              'MineAbout',
+              event: 'ui_about_open_url_fail',
+              messageZh: '关于页打开开发者链接失败',
+              message: 'open developer url failed',
+              module: 'ui',
+              action: 'open_url',
+              status: 'fail',
+              reason: 'launch_failed',
+              fields: {'target_url': urlString},
+            );
           }
         },
         child: Padding(
@@ -115,7 +127,18 @@ Future<void> showMineAboutDialog(BuildContext context) async {
               'https://weibo.com/5401723589?refer_flag=1001030103_';
           final Uri url = Uri.parse(urlString);
           if (!await launchUrl(url)) {
-            debugPrint('Could not launch $url');
+            AppLogger.I.event(
+              LogLevel.warn,
+              'MineAbout',
+              event: 'ui_about_open_url_fail',
+              messageZh: '关于页打开吉祥物链接失败',
+              message: 'open mascot url failed',
+              module: 'ui',
+              action: 'open_url',
+              status: 'fail',
+              reason: 'launch_failed',
+              fields: {'target_url': url.toString()},
+            );
           }
         },
         child: Padding(
@@ -163,7 +186,18 @@ Future<void> showMineAboutDialog(BuildContext context) async {
           await FirebaseAnalytics.instance.logEvent(name: 'click_repo_link');
           const urlString = 'https://github.com/lhgr/CQUT-Helper';
           if (!await GithubProxy.launchExternalUrlString(urlString)) {
-            debugPrint('Could not launch $urlString');
+            AppLogger.I.event(
+              LogLevel.warn,
+              'MineAbout',
+              event: 'ui_about_open_url_fail',
+              messageZh: '关于页打开仓库链接失败',
+              message: 'open repository url failed',
+              module: 'ui',
+              action: 'open_url',
+              status: 'fail',
+              reason: 'launch_failed',
+              fields: {'target_url': urlString},
+            );
           }
         },
         child: Text(

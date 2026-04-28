@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/app_logger.dart';
 import '../utils/widget_updater.dart';
 
 class ThemeManager extends ChangeNotifier {
@@ -77,11 +78,32 @@ class ThemeManager extends ChangeNotifier {
 
   Future<void> setThemeMode(ThemeMode mode) async {
     if (kDebugMode) {
-      debugPrint('ThemeManager: setThemeMode called with $mode');
+      AppLogger.I.event(
+        LogLevel.debug,
+        'ThemeManager',
+        event: 'ui_theme_change_start',
+        messageZh: '开始切换主题模式',
+        message: 'set theme mode requested',
+        module: 'ui',
+        action: 'change_theme',
+        status: 'start',
+        fields: {'target_mode': mode.name},
+      );
     }
     if (_themeMode == mode) {
       if (kDebugMode) {
-        debugPrint('ThemeManager: mode is already $mode, ignoring');
+        AppLogger.I.event(
+          LogLevel.debug,
+          'ThemeManager',
+          event: 'ui_theme_change_skip',
+          messageZh: '主题模式未变化，跳过更新',
+          message: 'theme mode unchanged',
+          module: 'ui',
+          action: 'change_theme',
+          status: 'skip',
+          reason: 'same_mode',
+          fields: {'mode': mode.name},
+        );
       }
       return;
     }
@@ -90,7 +112,17 @@ class ThemeManager extends ChangeNotifier {
     final modeText = _persistedModeValue(mode);
     await prefs.setString(_themeModeKey, modeText);
     if (kDebugMode) {
-      debugPrint('ThemeManager: notifying listeners. New mode: $_themeMode');
+      AppLogger.I.event(
+        LogLevel.debug,
+        'ThemeManager',
+        event: 'ui_theme_change_ok',
+        messageZh: '主题模式切换完成',
+        message: 'theme mode updated',
+        module: 'ui',
+        action: 'change_theme',
+        status: 'ok',
+        fields: {'new_mode': _themeMode.name},
+      );
     }
     notifyListeners();
     await WidgetUpdater.updateTodayWidget(
@@ -98,6 +130,7 @@ class ThemeManager extends ChangeNotifier {
       trigger: 'app_theme_changed',
     );
   }
+
 
   Future<void> setSystemColor(bool isSystem) async {
     if (_isSystemColor == isSystem) return;

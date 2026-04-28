@@ -1124,6 +1124,39 @@ class AppLogger {
     );
   }
 
+  void event(
+    LogLevel level,
+    String tag, {
+    required String event,
+    required String messageZh,
+    String? message,
+    String? module,
+    String? action,
+    String? status,
+    String? reason,
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, Object?>? fields,
+  }) {
+    final mergedFields = <String, Object?>{
+      'event': event,
+      'message_zh': messageZh,
+      if (module != null && module.isNotEmpty) 'module': module,
+      if (action != null && action.isNotEmpty) 'action': action,
+      if (status != null && status.isNotEmpty) 'status': status,
+      if (reason != null && reason.isNotEmpty) 'reason': reason,
+      if (fields != null) ...fields,
+    };
+    log(
+      level,
+      tag,
+      message ?? event,
+      error: error,
+      stackTrace: stackTrace,
+      fields: mergedFields,
+    );
+  }
+
   void log(
     LogLevel level,
     String tag,
@@ -1563,6 +1596,7 @@ class DioLogInterceptor extends Interceptor {
 
   static const _startKey = '__log_start';
   static const _traceKey = '__log_trace_id';
+  static const _requestKey = '__log_request_id';
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
@@ -1571,12 +1605,19 @@ class DioLogInterceptor extends Interceptor {
         options.headers['x-trace-id'] ?? options.headers['X-Trace-Id'];
     final traceId =
         headerTrace?.toString() ?? logger.currentTraceId ?? logger.newTraceId();
+    final requestId = logger.newTraceId(bytes: 8);
     options.headers['x-trace-id'] = traceId;
     options.extra[_traceKey] = traceId;
+    options.extra[_requestKey] = requestId;
     logger.debug(
       tag,
       '${options.method} ${options.uri}',
-      fields: {'net': 1, 'type': 'request', 'trace_id': traceId},
+      fields: {
+        'net': 1,
+        'type': 'request',
+        'trace_id': traceId,
+        'request_id': requestId,
+      },
     );
     handler.next(options);
   }
@@ -1586,6 +1627,7 @@ class DioLogInterceptor extends Interceptor {
     final ms = _elapsedMs(response.requestOptions);
     final status = response.statusCode ?? 0;
     final traceId = _traceId(response.requestOptions);
+    final requestId = _requestId(response.requestOptions);
     final ok = status >= 200 && status < 400;
     final level = status >= 500
         ? LogLevel.error
@@ -1601,6 +1643,7 @@ class DioLogInterceptor extends Interceptor {
         'net': 1,
         'type': 'response',
         if (traceId != null) 'trace_id': traceId,
+        if (requestId != null) 'request_id': requestId,
         'ok': ok,
         'status': status,
         if (ms != null) 'duration_ms': ms,
@@ -1614,6 +1657,7 @@ class DioLogInterceptor extends Interceptor {
     final ms = _elapsedMs(err.requestOptions);
     final status = err.response?.statusCode;
     final traceId = _traceId(err.requestOptions);
+    final requestId = _requestId(err.requestOptions);
     final msgMax = maxBodyChars < 200 ? maxBodyChars : 200;
     logger.error(
       tag,
@@ -1624,6 +1668,7 @@ class DioLogInterceptor extends Interceptor {
         'net': 1,
         'type': 'error',
         if (traceId != null) 'trace_id': traceId,
+        if (requestId != null) 'request_id': requestId,
         'ok': false,
         if (status != null) 'status': status,
         if (ms != null) 'duration_ms': ms,
@@ -1648,6 +1693,12 @@ class DioLogInterceptor extends Interceptor {
     if (v is String) return v;
     final h = options.headers['x-trace-id'] ?? options.headers['X-Trace-Id'];
     return h?.toString();
+  }
+
+  String? _requestId(RequestOptions options) {
+    final v = options.extra[_requestKey];
+    if (v is String) return v;
+    return null;
   }
 
   static Object? _sanitizeObject(Object? value, int maxChars) {

@@ -112,7 +112,20 @@ class ScheduleController {
         },
       );
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.I.event(
+        LogLevel.warn,
+        'TimeInfo',
+        event: 'schedule_time_info_cache_load_fail',
+        messageZh: '从本地缓存读取节次信息失败',
+        message: 'cache load failed',
+        module: 'time_info',
+        action: 'load_cache',
+        status: 'fail',
+        reason: 'cache_parse_failed',
+        error: e,
+        stackTrace: st,
+      );
       return false;
     }
   }
@@ -153,7 +166,21 @@ class ScheduleController {
     if (campusName == null || campusName.trim().isEmpty) {
       try {
         campusName = await _service.getCampusName();
-      } catch (_) {}
+      } catch (e, st) {
+        AppLogger.I.event(
+          LogLevel.warn,
+          'TimeInfo',
+          event: 'schedule_time_info_campus_resolve_fail',
+          messageZh: '获取校区信息失败，使用默认校区',
+          message: 'resolve campus failed',
+          module: 'time_info',
+          action: 'resolve_campus',
+          status: 'fail',
+          reason: 'campus_resolve_failed',
+          error: e,
+          stackTrace: st,
+        );
+      }
       if (campusName != null && campusName.trim().isNotEmpty) {
         await prefs.setString(_prefsKeyTimeInfoLastCampus, campusName);
       }
@@ -183,8 +210,21 @@ class ScheduleController {
     List<CampusTimeInfo>? fetched;
     try {
       fetched = await _service.fetchCampusTimeInfo(campusName);
-    } catch (_) {
-      AppLogger.I.warn('TimeInfo', 'refresh_failed');
+    } catch (e, st) {
+      AppLogger.I.event(
+        LogLevel.warn,
+        'TimeInfo',
+        event: 'schedule_time_info_refresh_fail',
+        messageZh: '刷新校区节次信息失败',
+        message: 'refresh failed',
+        module: 'time_info',
+        action: 'refresh',
+        status: 'fail',
+        reason: 'fetch_failed',
+        error: e,
+        stackTrace: st,
+        fields: {'campus': campusName},
+      );
       return false;
     }
     if (fetched.isEmpty) return false;
@@ -731,8 +771,21 @@ class ScheduleController {
         await prefs.setInt(fpUpdatedAtKey, now);
         await prefs.setInt(fetchAtKey, now);
       }
-    } catch (e) {
-      // 预取或刷新失败忽略
+    } catch (e, st) {
+      AppLogger.I.event(
+        LogLevel.debug,
+        'ScheduleController',
+        event: 'schedule_week_prefetch_fail',
+        messageZh: '预取周课表失败，已忽略',
+        message: 'prefetch week failed',
+        module: 'schedule',
+        action: 'prefetch_week',
+        status: 'fail',
+        reason: 'prefetch_failed',
+        error: e,
+        stackTrace: st,
+        fields: {'week': weekNum, 'term': yearTerm},
+      );
     }
   }
 }
