@@ -102,34 +102,42 @@ class ScheduleUpdateWorker {
       );
       return;
     }
-    await Workmanager().registerPeriodicTask(
-      _taskName,
-      _taskName,
-      frequency: const Duration(minutes: _frequencyMinutes),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
-      constraints: Constraints(networkType: NetworkType.connected),
-      inputData: {
-        'userId': userId,
-        'encryptedPassword': encryptedPassword,
-        'trigger': 'periodic',
-      },
-    );
-    await Workmanager().registerOneOffTask(
-      _immediateTaskUniqueName,
-      _taskName,
-      initialDelay: const Duration(minutes: 1),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
-      constraints: Constraints(networkType: NetworkType.connected),
-      inputData: {
-        'userId': userId,
-        'encryptedPassword': encryptedPassword,
-        'trigger': 'one_off',
-      },
-    );
-    await _recordSyncState(
-      status: 'sync_registered',
-      fields: {'frequencyMinutes': _frequencyMinutes},
-    );
+    try {
+      await Workmanager().registerPeriodicTask(
+        _taskName,
+        _taskName,
+        frequency: const Duration(minutes: _frequencyMinutes),
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+        constraints: Constraints(networkType: NetworkType.connected),
+        inputData: {
+          'userId': userId,
+          'encryptedPassword': encryptedPassword,
+          'trigger': 'periodic',
+        },
+      );
+      await Workmanager().registerOneOffTask(
+        _immediateTaskUniqueName,
+        _taskName,
+        initialDelay: const Duration(minutes: 1),
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+        constraints: Constraints(networkType: NetworkType.connected),
+        inputData: {
+          'userId': userId,
+          'encryptedPassword': encryptedPassword,
+          'trigger': 'one_off',
+        },
+      );
+      await _recordSyncState(
+        status: 'sync_registered',
+        fields: {'frequencyMinutes': _frequencyMinutes},
+      );
+    } catch (e) {
+      await _recordSyncState(
+        status: 'sync_register_failed',
+        fields: {'error': e.toString()},
+      );
+      rethrow;
+    }
   }
 
   @pragma('vm:entry-point')
