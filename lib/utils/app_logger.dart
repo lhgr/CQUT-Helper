@@ -610,7 +610,6 @@ class AppLogger {
   int _maxMessageChars = 2000;
   final _LogMetrics _metrics = _LogMetrics();
   final Object _traceZoneKey = Object();
-  String? _integrityKey;
   DateTime _lastSinkErrorAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastAlertAt = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -639,11 +638,6 @@ class AppLogger {
     _queueCapacity = queueCapacity;
     _maxFieldsChars = maxFieldsChars;
     _maxMessageChars = maxMessageChars;
-    if (enableIntegrity) {
-      _integrityKey = await _loadOrCreateIntegrityKey();
-    } else {
-      _integrityKey = null;
-    }
 
     await dispose();
     final sinks = <LogSink>[];
@@ -937,6 +931,7 @@ class AppLogger {
         return true;
       }).toList()..sort((a, b) => a.path.compareTo(b.path));
 
+      final summary = await _buildExportSummary(files);
       int written = 0;
       final sink = outFile.openWrite(mode: FileMode.write, encoding: utf8);
       try {
@@ -959,6 +954,11 @@ class AppLogger {
         sink.writeln('exported_at=${DateTime.now().toIso8601String()}');
         sink.writeln('export_kind=${kind.name}');
         sink.writeln('files=${files.length}');
+        sink.writeln('');
+        sink.writeln('===== summary =====');
+        for (final line in summary.toLines()) {
+          sink.writeln(line);
+        }
         sink.writeln('');
         for (final f in files) {
           final pLower = f.path.toLowerCase();
@@ -1023,6 +1023,25 @@ class AppLogger {
     } catch (_) {
       return false;
     }
+  }
+
+  Future<_ExportSummary> _buildExportSummary(List<File> files) async {
+    final summary = _ExportSummary();
+    for (final f in files) {
+      try {
+        Stream<List<int>> bytes = f.openRead();
+        if (f.path.toLowerCase().endsWith('.gz')) {
+          bytes = bytes.transform(gzip.decoder);
+        }
+        final lines = bytes
+            .transform(utf8.decoder)
+            .transform(const LineSplitter());
+        await for (final line in lines) {
+          summary.consume(line);
+        }
+      } catch (_) {}
+    }
+    return summary;
   }
 
   Future<String?> _sha256HexFile(File f) async {
@@ -1224,10 +1243,6 @@ class AppLogger {
     }
     if (stackTrace != null && !outFields.containsKey('stack')) {
       outFields['stack'] = stackTrace.toString();
-    }
-    if (_integrityKey != null && !outFields.containsKey('sig')) {
-      final base = '$at|${level.name}|$tag|$message';
-      outFields['sig'] = _hmacSig(base, _integrityKey!);
     }
 
     final msg = _truncate(_redactString(message), _maxMessageChars);
@@ -1583,6 +1598,19 @@ String pBasename(String path) {
   return path.substring(i + 1);
 }
 
+class _SuppressedNetError {
+  _SuppressedNetError({
+    required this.signature,
+    required this.windowStartedAt,
+    required this.lastAt,
+  });
+
+  final String signature;
+  final DateTime windowStartedAt;
+  DateTime lastAt;
+  int count = 1;
+}
+
 class DioLogInterceptor extends Interceptor {
   DioLogInterceptor({
     required this.logger,
@@ -1593,10 +1621,13 @@ class DioLogInterceptor extends Interceptor {
   final AppLogger logger;
   final String tag;
   final int maxBodyChars;
+  final Map<String, _SuppressedNetError> _suppressedErrors = {};
 
   static const _startKey = '__log_start';
   static const _traceKey = '__log_trace_id';
   static const _requestKey = '__log_request_id';
+  static const _dedupeWindow = Duration(seconds: 15);
+  static const _dedupeSummaryThreshold = 3;
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
@@ -1659,6 +1690,43 @@ class DioLogInterceptor extends Interceptor {
     final traceId = _traceId(err.requestOptions);
     final requestId = _requestId(err.requestOptions);
     final msgMax = maxBodyChars < 200 ? maxBodyChars : 200;
+    final now = DateTime.now();
+    final signature = _errorSignature(err);
+    final suppression = _suppressedErrors[signature];
+    if (suppression != null &&
+        now.difference(suppression.windowStartedAt) <= _dedupeWindow) {
+      suppression.count += 1;
+      suppression.lastAt = now;
+      if (suppression.count == _dedupeSummaryThreshold) {
+        logger.warn(
+          tag,
+          'suppressed repeated network errors',
+          fields: {
+            'net': 1,
+            'type': 'error_summary',
+            'suppressed': suppression.count - 1,
+            'window_seconds': _dedupeWindow.inSeconds,
+            'signature': suppression.signature,
+            'method': err.requestOptions.method,
+            'uri': '${err.requestOptions.uri.scheme}://${err.requestOptions.uri.host}${err.requestOptions.uri.path}',
+            'dio_type': err.type.name,
+            if (status != null) 'status': status,
+            if (err.message != null)
+              'message': _sanitizeObject(err.message, msgMax),
+          },
+        );
+      }
+      handler.next(err);
+      return;
+    }
+
+    _suppressedErrors[signature] = _SuppressedNetError(
+      signature: signature,
+      windowStartedAt: now,
+      lastAt: now,
+    );
+    _pruneSuppressedErrors(now);
+
     logger.error(
       tag,
       '${err.requestOptions.method} ${err.requestOptions.uri}',
@@ -1686,6 +1754,23 @@ class DioLogInterceptor extends Interceptor {
       return DateTime.now().millisecondsSinceEpoch - start;
     }
     return null;
+  }
+
+  String _errorSignature(DioException err) {
+    final method = err.requestOptions.method;
+    final uri = err.requestOptions.uri;
+    final status = err.response?.statusCode?.toString() ?? '-';
+    final host = uri.host;
+    final path = uri.path;
+    final dioType = err.type.name;
+    final message = (err.message ?? '').trim();
+    return '$tag|$method|$host|$path|$status|$dioType|$message';
+  }
+
+  void _pruneSuppressedErrors(DateTime now) {
+    _suppressedErrors.removeWhere(
+      (_, value) => now.difference(value.lastAt) > _dedupeWindow,
+    );
   }
 
   String? _traceId(RequestOptions options) {
@@ -1742,6 +1827,68 @@ class DioLogInterceptor extends Interceptor {
     if (lower.startsWith('bearer ')) return 'Bearer <redacted>';
     if (lower.contains('eyj') && s.length > 40) return '<jwt:redacted>';
     return s;
+  }
+}
+
+class _ExportSummary {
+  int errors = 0;
+  int warnings = 0;
+  int networkErrors = 0;
+  int errorSummaries = 0;
+  int timeInfoRefreshFailures = 0;
+  int scheduleUpdateFailures = 0;
+  int? slowestRequestMs;
+  String? slowestRequestLabel;
+
+  void consume(String line) {
+    if (line.isEmpty) return;
+    if (line.contains('[ERROR]')) errors += 1;
+    if (line.contains('[WARN]')) warnings += 1;
+    if (line.contains('"type":"error"') && line.contains('"net":1')) {
+      networkErrors += 1;
+    }
+    if (line.contains('"type":"error_summary"') && line.contains('"net":1')) {
+      errorSummaries += 1;
+    }
+    if (line.contains('schedule_time_info_refresh_fail')) {
+      timeInfoRefreshFailures += 1;
+    }
+    if (line.contains('[WARN] ScheduleUpdate - failure')) {
+      scheduleUpdateFailures += 1;
+    }
+
+    final duration = _extractDurationMs(line);
+    if (duration == null) return;
+    if (slowestRequestMs == null || duration > slowestRequestMs!) {
+      slowestRequestMs = duration;
+      slowestRequestLabel = _extractRequestLabel(line);
+    }
+  }
+
+  List<String> toLines() {
+    return [
+      'errors=$errors',
+      'warnings=$warnings',
+      'network_errors=$networkErrors',
+      'network_error_summaries=$errorSummaries',
+      'time_info_refresh_failures=$timeInfoRefreshFailures',
+      'schedule_update_failures=$scheduleUpdateFailures',
+      'slowest_request_ms=${slowestRequestMs ?? 0}',
+      if (slowestRequestLabel != null && slowestRequestLabel!.isNotEmpty)
+        'slowest_request=${slowestRequestLabel!}',
+    ];
+  }
+
+  int? _extractDurationMs(String line) {
+    final match = RegExp(r'"duration_ms":(\d+)').firstMatch(line);
+    if (match == null) return null;
+    return int.tryParse(match.group(1)!);
+  }
+
+  String? _extractRequestLabel(String line) {
+    final match = RegExp(r'\] ([^\-]+) - ([A-Z]+ https?://[^\s]+)').firstMatch(line);
+    if (match == null) return null;
+    return '${match.group(1)!.trim()} ${match.group(2)!.trim()}';
   }
 }
 
@@ -1817,24 +1964,3 @@ Map<String, Object?> _truncateJsonObject(
   };
 }
 
-String _hmacSig(String data, String key) {
-  final h = Hmac(sha256, utf8.encode(key));
-  final d = h.convert(utf8.encode(data));
-  return base64UrlEncode(d.bytes);
-}
-
-Future<String?> _loadOrCreateIntegrityKey() async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    const k = 'log_integrity_key_v1';
-    final existing = prefs.getString(k);
-    if (existing != null && existing.isNotEmpty) return existing;
-    final rnd = Random.secure();
-    final bytes = List<int>.generate(32, (_) => rnd.nextInt(256));
-    final v = base64UrlEncode(bytes);
-    await prefs.setString(k, v);
-    return v;
-  } catch (_) {
-    return null;
-  }
-}

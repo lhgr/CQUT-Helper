@@ -94,7 +94,7 @@ class ScheduleUpdateManager {
       failureDelta = failuresAfter - failuresBefore;
       hadFailures = !apiClosed && (error != null || failureDelta > 0);
       final durationMs = DateTime.now().difference(startAt).inMilliseconds;
-      final metricText = await ScheduleNoticeMetrics.record(
+      await ScheduleNoticeMetrics.record(
         ScheduleNoticeMetricsRecord(
           runType: runType,
           success: !hadFailures && !apiClosed,
@@ -117,7 +117,6 @@ class ScheduleUpdateManager {
         'durationMs': durationMs,
         'hadFailures': hadFailures,
         'failureDelta': failureDelta,
-        'metricsProm': metricText,
       });
       if (stackTrace != null) {
         await ScheduleUpdateLog.appendRun({
