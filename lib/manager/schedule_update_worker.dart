@@ -14,12 +14,44 @@ void scheduleUpdateCallbackDispatcher() {
   ScheduleUpdateWorker.callbackDispatcher();
 }
 
+enum ScheduleBackgroundPollHealthStatus {
+  observing,
+  healthy,
+  failed,
+  pausedAtNight,
+  restricted,
+}
+
+class ScheduleBackgroundPollHealthSnapshot {
+  final ScheduleBackgroundPollHealthStatus status;
+  final String title;
+  final String detail;
+  final DateTime? enabledAt;
+  final DateTime? lastRunAt;
+  final DateTime? lastSuccessAt;
+  final String? lastRunStatus;
+
+  const ScheduleBackgroundPollHealthSnapshot({
+    required this.status,
+    required this.title,
+    required this.detail,
+    this.enabledAt,
+    this.lastRunAt,
+    this.lastSuccessAt,
+    this.lastRunStatus,
+  });
+}
+
 class ScheduleUpdateWorker {
   static const String _taskName = 'schedule_notice_poll_task';
   static const String _immediateTaskUniqueName =
       'schedule_notice_poll_task_immediate';
   static const int _frequencyMinutes = 60;
   static const String _lastViewedWeekKeyPrefix = 'schedule_last_week_';
+  static const String _backgroundPollingEnabledAtKey =
+      'schedule_background_poll_enabled_at';
+  static const String _backgroundPollingLastSuccessAtKey =
+      'schedule_background_poll_last_success_at';
   static const String _lastViewedTermKeyPrefix = 'schedule_last_term_';
   static const String _widgetWeekKeyPrefix = 'schedule_widget_week_';
   static const String _widgetTermKeyPrefix = 'schedule_widget_term_';
@@ -71,6 +103,151 @@ class ScheduleUpdateWorker {
     await Workmanager().initialize(
       scheduleUpdateCallbackDispatcher,
       isInDebugMode: false,
+    );
+  }
+
+  static Future<void> markEnabledAtIfNeeded({required bool enabled}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!enabled) {
+      await prefs.remove(_backgroundPollingEnabledAtKey);
+      await prefs.remove(_backgroundPollingLastSuccessAtKey);
+      await prefs.remove('schedule_background_poll_last_state');
+      await prefs.remove('schedule_background_poll_sync_state');
+      return;
+    }
+    if (prefs.getString(_backgroundPollingEnabledAtKey)?.trim().isNotEmpty ==
+        true) {
+      return;
+    }
+    await prefs.setString(
+      _backgroundPollingEnabledAtKey,
+      DateTime.now().toIso8601String(),
+    );
+  }
+
+  static Future<ScheduleBackgroundPollHealthSnapshot>
+  loadHealthSnapshot() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled =
+        prefs.getBool('schedule_background_polling_enabled') ?? false;
+    if (!enabled) {
+      return const ScheduleBackgroundPollHealthSnapshot(
+        status: ScheduleBackgroundPollHealthStatus.observing,
+        title: '后台定时轮询已关闭',
+        detail: '开启后会在后台定时检查调课通知。',
+      );
+    }
+
+    DateTime? parseTime(String key) {
+      final raw = (prefs.getString(key) ?? '').trim();
+      if (raw.isEmpty) return null;
+      return DateTime.tryParse(raw)?.toLocal();
+    }
+
+    Map<String, dynamic>? parseState(String key) {
+      final raw = (prefs.getString(key) ?? '').trim();
+      if (raw.isEmpty) return null;
+      try {
+        final decoded = json.decode(raw);
+        return decoded is Map<String, dynamic> ? decoded : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final enabledAt = parseTime(_backgroundPollingEnabledAtKey);
+    final lastSuccessAt = parseTime(_backgroundPollingLastSuccessAtKey);
+    final lastState = parseState('schedule_background_poll_last_state');
+    final syncState = parseState('schedule_background_poll_sync_state');
+    final lastRunAt = DateTime.tryParse(
+      ((lastState?['at'] ?? '') as String?)?.trim() ?? '',
+    )?.toLocal();
+    final lastRunStatus = ((lastState?['status'] ?? '') as String?)?.trim();
+    final syncStatus = ((syncState?['status'] ?? '') as String?)?.trim();
+    final now = DateTime.now();
+    final observeWindow = const Duration(hours: 2);
+    final staleWindow = Duration(minutes: _frequencyMinutes * 3);
+
+    if (enabledAt == null || now.difference(enabledAt) < observeWindow) {
+      return ScheduleBackgroundPollHealthSnapshot(
+        status: ScheduleBackgroundPollHealthStatus.observing,
+        title: '后台定时轮询观察中',
+        detail: '刚开启后台定时轮询，系统需要一段时间建立后台执行记录。',
+        enabledAt: enabledAt,
+        lastRunAt: lastRunAt,
+        lastSuccessAt: lastSuccessAt,
+        lastRunStatus: lastRunStatus,
+      );
+    }
+
+    if (lastSuccessAt != null && now.difference(lastSuccessAt) <= staleWindow) {
+      return ScheduleBackgroundPollHealthSnapshot(
+        status: ScheduleBackgroundPollHealthStatus.healthy,
+        title: '后台定时轮询运行正常',
+        detail: '最近已检测到后台轮询成功执行。',
+        enabledAt: enabledAt,
+        lastRunAt: lastRunAt,
+        lastSuccessAt: lastSuccessAt,
+        lastRunStatus: lastRunStatus,
+      );
+    }
+
+    if (lastRunStatus == 'skip_deep_night' &&
+        lastRunAt != null &&
+        now.difference(lastRunAt) <= staleWindow) {
+      return ScheduleBackgroundPollHealthSnapshot(
+        status: ScheduleBackgroundPollHealthStatus.pausedAtNight,
+        title: '后台定时轮询夜间暂停',
+        detail: '应用会在 0:00-7:00 跳过后台轮询，白天会继续自动检查。',
+        enabledAt: enabledAt,
+        lastRunAt: lastRunAt,
+        lastSuccessAt: lastSuccessAt,
+        lastRunStatus: lastRunStatus,
+      );
+    }
+
+    const failureStatuses = {
+      'load_network_failed',
+      'pipeline_failed',
+      'skip_missing_credentials',
+      'skip_invalid_schedule_data',
+      'skip_term_mismatch',
+    };
+    if (lastRunStatus != null &&
+        failureStatuses.contains(lastRunStatus) &&
+        lastRunAt != null &&
+        now.difference(lastRunAt) <= staleWindow) {
+      return ScheduleBackgroundPollHealthSnapshot(
+        status: ScheduleBackgroundPollHealthStatus.failed,
+        title: '后台定时轮询最近失败',
+        detail: '后台任务最近执行过，但本次未成功完成，可稍后重试或检查登录状态与网络。',
+        enabledAt: enabledAt,
+        lastRunAt: lastRunAt,
+        lastSuccessAt: lastSuccessAt,
+        lastRunStatus: lastRunStatus,
+      );
+    }
+
+    if (syncStatus != 'sync_registered') {
+      return ScheduleBackgroundPollHealthSnapshot(
+        status: ScheduleBackgroundPollHealthStatus.failed,
+        title: '后台定时轮询尚未完成注册',
+        detail: '后台任务尚未成功注册，请重新保存设置后再观察运行状态。',
+        enabledAt: enabledAt,
+        lastRunAt: lastRunAt,
+        lastSuccessAt: lastSuccessAt,
+        lastRunStatus: lastRunStatus,
+      );
+    }
+
+    return ScheduleBackgroundPollHealthSnapshot(
+      status: ScheduleBackgroundPollHealthStatus.restricted,
+      title: '后台定时轮询可能受系统限制',
+      detail: '长时间未检测到后台执行记录，建议检查通知权限、忽略电池优化与自启动设置。',
+      enabledAt: enabledAt,
+      lastRunAt: lastRunAt,
+      lastSuccessAt: lastSuccessAt,
+      lastRunStatus: lastRunStatus,
     );
   }
 
@@ -154,33 +331,37 @@ class ScheduleUpdateWorker {
       }
 
       if (task != _taskName) {
-        AppLogger.I.info(
+        AppLogger.I.event(
+          LogLevel.warn,
           'ScheduleUpdateWorker',
-          'skip unknown task',
+          event: 'schedule_notice_poll_unknown_task',
+          messageZh: '后台轮询跳过未知任务',
+          message: 'skip unknown task',
+          module: 'schedule_notice_poll',
+          action: 'validate_task',
+          status: 'skip',
+          reason: 'unknown_task',
           fields: {'task': task},
         );
         return done(status: 'skip_unknown_task');
       }
-      AppLogger.I.info(
-        'ScheduleUpdateWorker',
-        'heartbeat task started',
-        fields: {'task': task, 'trigger': trigger},
-      );
       if (_isDeepNight()) {
-        AppLogger.I.info(
-          'ScheduleUpdateWorker',
-          'skip deep night window',
-          fields: {'trigger': trigger},
-        );
         return done(status: 'skip_deep_night');
       }
       final userId = ((inputData?['userId'] ?? '').toString()).trim();
       final encryptedPassword =
           ((inputData?['encryptedPassword'] ?? '').toString()).trim();
       if (userId.isEmpty || encryptedPassword.isEmpty) {
-        AppLogger.I.warn(
+        AppLogger.I.event(
+          LogLevel.warn,
           'ScheduleUpdateWorker',
-          'skip missing task credentials',
+          event: 'schedule_notice_poll_missing_credentials',
+          messageZh: '后台轮询跳过缺失凭证任务',
+          message: 'skip missing task credentials',
+          module: 'schedule_notice_poll',
+          action: 'validate_credentials',
+          status: 'skip',
+          reason: 'missing_credentials',
           fields: {'trigger': trigger},
         );
         return done(status: 'skip_missing_credentials');
@@ -209,9 +390,16 @@ class ScheduleUpdateWorker {
         }
         currentData ??= await scheduleApi.loadFromCache(userId: userId);
       } catch (e, st) {
-        AppLogger.I.warn(
+        AppLogger.I.event(
+          LogLevel.warn,
           'ScheduleUpdateWorker',
-          'load cache failed',
+          event: 'schedule_notice_poll_cache_load_fail',
+          messageZh: '后台轮询读取缓存失败',
+          message: 'load cache failed',
+          module: 'schedule_notice_poll',
+          action: 'load_cache',
+          status: 'fail',
+          reason: 'cache_read_failed',
           error: e,
           stackTrace: st,
           fields: {'trigger': trigger},
@@ -237,12 +425,23 @@ class ScheduleUpdateWorker {
             updateWidgetPins: false,
           );
         } catch (e, st) {
-          AppLogger.I.warn(
+          AppLogger.I.event(
+            LogLevel.error,
             'ScheduleUpdateWorker',
-            'load network failed',
+            event: 'schedule_notice_poll_network_load_fail',
+            messageZh: '后台轮询拉取课表失败',
+            message: 'load network failed',
+            module: 'schedule_notice_poll',
+            action: 'load_network',
+            status: 'fail',
+            reason: 'network_load_failed',
             error: e,
             stackTrace: st,
-            fields: {'trigger': trigger},
+            fields: {
+              'trigger': trigger,
+              'preferredTerm': preferredTerm,
+              'preferredWeek': preferredWeek,
+            },
           );
           return done(
             status: 'load_network_failed',
@@ -254,18 +453,32 @@ class ScheduleUpdateWorker {
           currentData.yearTerm!.trim().isEmpty ||
           currentData.weekList == null ||
           currentData.weekList!.isEmpty) {
-        AppLogger.I.warn(
+        AppLogger.I.event(
+          LogLevel.warn,
           'ScheduleUpdateWorker',
-          'skip invalid schedule data',
+          event: 'schedule_notice_poll_invalid_schedule_data',
+          messageZh: '后台轮询跳过无效课表数据',
+          message: 'skip invalid schedule data',
+          module: 'schedule_notice_poll',
+          action: 'validate_schedule',
+          status: 'skip',
+          reason: 'invalid_schedule_data',
           fields: {'trigger': trigger},
         );
         return done(status: 'skip_invalid_schedule_data');
       }
       if (preferredTerm.isNotEmpty &&
           currentData.yearTerm!.trim() != preferredTerm) {
-        AppLogger.I.warn(
+        AppLogger.I.event(
+          LogLevel.warn,
           'ScheduleUpdateWorker',
-          'polling term mismatch',
+          event: 'schedule_notice_poll_term_mismatch',
+          messageZh: '后台轮询跳过学期不匹配数据',
+          message: 'polling term mismatch',
+          module: 'schedule_notice_poll',
+          action: 'validate_term',
+          status: 'skip',
+          reason: 'term_mismatch',
           fields: {
             'trigger': trigger,
             'preferredTerm': preferredTerm,
@@ -302,9 +515,16 @@ class ScheduleUpdateWorker {
       try {
         result = await pipeline.run(currentData: currentData, headless: true);
       } catch (e, st) {
-        AppLogger.I.warn(
+        AppLogger.I.event(
+          LogLevel.error,
           'ScheduleUpdateWorker',
-          'pipeline run failed',
+          event: 'schedule_notice_poll_pipeline_fail',
+          messageZh: '后台轮询处理流程失败',
+          message: 'pipeline run failed',
+          module: 'schedule_notice_poll',
+          action: 'run_pipeline',
+          status: 'fail',
+          reason: 'pipeline_failed',
           error: e,
           stackTrace: st,
           fields: {'trigger': trigger},
@@ -313,15 +533,7 @@ class ScheduleUpdateWorker {
       }
 
       if (result.apiClosed || result.changes.isEmpty) {
-        AppLogger.I.info(
-          'ScheduleUpdateWorker',
-          'heartbeat task finished without changes',
-          fields: {
-            'trigger': trigger,
-            'apiClosed': result.apiClosed,
-            'changes': result.changes.length,
-          },
-        );
+        await _recordSuccessfulRun();
         return done(
           status: result.apiClosed ? 'api_closed' : 'no_changes',
           fields: {
@@ -344,6 +556,7 @@ class ScheduleUpdateWorker {
         body: body,
         payload: LocalNotifications.payloadScheduleUpdate,
       );
+      await _recordSuccessfulRun();
       AppLogger.I.info(
         'ScheduleUpdateWorker',
         'heartbeat task detected schedule changes',
@@ -367,6 +580,16 @@ class ScheduleUpdateWorker {
         fileName: 'cqut_$logDate.log',
       );
       _loggerReady = true;
+    } catch (_) {}
+  }
+
+  static Future<void> _recordSuccessfulRun() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _backgroundPollingLastSuccessAtKey,
+        DateTime.now().toIso8601String(),
+      );
     } catch (_) {}
   }
 
