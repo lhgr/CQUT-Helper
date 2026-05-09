@@ -193,10 +193,6 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
     return a.start <= b.end && b.start <= a.end;
   }
 
-  bool _containsStart(_EventRange container, int sessionStart) {
-    return container.start <= sessionStart && sessionStart <= container.end;
-  }
-
   bool _sameEvent(EventItem a, EventItem b) {
     final aId = (a.eventID ?? '').trim();
     final bId = (b.eventID ?? '').trim();
