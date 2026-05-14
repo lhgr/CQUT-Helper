@@ -1,17 +1,13 @@
-import 'dart:convert';
 import 'package:cqut_helper/manager/schedule_notice_refresh_pipeline.dart';
+import 'package:cqut_helper/manager/schedule_update_effects.dart';
+import 'package:cqut_helper/manager/schedule_update_result.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
-import 'package:cqut_helper/manager/schedule_update_intents.dart';
-import 'package:cqut_helper/utils/schedule_notice_metrics.dart';
-import 'package:cqut_helper/utils/schedule_update_log.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class ScheduleUpdateManager {
   final ScheduleController controller;
   bool _checkInFlight = false;
-  static const String _pendingKeyPrefix = 'schedule_pending_changes_';
 
   ScheduleUpdateManager({required this.controller});
 
@@ -42,26 +38,23 @@ class ScheduleUpdateManager {
     required String runType,
   }) async {
     if (_checkInFlight) {
+      const result = ScheduleUpdateRunResult.empty();
       return (
-        changes: const <ScheduleWeekChange>[],
-        hadFailures: false,
-        failureDelta: 0,
-        apiClosed: false,
-        changedNotices: 0,
-        affectedWeeks: 0,
+        changes: result.changes,
+        hadFailures: result.hadFailures,
+        failureDelta: result.failureDelta,
+        apiClosed: result.apiClosed,
+        changedNotices: result.changedNotices,
+        affectedWeeks: result.affectedWeeks,
       );
     }
     _checkInFlight = true;
     final startAt = DateTime.now();
-    final failuresBefore = await ScheduleUpdateLog.failureCounter();
-    List<ScheduleWeekChange> changes = const <ScheduleWeekChange>[];
-    int changedNotices = 0;
-    int affectedWeeks = 0;
-    bool apiClosed = false;
+    final failuresBefore = await loadScheduleUpdateFailureCounter();
+    var summary = const ScheduleUpdatePipelineSummary.empty();
     Object? error;
     StackTrace? stackTrace;
-    int failureDelta = 0;
-    bool hadFailures = false;
+    ScheduleUpdateRunResult? finalized;
     try {
       final pipeline = ScheduleNoticeRefreshPipeline(
         refreshWeek: (weekNum, yearTerm) {
@@ -74,113 +67,42 @@ class ScheduleUpdateManager {
         },
       );
       final result = await pipeline.run(currentData: currentData);
-      changes = result.changes;
-      changedNotices = result.changedNoticeCount;
-      affectedWeeks = result.affectedWeeks.length;
-      apiClosed = result.apiClosed;
-      if (changes.isNotEmpty) {
-        ScheduleUpdateIntents.requestScheduleUpdated();
-      }
+      summary = ScheduleUpdatePipelineSummary.fromRefreshResult(result);
+      requestScheduleUpdatedIfNeeded(summary.changes);
     } catch (e, st) {
       error = e;
       stackTrace = st;
-      await ScheduleUpdateLog.appendFailure({
-        'at': DateTime.now().millisecondsSinceEpoch,
-        'scope': runType,
-        'error': e.toString(),
-      });
+      await appendScheduleUpdateFailure(runType: runType, error: e);
     } finally {
-      final failuresAfter = await ScheduleUpdateLog.failureCounter();
-      failureDelta = failuresAfter - failuresBefore;
-      hadFailures = !apiClosed && (error != null || failureDelta > 0);
-      final durationMs = DateTime.now().difference(startAt).inMilliseconds;
-      await ScheduleNoticeMetrics.record(
-        ScheduleNoticeMetricsRecord(
-          runType: runType,
-          success: !hadFailures && !apiClosed,
-          degraded: false,
-          apiClosed: apiClosed,
-          changeCount: changedNotices,
-          affectedWeeks: affectedWeeks,
-          durationMs: durationMs,
-          failureStreak: 0,
-        ),
+      finalized = await finalizeScheduleUpdateRun(
+        runType: runType,
+        startAt: startAt,
+        failuresBefore: failuresBefore,
+        summary: summary,
+        error: error,
+        stackTrace: stackTrace,
       );
-      await ScheduleUpdateLog.appendRun({
-        'at': DateTime.now().millisecondsSinceEpoch,
-        'type': runType,
-        'pollType': 'notice',
-        'changedNotices': changedNotices,
-        'affectedWeeks': affectedWeeks,
-        'weeksChanged': changes.length,
-        'apiClosed': apiClosed,
-        'durationMs': durationMs,
-        'hadFailures': hadFailures,
-        'failureDelta': failureDelta,
-      });
-      if (stackTrace != null) {
-        await ScheduleUpdateLog.appendRun({
-          'at': DateTime.now().millisecondsSinceEpoch,
-          'type': '${runType}_exception',
-          'error': error.toString(),
-          'stack': stackTrace.toString(),
-        });
-      }
       _checkInFlight = false;
     }
+    final result = finalized;
     return (
-      changes: changes,
-      hadFailures: hadFailures,
-      failureDelta: failureDelta,
-      apiClosed: apiClosed,
-      changedNotices: changedNotices,
-      affectedWeeks: affectedWeeks,
+      changes: result.changes,
+      hadFailures: result.hadFailures,
+      failureDelta: result.failureDelta,
+      apiClosed: result.apiClosed,
+      changedNotices: result.changedNotices,
+      affectedWeeks: result.affectedWeeks,
     );
   }
 
   Future<({String? yearTerm, List<ScheduleWeekChange> changes})>
   checkPendingChanges() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('account');
-    if (userId == null || userId.trim().isEmpty) {
+    final raw = await consumeScheduleUpdatePendingRawForCurrentUser();
+    if (raw == null) {
       return (yearTerm: null, changes: const <ScheduleWeekChange>[]);
     }
 
-    final key = '$_pendingKeyPrefix$userId';
-    final raw = prefs.getString(key);
-    if (raw == null || raw.trim().isEmpty) {
-      return (yearTerm: null, changes: const <ScheduleWeekChange>[]);
-    }
-    await prefs.remove(key);
-
-    try {
-      final decoded = json.decode(raw);
-      if (decoded is! Map<String, dynamic>) {
-        return (yearTerm: null, changes: const <ScheduleWeekChange>[]);
-      }
-      final yearTerm = (decoded['yearTerm'] ?? '').toString().trim();
-      final items = decoded['changes'];
-      if (items is! List) {
-        return (
-          yearTerm: yearTerm.isEmpty ? null : yearTerm,
-          changes: const <ScheduleWeekChange>[],
-        );
-      }
-
-      final changes = <ScheduleWeekChange>[];
-      for (final it in items) {
-        if (it is! Map) continue;
-        final weekNum = (it['weekNum'] ?? '').toString();
-        final linesRaw = it['lines'];
-        final lines = linesRaw is List
-            ? linesRaw.map((e) => e.toString()).toList()
-            : const <String>[];
-        if (weekNum.isEmpty) continue;
-        changes.add(ScheduleWeekChange(weekNum: weekNum, lines: lines));
-      }
-      return (yearTerm: yearTerm.isEmpty ? null : yearTerm, changes: changes);
-    } catch (_) {
-      return (yearTerm: null, changes: const <ScheduleWeekChange>[]);
-    }
+    final result = parseScheduleUpdatePendingPayload(raw);
+    return (yearTerm: result.yearTerm, changes: result.changes);
   }
 }
