@@ -87,100 +87,99 @@
                     android:layout_marginEnd="8dp"
                     android:layout_alignParentEnd="true" />
             </RelativeLayout>
-            <ListView
-                android:id="@+id/lv_course"
+            <FrameLayout
+                android:id="@+id/fl_content"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:layout_below="@+id/rl_title"
-                android:layout_alignParentBottom="true"
-                android:divider="@null" />
-            <LinearLayout
-                android:id="@+id/ll_single_course_item"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_below="@+id/rl_title"
-                android:layout_alignParentBottom="true"
-                android:visibility="gone">
-                <ImageView
-                    android:id="@+id/iv_single_indicator"
-                    android:layout_width="4dp"
+                android:layout_alignParentBottom="true">
+                <ListView
+                    android:id="@+id/lv_course"
+                    android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:src="@drawable/appwidget_bg" />
+                    android:divider="@null" />
                 <LinearLayout
-                    android:id="@+id/ll_single_course_content"
-                    android:layout_width="0dp"
+                    android:id="@+id/ll_single_course_item"
+                    android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/widget_item_bg"
-                    android:gravity="center_vertical"
-                    android:orientation="vertical"
-                    android:padding="8dp">
-                    <TextView
-                        android:id="@+id/tv_single_course_name"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/widget_primary_text"
-                        android:textSize="14dp"
-                        android:textStyle="bold"
-                        android:maxLines="1"
-                        android:singleLine="true" />
-                    <TextView
-                        android:id="@+id/tv_single_campus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textSize="12dp"
-                        android:textColor="@color/widget_secondary_text"
-                        android:maxLines="1"
-                        android:singleLine="true" />
-                    <TextView
-                        android:id="@+id/tv_single_classroom"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textSize="12dp"
-                        android:textColor="@color/widget_secondary_text"
-                        android:maxLines="1"
-                        android:singleLine="true" />
-                    <TextView
-                        android:id="@+id/tv_single_teacher"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textSize="12dp"
-                        android:textColor="@color/widget_secondary_text"
-                        android:maxLines="1"
-                        android:singleLine="true" />
-                    <TextView
-                        android:id="@+id/tv_single_periods"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textSize="12dp"
-                        android:textColor="@color/widget_secondary_text"
-                        android:maxLines="1"
-                        android:singleLine="true" />
+                    android:visibility="gone">
+                    <ImageView
+                        android:id="@+id/iv_single_indicator"
+                        android:layout_width="4dp"
+                        android:layout_height="match_parent"
+                        android:src="@drawable/appwidget_bg" />
+                    <LinearLayout
+                        android:id="@+id/ll_single_course_content"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/widget_item_bg"
+                        android:gravity="center_vertical"
+                        android:orientation="vertical"
+                        android:padding="8dp">
+                        <TextView
+                            android:id="@+id/tv_single_course_name"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/widget_primary_text"
+                            android:textSize="14dp"
+                            android:textStyle="bold"
+                            android:maxLines="1"
+                            android:singleLine="true" />
+                        <TextView
+                            android:id="@+id/tv_single_campus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="12dp"
+                            android:textColor="@color/widget_secondary_text"
+                            android:maxLines="1"
+                            android:singleLine="true" />
+                        <TextView
+                            android:id="@+id/tv_single_classroom"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="12dp"
+                            android:textColor="@color/widget_secondary_text"
+                            android:maxLines="1"
+                            android:singleLine="true" />
+                        <TextView
+                            android:id="@+id/tv_single_teacher"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="12dp"
+                            android:textColor="@color/widget_secondary_text"
+                            android:maxLines="1"
+                            android:singleLine="true" />
+                        <TextView
+                            android:id="@+id/tv_single_periods"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="12dp"
+                            android:textColor="@color/widget_secondary_text"
+                            android:maxLines="1"
+                            android:singleLine="true" />
+                    </LinearLayout>
                 </LinearLayout>
-            </LinearLayout>
-            <LinearLayout
-                android:id="@android:id/empty"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_below="@+id/rl_title"
-                android:layout_alignParentBottom="true"
-                android:layout_alignParentStart="true"
-                android:layout_alignParentEnd="true"
-                android:paddingLeft="16dp"
-                android:paddingRight="16dp"
-                android:gravity="center"
-                android:orientation="vertical">
-                <TextView
-                    android:id="@+id/empty_text"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="12dp"
-                    android:textColor="@color/widget_secondary_text"
-                    android:text="暂无课程"
-                    android:lineSpacingExtra="8dp"
-                    android:textAlignment="center" />
-            </LinearLayout>
+                <LinearLayout
+                    android:id="@android:id/empty"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:gravity="center"
+                    android:orientation="vertical">
+                    <TextView
+                        android:id="@+id/empty_text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="12dp"
+                        android:textColor="@color/widget_secondary_text"
+                        android:text="暂无课程"
+                        android:lineSpacingExtra="8dp"
+                        android:textAlignment="center" />
+                </LinearLayout>
+            </FrameLayout>
         </RelativeLayout>
         <ImageView
             android:id="@+id/theme_transition_overlay"
