@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -114,6 +115,46 @@ jobs:
           print(f"build_number={build_number}")
           print(f"next_pubspec_version={build_name}+{next_build_number}")
           PY
+
+      - name: Validate Build Number Increment
+        uses: actions/github-script@v7
+        env:
+          CURRENT_BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const name = "LAST_SUCCESS_BUILD_NUMBER";
+            const current = Number(process.env.CURRENT_BUILD_NUMBER);
+            if (!Number.isFinite(current)) {
+              core.setFailed(`Invalid current build number: ${process.env.CURRENT_BUILD_NUMBER}`);
+              return;
+            }
+
+            let previous = null;
+            try {
+              const res = await github.rest.actions.getRepoVariable({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name
+              });
+              previous = Number(res.data.value);
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
+            if (previous !== null && !Number.isFinite(previous)) {
+              core.setFailed(`Stored ${name} is invalid: ${previous}`);
+              return;
+            }
+
+            if (previous !== null && Number.isFinite(previous) && current <= previous) {
+              core.setFailed(`Build number must be strictly increasing. current=${current}, previous=${previous}`);
+              return;
+            }
+
+            core.info(`Build number check passed. current=${current}, previous=${previous ?? "none"}`);
         
       - name: Build Fat APK (Universal)
         run: |
