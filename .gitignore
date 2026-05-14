@@ -55,7 +55,6 @@ android/key.properties
 workers
 .env
 docs
-test
 
 FastAPI/__pycache__/
 
