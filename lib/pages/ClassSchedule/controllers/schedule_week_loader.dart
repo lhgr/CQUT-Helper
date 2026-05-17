@@ -1,4 +1,5 @@
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ScheduleWeekLoader {
   final ScheduleApi service;
+  final CredentialStore credentialStore;
   final Map<int, ScheduleData> Function() getWeekCache;
   final void Function(Map<int, ScheduleData> value) setWeekCache;
   final String? Function() getCurrentTerm;
@@ -21,6 +23,7 @@ class ScheduleWeekLoader {
 
   ScheduleWeekLoader({
     required this.service,
+    CredentialStore? credentialStore,
     required this.getWeekCache,
     required this.setWeekCache,
     required this.getCurrentTerm,
@@ -30,12 +33,12 @@ class ScheduleWeekLoader {
     required this.setActualCurrentTermStr,
     required this.setNowInTeachingWeek,
     required this.setNowStatusLabel,
-  });
+  }) : credentialStore = credentialStore ?? CredentialStore();
 
   Future<void> loadCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     _userId = prefs.getString('account');
-    _encryptedPassword = prefs.getString('encrypted_password');
+    _encryptedPassword = await credentialStore.readEncryptedPassword();
   }
 
   String? get userId => _userId;

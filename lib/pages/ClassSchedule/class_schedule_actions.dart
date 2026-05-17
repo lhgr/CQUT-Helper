@@ -197,8 +197,8 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
   Future<void> _openTermNoticeRecords() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = (prefs.getString('account') ?? '').trim();
-    final encryptedPassword = (prefs.getString('encrypted_password') ?? '')
-        .trim();
+    final encryptedPassword =
+        ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
     final yearTerm = (_currentScheduleData?.yearTerm ?? '').trim();
     final nowHour = DateTime.now().hour;
     final deepNight = nowHour >= 0 && nowHour < 7;

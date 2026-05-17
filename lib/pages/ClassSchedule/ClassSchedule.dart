@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_manager.dart';

@@ -1,4 +1,5 @@
 import 'package:cqut_helper/api/auth/auth_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +22,7 @@ class _LoginPageState extends State<LoginPage> {
   String? _savedAccount;
 
   final AuthApi _authApi = AuthApi();
+  final CredentialStore _credentialStore = CredentialStore();
 
   @override
   void initState() {
@@ -41,7 +43,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _loadSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     final account = prefs.getString('account');
-    final encryptedPwd = prefs.getString('encrypted_password');
+    final encryptedPwd = await _credentialStore.readEncryptedPassword();
 
     if (account != null && account.isNotEmpty) {
       if (mounted) {
@@ -99,10 +101,10 @@ class _LoginPageState extends State<LoginPage> {
         DateTime.now().millisecondsSinceEpoch,
       );
       if (useSavedPassword) {
-        await prefs.setString('encrypted_password', _savedEncryptedPassword!);
+        await _credentialStore.writeEncryptedPassword(_savedEncryptedPassword!);
       } else {
         final encrypted = _authApi.encryptPassword(password);
-        await prefs.setString('encrypted_password', encrypted);
+        await _credentialStore.writeEncryptedPassword(encrypted);
       }
 
       if (mounted) {

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_notice_refresh_pipeline.dart';
 import 'package:cqut_helper/manager/schedule_update_worker_health.dart';
 import 'package:cqut_helper/manager/schedule_update_worker_state_store.dart';
@@ -60,8 +61,8 @@ class ScheduleUpdateWorker {
   static Future<void> syncFromPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = (prefs.getString('account') ?? '').trim();
-    final encryptedPassword = (prefs.getString('encrypted_password') ?? '')
-        .trim();
+    final encryptedPassword =
+        ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
     final enabled =
         prefs.getBool('schedule_background_polling_enabled') ?? false;
     await recordScheduleUpdateWorkerSyncState(
@@ -178,11 +179,11 @@ class ScheduleUpdateWorker {
       }
       final prefs = await SharedPreferences.getInstance();
       final currentAccount = (prefs.getString('account') ?? '').trim();
-      final currentPassword = (prefs.getString('encrypted_password') ?? '')
-          .trim();
+      final currentPassword =
+          ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
       if (currentAccount.isEmpty || currentPassword.isEmpty) {
         await prefs.setString('account', userId);
-        await prefs.setString('encrypted_password', encryptedPassword);
+        await CredentialStore().writeEncryptedPassword(encryptedPassword);
       }
 
       final scheduleApi = ScheduleApi();

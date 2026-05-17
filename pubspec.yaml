@@ -40,6 +40,7 @@ dependencies:
   pointycastle: ^4.0.0
   asn1lib: ^1.6.5
   shared_preferences: ^2.5.4
+  flutter_secure_storage: ^9.2.2
   url_launcher: ^6.3.2
   dynamic_color: ^1.8.1
   cached_network_image: ^3.4.1
