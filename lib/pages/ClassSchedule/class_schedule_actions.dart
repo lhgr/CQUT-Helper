@@ -6,13 +6,6 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       _userChangedWeekDuringInitialBoot = true;
     }
 
-    if (_weekList != null && index >= 0 && index < _weekList!.length) {
-      FirebaseAnalytics.instance.logEvent(
-        name: 'view_schedule_week',
-        parameters: {'week_number': _weekList![index]},
-      );
-    }
-
     _setState(() {
       _currentWeekIndex = index;
     });

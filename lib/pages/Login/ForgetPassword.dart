@@ -1,5 +1,4 @@
 import 'package:cqut_helper/api/auth/forget_password_api.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 
 class ForgetPasswordPage extends StatefulWidget {
@@ -148,7 +147,6 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
 
     setState(() => _isLoading = true);
     try {
-      await FirebaseAnalytics.instance.logEvent(name: 'forgot_password_set_new_password');
       await _api.setNewPassword(ticket: ticket, password: pwd1);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

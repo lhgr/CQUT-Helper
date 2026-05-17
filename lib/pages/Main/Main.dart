@@ -6,7 +6,6 @@ import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/pages/Data/Data.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -143,11 +142,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        onDestinationSelected: (int index) async {
-          await FirebaseAnalytics.instance.logEvent(
-            name: 'tab_switch',
-            parameters: {'tab_name': _tabList[index]['text']},
-          );
+        onDestinationSelected: (int index) {
           setState(() {
             _currentIndex = index;
           });

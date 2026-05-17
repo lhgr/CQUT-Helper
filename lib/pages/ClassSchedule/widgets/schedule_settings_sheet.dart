@@ -3,7 +3,6 @@ import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 
@@ -252,12 +251,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
     final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
       noticeApiBaseUrl,
-    );
-    unawaited(
-      FirebaseAnalytics.instance.logEvent(
-        name: 'schedule_toggle_show_weekend',
-        parameters: {'value': showWeekend ? 1 : 0},
-      ),
     );
 
     await ScheduleUpdateWorker.markEnabledAtIfNeeded(

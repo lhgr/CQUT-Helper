@@ -3,7 +3,6 @@ import 'package:cqut_helper/pages/Data/repo_file_preview.dart';
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
 import 'package:cqut_helper/manager/favorites_manager.dart';
 import 'package:cqut_helper/model/github_item.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cqut_helper/utils/github_proxy.dart';
@@ -63,10 +62,6 @@ class _DataViewState extends State<DataView> {
   }
 
   void _navigateToRepoBrowser(String path, String title) {
-    FirebaseAnalytics.instance.logEvent(
-      name: 'view_material',
-      parameters: {'path': path, 'title': title},
-    );
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -170,10 +165,6 @@ class _DataViewState extends State<DataView> {
                     children: [
                       InkWell(
                         onTap: () async {
-                          await FirebaseAnalytics.instance.logEvent(
-                            name: 'click_material_repo_author_avatar',
-                            parameters: {'owner': _ownerName},
-                          );
                           await _launchUrl(_ownerProfileUrl);
                         },
                         borderRadius: BorderRadius.circular(16),

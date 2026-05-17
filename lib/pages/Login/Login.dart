@@ -1,6 +1,5 @@
 import 'package:cqut_helper/api/auth/auth_api.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -92,9 +91,6 @@ class _LoginPageState extends State<LoginPage> {
       } else {
         await _authApi.login(account: account, password: password);
       }
-
-      // 登录成功，保存凭证
-      await FirebaseAnalytics.instance.logLogin(loginMethod: 'password');
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('account', account);
@@ -236,9 +232,6 @@ class _LoginPageState extends State<LoginPage> {
                       const Spacer(),
                       TextButton(
                         onPressed: () async {
-                          await FirebaseAnalytics.instance.logEvent(
-                            name: 'forgot_password_click',
-                          );
                           if (!context.mounted) return;
                           Navigator.of(context).push(
                             MaterialPageRoute(
