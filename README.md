@@ -40,7 +40,7 @@
   <tr>
     <td width="50%" valign="top">
       <strong>个性化主题</strong><br />
-      支持 Material 3 动态取色（Dynamic Color），界面可随心而动。
+      支持 Material 3 动态取色，界面可随心而动。
     </td>
     <td width="50%" valign="top">
       <strong>自动获取</strong><br />
@@ -103,13 +103,16 @@
 
    用户账号、密码（加密后）以及课表详情等核心隐私数据，默认仅存储在本地设备中。
 
-   仅在使用“调课通知”功能时，由于相关接口存在应用端无法独立完成的加密参数，才需要由服务端协助处理，并将账号与加密后的密码发送至服务端以获取调课信息。相关实现代码见 [jwxt_automation.py](FastAPI/jwxt_automation.py)。
+   仅在使用“调课通知”功能时，由于相关接口存在应用端无法独立完成的加密参数，才需要由服务端协助处理，并将账号与加密后的密码发送至服务端以获取调课信息。相关实现见 [jwxt_automation.py](FastAPI/jwxt_automation.py)。
 
 > [!WARNING]
 > 仅在使用“调课通知”功能时，才会将账号与加密后的密码发送至服务端进行处理。
 
 > [!NOTE]
 > 该服务端仅用于处理调课通知，不会存储任何个人隐私信息。
+
+> [!NOTE]
+> 如你仍有隐私顾虑，可自行部署 [jwxt_automation.py](FastAPI/jwxt_automation.py) 到自己的服务器，并在课程表设置的“启用后台定时轮询”中配置你的域名。
 
 2. **权限使用**
 
@@ -121,9 +124,6 @@
 
 > [!NOTE]
 > [Firebase 相关集成移除记录](https://github.com/lhgr/CQUT-Helper/commit/3d42a06f253b720c4c41dfa1b47aa0960a0cd48c)
-
-> [!NOTE]
-> 如你仍有隐私顾虑，可自行部署 [jwxt_automation.py](FastAPI/jwxt_automation.py) 到自己的服务器，并在课程表设置的“启用后台定时轮询”中配置你的域名。
 
 <a id="development"></a>
 ## ⚠️ 开发说明
