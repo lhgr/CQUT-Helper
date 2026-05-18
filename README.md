@@ -115,6 +115,13 @@
 
    应用仅会在确有必要时申请所需权限，并明确说明用途。
 
+3. **Firebase 说明**
+
+   Firebase 相关集成已移除，当前版本不再接入 Firebase，也不会向 Firebase 上传或同步用户数据。
+
+> [!NOTE]
+> [Firebase 相关集成移除记录](https://github.com/lhgr/CQUT-Helper/commit/3d42a06f253b720c4c41dfa1b47aa0960a0cd48c)
+
 > [!NOTE]
 > 如你仍有隐私顾虑，可自行部署 [jwxt_automation.py](FastAPI/jwxt_automation.py) 到自己的服务器，并在课程表设置的“启用后台定时轮询”中配置你的域名。
 
