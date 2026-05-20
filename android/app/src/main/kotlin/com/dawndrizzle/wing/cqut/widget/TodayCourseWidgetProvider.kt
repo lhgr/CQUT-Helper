@@ -106,7 +106,6 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       val dayOffset = getDayOffset(context, appWidgetId)
       val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
       val weekCount = TodayWidgetData.loadWeekCountText(context)
-      val courses = TodayWidgetData.loadCoursesByDayOffset(context, dayOffset)
       views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
       views.setTextViewText(R.id.tv_date, header.dateText)
       val weekCountPart = if (weekCount.isNotBlank()) " | $weekCount    " else " | "
@@ -116,32 +115,11 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
+        putExtra(CourseListWidgetService.EXTRA_ADD_FIRST_ITEM_TOP_SPACING, true)
         data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
       }
       views.setRemoteAdapter(R.id.lv_course, svcIntent)
       views.setEmptyView(R.id.lv_course, android.R.id.empty)
-      val singleCourse = courses.singleOrNull()
-      val isSingleCourse = singleCourse != null
-      views.setViewVisibility(R.id.ll_single_course_item, if (isSingleCourse) android.view.View.VISIBLE else android.view.View.GONE)
-      views.setViewVisibility(R.id.lv_course, if (isSingleCourse) android.view.View.GONE else android.view.View.VISIBLE)
-      if (singleCourse != null) {
-        views.setInt(
-          R.id.ll_single_course_content,
-          "setBackgroundResource",
-          palette.itemBackgroundRes,
-        )
-        views.setTextColor(R.id.tv_single_course_name, palette.primaryText)
-        views.setTextColor(R.id.tv_single_campus, palette.secondaryText)
-        views.setTextColor(R.id.tv_single_classroom, palette.secondaryText)
-        views.setTextColor(R.id.tv_single_teacher, palette.secondaryText)
-        views.setTextColor(R.id.tv_single_periods, palette.secondaryText)
-        views.setTextViewText(R.id.tv_single_course_name, singleCourse.name)
-        views.setTextViewText(R.id.tv_single_campus, singleCourse.campus)
-        views.setTextViewText(R.id.tv_single_classroom, singleCourse.classroom)
-        views.setTextViewText(R.id.tv_single_teacher, singleCourse.teacher)
-        views.setTextViewText(R.id.tv_single_periods, singleCourse.periods)
-        views.setInt(R.id.iv_single_indicator, "setColorFilter", singleCourse.indicatorColor)
-      }
 
       views.setFloat(R.id.iv_next, "setRotation", if (dayOffset == 0) 180f else 0f)
       val toggleIntent =
