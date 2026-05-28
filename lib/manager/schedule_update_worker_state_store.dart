@@ -11,6 +11,8 @@ const String _backgroundPollingLastSuccessAtKey =
     'schedule_background_poll_last_success_at';
 const String _backgroundPollLastStateKey = 'schedule_background_poll_last_state';
 const String _backgroundPollSyncStateKey = 'schedule_background_poll_sync_state';
+const String _backgroundPollDailyStateKey =
+    'schedule_background_poll_daily_state';
 const String _pendingKeyPrefix = 'schedule_pending_changes_';
 
 class ScheduleUpdateWorkerStoredState {
@@ -19,6 +21,7 @@ class ScheduleUpdateWorkerStoredState {
   final DateTime? lastSuccessAt;
   final Map<String, dynamic>? lastState;
   final Map<String, dynamic>? syncState;
+  final Map<String, dynamic>? dailyState;
 
   const ScheduleUpdateWorkerStoredState({
     required this.enabled,
@@ -26,6 +29,7 @@ class ScheduleUpdateWorkerStoredState {
     required this.lastSuccessAt,
     required this.lastState,
     required this.syncState,
+    required this.dailyState,
   });
 }
 
@@ -37,10 +41,7 @@ Future<void> markScheduleUpdateWorkerEnabledAtIfNeeded({
 }) async {
   final prefs = await SharedPreferences.getInstance();
   if (!enabled) {
-    await prefs.remove(_backgroundPollingEnabledAtKey);
-    await prefs.remove(_backgroundPollingLastSuccessAtKey);
-    await prefs.remove(_backgroundPollLastStateKey);
-    await prefs.remove(_backgroundPollSyncStateKey);
+    await clearScheduleUpdateWorkerState(clearEnabledAt: true);
     return;
   }
   if (prefs.getString(_backgroundPollingEnabledAtKey)?.trim().isNotEmpty ==
@@ -62,7 +63,30 @@ loadScheduleUpdateWorkerStoredState() async {
     lastSuccessAt: _parseTime(prefs, _backgroundPollingLastSuccessAtKey),
     lastState: _parseState(prefs, _backgroundPollLastStateKey),
     syncState: _parseState(prefs, _backgroundPollSyncStateKey),
+    dailyState: _parseState(prefs, _backgroundPollDailyStateKey),
   );
+}
+
+Future<void> clearScheduleUpdateWorkerState({
+  required bool clearEnabledAt,
+}) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    if (clearEnabledAt) {
+      await prefs.remove(_backgroundPollingEnabledAtKey);
+    }
+    await prefs.remove(_backgroundPollingLastSuccessAtKey);
+    await prefs.remove(_backgroundPollLastStateKey);
+    await prefs.remove(_backgroundPollSyncStateKey);
+    await prefs.remove(_backgroundPollDailyStateKey);
+  } catch (_) {}
+}
+
+Future<void> clearScheduleUpdateWorkerDailyState() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_backgroundPollDailyStateKey);
+  } catch (_) {}
 }
 
 Future<void> recordScheduleUpdateWorkerSuccessfulRun() async {
@@ -110,6 +134,55 @@ Future<void> recordScheduleUpdateWorkerSyncState({
         'fields': fields,
       }),
     );
+  } catch (_) {}
+}
+
+Future<Map<String, dynamic>?> loadScheduleUpdateWorkerDailyState() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    return _parseState(prefs, _backgroundPollDailyStateKey);
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> writeScheduleUpdateWorkerDailyState({
+  required Map<String, dynamic> state,
+}) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_backgroundPollDailyStateKey, json.encode(state));
+  } catch (_) {}
+}
+
+Future<void> patchScheduleUpdateWorkerDailyState({
+  required String logicalDateBjt,
+  Map<String, Object?> fields = const {},
+  Map<String, Object?>? main,
+  Map<String, Object?>? retry,
+}) async {
+  try {
+    final current = await loadScheduleUpdateWorkerDailyState();
+    final next = <String, dynamic>{
+      if (current != null) ...current,
+      'logicalDateBjt': logicalDateBjt,
+      ...fields,
+    };
+    if (main != null) {
+      next['main'] = {
+        ...((current?['main'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{}),
+        ...main,
+      };
+    }
+    if (retry != null) {
+      next['retry'] = {
+        ...((current?['retry'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{}),
+        ...retry,
+      };
+    }
+    await writeScheduleUpdateWorkerDailyState(state: next);
   } catch (_) {}
 }
 

@@ -31,15 +31,26 @@ void main() {
       expect(snapshot.title, '后台定时轮询观察中');
     });
 
-    test('最近成功执行时返回 healthy 状态', () async {
+    test('今日主任务成功时返回 healthy 状态', () async {
+      final todayBjt = DateTime.now()
+          .toUtc()
+          .add(const Duration(hours: 8))
+          .toIso8601String()
+          .split('T')
+          .first;
       SharedPreferences.setMockInitialValues({
         'schedule_background_polling_enabled': true,
         'schedule_background_poll_enabled_at': DateTime.now()
             .subtract(const Duration(hours: 4))
             .toIso8601String(),
-        'schedule_background_poll_last_success_at': DateTime.now()
-            .subtract(const Duration(minutes: 20))
-            .toIso8601String(),
+        'schedule_background_poll_sync_state': json.encode({
+          'at': DateTime.now().toIso8601String(),
+          'status': 'sync_registered',
+        }),
+        'schedule_background_poll_daily_state': json.encode({
+          'logicalDateBjt': todayBjt,
+          'main': {'status': 'succeeded'},
+        }),
       });
 
       final snapshot = await ScheduleUpdateWorker.loadHealthSnapshot();
@@ -54,6 +65,10 @@ void main() {
         'schedule_background_poll_enabled_at': DateTime.now()
             .subtract(const Duration(hours: 4))
             .toIso8601String(),
+        'schedule_background_poll_sync_state': json.encode({
+          'at': DateTime.now().toIso8601String(),
+          'status': 'sync_registered',
+        }),
         'schedule_background_poll_last_state': json.encode({
           'at': DateTime.now()
               .subtract(const Duration(minutes: 20))
@@ -68,24 +83,37 @@ void main() {
       expect(snapshot.title, '后台定时轮询夜间暂停');
     });
 
-    test('最近失败状态时返回 failed 状态', () async {
+    test('今日 9 点失败且已安排 12 点补跑时返回 failed 状态', () async {
+      final todayBjt = DateTime.now()
+          .toUtc()
+          .add(const Duration(hours: 8))
+          .toIso8601String()
+          .split('T')
+          .first;
       SharedPreferences.setMockInitialValues({
         'schedule_background_polling_enabled': true,
         'schedule_background_poll_enabled_at': DateTime.now()
             .subtract(const Duration(hours: 4))
             .toIso8601String(),
-        'schedule_background_poll_last_state': json.encode({
-          'at': DateTime.now()
-              .subtract(const Duration(minutes: 10))
-              .toIso8601String(),
-          'status': 'load_network_failed',
+        'schedule_background_poll_sync_state': json.encode({
+          'at': DateTime.now().toIso8601String(),
+          'status': 'sync_registered',
+        }),
+        'schedule_background_poll_daily_state': json.encode({
+          'logicalDateBjt': todayBjt,
+          'main': {'status': 'failed', 'retryEligible': true},
+          'retry': {
+            'status': 'scheduled',
+            'attempted': false,
+            'scheduledFor': '${todayBjt}T12:00:00+08:00',
+          },
         }),
       });
 
       final snapshot = await ScheduleUpdateWorker.loadHealthSnapshot();
 
       expect(snapshot.status, ScheduleBackgroundPollHealthStatus.failed);
-      expect(snapshot.title, '后台定时轮询最近失败');
+      expect(snapshot.title, '后台定时轮询上午失败');
     });
 
     test('未完成注册时返回 failed 状态', () async {
@@ -112,17 +140,17 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'schedule_background_polling_enabled': true,
         'schedule_background_poll_enabled_at': DateTime.now()
-            .subtract(const Duration(hours: 6))
+            .subtract(const Duration(days: 4))
             .toIso8601String(),
         'schedule_background_poll_last_state': json.encode({
           'at': DateTime.now()
-              .subtract(const Duration(hours: 4))
+              .subtract(const Duration(days: 3))
               .toIso8601String(),
           'status': 'started',
         }),
         'schedule_background_poll_sync_state': json.encode({
           'at': DateTime.now()
-              .subtract(const Duration(hours: 4))
+              .subtract(const Duration(days: 3))
               .toIso8601String(),
           'status': 'sync_registered',
         }),

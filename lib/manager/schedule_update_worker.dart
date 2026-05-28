@@ -24,7 +24,13 @@ class ScheduleUpdateWorker {
   static const String _taskName = 'schedule_notice_poll_task';
   static const String _immediateTaskUniqueName =
       'schedule_notice_poll_task_immediate';
-  static const int _frequencyMinutes = 60;
+  static const String _dailyTaskUniqueName = 'schedule_notice_poll_task_daily';
+  static const String _fallbackTaskUniqueName =
+      'schedule_notice_poll_task_fallback';
+  static const String _triggerImmediate = 'immediate';
+  static const String _triggerDaily9am = 'daily_9am';
+  static const String _triggerFallbackNoon = 'fallback_noon';
+  static const String _timeZoneOffset = '+08:00';
   static bool _loggerReady = false;
 
   static String pendingKeyForUser(String userId) =>
@@ -53,9 +59,7 @@ class ScheduleUpdateWorker {
   }
 
   static Future<ScheduleBackgroundPollHealthSnapshot> loadHealthSnapshot() {
-    return loadScheduleUpdateWorkerHealthSnapshot(
-      frequencyMinutes: _frequencyMinutes,
-    );
+    return loadScheduleUpdateWorkerHealthSnapshot();
   }
 
   static Future<void> syncFromPreferences() async {
@@ -73,9 +77,9 @@ class ScheduleUpdateWorker {
         'hasPassword': encryptedPassword.isNotEmpty,
       },
     );
-    if (!enabled || userId.isEmpty || encryptedPassword.isEmpty) {
-      await Workmanager().cancelByUniqueName(_taskName);
-      await Workmanager().cancelByUniqueName(_immediateTaskUniqueName);
+    if (!enabled) {
+      await _cancelAllScheduledTasks();
+      await clearScheduleUpdateWorkerState(clearEnabledAt: true);
       await recordScheduleUpdateWorkerSyncState(
         status: 'sync_cancelled',
         fields: {
@@ -86,33 +90,36 @@ class ScheduleUpdateWorker {
       );
       return;
     }
-    await Workmanager().registerPeriodicTask(
-      _taskName,
-      _taskName,
-      frequency: const Duration(minutes: _frequencyMinutes),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
-      constraints: Constraints(networkType: NetworkType.connected),
-      inputData: {
-        'userId': userId,
-        'encryptedPassword': encryptedPassword,
-        'trigger': 'periodic',
-      },
+    if (userId.isEmpty || encryptedPassword.isEmpty) {
+      await _cancelAllScheduledTasks();
+      await clearScheduleUpdateWorkerState(clearEnabledAt: false);
+      await recordScheduleUpdateWorkerSyncState(
+        status: 'sync_cancelled',
+        fields: {
+          'enabled': enabled,
+          'hasUserId': userId.isNotEmpty,
+          'hasPassword': encryptedPassword.isNotEmpty,
+        },
+      );
+      return;
+    }
+    await _scheduleImmediateTask(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
     );
-    await Workmanager().registerOneOffTask(
-      _immediateTaskUniqueName,
-      _taskName,
-      initialDelay: const Duration(minutes: 1),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
-      constraints: Constraints(networkType: NetworkType.connected),
-      inputData: {
-        'userId': userId,
-        'encryptedPassword': encryptedPassword,
-        'trigger': 'one_off',
-      },
+    await _scheduleNextDailyTask(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+    );
+    await _scheduleFallbackFromStoredStateIfNeeded(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
     );
     await recordScheduleUpdateWorkerSyncState(
       status: 'sync_registered',
-      fields: {'frequencyMinutes': _frequencyMinutes},
+      fields: {
+        'nextDailyAt': _nextDaily9amUtc().toIso8601String(),
+      },
     );
   }
 
@@ -122,6 +129,8 @@ class ScheduleUpdateWorker {
       WidgetsFlutterBinding.ensureInitialized();
       await _ensureLoggerReady();
       final trigger = ((inputData?['trigger'] ?? 'unknown').toString()).trim();
+      final logicalDateBjt =
+          ((inputData?['logicalDateBjt'] ?? '').toString()).trim();
       await recordScheduleUpdateWorkerState(
         status: 'started',
         trigger: trigger,
@@ -130,6 +139,7 @@ class ScheduleUpdateWorker {
       Future<bool> done({
         required String status,
         Map<String, Object?> fields = const {},
+        bool scheduleFollowUp = false,
       }) async {
         await recordScheduleUpdateWorkerState(
           status: status,
@@ -137,6 +147,14 @@ class ScheduleUpdateWorker {
           task: task,
           fields: fields,
         );
+        if (scheduleFollowUp) {
+          await _handleFollowUpScheduling(
+            trigger: trigger,
+            status: status,
+            logicalDateBjt: logicalDateBjt,
+            inputData: inputData,
+          );
+        }
         await AppLogger.I.flush();
         return true;
       }
@@ -157,7 +175,7 @@ class ScheduleUpdateWorker {
         return done(status: 'skip_unknown_task');
       }
       if (_isDeepNight()) {
-        return done(status: 'skip_deep_night');
+        return done(status: 'skip_deep_night', scheduleFollowUp: true);
       }
       final userId = ((inputData?['userId'] ?? '').toString()).trim();
       final encryptedPassword =
@@ -175,7 +193,7 @@ class ScheduleUpdateWorker {
           reason: 'missing_credentials',
           fields: {'trigger': trigger},
         );
-        return done(status: 'skip_missing_credentials');
+        return done(status: 'skip_missing_credentials', scheduleFollowUp: true);
       }
       final prefs = await SharedPreferences.getInstance();
       final currentAccount = (prefs.getString('account') ?? '').trim();
@@ -257,6 +275,7 @@ class ScheduleUpdateWorker {
           return done(
             status: 'load_network_failed',
             fields: {'error': e.toString()},
+            scheduleFollowUp: true,
           );
         }
       }
@@ -276,7 +295,10 @@ class ScheduleUpdateWorker {
           reason: 'invalid_schedule_data',
           fields: {'trigger': trigger},
         );
-        return done(status: 'skip_invalid_schedule_data');
+        return done(
+          status: 'skip_invalid_schedule_data',
+          scheduleFollowUp: true,
+        );
       }
       if (preferredTerm.isNotEmpty &&
           currentData.yearTerm!.trim() != preferredTerm) {
@@ -302,6 +324,7 @@ class ScheduleUpdateWorker {
             'preferredTerm': preferredTerm,
             'currentTerm': currentData.yearTerm!.trim(),
           },
+          scheduleFollowUp: true,
         );
       }
 
@@ -340,7 +363,11 @@ class ScheduleUpdateWorker {
           stackTrace: st,
           fields: {'trigger': trigger},
         );
-        return done(status: 'pipeline_failed', fields: {'error': e.toString()});
+        return done(
+          status: 'pipeline_failed',
+          fields: {'error': e.toString()},
+          scheduleFollowUp: true,
+        );
       }
 
       if (result.apiClosed || result.changes.isEmpty) {
@@ -351,6 +378,7 @@ class ScheduleUpdateWorker {
             'apiClosed': result.apiClosed,
             'changes': result.changes.length,
           },
+          scheduleFollowUp: true,
         );
       }
 
@@ -376,8 +404,260 @@ class ScheduleUpdateWorker {
       return done(
         status: 'changes_detected',
         fields: {'changes': result.changes.length},
+        scheduleFollowUp: true,
       );
     });
+  }
+
+  static Future<void> _cancelAllScheduledTasks() async {
+    await Workmanager().cancelByUniqueName(_taskName);
+    await Workmanager().cancelByUniqueName(_dailyTaskUniqueName);
+    await Workmanager().cancelByUniqueName(_fallbackTaskUniqueName);
+    await Workmanager().cancelByUniqueName(_immediateTaskUniqueName);
+  }
+
+  static Future<void> _scheduleImmediateTask({
+    required String userId,
+    required String encryptedPassword,
+  }) async {
+    await Workmanager().registerOneOffTask(
+      _immediateTaskUniqueName,
+      _taskName,
+      initialDelay: const Duration(minutes: 1),
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+      constraints: Constraints(networkType: NetworkType.connected),
+      inputData: {
+        'userId': userId,
+        'encryptedPassword': encryptedPassword,
+        'trigger': _triggerImmediate,
+        'logicalDateBjt': _logicalDateBjtForInstant(_nowUtc()),
+      },
+    );
+  }
+
+  static Future<void> _scheduleNextDailyTask({
+    required String userId,
+    required String encryptedPassword,
+  }) async {
+    final runAtUtc = _nextDaily9amUtc();
+    await Workmanager().registerOneOffTask(
+      _dailyTaskUniqueName,
+      _taskName,
+      initialDelay: _delayUntilUtc(runAtUtc),
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+      constraints: Constraints(networkType: NetworkType.connected),
+      inputData: {
+        'userId': userId,
+        'encryptedPassword': encryptedPassword,
+        'trigger': _triggerDaily9am,
+        'logicalDateBjt': _logicalDateBjtForInstant(runAtUtc),
+        'scheduledAtBjt': _toBjtWallClockString(runAtUtc),
+      },
+    );
+  }
+
+  static Future<void> _scheduleFallbackTask({
+    required String userId,
+    required String encryptedPassword,
+    required DateTime runAtUtc,
+  }) async {
+    await Workmanager().registerOneOffTask(
+      _fallbackTaskUniqueName,
+      _taskName,
+      initialDelay: _delayUntilUtc(runAtUtc),
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+      constraints: Constraints(networkType: NetworkType.connected),
+      inputData: {
+        'userId': userId,
+        'encryptedPassword': encryptedPassword,
+        'trigger': _triggerFallbackNoon,
+        'logicalDateBjt': _logicalDateBjtForInstant(runAtUtc),
+        'scheduledAtBjt': _toBjtWallClockString(runAtUtc),
+      },
+    );
+  }
+
+  static Future<void> _scheduleFallbackFromStoredStateIfNeeded({
+    required String userId,
+    required String encryptedPassword,
+  }) async {
+    final dailyState = await loadScheduleUpdateWorkerDailyState();
+    final today = _logicalDateBjtForInstant(_nowUtc());
+    if (dailyState == null || dailyState['logicalDateBjt'] != today) {
+      await Workmanager().cancelByUniqueName(_fallbackTaskUniqueName);
+      return;
+    }
+    final main = (dailyState['main'] as Map?)?.cast<String, dynamic>();
+    final retry = (dailyState['retry'] as Map?)?.cast<String, dynamic>();
+    final shouldRetry = (main?['retryEligible'] == true) &&
+        (main?['status'] == 'failed') &&
+        (retry?['attempted'] != true) &&
+        _canScheduleFallbackNoonForToday();
+    if (!shouldRetry) {
+      await Workmanager().cancelByUniqueName(_fallbackTaskUniqueName);
+      return;
+    }
+    final fallbackAtUtc = _todayNoonUtc();
+    await _scheduleFallbackTask(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+      runAtUtc: fallbackAtUtc,
+    );
+    await patchScheduleUpdateWorkerDailyState(
+      logicalDateBjt: today,
+      retry: {
+        'status': 'scheduled',
+        'scheduledFor': _toBjtWallClockString(fallbackAtUtc),
+        'attempted': false,
+      },
+    );
+  }
+
+  static Future<void> _handleFollowUpScheduling({
+    required String trigger,
+    required String status,
+    required String logicalDateBjt,
+    required Map<String, dynamic>? inputData,
+  }) async {
+    final userId = ((inputData?['userId'] ?? '').toString()).trim();
+    final encryptedPassword =
+        ((inputData?['encryptedPassword'] ?? '').toString()).trim();
+    if (userId.isEmpty || encryptedPassword.isEmpty) {
+      await _cancelAllScheduledTasks();
+      await clearScheduleUpdateWorkerDailyState();
+      return;
+    }
+    if (trigger == _triggerImmediate) {
+      return;
+    }
+    final logicalDate = logicalDateBjt.isNotEmpty
+        ? logicalDateBjt
+        : _logicalDateBjtForInstant(_nowUtc());
+    if (trigger == _triggerDaily9am) {
+      final success = _isSuccessfulStatus(status);
+      final retryEligible = _isRetryEligibleFailureStatus(status);
+      await patchScheduleUpdateWorkerDailyState(
+        logicalDateBjt: logicalDate,
+        main: {
+          'status': success
+              ? 'succeeded'
+              : retryEligible
+              ? 'failed'
+              : 'completed',
+          'finishedAt': _toBjtWallClockString(_nowUtc()),
+          'retryEligible': retryEligible,
+        },
+      );
+      await _scheduleNextDailyTask(
+        userId: userId,
+        encryptedPassword: encryptedPassword,
+      );
+      if (retryEligible &&
+          _isTodayBjt(logicalDate) &&
+          _canScheduleFallbackNoonForToday()) {
+        final fallbackAtUtc = _todayNoonUtc();
+        await _scheduleFallbackTask(
+          userId: userId,
+          encryptedPassword: encryptedPassword,
+          runAtUtc: fallbackAtUtc,
+        );
+        await patchScheduleUpdateWorkerDailyState(
+          logicalDateBjt: logicalDate,
+          retry: {
+            'status': 'scheduled',
+            'scheduledFor': _toBjtWallClockString(fallbackAtUtc),
+            'attempted': false,
+          },
+        );
+        return;
+      }
+      await Workmanager().cancelByUniqueName(_fallbackTaskUniqueName);
+      return;
+    }
+    if (trigger == _triggerFallbackNoon) {
+      await patchScheduleUpdateWorkerDailyState(
+        logicalDateBjt: logicalDate,
+        retry: {
+          'status': _isSuccessfulStatus(status) ? 'succeeded' : 'finished',
+          'finishedAt': _toBjtWallClockString(_nowUtc()),
+          'attempted': true,
+        },
+      );
+      await Workmanager().cancelByUniqueName(_fallbackTaskUniqueName);
+      await _scheduleNextDailyTask(
+        userId: userId,
+        encryptedPassword: encryptedPassword,
+      );
+    }
+  }
+
+  static bool _isSuccessfulStatus(String status) {
+    return status == 'api_closed' ||
+        status == 'no_changes' ||
+        status == 'changes_detected';
+  }
+
+  static bool _isRetryEligibleFailureStatus(String status) {
+    return status == 'load_network_failed' || status == 'pipeline_failed';
+  }
+
+  static bool _isTodayBjt(String logicalDateBjt) {
+    return logicalDateBjt == _logicalDateBjtForInstant(_nowUtc());
+  }
+
+  static bool _canScheduleFallbackNoonForToday() {
+    return _nowUtc().isBefore(_todayNoonUtc());
+  }
+
+  static Duration _delayUntilUtc(DateTime runAtUtc) {
+    final delay = runAtUtc.difference(_nowUtc());
+    return delay.isNegative ? Duration.zero : delay;
+  }
+
+  static DateTime _nextDaily9amUtc() {
+    final nowUtc = _nowUtc();
+    final todayBjt = _logicalDateBjtForInstant(nowUtc);
+    final today9Utc = _bjtClockToUtc(todayBjt, 9);
+    return nowUtc.isBefore(today9Utc)
+        ? today9Utc
+        : _bjtClockToUtc(
+            _logicalDateBjtForInstant(
+              nowUtc.add(const Duration(days: 1, hours: 8)),
+            ),
+            9,
+          );
+  }
+
+  static DateTime _todayNoonUtc() {
+    return _bjtClockToUtc(_logicalDateBjtForInstant(_nowUtc()), 12);
+  }
+
+  static DateTime _nowUtc() {
+    return DateTime.now().toUtc();
+  }
+
+  static String _logicalDateBjtForInstant(DateTime instantUtc) {
+    final bjt = instantUtc.toUtc().add(const Duration(hours: 8));
+    final year = bjt.year.toString().padLeft(4, '0');
+    final month = bjt.month.toString().padLeft(2, '0');
+    final day = bjt.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  static DateTime _bjtClockToUtc(String logicalDateBjt, int hour) {
+    return DateTime.parse('${logicalDateBjt}T${hour.toString().padLeft(2, '0')}:00:00$_timeZoneOffset')
+        .toUtc();
+  }
+
+  static String _toBjtWallClockString(DateTime instantUtc) {
+    final bjt = instantUtc.toUtc().add(const Duration(hours: 8));
+    final year = bjt.year.toString().padLeft(4, '0');
+    final month = bjt.month.toString().padLeft(2, '0');
+    final day = bjt.day.toString().padLeft(2, '0');
+    final hour = bjt.hour.toString().padLeft(2, '0');
+    final minute = bjt.minute.toString().padLeft(2, '0');
+    final second = bjt.second.toString().padLeft(2, '0');
+    return '$year-$month-$day''T$hour:$minute:$second$_timeZoneOffset';
   }
 
   static Future<void> _ensureLoggerReady() async {
