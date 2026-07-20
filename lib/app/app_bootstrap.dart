@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cqut_helper/manager/preview_cache_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
@@ -29,5 +28,4 @@ Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
 
   runApp(rootBuilder());
   unawaited(ScheduleUpdateWorker.syncFromPreferences());
-  unawaited(PreviewCacheManager.cleanupIfNeeded());
 }

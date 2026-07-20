@@ -32,7 +32,6 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  archive: ^4.0.7
   crypto: ^3.0.6
   dio: ^5.9.0
   cookie_jar: ^4.0.8
@@ -50,11 +49,6 @@ dependencies:
   path_provider: ^2.1.5
   workmanager: ^0.6.0
   flutter_local_notifications: ^19.0.0
-  pdfx: ^2.9.2
-  video_player: ^2.10.1
-  chewie: ^1.13.0
-  audioplayers: ^6.6.0
-  webview_flutter: ^4.13.1
   image_picker: ^1.2.0
   flutter_image_compress: ^2.4.0
 
