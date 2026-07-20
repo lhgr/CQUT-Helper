@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 
 class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   static const double _appBarHeight = 76;
+
   final bool loading;
   final List<String>? weekList;
   final int currentWeekIndex;
   final ScheduleData? currentScheduleData;
   final bool? nowInTeachingWeek;
   final String? nowStatusLabel;
-  final VoidCallback onNoticeRecords;
   final VoidCallback onRefresh;
   final VoidCallback onSettings;
   final VoidCallback onWeekPicker;
@@ -24,7 +24,6 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.currentScheduleData,
     this.nowInTeachingWeek,
     this.nowStatusLabel,
-    required this.onNoticeRecords,
     required this.onRefresh,
     required this.onSettings,
     required this.onWeekPicker,
@@ -40,6 +39,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     const double sideSlotWidth = 116;
     const double sideHorizontalPadding = 12;
     const double pickerButtonGap = 2;
+
     Widget buildPickerButton({
       required String label,
       required VoidCallback onTap,
@@ -79,6 +79,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
         : (weekList != null && currentWeekIndex < weekList!.length)
         ? "第${weekList![currentWeekIndex]}周"
         : "课表";
+
     return AppBar(
       toolbarHeight: _appBarHeight,
       titleSpacing: 0,
@@ -119,17 +120,6 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                IconButton(
-                  onPressed: onNoticeRecords,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 36,
-                    height: 36,
-                  ),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.notifications_outlined),
-                  tooltip: '调课记录',
-                ),
                 IconButton(
                   onPressed: loading ? null : onRefresh,
                   constraints: const BoxConstraints.tightFor(
