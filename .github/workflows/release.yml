@@ -30,6 +30,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Check tag matches pubspec version
         env:
@@ -117,44 +119,70 @@ jobs:
           PY
 
       - name: Validate Build Number Increment
-        uses: actions/github-script@v7
         env:
           CURRENT_BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const name = "LAST_SUCCESS_BUILD_NUMBER";
-            const current = Number(process.env.CURRENT_BUILD_NUMBER);
-            if (!Number.isFinite(current)) {
-              core.setFailed(`Invalid current build number: ${process.env.CURRENT_BUILD_NUMBER}`);
-              return;
-            }
+          DISPATCH_TAG_NAME: ${{ github.event.inputs.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
 
-            let previous = null;
-            try {
-              const res = await github.rest.actions.getRepoVariable({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name
-              });
-              previous = Number(res.data.value);
-            } catch (error) {
-              if (error.status !== 404) {
-                throw error;
-              }
-            }
+          current_raw = os.environ.get("CURRENT_BUILD_NUMBER", "").strip()
+          try:
+            current = int(current_raw)
+          except ValueError:
+            print(f"::error ::Invalid current build number: {current_raw}")
+            raise SystemExit(1)
 
-            if (previous !== null && !Number.isFinite(previous)) {
-              core.setFailed(`Stored ${name} is invalid: ${previous}`);
-              return;
-            }
+          ref_type = os.environ.get("GITHUB_REF_TYPE", "").strip()
+          ref_name = os.environ.get("GITHUB_REF_NAME", "").strip()
+          dispatch_tag = os.environ.get("DISPATCH_TAG_NAME", "").strip()
+          current_tag = ref_name if ref_type == "tag" else dispatch_tag
 
-            if (previous !== null && Number.isFinite(previous) && current <= previous) {
-              core.setFailed(`Build number must be strictly increasing. current=${current}, previous=${previous}`);
-              return;
-            }
+          tags_output = subprocess.check_output(
+            ["git", "tag", "--list", "v*", "--sort=-creatordate"],
+            text=True,
+          )
+          tags = [line.strip() for line in tags_output.splitlines() if line.strip()]
 
-            core.info(`Build number check passed. current=${current}, previous=${previous ?? "none"}`);
+          max_tag = None
+          max_build_number = None
+          version_pattern = re.compile(r"^version:\s*([0-9A-Za-z\.\-]+)\+(\d+)\s*$", re.M)
+
+          for tag in tags:
+            if current_tag and tag == current_tag:
+              continue
+            try:
+              content = subprocess.check_output(
+                ["git", "show", f"{tag}:pubspec.yaml"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+              )
+            except subprocess.CalledProcessError:
+              continue
+
+            match = version_pattern.search(content)
+            if not match:
+              continue
+
+            build_number = int(match.group(2))
+            if max_build_number is None or build_number > max_build_number:
+              max_build_number = build_number
+              max_tag = tag
+
+          if max_build_number is not None and current <= max_build_number:
+            print(
+              "::error ::Build number must be strictly increasing. "
+              f"current={current}, previous_max={max_build_number} (tag {max_tag})"
+            )
+            raise SystemExit(1)
+
+          print(
+            "Build number check passed. "
+            f"current={current}, previous_max={max_build_number if max_build_number is not None else 'none'}"
+          )
+          PY
         
       - name: Build Fat APK (Universal)
         run: |
