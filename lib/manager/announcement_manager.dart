@@ -90,6 +90,7 @@ class AnnouncementManager {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
+      case DioExceptionType.transformTimeout:
         return const AnnouncementFailure(
           type: AnnouncementFailureType.user,
           message: '网络超时，请检查网络后重试',

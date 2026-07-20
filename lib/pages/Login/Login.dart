@@ -1,6 +1,6 @@
 import 'package:cqut_helper/api/auth/auth_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,6 +22,7 @@ class _LoginPageState extends State<LoginPage> {
   String? _savedAccount;
 
   final AuthApi _authApi = AuthApi();
+  final CredentialStore _credentialStore = CredentialStore();
 
   @override
   void initState() {
@@ -42,7 +43,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _loadSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     final account = prefs.getString('account');
-    final encryptedPwd = prefs.getString('encrypted_password');
+    final encryptedPwd = await _credentialStore.readEncryptedPassword();
 
     if (account != null && account.isNotEmpty) {
       if (mounted) {
@@ -93,9 +94,6 @@ class _LoginPageState extends State<LoginPage> {
         await _authApi.login(account: account, password: password);
       }
 
-      // 登录成功，保存凭证
-      await FirebaseAnalytics.instance.logLogin(loginMethod: 'password');
-
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('account', account);
       await prefs.setInt(
@@ -103,10 +101,10 @@ class _LoginPageState extends State<LoginPage> {
         DateTime.now().millisecondsSinceEpoch,
       );
       if (useSavedPassword) {
-        await prefs.setString('encrypted_password', _savedEncryptedPassword!);
+        await _credentialStore.writeEncryptedPassword(_savedEncryptedPassword!);
       } else {
         final encrypted = _authApi.encryptPassword(password);
-        await prefs.setString('encrypted_password', encrypted);
+        await _credentialStore.writeEncryptedPassword(encrypted);
       }
 
       if (mounted) {
@@ -236,9 +234,6 @@ class _LoginPageState extends State<LoginPage> {
                       const Spacer(),
                       TextButton(
                         onPressed: () async {
-                          await FirebaseAnalytics.instance.logEvent(
-                            name: 'forgot_password_click',
-                          );
                           if (!context.mounted) return;
                           Navigator.of(context).push(
                             MaterialPageRoute(

@@ -8,9 +8,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:cqut_helper/manager/preview_cache_manager.dart';
-
-enum AppCacheType { timetable, userInfo, imageCache, favorites, logs, preview }
+enum AppCacheType { timetable, userInfo, imageCache, logs }
 
 @immutable
 class AppCacheUsage {
@@ -32,18 +30,14 @@ class AppCacheUsage {
 class CacheCleanupManager {
   static final ValueNotifier<int> timetableCacheEpoch = ValueNotifier(0);
   static final ValueNotifier<int> userInfoCacheEpoch = ValueNotifier(0);
-  static final ValueNotifier<int> favoritesCacheEpoch = ValueNotifier(0);
   static final ValueNotifier<int> imageCacheEpoch = ValueNotifier(0);
   static final ValueNotifier<int> logCacheEpoch = ValueNotifier(0);
-  static final ValueNotifier<int> previewCacheEpoch = ValueNotifier(0);
 
   static const Map<AppCacheType, String> _titles = {
     AppCacheType.timetable: '课表缓存',
     AppCacheType.userInfo: '个人信息缓存',
     AppCacheType.imageCache: '图片缓存',
-    AppCacheType.favorites: '收藏缓存',
     AppCacheType.logs: '日志缓存',
-    AppCacheType.preview: '预览缓存',
   };
 
   static Future<List<AppCacheUsage>> getUsages() async {
@@ -56,14 +50,8 @@ class CacheCleanupManager {
     final userInfoKeys = keys.where((k) => k.startsWith('user_info_'));
     final userInfoBytes = _estimatePrefsBytes(prefs, userInfoKeys);
 
-    final favoritesKeys = keys.where(
-      (k) => k == 'repo_favorites_guest' || k.startsWith('repo_favorites_'),
-    );
-    final favoritesBytes = _estimatePrefsBytes(prefs, favoritesKeys);
-
     final imageCacheBytes = await _getImageCacheBytes();
     final logBytes = await AppLogger.I.getLogBytes();
-    final previewBytes = await PreviewCacheManager.getCacheSize();
 
     return [
       AppCacheUsage(
@@ -85,20 +73,6 @@ class CacheCleanupManager {
         title: titleOf(AppCacheType.imageCache),
         description: '包含网络图片的磁盘缓存与内存缓存',
         bytes: imageCacheBytes,
-        supported: true,
-      ),
-      AppCacheUsage(
-        type: AppCacheType.preview,
-        title: titleOf(AppCacheType.preview),
-        description: '包含资料预览生成的临时文件',
-        bytes: previewBytes,
-        supported: true,
-      ),
-      AppCacheUsage(
-        type: AppCacheType.favorites,
-        title: titleOf(AppCacheType.favorites),
-        description: '包含资料页的本地收藏列表数据',
-        bytes: favoritesBytes,
         supported: true,
       ),
       AppCacheUsage(
@@ -138,20 +112,6 @@ class CacheCleanupManager {
       userInfoCacheEpoch.value = userInfoCacheEpoch.value + 1;
     }
 
-    if (types.contains(AppCacheType.favorites)) {
-      final toRemove = keys
-          .where(
-            (k) =>
-                k == 'repo_favorites_guest' || k.startsWith('repo_favorites_'),
-          )
-          .toList(growable: false);
-      for (final k in toRemove) {
-        await prefs.remove(k);
-      }
-      clearedCounts[AppCacheType.favorites] = toRemove.length;
-      favoritesCacheEpoch.value = favoritesCacheEpoch.value + 1;
-    }
-
     if (types.contains(AppCacheType.imageCache)) {
       await DefaultCacheManager().emptyCache();
       PaintingBinding.instance.imageCache.clear();
@@ -173,12 +133,6 @@ class CacheCleanupManager {
       final removed = await AppLogger.I.clearLogFiles();
       clearedCounts[AppCacheType.logs] = removed;
       logCacheEpoch.value = logCacheEpoch.value + 1;
-    }
-
-    if (types.contains(AppCacheType.preview)) {
-      await PreviewCacheManager.clearCache();
-      clearedCounts[AppCacheType.preview] = 1;
-      previewCacheEpoch.value = previewCacheEpoch.value + 1;
     }
 
     try {
@@ -220,9 +174,7 @@ class CacheCleanupManager {
   }
 
   static int _estimateValueBytes(Object value) {
-    if (value is String) {
-      return utf8.encode(value).length;
-    }
+    if (value is String) return utf8.encode(value).length;
     if (value is bool) return 1;
     if (value is int) return 8;
     if (value is double) return 8;

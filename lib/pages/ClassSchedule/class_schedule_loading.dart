@@ -50,9 +50,8 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
   }
 
   Future<void> _runSilentFallbackSync(ScheduleData currentData) async {
-    final silentChanges = await _controller.silentCheckRecentWeeksForChangesDetailed(
-      currentData,
-    );
+    final silentChanges = await _controller
+        .silentCheckRecentWeeksForChangesDetailed(currentData);
     if (!mounted || silentChanges.isEmpty) return;
     _syncCurrentWeekFromCache();
   }

@@ -1,4 +1,5 @@
 import 'package:cqut_helper/api/auth/auth_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,7 +18,7 @@ Future<void> showMineLogoutDialog(BuildContext context) async {
           onPressed: () async {
             final prefs = await SharedPreferences.getInstance();
             await prefs.remove('account');
-            await prefs.remove('encrypted_password');
+            await CredentialStore().clearEncryptedPassword();
             await AuthApi().resetLoginContext();
             if (context.mounted) {
               Navigator.pop(context);

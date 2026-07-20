@@ -115,6 +115,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
+        putExtra(CourseListWidgetService.EXTRA_ADD_FIRST_ITEM_TOP_SPACING, true)
         data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
       }
       views.setRemoteAdapter(R.id.lv_course, svcIntent)

@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 
@@ -47,6 +47,8 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   bool _noticeConfigExpanded = false;
   bool confirmDialogOpen = false;
   bool _allowPop = false;
+  bool _checkingSetup = false;
+  ScheduleBackgroundPollHealthSnapshot? _healthSnapshot;
 
   late bool _baselineShowWeekend;
   late bool _baselineTimeInfoEnabled;
@@ -82,6 +84,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     _baselineTimeInfoEnabled = timeInfoEnabled;
     _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
     _baselineNoticeApiBaseUrl = noticeApiBaseUrl;
+    unawaited(_loadHealthSnapshot());
   }
 
   @override
@@ -106,6 +109,14 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       return '请输入合法域名，例如 https://mydomain.com';
     }
     return null;
+  }
+
+  Future<void> _loadHealthSnapshot() async {
+    final snapshot = await ScheduleUpdateWorker.loadHealthSnapshot();
+    if (!mounted) return;
+    setState(() {
+      _healthSnapshot = snapshot;
+    });
   }
 
   Future<void> _testConnectivity() async {
@@ -135,23 +146,25 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     });
   }
 
-  Future<bool> _ensureBackgroundPollingPermissions(BuildContext context) async {
-    if (!context.mounted) return false;
+  Future<bool> _runBackgroundPollingSetupFlow() async {
+    if (!mounted) return false;
     final proceed =
         await showDialog<bool>(
           context: context,
           builder: (context) {
             return AlertDialog(
-              title: Text('需要忽略电池优化'),
-              content: Text('后台轮询需要忽略电池优化，请先授权后再开启。'),
+              title: const Text('启用后台定时轮询'),
+              content: const Text(
+                '启用后会在后台定时检查调课通知。为提升稳定性，建议授予通知权限、忽略电池优化，并在系统中允许应用自启动。',
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: Text('取消'),
+                  child: const Text('暂不开启'),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: Text('去设置'),
+                  child: const Text('继续开启'),
                 ),
               ],
             );
@@ -159,106 +172,71 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         ) ??
         false;
     if (!proceed) return false;
-    final opened =
-        await AndroidBackgroundRestrictions.requestIgnoreBatteryOptimizations();
-    if (!opened) {
-      await AndroidBackgroundRestrictions.openBatteryOptimizationSettings();
-    }
-    if (!context.mounted) return false;
-    final confirmed =
-        await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: Text('授权确认'),
-              content: Text('完成忽略电池优化后，点击“已完成”。'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: Text('已完成'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-    if (!confirmed) return false;
 
-    if (!context.mounted) return false;
-    final openAutoStart =
-        await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: Text('开启自启动'),
-              content: Text('请在系统页面中允许应用自启动，以提升后台轮询稳定性。'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: Text('去开启'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-    if (!openAutoStart) return false;
+    final granted = await LocalNotifications.ensurePermission();
+    if (!mounted) return false;
+    if (!granted) {
+      setState(() {
+        _sheetNoticeMessage = '未授予系统通知权限，无法及时接收调课变更提醒。';
+      });
+      return false;
+    }
+
+    final ignored =
+        await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
+    if (ignored != true) {
+      final opened =
+          await AndroidBackgroundRestrictions.requestIgnoreBatteryOptimizations();
+      if (!opened) {
+        await AndroidBackgroundRestrictions.openBatteryOptimizationSettings();
+      }
+    }
+    if (!mounted) return false;
+
     await AndroidBackgroundRestrictions.openAutoStartSettings();
-    if (!context.mounted) return false;
-    final done =
-        await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: Text('确认已开启'),
-              content: Text('完成自启动授权后，点击“已开启”。'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: Text('已开启'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-    return done;
+    if (!mounted) return false;
+
+    setState(() {
+      _sheetNoticeMessage = ignored == true
+          ? '已检测到忽略电池优化；已尝试打开自启动设置，后续会根据后台运行情况自动判断稳定性。'
+          : '已尝试打开电池优化与自启动相关设置；后台轮询仍可开启，实际稳定性以后续后台运行记录为准。';
+    });
+    return true;
   }
 
   Future<void> _onBackgroundPollingSwitchChanged(bool value) async {
-    if (value && !backgroundPollingEnabled) {
-      final ok = await _ensureBackgroundPollingPermissions(context);
-      if (!ok) return;
-      final granted = await LocalNotifications.ensurePermission();
+    if (!value) {
+      setState(() {
+        backgroundPollingEnabled = false;
+        _noticeConfigExpanded = false;
+        _sheetNoticeMessage = '';
+      });
+      return;
+    }
+
+    if (backgroundPollingEnabled || _checkingSetup) return;
+    setState(() {
+      _checkingSetup = true;
+    });
+    try {
+      final ok = await _runBackgroundPollingSetupFlow();
       if (!mounted) return;
-      if (!granted) {
+      if (!ok) {
         setState(() {
-          _sheetNoticeMessage = '未授予系统通知权限，检测到调课变更时可能无法弹出系统通知';
+          backgroundPollingEnabled = false;
         });
-      } else {
+        return;
+      }
+      setState(() {
+        backgroundPollingEnabled = true;
+      });
+    } finally {
+      if (mounted) {
         setState(() {
-          _sheetNoticeMessage = '';
+          _checkingSetup = false;
         });
       }
     }
-    setState(() {
-      backgroundPollingEnabled = value;
-      if (!value) {
-        _noticeConfigExpanded = false;
-      }
-    });
   }
 
   Future<bool> saveSettings() async {
@@ -270,14 +248,13 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       });
       return false;
     }
+
     final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
       noticeApiBaseUrl,
     );
-    unawaited(
-      FirebaseAnalytics.instance.logEvent(
-        name: 'schedule_toggle_show_weekend',
-        parameters: {'value': showWeekend ? 1 : 0},
-      ),
+
+    await ScheduleUpdateWorker.markEnabledAtIfNeeded(
+      enabled: backgroundPollingEnabled,
     );
 
     await widget.onSave(
@@ -294,8 +271,8 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
         noticeApiBaseUrl = normalizedBaseUrl;
         _baselineNoticeApiBaseUrl = normalizedBaseUrl;
-        _sheetNoticeMessage = '';
       });
+      unawaited(_loadHealthSnapshot());
     }
 
     return true;
@@ -414,7 +391,11 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                   ),
                   ListTile(
                     title: Text('启用后台定时轮询'),
-                    subtitle: Text('后台定时检查调课通知并更新受影响周课表'),
+                    subtitle: Text(
+                      _healthSnapshot == null
+                          ? '后台定时检查调课通知并更新受影响周课表'
+                          : '${_healthSnapshot!.title} · ${_healthSnapshot!.detail}',
+                    ),
                     onTap: () {
                       if (!backgroundPollingEnabled) return;
                       setState(() {
@@ -433,7 +414,9 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                         if (backgroundPollingEnabled) const SizedBox(width: 10),
                         Switch(
                           value: backgroundPollingEnabled,
-                          onChanged: _onBackgroundPollingSwitchChanged,
+                          onChanged: _checkingSetup
+                              ? null
+                              : _onBackgroundPollingSwitchChanged,
                         ),
                       ],
                     ),
@@ -502,13 +485,15 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                         SizedBox(width: 12),
                         Expanded(
                           child: FilledButton(
-                            onPressed: () async {
-                              final ok = await saveSettings();
-                              if (!ok) return;
-                              if (!context.mounted) return;
-                              _requestClose();
-                            },
-                            child: Text('保存'),
+                            onPressed: _checkingSetup
+                                ? null
+                                : () async {
+                                    final ok = await saveSettings();
+                                    if (!ok) return;
+                                    if (!context.mounted) return;
+                                    _requestClose();
+                                  },
+                            child: Text(_checkingSetup ? '检查中...' : '保存'),
                           ),
                         ),
                       ],

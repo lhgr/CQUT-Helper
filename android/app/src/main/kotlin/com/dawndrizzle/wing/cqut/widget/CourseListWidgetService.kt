@@ -11,11 +11,14 @@ class CourseListWidgetService : RemoteViewsService() {
   override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
     val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
     val dayOffset = intent.getIntExtra(EXTRA_DAY_OFFSET, 0)
-    return CourseListRemoteViewsFactory(applicationContext, appWidgetId, dayOffset)
+    val addFirstItemTopSpacing = intent.getBooleanExtra(EXTRA_ADD_FIRST_ITEM_TOP_SPACING, false)
+    return CourseListRemoteViewsFactory(applicationContext, appWidgetId, dayOffset, addFirstItemTopSpacing)
   }
 
   companion object {
     const val EXTRA_DAY_OFFSET = "dayOffset"
+    const val EXTRA_ADD_FIRST_ITEM_TOP_SPACING = "addFirstItemTopSpacing"
+    const val FIRST_ITEM_TOP_SPACING_DP = 8
   }
 }
 
@@ -23,6 +26,7 @@ private class CourseListRemoteViewsFactory(
   private val context: Context,
   private val appWidgetId: Int,
   private val dayOffset: Int,
+  private val addFirstItemTopSpacing: Boolean,
 ) : RemoteViewsService.RemoteViewsFactory {
   private var items: List<TodayWidgetData.CourseItem> = emptyList()
 
@@ -54,6 +58,13 @@ private class CourseListRemoteViewsFactory(
     views.setTextColor(R.id.tv_classroom, palette.secondaryText)
     views.setTextColor(R.id.tv_teacher, palette.secondaryText)
     views.setTextColor(R.id.tv_periods, palette.secondaryText)
+    val topSpacingPx =
+      if (addFirstItemTopSpacing && position == 0) {
+        (CourseListWidgetService.FIRST_ITEM_TOP_SPACING_DP * context.resources.displayMetrics.density).toInt()
+      } else {
+        0
+      }
+    views.setViewPadding(R.id.ll_item, 0, topSpacingPx, 0, 0)
 
     if (item == null) {
       views.setTextViewText(R.id.tv_course_name, "")

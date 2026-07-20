@@ -55,9 +55,9 @@ android/key.properties
 workers
 .env
 docs
-test
 
 FastAPI/__pycache__/
 
 APIs/
-.claude/settings.local.json
+
+.claude/

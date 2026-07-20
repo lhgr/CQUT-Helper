@@ -36,11 +36,10 @@ class LocalNotifications {
       },
     );
 
-    final android =
-        _plugin
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (android != null) {
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
@@ -73,11 +72,10 @@ class LocalNotifications {
   static Future<bool> ensurePermission() async {
     if (!Platform.isAndroid) return false;
     await initialize();
-    final android =
-        _plugin
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (android == null) return false;
     final ok = await android.requestNotificationsPermission();
     return ok ?? false;

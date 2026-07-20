@@ -3,7 +3,6 @@ import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Main/Main.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -50,12 +49,6 @@ class MyApp extends StatelessWidget {
               title: 'CQUT Helper',
               initialRoute: "/",
               routes: getRootRoutes(),
-              // 添加 Firebase Analytics 监听
-              navigatorObservers: [
-                FirebaseAnalyticsObserver(
-                  analytics: FirebaseAnalytics.instance,
-                ),
-              ],
               locale: const Locale('zh', 'CN'),
               supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
               localizationsDelegates: const [

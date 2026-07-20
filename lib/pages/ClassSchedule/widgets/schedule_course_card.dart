@@ -33,11 +33,8 @@ class ScheduleCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final card = LayoutBuilder(
       builder: (context, constraints) {
-        final compactWidth = constraints.maxWidth < 56;
         final tinyWidth = constraints.maxWidth < 42;
-        final compactHeight = constraints.maxHeight < 46;
-        final hideTeacher = compactWidth || compactHeight;
-        final hideAddress = tinyWidth || constraints.maxHeight < 34;
+        final compactWidth = constraints.maxWidth < 56;
         final showBadge =
             showConflictBadge &&
             conflictCount > 0 &&
@@ -46,6 +43,23 @@ class ScheduleCourseCard extends StatelessWidget {
         final edgeInsets = tinyWidth
             ? const EdgeInsets.symmetric(horizontal: 1, vertical: 1)
             : const EdgeInsets.all(2);
+        final lineBudget = _lineBudgetForHeight(constraints.maxHeight);
+
+        final titleText = (event.eventName ?? '').trim();
+        final addressText = (event.address ?? '').trim();
+        final teacherText = (event.memberName ?? '').trim();
+
+        final titleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontSize: tinyWidth ? 9 : 10,
+          fontWeight: FontWeight.bold,
+          color: titleColor,
+          height: 1.15,
+        );
+        final detailStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontSize: tinyWidth ? 8 : 9,
+          color: descriptionColor,
+          height: 1.15,
+        );
 
         return Container(
           margin: const EdgeInsets.all(1),
@@ -68,45 +82,22 @@ class ScheduleCourseCard extends StatelessWidget {
             clipBehavior: Clip.hardEdge,
             children: [
               if (showContent)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      event.eventName ?? "",
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontSize: tinyWidth ? 9 : 10,
-                        fontWeight: FontWeight.bold,
-                        color: titleColor,
+                Padding(
+                  padding: EdgeInsets.only(right: showBadge ? 18 : 0),
+                  child: SizedBox.expand(
+                    child: Text.rich(
+                      _buildContentSpan(
+                        title: titleText,
+                        address: addressText,
+                        teacher: teacherText,
+                        titleStyle: titleStyle,
+                        detailStyle: detailStyle,
                       ),
-                      maxLines: tinyWidth ? 1 : (compactWidth ? 2 : 3),
+                      softWrap: true,
+                      maxLines: lineBudget,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (!hideAddress) const SizedBox(height: 2),
-                    if (!hideAddress)
-                      Flexible(
-                        child: Text(
-                          "@${event.address}",
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                fontSize: tinyWidth ? 8 : 9,
-                                color: descriptionColor,
-                              ),
-                          maxLines: compactWidth ? 1 : 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    if (!hideTeacher) const SizedBox(height: 2),
-                    if (!hideTeacher)
-                      Text(
-                        event.memberName ?? "",
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontSize: tinyWidth ? 8 : 9,
-                          color: descriptionColor,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                  ],
+                  ),
                 ),
               if (showBadge)
                 Positioned(
@@ -124,7 +115,7 @@ class ScheduleCourseCard extends StatelessWidget {
                     child: Text(
                       '+$conflictCount',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontSize: 9,
+                        fontSize: compactWidth ? 8 : 9,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
                       ),
@@ -138,5 +129,37 @@ class ScheduleCourseCard extends StatelessWidget {
     );
     if (!enableTap) return card;
     return GestureDetector(onTap: onTap, child: card);
+  }
+
+  TextSpan _buildContentSpan({
+    required String title,
+    required String address,
+    required String teacher,
+    required TextStyle? titleStyle,
+    required TextStyle? detailStyle,
+  }) {
+    final children = <InlineSpan>[
+      TextSpan(text: title.isEmpty ? '-' : title, style: titleStyle),
+    ];
+
+    if (address.isNotEmpty) {
+      children.add(TextSpan(text: '\n@$address', style: detailStyle));
+    }
+
+    if (teacher.isNotEmpty) {
+      children.add(TextSpan(text: '\n$teacher', style: detailStyle));
+    }
+
+    return TextSpan(children: children);
+  }
+
+  int _lineBudgetForHeight(double height) {
+    if (height < 28) return 1;
+    if (height < 42) return 2;
+    if (height < 58) return 3;
+    if (height < 74) return 4;
+    if (height < 90) return 5;
+    if (height < 108) return 6;
+    return 7;
   }
 }

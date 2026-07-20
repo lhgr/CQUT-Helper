@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_notice.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
@@ -27,6 +28,7 @@ class ScheduleNoticeRefreshResult {
 
 class ScheduleNoticeRefreshPipeline {
   final ScheduleApi scheduleApi;
+  final CredentialStore credentialStore;
   final Future<void> Function(String weekNum, String yearTerm) refreshWeek;
   final Future<SharedPreferences> Function() prefsProvider;
   final DateTime Function() nowProvider;
@@ -34,9 +36,11 @@ class ScheduleNoticeRefreshPipeline {
   ScheduleNoticeRefreshPipeline({
     required this.refreshWeek,
     ScheduleApi? scheduleApi,
+    CredentialStore? credentialStore,
     Future<SharedPreferences> Function()? prefsProvider,
     DateTime Function()? nowProvider,
   }) : scheduleApi = scheduleApi ?? ScheduleApi(),
+       credentialStore = credentialStore ?? CredentialStore(),
        prefsProvider = prefsProvider ?? SharedPreferences.getInstance,
        nowProvider = nowProvider ?? DateTime.now;
 
@@ -80,7 +84,8 @@ class ScheduleNoticeRefreshPipeline {
 
     final prefs = await prefsProvider();
     final userId = (prefs.getString('account') ?? '').trim();
-    final encryptedPassword = (prefs.getString('encrypted_password') ?? '').trim();
+    final encryptedPassword = ((await credentialStore.readEncryptedPassword()) ?? '')
+        .trim();
     if (userId.isEmpty || encryptedPassword.isEmpty) {
       return const ScheduleNoticeRefreshResult(
         changes: <ScheduleWeekChange>[],

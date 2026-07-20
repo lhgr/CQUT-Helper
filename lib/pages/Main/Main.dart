@@ -1,12 +1,11 @@
-import 'package:cqut_helper/manager/update_manager.dart';
 import 'package:cqut_helper/manager/announcement_manager.dart';
-import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
-import 'package:cqut_helper/pages/Data/Data.dart';
+import 'package:cqut_helper/manager/update_manager.dart';
+import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
+import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,6 +19,25 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   bool _isCheckingLogin = true;
   int _lastOpenFromNotificationToken = 0;
+  int _currentIndex = 1;
+
+  final List<Map<String, dynamic>> _tabList = const [
+    {
+      'icon': Icons.today_outlined,
+      'active_icon': Icons.today,
+      'text': '今日',
+    },
+    {
+      'icon': Icons.calendar_today_outlined,
+      'active_icon': Icons.calendar_today,
+      'text': '课表',
+    },
+    {
+      'icon': Icons.person_outline,
+      'active_icon': Icons.person,
+      'text': '我的',
+    },
+  ];
 
   @override
   void initState() {
@@ -64,25 +82,24 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       if (mounted) {
         Navigator.of(context).pushReplacementNamed('/login');
       }
-    } else {
-      if (mounted) {
-        setState(() {
-          _isCheckingLogin = false;
-        });
-        // 登录成功后，自动检查更新
-        // 使用 addPostFrameCallback 确保在当前帧绘制完成后执行，避免构建冲突
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          UpdateManager().checkUpdate(context);
-          AnnouncementManager().checkAndShow(context);
-          ScheduleUpdateWorker.syncFromPreferences();
-          _markActive();
-          final open = await LocalNotifications.consumeOpenScheduleUpdateFlag();
-          if (open) {
-            _openScheduleAndChanges();
-          }
-        });
-      }
+      return;
     }
+
+    if (!mounted) return;
+    setState(() {
+      _isCheckingLogin = false;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      UpdateManager().checkUpdate(context);
+      AnnouncementManager().checkAndShow(context);
+      ScheduleUpdateWorker.syncFromPreferences();
+      _markActive();
+      final open = await LocalNotifications.consumeOpenScheduleUpdateFlag();
+      if (open) {
+        _openScheduleAndChanges();
+      }
+    });
   }
 
   void _onOpenFromSystemNotification() {
@@ -104,37 +121,28 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     });
   }
 
-  final List<Map<String, dynamic>> _tabList = [
-    {"icon": Icons.folder_outlined, "active_icon": Icons.folder, "text": "资料"},
-    {
-      "icon": Icons.calendar_today_outlined,
-      "active_icon": Icons.calendar_today,
-      "text": "课表",
-    },
-    {"icon": Icons.person_outline, "active_icon": Icons.person, "text": "我的"},
-  ];
-
-  int _currentIndex = 1;
-
   List<NavigationDestination> _getDestinations() {
     return _tabList.map((item) {
       return NavigationDestination(
-        icon: Icon(item["icon"]),
-        selectedIcon: Icon(item["active_icon"]),
-        label: item["text"],
+        icon: Icon(item['icon'] as IconData),
+        selectedIcon: Icon(item['active_icon'] as IconData),
+        label: item['text'] as String,
       );
-    }).toList();
+    }).toList(growable: false);
   }
 
   List<Widget> _getStackChildren() {
-    return const [DataView(), ClassscheduleView(), MineView()];
+    return const [TodayScheduleView(), ClassscheduleView(), MineView()];
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isCheckingLogin) {
-      return Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
+
     return Scaffold(
       body: SafeArea(
         child: IndexedStack(
@@ -143,11 +151,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        onDestinationSelected: (int index) async {
-          await FirebaseAnalytics.instance.logEvent(
-            name: 'tab_switch',
-            parameters: {'tab_name': _tabList[index]['text']},
-          );
+        onDestinationSelected: (index) {
           setState(() {
             _currentIndex = index;
           });
