@@ -60,3 +60,4 @@ test
 FastAPI/__pycache__/
 
 APIs/
+.claude/settings.local.json

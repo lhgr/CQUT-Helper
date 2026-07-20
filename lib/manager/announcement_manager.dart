@@ -82,6 +82,11 @@ class AnnouncementManager {
     }
 
     switch (e.type) {
+      case DioExceptionType.transformTimeout:
+        return const AnnouncementFailure(
+          type: AnnouncementFailureType.user,
+          message: '数据解析超时，请稍后重试',
+        );
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:

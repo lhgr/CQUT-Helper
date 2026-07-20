@@ -5,11 +5,8 @@ import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-
-import '../firebase_options.dart';
 
 Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
   final logDate = DateTime.now().toIso8601String().split('T').first;
@@ -26,7 +23,6 @@ Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
     fields: {'log_file': AppLogger.I.logFilePath},
   );
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await ThemeManager().init();
   await LocalNotifications.initialize();
   await ScheduleUpdateWorker.initialize();
