@@ -29,7 +29,7 @@ Future<void> showMineAboutDialog(BuildContext context) async {
       InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () async {
-          const urlString = 'https://github.com/lhgr';
+          const urlString = 'https://dawndrizzle.top/';
           if (!await GithubProxy.launchExternalUrlString(urlString)) {
             AppLogger.I.event(
               LogLevel.warn,
@@ -120,8 +120,7 @@ Future<void> showMineAboutDialog(BuildContext context) async {
       InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () async {
-          const String urlString =
-              'https://weibo.com/5401723589?refer_flag=1001030103_';
+          const String urlString = 'https://space.bilibili.com/350065580';
           final Uri url = Uri.parse(urlString);
           if (!await launchUrl(url)) {
             AppLogger.I.event(
