@@ -47,7 +47,10 @@ private class CourseListRemoteViewsFactory(
   override fun getViewAt(position: Int): RemoteViews {
     val item = items.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_today_list_item)
-    val palette = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH).palette
+    val palette =
+      WidgetInstanceConfigStore
+        .resolveTheme(context, appWidgetId)
+        .palette
     views.setInt(
       R.id.ll_content,
       "setBackgroundResource",

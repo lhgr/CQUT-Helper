@@ -4,5 +4,7 @@
     android:minHeight="110dp"
     android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/widget_today_list"
+    android:configure="com.dawndrizzle.wing.cqut.widget.WidgetConfigurationActivity"
     android:resizeMode="vertical|horizontal"
+    android:widgetFeatures="reconfigurable"
     android:widgetCategory="home_screen" />

@@ -32,10 +32,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity
+            android:name="com.dawndrizzle.wing.cqut.widget.WidgetConfigurationActivity"
+            android:exported="true"
+            android:theme="@style/WidgetConfigurationTheme" />
         <receiver
             android:name="com.dawndrizzle.wing.cqut.widget.TodayListWidgetProvider"
             android:exported="true"
-            android:label="今日课程">
+            android:label="单日课程">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.dawndrizzle.wing.cqut.widget.TODAY_LIST_REFRESH" />

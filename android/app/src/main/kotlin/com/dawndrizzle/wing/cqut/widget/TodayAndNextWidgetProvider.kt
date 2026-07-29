@@ -45,6 +45,14 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
     WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
   }
 
+  override fun onDeleted(
+    context: Context,
+    appWidgetIds: IntArray,
+  ) {
+    WidgetInstanceConfigStore.delete(context, appWidgetIds)
+    super.onDeleted(context, appWidgetIds)
+  }
+
   companion object {
     const val ACTION_REFRESH = "com.dawndrizzle.wing.cqut.widget.TODAY_AND_NEXT_REFRESH"
 
@@ -61,10 +69,22 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       appWidgetIds: IntArray,
       theme: WidgetThemeResolution? = null,
     ) {
-      val resolvedTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val fallbackTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
       for (appWidgetId in appWidgetIds) {
+        val resolvedTheme =
+          WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
         updateAppWidget(context, appWidgetManager, appWidgetId, resolvedTheme)
       }
+    }
+
+    fun updateOne(
+      context: Context,
+      appWidgetId: Int,
+    ) {
+      val appWidgetManager = AppWidgetManager.getInstance(context)
+      val fallbackTheme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
+      updateAppWidget(context, appWidgetManager, appWidgetId, theme)
     }
 
     private fun updateAppWidget(

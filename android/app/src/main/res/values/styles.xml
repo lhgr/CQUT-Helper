@@ -16,6 +16,11 @@
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
 
+    <style name="WidgetConfigurationTheme" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">@color/md_theme_primary</item>
+    </style>
+
     <style name="Theme.AppWidget.AppWidgetContainerParent" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
         <item name="android:colorAccent">@color/md_theme_primary</item>
         <item name="android:colorBackground">@android:color/transparent</item>

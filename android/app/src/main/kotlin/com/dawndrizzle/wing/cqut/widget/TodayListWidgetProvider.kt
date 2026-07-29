@@ -45,6 +45,14 @@ class TodayListWidgetProvider : AppWidgetProvider() {
     WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
   }
 
+  override fun onDeleted(
+    context: Context,
+    appWidgetIds: IntArray,
+  ) {
+    WidgetInstanceConfigStore.delete(context, appWidgetIds)
+    super.onDeleted(context, appWidgetIds)
+  }
+
   companion object {
     const val ACTION_REFRESH = "com.dawndrizzle.wing.cqut.widget.TODAY_LIST_REFRESH"
 
@@ -61,10 +69,22 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       appWidgetIds: IntArray,
       theme: WidgetThemeResolution? = null,
     ) {
-      val resolvedTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val fallbackTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
       for (appWidgetId in appWidgetIds) {
+        val resolvedTheme =
+          WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
         updateAppWidget(context, appWidgetManager, appWidgetId, resolvedTheme)
       }
+    }
+
+    fun updateOne(
+      context: Context,
+      appWidgetId: Int,
+    ) {
+      val appWidgetManager = AppWidgetManager.getInstance(context)
+      val fallbackTheme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
+      updateAppWidget(context, appWidgetManager, appWidgetId, theme)
     }
 
     private fun updateAppWidget(
@@ -91,27 +111,28 @@ class TodayListWidgetProvider : AppWidgetProvider() {
         if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
       )
 
-      val header = TodayWidgetData.loadHeader(context)
+      val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+      val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
       views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
       views.setTextViewText(R.id.tv_date, header.dateText)
       views.setTextViewText(R.id.tv_week, header.weekText)
       views.setTextViewText(
         R.id.empty,
-        TodayWidgetData.loadEmptyStateText(context, 0),
+        TodayWidgetData.loadEmptyStateText(context, dayOffset),
       )
 
       val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, 0)
-        data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
+        putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
+        data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
       }
       views.setRemoteAdapter(R.id.lv_course, svcIntent)
       views.setEmptyView(R.id.lv_course, R.id.empty)
 
       val rootPendingIntent =
-        WidgetNavigationPendingIntent.create(context, appWidgetId, 0, false)
+        WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)
       val coursePendingIntent =
-        WidgetNavigationPendingIntent.create(context, appWidgetId, 0, true)
+        WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, true)
       if (rootPendingIntent != null) {
         views.setOnClickPendingIntent(R.id.widget_root, rootPendingIntent)
         views.setOnClickPendingIntent(R.id.rl_title, rootPendingIntent)

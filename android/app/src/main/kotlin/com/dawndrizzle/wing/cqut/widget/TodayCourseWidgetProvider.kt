@@ -55,13 +55,19 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
   }
 
+  override fun onDeleted(
+    context: Context,
+    appWidgetIds: IntArray,
+  ) {
+    WidgetInstanceConfigStore.delete(context, appWidgetIds)
+    super.onDeleted(context, appWidgetIds)
+  }
+
   companion object {
     const val ACTION_REFRESH = "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_REFRESH"
     const val ACTION_TOGGLE_DAY = "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_TOGGLE_DAY"
     const val ACTION_MANUAL_REFRESH =
       "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_MANUAL_REFRESH"
-    private const val PREFS_NAME = "TodayCourseWidgetPrefs"
-
     fun updateAll(context: Context, theme: WidgetThemeResolution? = null) {
       val appWidgetManager = AppWidgetManager.getInstance(context)
       val ids =
@@ -75,10 +81,22 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       appWidgetIds: IntArray,
       theme: WidgetThemeResolution? = null,
     ) {
-      val resolvedTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val fallbackTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
       for (appWidgetId in appWidgetIds) {
+        val resolvedTheme =
+          WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
         updateAppWidget(context, appWidgetManager, appWidgetId, resolvedTheme)
       }
+    }
+
+    fun updateOne(
+      context: Context,
+      appWidgetId: Int,
+    ) {
+      val appWidgetManager = AppWidgetManager.getInstance(context)
+      val fallbackTheme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
+      updateAppWidget(context, appWidgetManager, appWidgetId, theme)
     }
 
     private fun updateAppWidget(
@@ -216,18 +234,17 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     }
 
     private fun getDayOffset(context: Context, appWidgetId: Int): Int {
-      val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      return prefs.getInt("dayOffset_$appWidgetId", 0).coerceIn(0, 1)
+      return WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
     }
 
     private fun toggleDayOffset(context: Context, appWidgetId: Int) {
-      val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      val current = prefs.getInt("dayOffset_$appWidgetId", 0).coerceIn(0, 1)
+      val current = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
       val next = if (current == 0) 1 else 0
-      prefs.edit().putInt("dayOffset_$appWidgetId", next).apply()
+      WidgetInstanceConfigStore.saveDayOffset(context, appWidgetId, next)
 
       val appWidgetManager = AppWidgetManager.getInstance(context)
-      val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val fallbackTheme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
       updateAppWidget(context, appWidgetManager, appWidgetId, theme)
       WidgetAutoRefreshScheduler.schedule(context)
     }

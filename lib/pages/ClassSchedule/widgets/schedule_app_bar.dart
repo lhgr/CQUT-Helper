@@ -65,6 +65,67 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       );
     }
 
+    String compactRefreshStatus(String status) {
+      return status
+          .replaceFirst(RegExp(r'^今天\s+'), '')
+          .replaceFirst(RegExp(r'更新$'), '');
+    }
+
+    Widget buildRefreshAction() {
+      final status = refreshStatusText;
+      final compactStatus = status == null
+          ? null
+          : compactRefreshStatus(status);
+      final color = Theme.of(context).colorScheme.onSurfaceVariant;
+      return Tooltip(
+        message: status == null ? '刷新课表' : '最后更新：$status',
+        child: Semantics(
+          button: true,
+          label: status == null ? '刷新课表' : '刷新课表，最后更新$status',
+          child: InkWell(
+            onTap: loading ? null : onRefresh,
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: 58,
+              height: 54,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    height: 30,
+                    child: Center(
+                      child: loading
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: color,
+                              ),
+                            )
+                          : Icon(Icons.refresh, color: color),
+                    ),
+                  ),
+                  if (compactStatus != null)
+                    Text(
+                      compactStatus,
+                      maxLines: 1,
+                      overflow: TextOverflow.fade,
+                      softWrap: false,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: color,
+                        fontSize: 9.5,
+                        height: 1,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final titleTextStyle = Theme.of(
       context,
     ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold);
@@ -122,16 +183,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                IconButton(
-                  onPressed: loading ? null : onRefresh,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 36,
-                    height: 36,
-                  ),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.refresh),
-                ),
+                buildRefreshAction(),
                 IconButton(
                   onPressed: onSettings,
                   constraints: const BoxConstraints.tightFor(
@@ -161,9 +213,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
             centerButtons.add(const SizedBox(height: pickerButtonGap));
             centerButtons.add(
               buildPickerButton(
-                label:
-                    "${currentScheduleData!.yearTerm}学期"
-                    "${refreshStatusText == null ? '' : ' · $refreshStatusText'}",
+                label: "${currentScheduleData!.yearTerm}学期",
                 onTap: onTermPicker,
                 textStyle: termTextStyle,
               ),
