@@ -13,7 +13,8 @@ class ScheduleController {
   late final ScheduleRefreshOrchestrator _refreshOrchestrator;
   late final ScheduleRecentChangeDetector _recentChangeDetector;
 
-  ScheduleController({ScheduleApi? service}) : _service = service ?? ScheduleApi() {
+  ScheduleController({ScheduleApi? service})
+    : _service = service ?? ScheduleApi() {
     _timeInfoCoordinator = ScheduleTimeInfoCoordinator(
       service: _service,
       getTimeInfoList: () => timeInfoList,
@@ -55,6 +56,7 @@ class ScheduleController {
   String? actualCurrentTermStr;
   bool? nowInTeachingWeek;
   String? nowStatusLabel;
+  String? get userId => _weekLoader.userId;
 
   bool _disposed = false;
 
@@ -78,18 +80,19 @@ class ScheduleController {
     return _timeInfoCoordinator.loadTimeInfoFromCacheIfAny();
   }
 
+  Future<void> loadCredentials() => _weekLoader.loadCredentials();
+
   Future<bool> refreshTimeInfoIfEnabled({bool force = false}) {
     return _timeInfoCoordinator.refreshTimeInfoIfEnabled(force: force);
   }
 
   Future<void> ensureTimeInfoLoaded() {
-    return _timeInfoCoordinator.ensureTimeInfoLoaded(isDisposed: () => _disposed);
+    return _timeInfoCoordinator.ensureTimeInfoLoaded(
+      isDisposed: () => _disposed,
+    );
   }
 
-  Future<ScheduleData?> loadFromCache({
-    String? weekNum,
-    String? yearTerm,
-  }) {
+  Future<ScheduleData?> loadFromCache({String? weekNum, String? yearTerm}) {
     return _weekLoader.loadFromCache(weekNum: weekNum, yearTerm: yearTerm);
   }
 
@@ -116,11 +119,7 @@ class ScheduleController {
     Function() onUpdate, {
     Duration delay = const Duration(milliseconds: 300),
   }) {
-    _refreshOrchestrator.schedulePrefetch(
-      currentData,
-      onUpdate,
-      delay: delay,
-    );
+    _refreshOrchestrator.schedulePrefetch(currentData, onUpdate, delay: delay);
   }
 
   Future<List<ScheduleWeekChange>> silentCheckRecentWeeksForChangesDetailed(
@@ -159,7 +158,7 @@ class ScheduleController {
     );
   }
 
-  Future<void> ensureWeekLoaded(
+  Future<bool> ensureWeekLoaded(
     String weekNum,
     String yearTerm, {
     bool forceRefresh = false,

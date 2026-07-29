@@ -5,12 +5,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ScheduleRefreshOrchestrator {
   final bool Function() isDisposed;
-  final Future<void> Function(
+  final Future<bool> Function(
     String weekNum,
     String yearTerm, {
     bool forceRefresh,
     bool updateLastViewed,
-  }) ensureWeekLoaded;
+  })
+  ensureWeekLoaded;
   final Future<String?> Function() loadUserId;
   Timer? _prefetchTimer;
   Future<void>? _foregroundFullRefreshInFlight;
@@ -59,7 +60,7 @@ class ScheduleRefreshOrchestrator {
     if (currentIndex == -1) return;
     if (isDisposed()) return;
 
-    final futures = <Future<void>>[];
+    final futures = <Future<bool>>[];
     if (currentIndex > 0) {
       final prevWeek = wList[currentIndex - 1];
       futures.add(ensureWeekLoaded(prevWeek, cTerm));

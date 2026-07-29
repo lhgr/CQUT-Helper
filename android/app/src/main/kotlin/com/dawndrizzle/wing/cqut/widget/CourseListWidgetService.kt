@@ -84,8 +84,8 @@ private class CourseListRemoteViewsFactory(
     views.setInt(R.id.iv_indicator, "setColorFilter", item.indicatorColor)
 
     val fillInIntent = Intent().apply {
-      putExtra("eventName", item.name)
-      putExtra("eventId", item.eventId)
+      putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME, item.name)
+      putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_ID, item.eventId)
     }
     views.setOnClickFillInIntent(R.id.ll_item, fillInIntent)
 

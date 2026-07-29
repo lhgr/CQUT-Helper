@@ -95,6 +95,10 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
       views.setTextViewText(R.id.tv_date, header.dateText)
       views.setTextViewText(R.id.tv_week, header.weekText)
+      views.setTextViewText(
+        R.id.empty,
+        TodayWidgetData.loadEmptyStateText(context, 0),
+      )
 
       val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -104,19 +108,17 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       views.setRemoteAdapter(R.id.lv_course, svcIntent)
       views.setEmptyView(R.id.lv_course, R.id.empty)
 
-      val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-      if (launchIntent != null) {
-        val pendingIntent =
-          PendingIntent.getActivity(
-            context,
-            0,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-          )
-        views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
-        views.setOnClickPendingIntent(R.id.rl_title, pendingIntent)
-        views.setOnClickPendingIntent(R.id.empty, pendingIntent)
-        views.setPendingIntentTemplate(R.id.lv_course, pendingIntent)
+      val rootPendingIntent =
+        WidgetNavigationPendingIntent.create(context, appWidgetId, 0, false)
+      val coursePendingIntent =
+        WidgetNavigationPendingIntent.create(context, appWidgetId, 0, true)
+      if (rootPendingIntent != null) {
+        views.setOnClickPendingIntent(R.id.widget_root, rootPendingIntent)
+        views.setOnClickPendingIntent(R.id.rl_title, rootPendingIntent)
+        views.setOnClickPendingIntent(R.id.empty, rootPendingIntent)
+      }
+      if (coursePendingIntent != null) {
+        views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
       }
 
       appWidgetManager.updateAppWidget(appWidgetId, views)

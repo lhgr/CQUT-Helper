@@ -122,8 +122,9 @@ void main() {
       final loader = buildLoader(api);
       weekCache[2] = ScheduleData(weekNum: '2', yearTerm: '2024-2025-2');
 
-      await loader.ensureWeekLoaded('2', '2024-2025-2');
+      final success = await loader.ensureWeekLoaded('2', '2024-2025-2');
 
+      expect(success, isTrue);
       expect(api.cacheCalls, 0);
       expect(api.networkCalls, 0);
     });
@@ -137,17 +138,16 @@ void main() {
         ..cacheResult = ScheduleData(weekNum: '2', yearTerm: '2024-2025-2');
       final loader = buildLoader(api);
 
-      await loader.ensureWeekLoaded('2', '2024-2025-2');
+      final success = await loader.ensureWeekLoaded('2', '2024-2025-2');
 
+      expect(success, isTrue);
       expect(api.cacheCalls, 1);
       expect(api.networkCalls, 0);
       expect(weekCache[2], isNotNull);
     });
 
     test('ensureWeekLoaded 在无缓存时通过凭证存储读取密码并写入缓存', () async {
-      SharedPreferences.setMockInitialValues({
-        'account': 'u1',
-      });
+      SharedPreferences.setMockInitialValues({'account': 'u1'});
       final api = _FakeWeekLoaderScheduleApi()
         ..networkResult = ScheduleData(
           weekNum: '2',
@@ -155,22 +155,36 @@ void main() {
           weekList: const ['1', '2', '3'],
           eventList: const [],
         );
-      final credentialStore = _FakeWeekLoaderCredentialStore(value: 'secure-p1');
+      final credentialStore = _FakeWeekLoaderCredentialStore(
+        value: 'secure-p1',
+      );
       final loader = buildLoader(api, credentialStore: credentialStore);
 
-      await loader.ensureWeekLoaded('2', '2024-2025-2');
+      final success = await loader.ensureWeekLoaded('2', '2024-2025-2');
 
+      expect(success, isTrue);
       expect(api.cacheCalls, 1);
       expect(api.networkCalls, 1);
       expect(api.lastEncryptedPassword, 'secure-p1');
       expect(credentialStore.readCalls, 1);
       expect(weekCache[2], isNotNull);
       final prefs = await SharedPreferences.getInstance();
-      expect(
-        prefs.getString('schedule_fp_u1_2024-2025-2_2'),
-        isNotNull,
-      );
+      expect(prefs.getString('schedule_fp_u1_2024-2025-2_2'), isNotNull);
       expect(prefs.getInt('schedule_fetch_at_u1_2024-2025-2_2'), isNotNull);
+    });
+
+    test('ensureWeekLoaded 网络失败时返回 false', () async {
+      SharedPreferences.setMockInitialValues({'account': 'u1'});
+      final api = _FakeWeekLoaderScheduleApi();
+      final credentialStore = _FakeWeekLoaderCredentialStore(
+        value: 'secure-p1',
+      );
+      final loader = buildLoader(api, credentialStore: credentialStore);
+
+      final success = await loader.ensureWeekLoaded('2', '2024-2025-2');
+
+      expect(success, isFalse);
+      expect(weekCache, isEmpty);
     });
   });
 }

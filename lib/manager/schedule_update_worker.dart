@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
+import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_notice_refresh_pipeline.dart';
 import 'package:cqut_helper/manager/schedule_update_worker_health.dart';
 import 'package:cqut_helper/manager/schedule_update_worker_state_store.dart';
@@ -28,6 +29,7 @@ class ScheduleUpdateWorker {
   static const String _fallbackTaskUniqueName =
       'schedule_notice_poll_task_fallback';
   static const String _triggerImmediate = 'immediate';
+  static const String _triggerWidgetManual = 'widget_manual';
   static const String _triggerDaily9am = 'daily_9am';
   static const String _triggerFallbackNoon = 'fallback_noon';
   static const String _timeZoneOffset = '+08:00';
@@ -117,9 +119,7 @@ class ScheduleUpdateWorker {
     );
     await recordScheduleUpdateWorkerSyncState(
       status: 'sync_registered',
-      fields: {
-        'nextDailyAt': _nextDaily9amUtc().toIso8601String(),
-      },
+      fields: {'nextDailyAt': _nextDaily9amUtc().toIso8601String()},
     );
   }
 
@@ -129,8 +129,9 @@ class ScheduleUpdateWorker {
       WidgetsFlutterBinding.ensureInitialized();
       await _ensureLoggerReady();
       final trigger = ((inputData?['trigger'] ?? 'unknown').toString()).trim();
-      final logicalDateBjt =
-          ((inputData?['logicalDateBjt'] ?? '').toString()).trim();
+      final isWidgetManual = trigger == _triggerWidgetManual;
+      final logicalDateBjt = ((inputData?['logicalDateBjt'] ?? '').toString())
+          .trim();
       await recordScheduleUpdateWorkerState(
         status: 'started',
         trigger: trigger,
@@ -141,6 +142,22 @@ class ScheduleUpdateWorker {
         Map<String, Object?> fields = const {},
         bool scheduleFollowUp = false,
       }) async {
+        if (isWidgetManual && status != 'widget_manual_success') {
+          final widgetPrefs = await SharedPreferences.getInstance();
+          final widgetUserId = (widgetPrefs.getString('account') ?? '').trim();
+          if (widgetUserId.isNotEmpty) {
+            final errorText = (fields['error'] ?? '').toString();
+            final failure =
+                status == 'skip_missing_credentials' ||
+                    ScheduleRefreshState.looksLikeCredentialFailure(errorText)
+                ? ScheduleWidgetRefreshFailure.credentialInvalid
+                : ScheduleWidgetRefreshFailure.generic;
+            await ScheduleRefreshState.markFailure(
+              widgetUserId,
+              failure: failure,
+            );
+          }
+        }
         await recordScheduleUpdateWorkerState(
           status: status,
           trigger: trigger,
@@ -174,13 +191,25 @@ class ScheduleUpdateWorker {
         );
         return done(status: 'skip_unknown_task');
       }
-      if (_isDeepNight()) {
+      if (_isDeepNight() && trigger != _triggerWidgetManual) {
         return done(status: 'skip_deep_night', scheduleFollowUp: true);
       }
-      final userId = ((inputData?['userId'] ?? '').toString()).trim();
-      final encryptedPassword =
+      var userId = ((inputData?['userId'] ?? '').toString()).trim();
+      var encryptedPassword =
           ((inputData?['encryptedPassword'] ?? '').toString()).trim();
+      if (isWidgetManual && (userId.isEmpty || encryptedPassword.isEmpty)) {
+        final storedPrefs = await SharedPreferences.getInstance();
+        userId = (storedPrefs.getString('account') ?? '').trim();
+        encryptedPassword =
+            ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
+      }
       if (userId.isEmpty || encryptedPassword.isEmpty) {
+        if (isWidgetManual && userId.isNotEmpty) {
+          await ScheduleRefreshState.markFailure(
+            userId,
+            failure: ScheduleWidgetRefreshFailure.credentialInvalid,
+          );
+        }
         AppLogger.I.event(
           LogLevel.warn,
           'ScheduleUpdateWorker',
@@ -206,6 +235,7 @@ class ScheduleUpdateWorker {
 
       final scheduleApi = ScheduleApi();
       ScheduleData? currentData;
+      var loadedCurrentDataFromNetwork = false;
       final pollingTarget = resolvePollingTarget(prefs: prefs, userId: userId);
       final preferredTerm = (pollingTarget.yearTerm ?? '').trim();
       final preferredWeek = pollingTarget.weekNum.trim();
@@ -251,8 +281,9 @@ class ScheduleUpdateWorker {
             weekNum: preferredWeek,
             yearTerm: preferredTerm.isEmpty ? null : preferredTerm,
             persistLastViewed: false,
-            updateWidgetPins: false,
+            updateWidgetPins: isWidgetManual && preferredTerm.isEmpty,
           );
+          loadedCurrentDataFromNetwork = true;
         } catch (e, st) {
           AppLogger.I.event(
             LogLevel.error,
@@ -326,6 +357,45 @@ class ScheduleUpdateWorker {
           },
           scheduleFollowUp: true,
         );
+      }
+
+      if (isWidgetManual) {
+        try {
+          if (!loadedCurrentDataFromNetwork) {
+            await scheduleApi.loadFromNetwork(
+              userId: userId,
+              encryptedPassword: encryptedPassword,
+              weekNum: preferredTerm.isEmpty ? null : preferredWeek,
+              yearTerm: preferredTerm.isEmpty ? null : preferredTerm,
+              persistLastViewed: false,
+              updateWidgetPins: preferredTerm.isEmpty,
+            );
+          }
+          await ScheduleRefreshState.markSuccess(userId);
+          return done(status: 'widget_manual_success');
+        } catch (e, st) {
+          final failure = ScheduleRefreshState.looksLikeCredentialFailure(e)
+              ? ScheduleWidgetRefreshFailure.credentialInvalid
+              : ScheduleWidgetRefreshFailure.generic;
+          await ScheduleRefreshState.markFailure(userId, failure: failure);
+          AppLogger.I.event(
+            LogLevel.error,
+            'ScheduleUpdateWorker',
+            event: 'schedule_widget_manual_refresh_fail',
+            messageZh: '小组件手动刷新课表失败',
+            message: 'widget manual refresh failed',
+            module: 'schedule',
+            action: 'widget_manual_refresh',
+            status: 'fail',
+            reason: failure.name,
+            error: e,
+            stackTrace: st,
+          );
+          return done(
+            status: 'widget_manual_failed',
+            fields: {'error': e.toString(), 'failure': failure.name},
+          );
+        }
       }
 
       final pipeline = ScheduleNoticeRefreshPipeline(
@@ -489,7 +559,8 @@ class ScheduleUpdateWorker {
     }
     final main = (dailyState['main'] as Map?)?.cast<String, dynamic>();
     final retry = (dailyState['retry'] as Map?)?.cast<String, dynamic>();
-    final shouldRetry = (main?['retryEligible'] == true) &&
+    final shouldRetry =
+        (main?['retryEligible'] == true) &&
         (main?['status'] == 'failed') &&
         (retry?['attempted'] != true) &&
         _canScheduleFallbackNoonForToday();
@@ -645,8 +716,9 @@ class ScheduleUpdateWorker {
   }
 
   static DateTime _bjtClockToUtc(String logicalDateBjt, int hour) {
-    return DateTime.parse('${logicalDateBjt}T${hour.toString().padLeft(2, '0')}:00:00$_timeZoneOffset')
-        .toUtc();
+    return DateTime.parse(
+      '${logicalDateBjt}T${hour.toString().padLeft(2, '0')}:00:00$_timeZoneOffset',
+    ).toUtc();
   }
 
   static String _toBjtWallClockString(DateTime instantUtc) {
@@ -657,7 +729,8 @@ class ScheduleUpdateWorker {
     final hour = bjt.hour.toString().padLeft(2, '0');
     final minute = bjt.minute.toString().padLeft(2, '0');
     final second = bjt.second.toString().padLeft(2, '0');
-    return '$year-$month-$day''T$hour:$minute:$second$_timeZoneOffset';
+    return '$year-$month-$day'
+        'T$hour:$minute:$second$_timeZoneOffset';
   }
 
   static Future<void> _ensureLoggerReady() async {

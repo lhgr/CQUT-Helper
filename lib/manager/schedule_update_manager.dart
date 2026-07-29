@@ -58,12 +58,18 @@ class ScheduleUpdateManager {
     try {
       final pipeline = ScheduleNoticeRefreshPipeline(
         refreshWeek: (weekNum, yearTerm) {
-          return controller.ensureWeekLoaded(
-            weekNum,
-            yearTerm,
-            forceRefresh: true,
-            updateLastViewed: false,
-          );
+          return controller
+              .ensureWeekLoaded(
+                weekNum,
+                yearTerm,
+                forceRefresh: true,
+                updateLastViewed: false,
+              )
+              .then((success) {
+                if (!success) {
+                  throw StateError('第$weekNum周课表刷新失败');
+                }
+              });
         },
       );
       final result = await pipeline.run(currentData: currentData);

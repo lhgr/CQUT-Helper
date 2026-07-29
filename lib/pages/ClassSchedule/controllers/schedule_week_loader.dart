@@ -47,8 +47,11 @@ class ScheduleWeekLoader {
   String fingerprintKey(String userId, String yearTerm, String weekNum) =>
       'schedule_fp_${userId}_${yearTerm}_$weekNum';
 
-  String fingerprintUpdatedAtKey(String userId, String yearTerm, String weekNum) =>
-      'schedule_fp_updated_at_${userId}_${yearTerm}_$weekNum';
+  String fingerprintUpdatedAtKey(
+    String userId,
+    String yearTerm,
+    String weekNum,
+  ) => 'schedule_fp_updated_at_${userId}_${yearTerm}_$weekNum';
 
   String lastFetchAtKey(String userId, String yearTerm, String weekNum) =>
       'schedule_fetch_at_${userId}_${yearTerm}_$weekNum';
@@ -137,7 +140,7 @@ class ScheduleWeekLoader {
     return termChanged;
   }
 
-  Future<void> ensureWeekLoaded(
+  Future<bool> ensureWeekLoaded(
     String weekNum,
     String yearTerm, {
     bool forceRefresh = false,
@@ -147,12 +150,12 @@ class ScheduleWeekLoader {
     final cache = getWeekCache();
 
     if (!forceRefresh) {
-      if (cache.containsKey(wInt)) return;
+      if (cache.containsKey(wInt)) return true;
 
       final cached = await loadFromCache(weekNum: weekNum, yearTerm: yearTerm);
       if (cached != null) {
         cache[wInt] = cached;
-        return;
+        return true;
       }
     }
 
@@ -178,6 +181,7 @@ class ScheduleWeekLoader {
         await prefs.setInt(fpUpdatedAtKey, now);
         await prefs.setInt(fetchAtKey, now);
       }
+      return true;
     } catch (e, st) {
       AppLogger.I.event(
         LogLevel.debug,
@@ -193,6 +197,7 @@ class ScheduleWeekLoader {
         stackTrace: st,
         fields: {'week': weekNum, 'term': yearTerm},
       );
+      return false;
     }
   }
 }

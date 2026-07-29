@@ -26,6 +26,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     super.onReceive(context, intent)
     when (intent.action) {
       ACTION_REFRESH -> WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
+      ACTION_MANUAL_REFRESH -> ScheduleWidgetRefreshWork.enqueue(context)
       Intent.ACTION_CONFIGURATION_CHANGED ->
         WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
       ACTION_UI_MODE_CHANGED ->
@@ -57,6 +58,8 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
   companion object {
     const val ACTION_REFRESH = "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_REFRESH"
     const val ACTION_TOGGLE_DAY = "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_TOGGLE_DAY"
+    const val ACTION_MANUAL_REFRESH =
+      "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_MANUAL_REFRESH"
     private const val PREFS_NAME = "TodayCourseWidgetPrefs"
 
     fun updateAll(context: Context, theme: WidgetThemeResolution? = null) {
@@ -96,6 +99,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       views.setTextColor(R.id.tv_week_count, palette.secondaryText)
       views.setTextColor(R.id.tv_week, palette.accent)
       views.setTextColor(R.id.empty_text, palette.secondaryText)
+      views.setTextColor(R.id.tv_sync_status, palette.secondaryText)
       views.setInt(R.id.iv_next, "setColorFilter", palette.icon)
       views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
       views.setViewVisibility(
@@ -111,6 +115,16 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       val weekCountPart = if (weekCount.isNotBlank()) " | $weekCount    " else " | "
       views.setTextViewText(R.id.tv_week_count, weekCountPart)
       views.setTextViewText(R.id.tv_week, header.weekText)
+      views.setTextViewText(
+        R.id.empty_text,
+        TodayWidgetData.loadEmptyStateText(context, dayOffset),
+      )
+      val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context)
+      views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
+      views.setViewVisibility(
+        R.id.tv_sync_status,
+        if (refreshPresentation.text.isBlank()) android.view.View.GONE else android.view.View.VISIBLE,
+      )
 
       val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -135,22 +149,66 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           toggleIntent,
           PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-      views.setOnClickPendingIntent(R.id.iv_next, togglePendingIntent)
+      val manualRefreshIntent =
+        Intent(context, TodayCourseWidgetProvider::class.java).apply {
+          action = ACTION_MANUAL_REFRESH
+          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#refresh-$appWidgetId")
+        }
+      val manualRefreshPendingIntent =
+        PendingIntent.getBroadcast(
+          context,
+          appWidgetId + 10000,
+          manualRefreshIntent,
+          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+      val isNormal =
+        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL
+      val isLoading =
+        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.LOADING
+      val isCredentialInvalid =
+        refreshPresentation.state ==
+          TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID
+      views.setImageViewResource(
+        R.id.iv_next,
+        if (isNormal) R.drawable.ic_back else android.R.drawable.ic_popup_sync,
+      )
+      views.setFloat(R.id.iv_next, "setRotation", if (isNormal && dayOffset == 0) 180f else 0f)
+      views.setBoolean(R.id.iv_next, "setEnabled", !isLoading)
+      when {
+        refreshPresentation.usesRefreshAction ->
+          views.setOnClickPendingIntent(R.id.iv_next, manualRefreshPendingIntent)
+        isLoading ->
+          views.setOnClickPendingIntent(R.id.iv_next, manualRefreshPendingIntent)
+        !isCredentialInvalid ->
+          views.setOnClickPendingIntent(R.id.iv_next, togglePendingIntent)
+      }
 
-      val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-      if (launchIntent != null) {
-        val pendingIntent =
-          PendingIntent.getActivity(
-            context,
-            0,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-          )
-        views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
-        views.setOnClickPendingIntent(R.id.rl_appwidget, pendingIntent)
-        views.setOnClickPendingIntent(R.id.rl_title, pendingIntent)
-        views.setOnClickPendingIntent(android.R.id.empty, pendingIntent)
-        views.setPendingIntentTemplate(R.id.lv_course, pendingIntent)
+      val rootPendingIntent =
+        WidgetNavigationPendingIntent.create(
+          context,
+          appWidgetId,
+          dayOffset,
+          false,
+        )
+      val coursePendingIntent =
+        WidgetNavigationPendingIntent.create(
+          context,
+          appWidgetId,
+          dayOffset,
+          true,
+        )
+      if (rootPendingIntent != null) {
+        views.setOnClickPendingIntent(R.id.widget_root, rootPendingIntent)
+        views.setOnClickPendingIntent(R.id.rl_appwidget, rootPendingIntent)
+        views.setOnClickPendingIntent(R.id.rl_title, rootPendingIntent)
+        views.setOnClickPendingIntent(android.R.id.empty, rootPendingIntent)
+        if (isCredentialInvalid) {
+          views.setOnClickPendingIntent(R.id.iv_next, rootPendingIntent)
+        }
+      }
+      if (coursePendingIntent != null) {
+        views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
       }
 
       appWidgetManager.updateAppWidget(appWidgetId, views)

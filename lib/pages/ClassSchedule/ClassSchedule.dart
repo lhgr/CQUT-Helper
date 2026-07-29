@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_update_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
@@ -47,6 +48,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
 
   bool _loading = true; // 默认为 true，防止初始空数据渲染
   String? _error;
+  DateTime? _lastSuccessfulRefreshAt;
 
   int _lastOpenChangesToken = 0;
   int _lastTimetableCacheEpoch = CacheCleanupManager.timetableCacheEpoch.value;
@@ -91,6 +93,18 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   void _setState(VoidCallback fn) {
     if (!mounted) return;
     setState(fn);
+  }
+
+  String? get _refreshStatusText {
+    final at = _lastSuccessfulRefreshAt;
+    if (at == null) return null;
+    final now = DateTime.now();
+    final sameDay =
+        now.year == at.year && now.month == at.month && now.day == at.day;
+    final prefix = sameDay ? '今天' : '${at.month}/${at.day}';
+    final hour = at.hour.toString().padLeft(2, '0');
+    final minute = at.minute.toString().padLeft(2, '0');
+    return '$prefix $hour:$minute更新';
   }
 
   void _onTimetableCacheCleared() {
@@ -217,6 +231,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         currentScheduleData: _currentScheduleData,
         nowInTeachingWeek: _nowInTeachingWeek,
         nowStatusLabel: _nowStatusLabel,
+        refreshStatusText: _refreshStatusText,
         onRefresh: () => _loadFromNetwork(
           weekNum: _weekList![_currentWeekIndex],
           yearTerm: _currentScheduleData?.yearTerm,

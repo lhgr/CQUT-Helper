@@ -1,6 +1,26 @@
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import '../core/api_client.dart';
 import '../auth/auth_api.dart';
+
+enum CourseApiErrorKind {
+  authentication,
+  timeout,
+  network,
+  server,
+  invalidResponse,
+}
+
+class CourseApiException implements Exception {
+  final CourseApiErrorKind kind;
+  final String message;
+  final int? statusCode;
+
+  const CourseApiException(this.kind, this.message, {this.statusCode});
+
+  @override
+  String toString() => message;
+}
 
 class CourseApi {
   final ApiClient _client = ApiClient();
@@ -33,11 +53,15 @@ class CourseApi {
     String? password,
     String? encryptedPassword,
   }) async {
-    await _authApi.ensureTimetableLogin(
-      account: userId,
-      password: password,
-      encryptedPassword: encryptedPassword,
-    );
+    try {
+      await _authApi.ensureTimetableLogin(
+        account: userId,
+        password: password,
+        encryptedPassword: encryptedPassword,
+      );
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
 
     final body = <String, dynamic>{'userID': userId};
     if (weekNum != null) body['weekNum'] = weekNum;
@@ -63,11 +87,10 @@ class CourseApi {
       final resp = await _client.dio.post(_timeTableApi, data: body);
       final parsed = _parseCourseResponse(resp.data);
       if (_looksLikeAuthError(parsed) && allowReloginRetry) {
-        await _authApi.ensureTimetableLogin(
-          account: userId,
+        await _forceRelogin(
+          userId: userId,
           password: password,
           encryptedPassword: encryptedPassword,
-          force: true,
         );
         return await _fetchWeekEventsOnce(
           body: body,
@@ -78,24 +101,46 @@ class CourseApi {
         );
       }
       if (_looksLikeAuthError(parsed)) {
-        throw Exception(_authErrorMessage(parsed));
+        throw CourseApiException(
+          CourseApiErrorKind.authentication,
+          _authErrorMessage(parsed),
+        );
       }
       return parsed;
-    } catch (e) {
-      if (!allowReloginRetry) rethrow;
+    } on DioException catch (error) {
+      if (allowReloginRetry &&
+          _isAuthenticationStatus(error.response?.statusCode)) {
+        await _forceRelogin(
+          userId: userId,
+          password: password,
+          encryptedPassword: encryptedPassword,
+        );
+        return _fetchWeekEventsOnce(
+          body: body,
+          userId: userId,
+          password: password,
+          encryptedPassword: encryptedPassword,
+          allowReloginRetry: false,
+        );
+      }
+      throw _mapDioException(error);
+    }
+  }
+
+  Future<void> _forceRelogin({
+    required String userId,
+    required String? password,
+    required String? encryptedPassword,
+  }) async {
+    try {
       await _authApi.ensureTimetableLogin(
         account: userId,
         password: password,
         encryptedPassword: encryptedPassword,
         force: true,
       );
-      return await _fetchWeekEventsOnce(
-        body: body,
-        userId: userId,
-        password: password,
-        encryptedPassword: encryptedPassword,
-        allowReloginRetry: false,
-      );
+    } on DioException catch (error) {
+      throw _mapDioException(error);
     }
   }
 
@@ -109,7 +154,10 @@ class CourseApi {
         if (decoded is Map<String, dynamic>) return decoded;
       } catch (_) {}
     }
-    throw Exception('Invalid course data format');
+    throw const CourseApiException(
+      CourseApiErrorKind.invalidResponse,
+      '课表接口返回格式异常，请稍后重试',
+    );
   }
 
   bool _looksLikeAuthError(Map<String, dynamic> data) {
@@ -124,5 +172,45 @@ class CourseApi {
     final msg = (data['msg'] ?? '').toString().trim();
     if (msg.isNotEmpty) return msg;
     return '课表鉴权失败，请重新登录';
+  }
+
+  bool _isAuthenticationStatus(int? statusCode) =>
+      statusCode == 401 || statusCode == 403;
+
+  CourseApiException _mapDioException(DioException error) {
+    final statusCode = error.response?.statusCode;
+    if (_isAuthenticationStatus(statusCode)) {
+      return CourseApiException(
+        CourseApiErrorKind.authentication,
+        '登录凭证已失效，请重新登录',
+        statusCode: statusCode,
+      );
+    }
+    if (error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout) {
+      return const CourseApiException(
+        CourseApiErrorKind.timeout,
+        '课表服务响应超时，请稍后重试',
+      );
+    }
+    if (error.type == DioExceptionType.connectionError) {
+      return const CourseApiException(
+        CourseApiErrorKind.network,
+        '网络连接失败，请检查网络后重试',
+      );
+    }
+    if (statusCode != null && statusCode >= 500) {
+      return CourseApiException(
+        CourseApiErrorKind.server,
+        '课表服务暂时不可用，请稍后重试',
+        statusCode: statusCode,
+      );
+    }
+    return CourseApiException(
+      CourseApiErrorKind.network,
+      '课表获取失败，请稍后重试',
+      statusCode: statusCode,
+    );
   }
 }

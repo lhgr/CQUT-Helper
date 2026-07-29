@@ -79,19 +79,30 @@
                 <ImageView
                     android:id="@+id/iv_next"
                     android:padding="8dp"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
                     android:src="@drawable/ic_back"
                     android:layout_centerVertical="true"
                     android:rotation="180"
                     android:layout_marginEnd="8dp"
                     android:layout_alignParentEnd="true" />
             </RelativeLayout>
+            <TextView
+                android:id="@+id/tv_sync_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/rl_title"
+                android:layout_marginBottom="4dp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="10sp"
+                android:textColor="@color/widget_secondary_text"
+                android:visibility="gone" />
             <FrameLayout
                 android:id="@+id/fl_content"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:layout_below="@+id/rl_title"
+                android:layout_below="@+id/tv_sync_status"
                 android:layout_alignParentBottom="true">
                 <ListView
                     android:id="@+id/lv_course"

@@ -149,7 +149,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
         _weekList!.indexOf(week) == _weekList!.indexOf(currentWeek) + 1) {
       return '下周';
     }
-    return '第${week}周';
+    return '第$week周';
   }
 
   void _showScheduleSettingsSheetWrapper() {

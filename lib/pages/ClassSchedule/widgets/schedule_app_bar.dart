@@ -10,6 +10,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   final ScheduleData? currentScheduleData;
   final bool? nowInTeachingWeek;
   final String? nowStatusLabel;
+  final String? refreshStatusText;
   final VoidCallback onRefresh;
   final VoidCallback onSettings;
   final VoidCallback onWeekPicker;
@@ -24,6 +25,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.currentScheduleData,
     this.nowInTeachingWeek,
     this.nowStatusLabel,
+    this.refreshStatusText,
     required this.onRefresh,
     required this.onSettings,
     required this.onWeekPicker,
@@ -159,7 +161,9 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
             centerButtons.add(const SizedBox(height: pickerButtonGap));
             centerButtons.add(
               buildPickerButton(
-                label: "${currentScheduleData!.yearTerm}学期",
+                label:
+                    "${currentScheduleData!.yearTerm}学期"
+                    "${refreshStatusText == null ? '' : ' · $refreshStatusText'}",
                 onTap: onTermPicker,
                 textStyle: termTextStyle,
               ),

@@ -20,6 +20,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     final cachedData = await _controller.loadFromCache();
     if (cachedData != null) {
       _processLoadedData(cachedData, isInitial: true);
+      await _loadRefreshSnapshot();
     }
 
     await _loadFromNetwork(fromInitialBoot: true);
@@ -171,6 +172,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         keepCurrentSelection:
             fromInitialBoot && _userChangedWeekDuringInitialBoot,
       );
+      await _loadRefreshSnapshot();
       _schedulePrefetch(data);
 
       if (_controller.timeInfoList == null) {
@@ -198,6 +200,20 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     }
   }
 
+  Future<void> _loadRefreshSnapshot() async {
+    final userId = _controller.userId;
+    if (userId == null || userId.trim().isEmpty) {
+      await _controller.loadCredentials();
+    }
+    final resolvedUserId = _controller.userId;
+    if (resolvedUserId == null || resolvedUserId.trim().isEmpty) return;
+    final snapshot = await ScheduleRefreshState.load(resolvedUserId);
+    if (!mounted) return;
+    _setState(() {
+      _lastSuccessfulRefreshAt = snapshot.lastSuccessfulRefreshAt;
+    });
+  }
+
   void _schedulePrefetch(ScheduleData currentData) {
     _controller.schedulePrefetch(currentData, () {
       _setState(() {});
@@ -205,7 +221,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
   }
 
   Future<void> _ensureWeekLoaded(String weekNum, String yearTerm) async {
-    await _controller.ensureWeekLoaded(
+    final success = await _controller.ensureWeekLoaded(
       weekNum,
       yearTerm,
       updateLastViewed: true,
@@ -219,6 +235,9 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       _schedulePrefetch(_weekCache[wInt]!);
     } else {
       _setState(() {});
+      if (!success) {
+        _showBoundaryMessage('第$weekNum周课表加载失败，请稍后重试');
+      }
     }
   }
 

@@ -10,14 +10,16 @@ void main() {
       final calls = <String>[];
       final orchestrator = ScheduleRefreshOrchestrator(
         isDisposed: () => false,
-        ensureWeekLoaded: (
-          weekNum,
-          yearTerm, {
-          bool forceRefresh = false,
-          bool updateLastViewed = false,
-        }) async {
-          calls.add('$weekNum@$yearTerm');
-        },
+        ensureWeekLoaded:
+            (
+              weekNum,
+              yearTerm, {
+              bool forceRefresh = false,
+              bool updateLastViewed = false,
+            }) async {
+              calls.add('$weekNum@$yearTerm');
+              return true;
+            },
         loadUserId: () async => 'u1',
       );
 
@@ -43,14 +45,16 @@ void main() {
       final calls = <String>[];
       final orchestrator = ScheduleRefreshOrchestrator(
         isDisposed: () => false,
-        ensureWeekLoaded: (
-          weekNum,
-          yearTerm, {
-          bool forceRefresh = false,
-          bool updateLastViewed = false,
-        }) async {
-          calls.add('$weekNum@$yearTerm:$forceRefresh:$updateLastViewed');
-        },
+        ensureWeekLoaded:
+            (
+              weekNum,
+              yearTerm, {
+              bool forceRefresh = false,
+              bool updateLastViewed = false,
+            }) async {
+              calls.add('$weekNum@$yearTerm:$forceRefresh:$updateLastViewed');
+              return true;
+            },
         loadUserId: () async => 'u1',
       );
 

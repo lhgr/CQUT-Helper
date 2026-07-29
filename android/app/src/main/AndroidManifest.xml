@@ -67,6 +67,7 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_REFRESH" />
+                <action android:name="com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_MANUAL_REFRESH" />
                 <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
                 <action android:name="android.intent.action.UI_MODE_CHANGED" />
             </intent-filter>

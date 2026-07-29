@@ -9,6 +9,32 @@ import java.util.Calendar
 import java.util.Locale
 
 object TodayWidgetData {
+  enum class DayScheduleAvailability {
+    COVERED,
+    OUTSIDE_TEACHING_WEEK,
+    MISSING_CACHE,
+  }
+
+  enum class RefreshPresentationState {
+    NORMAL,
+    NEEDS_SYNC,
+    STALE,
+    LOADING,
+    FAILED,
+    CREDENTIAL_INVALID,
+  }
+
+  data class RefreshPresentation(
+    val state: RefreshPresentationState,
+    val text: String,
+  ) {
+    val usesRefreshAction: Boolean
+      get() =
+        state == RefreshPresentationState.NEEDS_SYNC ||
+          state == RefreshPresentationState.STALE ||
+          state == RefreshPresentationState.FAILED
+  }
+
   data class Header(
     val scheduleName: String,
     val dateText: String,
@@ -35,6 +61,15 @@ object TodayWidgetData {
   private const val KEY_LAST_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_last_term_"
   private const val KEY_TIME_INFO_CACHE = "${FLUTTER_PREFIX}schedule_time_info_cache_v1"
   private const val KEY_COURSE_COLOR_MAP_PREFIX = "${FLUTTER_PREFIX}schedule_course_color_map_v1_"
+  private const val KEY_BACKGROUND_POLLING_ENABLED =
+    "${FLUTTER_PREFIX}schedule_background_polling_enabled"
+  private const val KEY_LAST_SUCCESSFUL_REFRESH_AT_PREFIX =
+    "${FLUTTER_PREFIX}schedule_last_successful_refresh_at_"
+  private const val KEY_WIDGET_REFRESH_STATE_PREFIX =
+    "${FLUTTER_PREFIX}schedule_widget_refresh_state_"
+  private const val KEY_WIDGET_REFRESH_FAILURE_PREFIX =
+    "${FLUTTER_PREFIX}schedule_widget_refresh_failure_"
+  private const val STALE_AFTER_MILLIS = 72L * 60 * 60 * 1000
   private const val ANONYMOUS_SCOPE = "anonymous"
   private val COURSE_TITLE_COLORS =
     intArrayOf(
@@ -89,6 +124,162 @@ object TodayWidgetData {
     return "第${week}周"
   }
 
+  fun loadRefreshPresentation(context: Context): RefreshPresentation {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val account =
+      prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
+    if (account.isEmpty()) {
+      return RefreshPresentation(
+        RefreshPresentationState.CREDENTIAL_INVALID,
+        "请打开应用登录",
+      )
+    }
+
+    val refreshState =
+      prefs.getString("$KEY_WIDGET_REFRESH_STATE_PREFIX$account", "idle")
+    val failure =
+      prefs.getString("$KEY_WIDGET_REFRESH_FAILURE_PREFIX$account", null)
+    if (refreshState == "loading") {
+      return RefreshPresentation(
+        RefreshPresentationState.LOADING,
+        "正在更新课表…",
+      )
+    }
+    if (refreshState == "failed") {
+      return if (failure == "credentialInvalid") {
+        RefreshPresentation(
+          RefreshPresentationState.CREDENTIAL_INVALID,
+          "登录已失效，请打开应用",
+        )
+      } else {
+        RefreshPresentation(
+          RefreshPresentationState.FAILED,
+          "更新失败，点右上角重试",
+        )
+      }
+    }
+
+    val lastSuccessfulAt =
+      prefs
+        .getString("$KEY_LAST_SUCCESSFUL_REFRESH_AT_PREFIX$account", null)
+        ?.let(::parseIso8601Millis)
+        ?: migrateLegacyRefreshAt(context, prefs, account)
+    val pollingEnabled = prefs.getBoolean(KEY_BACKGROUND_POLLING_ENABLED, false)
+    if (!pollingEnabled && lastSuccessfulAt == null) {
+      return RefreshPresentation(
+        RefreshPresentationState.NEEDS_SYNC,
+        "课表尚未同步",
+      )
+    }
+    if (!pollingEnabled &&
+      lastSuccessfulAt != null &&
+      System.currentTimeMillis() - lastSuccessfulAt > STALE_AFTER_MILLIS
+    ) {
+      return RefreshPresentation(
+        RefreshPresentationState.STALE,
+        "课表可能已过期",
+      )
+    }
+    return RefreshPresentation(
+      RefreshPresentationState.NORMAL,
+      lastSuccessfulAt?.let(::formatLastUpdated).orEmpty(),
+    )
+  }
+
+  private fun parseIso8601Millis(raw: String): Long? {
+    return try {
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        val hasOffset =
+          raw.endsWith("Z") || Regex("""[+-]\d{2}:\d{2}$""").containsMatchIn(raw)
+        if (hasOffset) {
+          java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli()
+        } else {
+          java.time.LocalDateTime
+            .parse(raw)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        }
+      } else {
+        val hasOffset =
+          raw.endsWith("Z") || Regex("""[+-]\d{2}:\d{2}$""").containsMatchIn(raw)
+        val normalized =
+          if (hasOffset) {
+            raw.replace("Z", "+0000")
+              .replace(Regex("""([+-]\d{2}):(\d{2})$"""), "$1$2")
+          } else {
+            raw
+          }
+        SimpleDateFormat(
+          if (hasOffset) "yyyy-MM-dd'T'HH:mm:ss.SSSZ" else "yyyy-MM-dd'T'HH:mm:ss.SSS",
+          Locale.US,
+        ).parse(normalized)?.time
+      }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun migrateLegacyRefreshAt(
+    context: Context,
+    prefs: android.content.SharedPreferences,
+    account: String,
+  ): Long? {
+    val schedule = loadScheduleJsonObject(context) ?: return null
+    if (!schedule.has("weekDayList") && !schedule.has("eventList")) return null
+
+    val term =
+      prefs.getString("$KEY_WIDGET_TERM_PREFIX$account", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_TERM_PREFIX$account", null)?.takeIf { it.isNotBlank() }
+        ?: return null
+    val week =
+      prefs.getString("$KEY_WIDGET_WEEK_PREFIX$account", null)?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("$KEY_LAST_WEEK_PREFIX$account", null)?.takeIf { it.isNotBlank() }
+        ?: return null
+
+    val legacyFetchAt =
+      try {
+        prefs.getLong("${FLUTTER_PREFIX}schedule_fetch_at_${account}_${term}_$week", 0L)
+      } catch (_: ClassCastException) {
+        0L
+      }
+    val backgroundPollAt =
+      prefs
+        .getString("${FLUTTER_PREFIX}schedule_background_poll_last_success_at", null)
+        ?.let(::parseIso8601Millis)
+        ?: 0L
+    val migratedAt =
+      maxOf(legacyFetchAt, backgroundPollAt).takeIf { it > 0L }
+        ?: if (scheduleContainsSystemDate(schedule)) {
+          System.currentTimeMillis()
+        } else {
+          return null
+        }
+    val migratedText =
+      SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+        .format(java.util.Date(migratedAt))
+    prefs
+      .edit()
+      .putString("$KEY_LAST_SUCCESSFUL_REFRESH_AT_PREFIX$account", migratedText)
+      .apply()
+    return migratedAt
+  }
+
+  private fun formatLastUpdated(timestamp: Long): String {
+    val now = Calendar.getInstance()
+    val at = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val prefix =
+      if (now.get(Calendar.YEAR) == at.get(Calendar.YEAR) &&
+        now.get(Calendar.DAY_OF_YEAR) == at.get(Calendar.DAY_OF_YEAR)
+      ) {
+        "今天"
+      } else {
+        SimpleDateFormat("M.d ", Locale.CHINA).format(at.time)
+      }
+    return "$prefix${SimpleDateFormat("HH:mm", Locale.CHINA).format(at.time)}更新"
+  }
+
   fun loadCoursesByDayOffset(context: Context, dayOffset: Int): List<CourseItem> {
     val data = loadScheduleJsonObject(context)
     if (data == null) return emptyList()
@@ -101,17 +292,68 @@ object TodayWidgetData {
 
     if (rawTarget > 7 && dayOffset > 0) {
       targetWeekDay = rawTarget - 7
-      val next = loadNextWeekScheduleJsonObject(context)
-      if (next != null) targetData = next
+      targetData = loadNextWeekScheduleJsonObject(context) ?: return emptyList()
     } else if (rawTarget < 1 && dayOffset < 0) {
       targetWeekDay = rawTarget + 7
-      val prev = loadPrevWeekScheduleJsonObject(context)
-      if (prev != null) targetData = prev
+      targetData = loadPrevWeekScheduleJsonObject(context) ?: return emptyList()
     }
+    val targetDate =
+      Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_YEAR, dayOffset)
+      }
+    if (!scheduleContainsDate(targetData, targetDate)) return emptyList()
 
-    val courses = loadCoursesByWeekdayFromSchedule(context, targetData, targetWeekDay.coerceIn(1, 7).toString())
+    val courses =
+      loadCoursesByWeekdayFromSchedule(
+        context,
+        targetData,
+        targetWeekDay.coerceIn(1, 7).toString(),
+      )
     if (dayOffset != 0) return courses
     return filterEndedCourses(context, targetData, courses)
+  }
+
+  fun loadEmptyStateText(context: Context, dayOffset: Int): String {
+    return emptyStateTextFor(loadDayScheduleAvailability(context, dayOffset))
+  }
+
+  internal fun emptyStateTextFor(availability: DayScheduleAvailability): String {
+    return when (availability) {
+      DayScheduleAvailability.COVERED -> "暂无课程"
+      DayScheduleAvailability.OUTSIDE_TEACHING_WEEK -> "当前不在教学周"
+      DayScheduleAvailability.MISSING_CACHE -> "课表尚未同步"
+    }
+  }
+
+  private fun loadDayScheduleAvailability(
+    context: Context,
+    dayOffset: Int,
+  ): DayScheduleAvailability {
+    val data =
+      loadScheduleJsonObject(context) ?: return DayScheduleAvailability.MISSING_CACHE
+    if (!scheduleContainsSystemDate(data)) {
+      return DayScheduleAvailability.OUTSIDE_TEACHING_WEEK
+    }
+    val rawTarget = toMondayBasedWeekday(Calendar.getInstance()) + dayOffset
+    val targetData =
+      when {
+        rawTarget > 7 && dayOffset > 0 ->
+          loadNextWeekScheduleJsonObject(context)
+            ?: return DayScheduleAvailability.MISSING_CACHE
+        rawTarget < 1 && dayOffset < 0 ->
+          loadPrevWeekScheduleJsonObject(context)
+            ?: return DayScheduleAvailability.MISSING_CACHE
+        else -> data
+      }
+    val targetDate =
+      Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_YEAR, dayOffset)
+      }
+    return if (scheduleContainsDate(targetData, targetDate)) {
+      DayScheduleAvailability.COVERED
+    } else {
+      DayScheduleAvailability.OUTSIDE_TEACHING_WEEK
+    }
   }
 
   fun nextRefreshAtMillis(context: Context): Long? {
@@ -126,6 +368,10 @@ object TodayWidgetData {
   }
 
   private fun scheduleContainsSystemDate(data: JSONObject): Boolean {
+    return scheduleContainsDate(data, Calendar.getInstance())
+  }
+
+  private fun scheduleContainsDate(data: JSONObject, targetDate: Calendar): Boolean {
     val weekDayList = data.optJSONArray("weekDayList")
     if (weekDayList == null || weekDayList.length() == 0) {
       val events = data.optJSONArray("eventList")
@@ -134,9 +380,13 @@ object TodayWidgetData {
     for (i in 0 until weekDayList.length()) {
       val d = weekDayList.optJSONObject(i) ?: continue
       val weekDate = d.optString("weekDate", "")
-      if (d.optBoolean("today", false)) return true
+      if (d.optBoolean("today", false) &&
+        isSameCalendarDate(targetDate, Calendar.getInstance())
+      ) {
+        return true
+      }
       if (weekDate.isBlank()) return true
-      if (isSameAsSystemDate(weekDate)) return true
+      if (isSameAsDate(weekDate, targetDate)) return true
     }
     return false
   }
@@ -308,11 +558,19 @@ object TodayWidgetData {
   }
 
   private fun isSameAsSystemDate(weekDateText: String): Boolean {
+    return isSameAsDate(weekDateText, Calendar.getInstance())
+  }
+
+  private fun isSameAsDate(weekDateText: String, targetDate: Calendar): Boolean {
     val md = extractMonthDay(weekDateText) ?: return false
-    val cal = Calendar.getInstance()
-    val sysMonth = cal.get(Calendar.MONTH) + 1
-    val sysDay = cal.get(Calendar.DAY_OF_MONTH)
-    return md.first == sysMonth && md.second == sysDay
+    val targetMonth = targetDate.get(Calendar.MONTH) + 1
+    val targetDay = targetDate.get(Calendar.DAY_OF_MONTH)
+    return md.first == targetMonth && md.second == targetDay
+  }
+
+  private fun isSameCalendarDate(first: Calendar, second: Calendar): Boolean {
+    return first.get(Calendar.YEAR) == second.get(Calendar.YEAR) &&
+      first.get(Calendar.DAY_OF_YEAR) == second.get(Calendar.DAY_OF_YEAR)
   }
 
   private fun mondayBasedWeekdayFromWeekDateText(weekDateText: String): Int? {
@@ -516,8 +774,8 @@ object TodayWidgetData {
     if (nowMinutes < 0) return courses
 
     val events = schedule.optJSONArray("eventList") ?: return courses
-    val startedEventIds = HashSet<String>()
-    val startedFallbackKeys = HashSet<String>()
+    val endedEventIds = HashSet<String>()
+    val endedFallbackKeys = HashSet<String>()
 
     for (i in 0 until events.length()) {
       val event = events.optJSONObject(i) ?: continue
@@ -525,7 +783,7 @@ object TodayWidgetData {
       val eventId = event.optString("eventID", "").trim()
       val sessionNums = sessionNumbersOfEvent(event)
       if (sessionNums.isEmpty()) continue
-      var minStartMinute: Int? = null
+      var maxEndMinute: Int? = null
       var hasInvalidSession = false
       for (sessionNum in sessionNums) {
         val clock = sessionClockMap[sessionNum]
@@ -533,28 +791,28 @@ object TodayWidgetData {
           hasInvalidSession = true
           break
         }
-        if (minStartMinute == null || clock.first < minStartMinute!!) {
-          minStartMinute = clock.first
+        if (maxEndMinute == null || clock.second > maxEndMinute!!) {
+          maxEndMinute = clock.second
         }
       }
-      if (hasInvalidSession || minStartMinute == null) continue
-      if (minStartMinute <= nowMinutes) {
+      if (hasInvalidSession || maxEndMinute == null) continue
+      if (maxEndMinute <= nowMinutes) {
         if (eventId.isNotEmpty()) {
-          startedEventIds.add(eventId)
+          endedEventIds.add(eventId)
         } else {
           val fallbackKey = fallbackCourseKey(event, sessionNums)
-          if (fallbackKey != null) startedFallbackKeys.add(fallbackKey)
+          if (fallbackKey != null) endedFallbackKeys.add(fallbackKey)
         }
       }
     }
-    if (startedEventIds.isEmpty() && startedFallbackKeys.isEmpty()) return courses
+    if (endedEventIds.isEmpty() && endedFallbackKeys.isEmpty()) return courses
     return courses.filterNot { item ->
       val eventId = item.eventId?.trim().orEmpty()
       if (eventId.isNotEmpty()) {
-        startedEventIds.contains(eventId)
+        endedEventIds.contains(eventId)
       } else {
         val fallbackKey = fallbackCourseKey(item.name, item.periods)
-        fallbackKey != null && startedFallbackKeys.contains(fallbackKey)
+        fallbackKey != null && endedFallbackKeys.contains(fallbackKey)
       }
     }
   }

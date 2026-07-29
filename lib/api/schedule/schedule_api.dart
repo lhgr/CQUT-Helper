@@ -3,6 +3,7 @@ import 'package:cqut_helper/api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_notice.dart';
+import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 
 class ScheduleApi {
@@ -93,7 +94,13 @@ class ScheduleApi {
       if (updateWidgetPins) {
         await prefs.setString(_widgetWeekKey(userId), saveWeek);
         await prefs.setString(_widgetTermKey(userId), saveTerm);
-        await WidgetUpdater.updateTodayWidget();
+      }
+      await ScheduleRefreshState.markSuccess(userId);
+      final widgetWeek = prefs.getString(_widgetWeekKey(userId))?.trim();
+      final widgetTerm = prefs.getString(_widgetTermKey(userId))?.trim();
+      if (updateWidgetPins ||
+          (widgetWeek == saveWeek && widgetTerm == saveTerm)) {
+        await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
       }
     }
 
@@ -165,5 +172,11 @@ class ScheduleApi {
     final prefs = await SharedPreferences.getInstance();
     final key = _scheduleKey(userId, _norm(yearTerm), _norm(weekNum));
     await prefs.setString(key, jsonStr);
+    await ScheduleRefreshState.markSuccess(userId);
+    final widgetWeek = prefs.getString(_widgetWeekKey(userId))?.trim();
+    final widgetTerm = prefs.getString(_widgetTermKey(userId))?.trim();
+    if (widgetWeek == _norm(weekNum) && widgetTerm == _norm(yearTerm)) {
+      await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+    }
   }
 }

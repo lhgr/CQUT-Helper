@@ -22,14 +22,35 @@ import io.flutter.plugin.common.MethodChannel
 import com.dawndrizzle.wing.cqut.widget.TodayListWidgetProvider
 import com.dawndrizzle.wing.cqut.widget.TodayAndNextWidgetProvider
 import com.dawndrizzle.wing.cqut.widget.TodayCourseWidgetProvider
+import com.dawndrizzle.wing.cqut.widget.WidgetNavigationPendingIntent
 
 class MainActivity : FlutterActivity() {
   private val channelName = "cqut/downloads"
   private val widgetChannelName = "cqut/widget"
   private val powerChannelName = "cqut/power"
+  private val navigationChannelName = "cqut/navigation"
+  private var navigationChannel: MethodChannel? = null
+  private var pendingWidgetNavigation: Map<String, Any?>? = null
 
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
+    pendingWidgetNavigation = parseWidgetNavigation(intent)
+
+    navigationChannel =
+      MethodChannel(
+        flutterEngine.dartExecutor.binaryMessenger,
+        navigationChannelName,
+      ).apply {
+        setMethodCallHandler { call, result ->
+          when (call.method) {
+            "getInitialWidgetNavigation" -> {
+              result.success(pendingWidgetNavigation)
+              pendingWidgetNavigation = null
+            }
+            else -> result.notImplemented()
+          }
+        }
+      }
 
     MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
       .setMethodCallHandler { call, result ->
@@ -366,5 +387,38 @@ class MainActivity : FlutterActivity() {
           else -> result.notImplemented()
         }
       }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    val navigation = parseWidgetNavigation(intent) ?: return
+    val channel = navigationChannel
+    if (channel == null) {
+      pendingWidgetNavigation = navigation
+    } else {
+      channel.invokeMethod("widgetNavigation", navigation)
+    }
+  }
+
+  private fun parseWidgetNavigation(intent: Intent?): Map<String, Any?>? {
+    if (intent?.getBooleanExtra(
+        WidgetNavigationPendingIntent.EXTRA_OPEN_TODAY,
+        false,
+      ) != true
+    ) {
+      return null
+    }
+    return mapOf(
+      "dayOffset" to
+        intent.getIntExtra(
+          WidgetNavigationPendingIntent.EXTRA_DAY_OFFSET,
+          0,
+        ),
+      "eventName" to
+        intent.getStringExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME),
+      "eventId" to
+        intent.getStringExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_ID),
+    )
   }
 }

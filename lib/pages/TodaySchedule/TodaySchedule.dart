@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
+import 'package:cqut_helper/utils/widget_navigation.dart';
 import 'package:flutter/material.dart';
 
 class TodayScheduleView extends StatefulWidget {
@@ -20,17 +22,23 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   bool _loading = true;
   bool _refreshing = false;
   String? _error;
+  DateTime? _lastSuccessfulRefreshAt;
+  String _dataSource = '缓存';
+  int _lastHandledWidgetNavigationToken = 0;
 
   List<CampusTimeInfo>? get _timeInfoList => _controller.timeInfoList;
 
   @override
   void initState() {
     super.initState();
+    WidgetNavigation.request.addListener(_onWidgetNavigation);
     _loadInitialData();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onWidgetNavigation());
   }
 
   @override
   void dispose() {
+    WidgetNavigation.request.removeListener(_onWidgetNavigation);
     _controller.dispose();
     super.dispose();
   }
@@ -51,6 +59,44 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       }),
     );
     await _loadSchedule();
+    _onWidgetNavigation();
+  }
+
+  void _onWidgetNavigation() {
+    final navigation = WidgetNavigation.request.value;
+    final data = _scheduleData;
+    if (!mounted ||
+        data == null ||
+        navigation == null ||
+        !navigation.hasCourse ||
+        navigation.token == _lastHandledWidgetNavigationToken) {
+      return;
+    }
+    final eventId = navigation.eventId?.trim() ?? '';
+    final eventName = navigation.eventName?.trim() ?? '';
+    final targetWeekDay = DateTime.now()
+        .add(Duration(days: navigation.dayOffset))
+        .weekday
+        .toString();
+    final events = (data.eventList ?? const <EventItem>[])
+        .where((event) {
+          final sameCourse = eventId.isNotEmpty
+              ? (event.eventID ?? '').trim() == eventId
+              : (event.eventName ?? '').trim() == eventName;
+          return sameCourse && (event.weekDay ?? '').trim() == targetWeekDay;
+        })
+        .toList(growable: false);
+    if (events.isEmpty) return;
+
+    _lastHandledWidgetNavigationToken = navigation.token;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showCourseDetailDialog(
+        context,
+        courseName: (events.first.eventName ?? '').trim(),
+        events: events,
+      );
+    });
   }
 
   Future<void> _loadSchedule({bool forceRefresh = false}) async {
@@ -72,7 +118,9 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
           setState(() {
             _scheduleData = cached;
             _loading = false;
+            _dataSource = '缓存';
           });
+          await _loadRefreshSnapshot();
         }
       }
 
@@ -91,7 +139,9 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         setState(() {
           _scheduleData = networkData;
           _error = null;
+          _dataSource = '在线';
         });
+        await _loadRefreshSnapshot();
       }
     } catch (e) {
       if (!mounted) return;
@@ -99,12 +149,35 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         _error = _mapError(e);
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _refreshing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _refreshing = false;
+        });
+      }
     }
+  }
+
+  Future<void> _loadRefreshSnapshot() async {
+    final userId = _controller.userId;
+    if (userId == null || userId.trim().isEmpty) return;
+    final snapshot = await ScheduleRefreshState.load(userId);
+    if (!mounted) return;
+    setState(() {
+      _lastSuccessfulRefreshAt = snapshot.lastSuccessfulRefreshAt;
+    });
+  }
+
+  String get _freshnessText {
+    final at = _lastSuccessfulRefreshAt;
+    if (at == null) return '$_dataSource · 更新时间未知';
+    final now = DateTime.now();
+    final sameDay =
+        now.year == at.year && now.month == at.month && now.day == at.day;
+    final date = sameDay ? '今天' : '${at.month}/${at.day}';
+    final hour = at.hour.toString().padLeft(2, '0');
+    final minute = at.minute.toString().padLeft(2, '0');
+    return '$_dataSource · $date $hour:$minute更新';
   }
 
   String _mapError(Object error) {
@@ -188,9 +261,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .join('、');
-    return sessions.isEmpty
-        ? '节次未知'
-        : '第$sessions节';
+    return sessions.isEmpty ? '节次未知' : '第$sessions节';
   }
 
   String? _timeRangeLabel(EventItem event) {
@@ -240,10 +311,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
 
     if (data == null) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('今日课表'),
-          centerTitle: true,
-        ),
+        appBar: AppBar(title: const Text('今日课表'), centerTitle: true),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -252,10 +320,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               children: [
                 const Icon(Icons.event_busy_outlined, size: 48),
                 const SizedBox(height: 16),
-                Text(
-                  _error ??
-                      '暂无可用的课表数据。',
-                ),
+                Text(_error ?? '暂无可用的课表数据。'),
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   onPressed: () => _loadSchedule(forceRefresh: true),
@@ -308,13 +373,11 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               weekText: data.weekNum?.trim().isNotEmpty == true
                   ? '第${data.weekNum!.trim()}周'
                   : '本周',
+              freshnessText: _freshnessText,
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
-              _InfoBanner(
-                icon: Icons.wifi_off_outlined,
-                message: _error!,
-              ),
+              _InfoBanner(icon: Icons.wifi_off_outlined, message: _error!),
             ],
             const SizedBox(height: 16),
             if (!coveredToday)
@@ -350,9 +413,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -388,9 +449,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                       ),
                     ),
                     Text(
-                      endSession > startSession
-                          ? '-$endSession'
-                          : '单节',
+                      endSession > startSession ? '-$endSession' : '单节',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
@@ -452,12 +511,14 @@ class _SummaryCard extends StatelessWidget {
   final String dateText;
   final String termText;
   final String weekText;
+  final String freshnessText;
 
   const _SummaryCard({
     required this.title,
     required this.dateText,
     required this.termText,
     required this.weekText,
+    required this.freshnessText,
   });
 
   @override
@@ -480,9 +541,9 @@ class _SummaryCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
           Text(dateText, style: Theme.of(context).textTheme.titleMedium),
@@ -493,6 +554,7 @@ class _SummaryCard extends StatelessWidget {
             children: [
               _MetaChip(label: weekText),
               _MetaChip(label: termText),
+              _MetaChip(label: freshnessText),
             ],
           ),
         ],
@@ -569,17 +631,13 @@ class _EmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(
-            icon,
-            size: 48,
-            color: Theme.of(context).colorScheme.outline,
-          ),
+          Icon(icon, size: 48, color: Theme.of(context).colorScheme.outline),
           const SizedBox(height: 16),
           Text(
             title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(

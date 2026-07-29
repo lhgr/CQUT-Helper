@@ -6,6 +6,7 @@ import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
 import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
+import 'package:cqut_helper/utils/widget_navigation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,23 +21,16 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   bool _isCheckingLogin = true;
   int _lastOpenFromNotificationToken = 0;
   int _currentIndex = 1;
+  int _lastWidgetNavigationToken = 0;
 
   final List<Map<String, dynamic>> _tabList = const [
-    {
-      'icon': Icons.today_outlined,
-      'active_icon': Icons.today,
-      'text': '今日',
-    },
+    {'icon': Icons.today_outlined, 'active_icon': Icons.today, 'text': '今日'},
     {
       'icon': Icons.calendar_today_outlined,
       'active_icon': Icons.calendar_today,
       'text': '课表',
     },
-    {
-      'icon': Icons.person_outline,
-      'active_icon': Icons.person,
-      'text': '我的',
-    },
+    {'icon': Icons.person_outline, 'active_icon': Icons.person, 'text': '我的'},
   ];
 
   @override
@@ -46,7 +40,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     ScheduleUpdateIntents.openFromSystemNotification.addListener(
       _onOpenFromSystemNotification,
     );
+    WidgetNavigation.request.addListener(_onWidgetNavigation);
     _checkLoginStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onWidgetNavigation());
   }
 
   @override
@@ -55,6 +51,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     ScheduleUpdateIntents.openFromSystemNotification.removeListener(
       _onOpenFromSystemNotification,
     );
+    WidgetNavigation.request.removeListener(_onWidgetNavigation);
     super.dispose();
   }
 
@@ -109,6 +106,21 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     _openScheduleAndChanges();
   }
 
+  void _onWidgetNavigation() {
+    final navigation = WidgetNavigation.request.value;
+    if (navigation == null ||
+        navigation.token == _lastWidgetNavigationToken ||
+        !mounted) {
+      return;
+    }
+    _lastWidgetNavigationToken = navigation.token;
+    if (_currentIndex != 0) {
+      setState(() {
+        _currentIndex = 0;
+      });
+    }
+  }
+
   void _openScheduleAndChanges() {
     if (!mounted) return;
     if (_currentIndex != 1) {
@@ -122,13 +134,15 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   List<NavigationDestination> _getDestinations() {
-    return _tabList.map((item) {
-      return NavigationDestination(
-        icon: Icon(item['icon'] as IconData),
-        selectedIcon: Icon(item['active_icon'] as IconData),
-        label: item['text'] as String,
-      );
-    }).toList(growable: false);
+    return _tabList
+        .map((item) {
+          return NavigationDestination(
+            icon: Icon(item['icon'] as IconData),
+            selectedIcon: Icon(item['active_icon'] as IconData),
+            label: item['text'] as String,
+          );
+        })
+        .toList(growable: false);
   }
 
   List<Widget> _getStackChildren() {
@@ -138,9 +152,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (_isCheckingLogin) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
