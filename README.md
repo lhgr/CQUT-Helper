@@ -124,7 +124,9 @@
 > \[!NOTE]
 > 本项目的绝大部分代码由**GPT**完成，主要用于学习与实验。代码质量和设计模式可能仍有不足，仅供参考。
 
-如果你在使用中遇到问题，或有任何建议，欢迎通过 [Issues](https://github.com/lhgr/CQUT-Helper/issues) 或 [邮件](mailto:dawndrizzle@outlook.com) 与我联系。
+如果你在使用中遇到问题，或有任何建议，欢迎通过 [Issues](https://github.com/lhgr/CQUT-Helper/issues) 或 [邮件](mailto:dawndrizzle0104@gmail.com) 与我联系。
+
+有关课表数据API可见[此文章](https://blog.dawndrizzle.top/blog/reverse-timetable)
 
 <a id="references"></a>
 
@@ -154,5 +156,5 @@
 ***
 
 > \[!CAUTION]
-> 本项目为第三方非官方客户端，仅供学习交流使用；如涉及侵权问题，请通过[邮件](mailto:dawndrizzle@outlook.com)联系我们。
+> 本项目为第三方非官方客户端，仅供学习交流使用；如涉及侵权问题，请通过[邮件](mailto:dawndrizzle0104@gmail.com)联系我们。
 
