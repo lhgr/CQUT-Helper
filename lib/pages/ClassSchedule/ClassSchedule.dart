@@ -7,6 +7,7 @@ import 'package:cqut_helper/manager/schedule_update_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
+import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_app_bar.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_inline_notice_panel.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_page_view.dart';

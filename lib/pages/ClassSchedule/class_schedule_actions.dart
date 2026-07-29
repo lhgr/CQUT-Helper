@@ -57,7 +57,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     );
   }
 
-  void _openSemesterCourseListPage() {
+  Future<void> _openSemesterCourseListPage() async {
     final yearTerm = (_currentScheduleData?.yearTerm ?? '').trim();
     if (yearTerm.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -68,6 +68,72 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       );
       return;
     }
+    final weeks = _weekList ?? const <String>[];
+    final progress = ValueNotifier<int>(0);
+    BuildContext? progressDialogContext;
+    if (weeks.isNotEmpty) {
+      final dialogReady = Completer<BuildContext>();
+      unawaited(
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) {
+            if (!dialogReady.isCompleted) {
+              dialogReady.complete(dialogContext);
+            }
+            progressDialogContext = dialogContext;
+            return PopScope(
+              canPop: false,
+              child: AlertDialog(
+                title: const Text('正在准备本学期课程'),
+                content: ValueListenableBuilder<int>(
+                  valueListenable: progress,
+                  builder: (context, completed, _) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        LinearProgressIndicator(
+                          value: weeks.isEmpty
+                              ? null
+                              : completed / weeks.length,
+                        ),
+                        const SizedBox(height: 12),
+                        Text('已读取 $completed/${weeks.length} 周'),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      );
+      await dialogReady.future;
+    }
+
+    final failedWeeks = <String>[];
+    try {
+      for (var index = 0; index < weeks.length; index++) {
+        if (!mounted) return;
+        final week = weeks[index];
+        final success = await _controller.ensureWeekLoaded(
+          week,
+          yearTerm,
+          updateLastViewed: false,
+        );
+        if (!success) failedWeeks.add(week);
+        progress.value = index + 1;
+      }
+    } finally {
+      final dialogContext = progressDialogContext;
+      if (dialogContext != null && dialogContext.mounted) {
+        Navigator.of(dialogContext).pop();
+      }
+      progress.dispose();
+    }
+    if (!mounted) return;
+
     final events = <EventItem>[];
     for (final data in _weekCache.values) {
       if ((data.yearTerm ?? '').trim() != yearTerm) continue;
@@ -80,6 +146,14 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       if (fallback != null && fallback.isNotEmpty) {
         events.addAll(fallback);
       }
+    }
+    if (failedWeeks.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('部分课表读取失败：第${failedWeeks.join('、')}周，已展示其余课程'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
     Navigator.of(context).push(
       MaterialPageRoute(

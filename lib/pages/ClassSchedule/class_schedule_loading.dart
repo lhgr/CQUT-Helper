@@ -18,12 +18,27 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     );
 
     final cachedData = await _controller.loadFromCache();
+    var shouldRefreshCurrentWeek = true;
     if (cachedData != null) {
       _processLoadedData(cachedData, isInitial: true);
       await _loadRefreshSnapshot();
+      final coversToday = ScheduleDate.dataCoversDate(
+        cachedData,
+        DateTime.now(),
+      );
+      final fresh = coversToday && await _controller.isFresh(cachedData);
+      if (fresh) {
+        _controller.hydrateCurrentStatusFromCache(cachedData);
+        shouldRefreshCurrentWeek = false;
+        _setState(() {
+          _loading = false;
+        });
+      }
     }
 
-    await _loadFromNetwork(fromInitialBoot: true);
+    if (shouldRefreshCurrentWeek) {
+      await _loadFromNetwork(fromInitialBoot: true);
+    }
     _initialBootRequestPending = false;
 
     await _consumePendingChangesIfAny();
@@ -45,7 +60,6 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         await _runSilentFallbackSync(_currentScheduleData!);
         if (!mounted) return;
       }
-      _scheduleSilentForegroundFullRefresh(_currentScheduleData!);
     }
     await _maybeShowBackgroundPollingGuide();
   }
@@ -55,18 +69,6 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         .silentCheckRecentWeeksForChangesDetailed(currentData);
     if (!mounted || silentChanges.isEmpty) return;
     _syncCurrentWeekFromCache();
-  }
-
-  void _scheduleSilentForegroundFullRefresh(ScheduleData currentData) {
-    unawaited(
-      _controller
-          .refreshAllWeeksInForeground(currentData)
-          .then((_) {
-            if (!mounted) return;
-            _syncCurrentWeekFromCache();
-          })
-          .catchError((_) {}),
-    );
   }
 
   void _syncCurrentWeekFromCache() {

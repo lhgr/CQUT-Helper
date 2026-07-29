@@ -1,5 +1,6 @@
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/manager/schedule_repository.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_recent_change_detector.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_refresh_orchestrator.dart';
@@ -8,13 +9,19 @@ import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_week_loader
 
 class ScheduleController {
   final ScheduleApi _service;
+  final ScheduleRepository _repository;
   late final ScheduleTimeInfoCoordinator _timeInfoCoordinator;
   late final ScheduleWeekLoader _weekLoader;
   late final ScheduleRefreshOrchestrator _refreshOrchestrator;
   late final ScheduleRecentChangeDetector _recentChangeDetector;
 
-  ScheduleController({ScheduleApi? service})
-    : _service = service ?? ScheduleApi() {
+  ScheduleController({ScheduleApi? service, ScheduleRepository? repository})
+    : _service = service ?? repository?.api ?? ScheduleRepository.shared.api,
+      _repository =
+          repository ??
+          (service == null
+              ? ScheduleRepository.shared
+              : ScheduleRepository(service)) {
     _timeInfoCoordinator = ScheduleTimeInfoCoordinator(
       service: _service,
       getTimeInfoList: () => timeInfoList,
@@ -22,6 +29,7 @@ class ScheduleController {
     );
     _weekLoader = ScheduleWeekLoader(
       service: _service,
+      repository: _repository,
       getWeekCache: () => weekCache,
       setWeekCache: (value) => weekCache = value,
       getCurrentTerm: () => currentTerm,
@@ -78,6 +86,17 @@ class ScheduleController {
 
   Future<bool> loadTimeInfoFromCacheIfAny() {
     return _timeInfoCoordinator.loadTimeInfoFromCacheIfAny();
+  }
+
+  Future<bool> isFresh(
+    ScheduleData data, {
+    Duration maxAge = const Duration(minutes: 15),
+  }) {
+    return _weekLoader.isFresh(data, maxAge: maxAge);
+  }
+
+  void hydrateCurrentStatusFromCache(ScheduleData data) {
+    _weekLoader.hydrateCurrentStatusFromCache(data);
   }
 
   Future<void> loadCredentials() => _weekLoader.loadCredentials();

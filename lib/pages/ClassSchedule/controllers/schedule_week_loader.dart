@@ -1,5 +1,6 @@
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
+import 'package:cqut_helper/manager/schedule_repository.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
@@ -9,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ScheduleWeekLoader {
   final ScheduleApi service;
   final CredentialStore credentialStore;
+  final ScheduleRepository repository;
   final Map<int, ScheduleData> Function() getWeekCache;
   final void Function(Map<int, ScheduleData> value) setWeekCache;
   final String? Function() getCurrentTerm;
@@ -23,6 +25,7 @@ class ScheduleWeekLoader {
 
   ScheduleWeekLoader({
     required this.service,
+    ScheduleRepository? repository,
     CredentialStore? credentialStore,
     required this.getWeekCache,
     required this.setWeekCache,
@@ -33,7 +36,8 @@ class ScheduleWeekLoader {
     required this.setActualCurrentTermStr,
     required this.setNowInTeachingWeek,
     required this.setNowStatusLabel,
-  }) : credentialStore = credentialStore ?? CredentialStore();
+  }) : credentialStore = credentialStore ?? CredentialStore(),
+       repository = repository ?? ScheduleRepository(service);
 
   Future<void> loadCredentials() async {
     final prefs = await SharedPreferences.getInstance();
@@ -92,7 +96,7 @@ class ScheduleWeekLoader {
         updateWidgetPins ||
         ((weekNum == null || weekNum.trim().isEmpty) &&
             (yearTerm == null || yearTerm.trim().isEmpty));
-    final data = await service.loadFromNetwork(
+    final data = await repository.loadFromNetwork(
       userId: _userId!,
       encryptedPassword: _encryptedPassword!,
       weekNum: weekNum,
@@ -123,6 +127,13 @@ class ScheduleWeekLoader {
     return data;
   }
 
+  Future<bool> isFresh(
+    ScheduleData data, {
+    Duration maxAge = const Duration(minutes: 15),
+  }) {
+    return repository.isFresh(data, maxAge: maxAge);
+  }
+
   bool processLoadedData(ScheduleData data) {
     if (data.weekNum == null || data.weekList == null) return false;
 
@@ -138,6 +149,14 @@ class ScheduleWeekLoader {
     final weekNum = int.tryParse(data.weekNum!) ?? 1;
     cache[weekNum] = data;
     return termChanged;
+  }
+
+  void hydrateCurrentStatusFromCache(ScheduleData data) {
+    if (!ScheduleDate.dataCoversDate(data, DateTime.now())) return;
+    setNowInTeachingWeek(true);
+    setNowStatusLabel(null);
+    setActualCurrentWeekStr(data.weekNum);
+    setActualCurrentTermStr(data.yearTerm);
   }
 
   Future<bool> ensureWeekLoaded(

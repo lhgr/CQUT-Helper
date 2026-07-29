@@ -18,6 +18,13 @@ class ScheduleApi {
   String _scheduleKey(String userId, String yearTerm, String weekNum) =>
       'schedule_${userId}_${_norm(yearTerm)}_${_norm(weekNum)}';
 
+  static String lastFetchAtKey(
+    String userId,
+    String yearTerm,
+    String weekNum,
+  ) =>
+      'schedule_fetch_at_${userId.trim()}_${yearTerm.trim()}_${weekNum.trim()}';
+
   Future<ScheduleData?> loadFromCache({
     required String userId,
     String? weekNum,
@@ -96,6 +103,10 @@ class ScheduleApi {
         await prefs.setString(_widgetTermKey(userId), saveTerm);
       }
       await ScheduleRefreshState.markSuccess(userId);
+      await prefs.setInt(
+        lastFetchAtKey(userId, saveTerm, saveWeek),
+        DateTime.now().millisecondsSinceEpoch,
+      );
       final widgetWeek = prefs.getString(_widgetWeekKey(userId))?.trim();
       final widgetTerm = prefs.getString(_widgetTermKey(userId))?.trim();
       if (updateWidgetPins ||
@@ -173,6 +184,10 @@ class ScheduleApi {
     final key = _scheduleKey(userId, _norm(yearTerm), _norm(weekNum));
     await prefs.setString(key, jsonStr);
     await ScheduleRefreshState.markSuccess(userId);
+    await prefs.setInt(
+      lastFetchAtKey(userId, _norm(yearTerm), _norm(weekNum)),
+      DateTime.now().millisecondsSinceEpoch,
+    );
     final widgetWeek = prefs.getString(_widgetWeekKey(userId))?.trim();
     final widgetTerm = prefs.getString(_widgetTermKey(userId))?.trim();
     if (widgetWeek == _norm(weekNum) && widgetTerm == _norm(yearTerm)) {

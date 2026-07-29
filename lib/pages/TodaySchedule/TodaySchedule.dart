@@ -124,10 +124,12 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         }
       }
 
+      final cacheCoversToday =
+          cached != null && ScheduleDate.dataCoversDate(cached, DateTime.now());
+      final cacheIsFresh =
+          cacheCoversToday && await _controller.isFresh(cached);
       final shouldFetchNetwork =
-          forceRefresh ||
-          cached == null ||
-          !ScheduleDate.dataCoversDate(cached, DateTime.now());
+          forceRefresh || cached == null || !cacheCoversToday || !cacheIsFresh;
 
       if (shouldFetchNetwork) {
         final networkData = await _controller.loadFromNetwork(
