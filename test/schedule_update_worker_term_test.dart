@@ -36,4 +36,20 @@ void main() {
       expect(target.weekNum, '1');
     });
   });
+
+  group('ScheduleUpdateWorker 后台任务参数', () {
+    test('只保存账号和调度元数据，不复制教务系统凭证', () {
+      final inputData = ScheduleUpdateWorker.buildTaskInputData(
+        userId: 'u1',
+        trigger: 'daily_9am',
+        logicalDateBjt: '2026-07-29',
+        scheduledAtBjt: '2026-07-29T09:00:00+08:00',
+      );
+
+      expect(inputData['userId'], 'u1');
+      expect(inputData['trigger'], 'daily_9am');
+      expect(inputData.containsKey('encryptedPassword'), isFalse);
+      expect(inputData.values, isNot(contains('secure-p1')));
+    });
+  });
 }

@@ -50,9 +50,9 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     }
 
     if (_currentScheduleData != null) {
-      final changes = await _updateManager.checkForUpdates(
-        _currentScheduleData!,
-      );
+      final changes = _settingsManager.backgroundPollingEnabled
+          ? await _updateManager.checkForUpdates(_currentScheduleData!)
+          : const <ScheduleWeekChange>[];
       if (!mounted) return;
       if (changes.isNotEmpty) {
         _showUpdateNotification(changes);
@@ -97,7 +97,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('如需自动更新课表，请在右上角设置中开启“定时轮询”功能'),
+        content: Text('如需在后台接收调课提醒，可在右上角设置中开启“调课通知增强”'),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 6),
         action: SnackBarAction(

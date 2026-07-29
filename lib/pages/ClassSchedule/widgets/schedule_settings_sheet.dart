@@ -48,6 +48,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   bool confirmDialogOpen = false;
   bool _allowPop = false;
   bool _checkingSetup = false;
+  bool _noticePrivacyConsentAcceptedThisSession = false;
   ScheduleBackgroundPollHealthSnapshot? _healthSnapshot;
 
   late bool _baselineShowWeekend;
@@ -106,7 +107,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   String? _validateNoticeApiBaseUrl(String value) {
     if (value.trim().isEmpty) return null;
     if (!ScheduleSettingsManager.isValidNoticeApiBaseUrl(value)) {
-      return '请输入合法域名，例如 https://mydomain.com';
+      return '请输入 HTTPS 服务地址，例如 https://mydomain.com';
     }
     return null;
   }
@@ -153,18 +154,20 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
           context: context,
           builder: (context) {
             return AlertDialog(
-              title: const Text('启用后台定时轮询'),
+              title: const Text('开启“调课通知增强”'),
               content: const Text(
-                '启用后会在后台定时检查调课通知。为提升稳定性，建议授予通知权限、忽略电池优化，并在系统中允许应用自启动。',
+                '开启后，应用会将你的学号、教务系统加密密码和当前学期发送到所配置的调课服务，用于代你查询调课通知，并在后台刷新受影响周。\n\n'
+                '普通课表和桌面小组件不依赖此服务；保持关闭或服务不可用时，仍可正常查看和手动刷新课表。\n\n'
+                '继续后还会申请通知权限，并引导你设置电池优化和自启动。',
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: const Text('暂不开启'),
+                  child: const Text('保持关闭'),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text('继续开启'),
+                  child: const Text('我已了解，继续'),
                 ),
               ],
             );
@@ -172,6 +175,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         ) ??
         false;
     if (!proceed) return false;
+    _noticePrivacyConsentAcceptedThisSession = true;
 
     final granted = await LocalNotifications.ensurePermission();
     if (!mounted) return false;
@@ -253,6 +257,9 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       noticeApiBaseUrl,
     );
 
+    if (backgroundPollingEnabled && _noticePrivacyConsentAcceptedThisSession) {
+      await ScheduleSettingsManager.markNoticePrivacyConsentAccepted();
+    }
     await ScheduleUpdateWorker.markEnabledAtIfNeeded(
       enabled: backgroundPollingEnabled,
     );
@@ -390,10 +397,12 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                     },
                   ),
                   ListTile(
-                    title: Text('启用后台定时轮询'),
+                    title: Text('调课通知增强（可选）'),
                     subtitle: Text(
-                      _healthSnapshot == null
-                          ? '后台定时检查调课通知并更新受影响周课表'
+                      !backgroundPollingEnabled
+                          ? '关闭时不会访问调课服务，普通课表仍可正常刷新'
+                          : _healthSnapshot == null
+                          ? '后台检查调课通知，并只更新受影响周'
                           : '${_healthSnapshot!.title} · ${_healthSnapshot!.detail}',
                     ),
                     onTap: () {
@@ -427,15 +436,20 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Text(
+                            '高级设置',
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                          const SizedBox(height: 8),
                           TextField(
                             controller: _noticeApiController,
                             keyboardType: TextInputType.url,
                             textInputAction: TextInputAction.done,
                             decoration: InputDecoration(
-                              labelText: '调课信息接口域名',
+                              labelText: '调课服务地址',
                               hintText: ScheduleSettingsManager
                                   .officialNoticeApiBaseUrl,
-                              helperText: '留空使用官方域名；仅支持 http/https 且不包含路径',
+                              helperText: '仅支持 HTTPS；学号和教务系统加密密码会发送到该地址',
                               errorText: _noticeApiError,
                             ),
                           ),

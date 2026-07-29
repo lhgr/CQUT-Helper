@@ -4,6 +4,7 @@ import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_notice_refresh_pipeline.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker_health.dart';
 import 'package:cqut_helper/manager/schedule_update_worker_state_store.dart';
 import 'package:cqut_helper/manager/schedule_update_worker_target.dart';
@@ -49,6 +50,21 @@ class ScheduleUpdateWorker {
     );
   }
 
+  @visibleForTesting
+  static Map<String, Object> buildTaskInputData({
+    required String userId,
+    required String trigger,
+    required String logicalDateBjt,
+    String? scheduledAtBjt,
+  }) {
+    return <String, Object>{
+      'userId': userId,
+      'trigger': trigger,
+      'logicalDateBjt': logicalDateBjt,
+      if (scheduledAtBjt != null) 'scheduledAtBjt': scheduledAtBjt,
+    };
+  }
+
   static Future<void> initialize() async {
     await Workmanager().initialize(
       scheduleUpdateCallbackDispatcher,
@@ -69,8 +85,7 @@ class ScheduleUpdateWorker {
     final userId = (prefs.getString('account') ?? '').trim();
     final encryptedPassword =
         ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
-    final enabled =
-        prefs.getBool('schedule_background_polling_enabled') ?? false;
+    final enabled = ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs);
     await recordScheduleUpdateWorkerSyncState(
       status: 'sync_start',
       fields: {
@@ -105,18 +120,9 @@ class ScheduleUpdateWorker {
       );
       return;
     }
-    await _scheduleImmediateTask(
-      userId: userId,
-      encryptedPassword: encryptedPassword,
-    );
-    await _scheduleNextDailyTask(
-      userId: userId,
-      encryptedPassword: encryptedPassword,
-    );
-    await _scheduleFallbackFromStoredStateIfNeeded(
-      userId: userId,
-      encryptedPassword: encryptedPassword,
-    );
+    await _scheduleImmediateTask(userId: userId);
+    await _scheduleNextDailyTask(userId: userId);
+    await _scheduleFallbackFromStoredStateIfNeeded(userId: userId);
     await recordScheduleUpdateWorkerSyncState(
       status: 'sync_registered',
       fields: {'nextDailyAt': _nextDaily9amUtc().toIso8601String()},
@@ -191,18 +197,26 @@ class ScheduleUpdateWorker {
         );
         return done(status: 'skip_unknown_task');
       }
+      final prefs = await SharedPreferences.getInstance();
+      if (!isWidgetManual &&
+          !ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs)) {
+        return done(status: 'skip_disabled');
+      }
       if (_isDeepNight() && trigger != _triggerWidgetManual) {
         return done(status: 'skip_deep_night', scheduleFollowUp: true);
       }
-      var userId = ((inputData?['userId'] ?? '').toString()).trim();
-      var encryptedPassword =
-          ((inputData?['encryptedPassword'] ?? '').toString()).trim();
-      if (isWidgetManual && (userId.isEmpty || encryptedPassword.isEmpty)) {
-        final storedPrefs = await SharedPreferences.getInstance();
-        userId = (storedPrefs.getString('account') ?? '').trim();
-        encryptedPassword =
-            ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
+      final scheduledUserId = ((inputData?['userId'] ?? '').toString()).trim();
+      final userId = (prefs.getString('account') ?? '').trim();
+      if (!isWidgetManual &&
+          scheduledUserId.isNotEmpty &&
+          scheduledUserId != userId) {
+        return done(
+          status: 'skip_stale_account',
+          fields: {'scheduledUserId': scheduledUserId},
+        );
       }
+      final encryptedPassword =
+          ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
       if (userId.isEmpty || encryptedPassword.isEmpty) {
         if (isWidgetManual && userId.isNotEmpty) {
           await ScheduleRefreshState.markFailure(
@@ -223,14 +237,6 @@ class ScheduleUpdateWorker {
           fields: {'trigger': trigger},
         );
         return done(status: 'skip_missing_credentials', scheduleFollowUp: true);
-      }
-      final prefs = await SharedPreferences.getInstance();
-      final currentAccount = (prefs.getString('account') ?? '').trim();
-      final currentPassword =
-          ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
-      if (currentAccount.isEmpty || currentPassword.isEmpty) {
-        await prefs.setString('account', userId);
-        await CredentialStore().writeEncryptedPassword(encryptedPassword);
       }
 
       final scheduleApi = ScheduleApi();
@@ -486,29 +492,22 @@ class ScheduleUpdateWorker {
     await Workmanager().cancelByUniqueName(_immediateTaskUniqueName);
   }
 
-  static Future<void> _scheduleImmediateTask({
-    required String userId,
-    required String encryptedPassword,
-  }) async {
+  static Future<void> _scheduleImmediateTask({required String userId}) async {
     await Workmanager().registerOneOffTask(
       _immediateTaskUniqueName,
       _taskName,
       initialDelay: const Duration(minutes: 1),
       existingWorkPolicy: ExistingWorkPolicy.replace,
       constraints: Constraints(networkType: NetworkType.connected),
-      inputData: {
-        'userId': userId,
-        'encryptedPassword': encryptedPassword,
-        'trigger': _triggerImmediate,
-        'logicalDateBjt': _logicalDateBjtForInstant(_nowUtc()),
-      },
+      inputData: buildTaskInputData(
+        userId: userId,
+        trigger: _triggerImmediate,
+        logicalDateBjt: _logicalDateBjtForInstant(_nowUtc()),
+      ),
     );
   }
 
-  static Future<void> _scheduleNextDailyTask({
-    required String userId,
-    required String encryptedPassword,
-  }) async {
+  static Future<void> _scheduleNextDailyTask({required String userId}) async {
     final runAtUtc = _nextDaily9amUtc();
     await Workmanager().registerOneOffTask(
       _dailyTaskUniqueName,
@@ -516,19 +515,17 @@ class ScheduleUpdateWorker {
       initialDelay: _delayUntilUtc(runAtUtc),
       existingWorkPolicy: ExistingWorkPolicy.replace,
       constraints: Constraints(networkType: NetworkType.connected),
-      inputData: {
-        'userId': userId,
-        'encryptedPassword': encryptedPassword,
-        'trigger': _triggerDaily9am,
-        'logicalDateBjt': _logicalDateBjtForInstant(runAtUtc),
-        'scheduledAtBjt': _toBjtWallClockString(runAtUtc),
-      },
+      inputData: buildTaskInputData(
+        userId: userId,
+        trigger: _triggerDaily9am,
+        logicalDateBjt: _logicalDateBjtForInstant(runAtUtc),
+        scheduledAtBjt: _toBjtWallClockString(runAtUtc),
+      ),
     );
   }
 
   static Future<void> _scheduleFallbackTask({
     required String userId,
-    required String encryptedPassword,
     required DateTime runAtUtc,
   }) async {
     await Workmanager().registerOneOffTask(
@@ -537,19 +534,17 @@ class ScheduleUpdateWorker {
       initialDelay: _delayUntilUtc(runAtUtc),
       existingWorkPolicy: ExistingWorkPolicy.replace,
       constraints: Constraints(networkType: NetworkType.connected),
-      inputData: {
-        'userId': userId,
-        'encryptedPassword': encryptedPassword,
-        'trigger': _triggerFallbackNoon,
-        'logicalDateBjt': _logicalDateBjtForInstant(runAtUtc),
-        'scheduledAtBjt': _toBjtWallClockString(runAtUtc),
-      },
+      inputData: buildTaskInputData(
+        userId: userId,
+        trigger: _triggerFallbackNoon,
+        logicalDateBjt: _logicalDateBjtForInstant(runAtUtc),
+        scheduledAtBjt: _toBjtWallClockString(runAtUtc),
+      ),
     );
   }
 
   static Future<void> _scheduleFallbackFromStoredStateIfNeeded({
     required String userId,
-    required String encryptedPassword,
   }) async {
     final dailyState = await loadScheduleUpdateWorkerDailyState();
     final today = _logicalDateBjtForInstant(_nowUtc());
@@ -569,11 +564,7 @@ class ScheduleUpdateWorker {
       return;
     }
     final fallbackAtUtc = _todayNoonUtc();
-    await _scheduleFallbackTask(
-      userId: userId,
-      encryptedPassword: encryptedPassword,
-      runAtUtc: fallbackAtUtc,
-    );
+    await _scheduleFallbackTask(userId: userId, runAtUtc: fallbackAtUtc);
     await patchScheduleUpdateWorkerDailyState(
       logicalDateBjt: today,
       retry: {
@@ -590,10 +581,15 @@ class ScheduleUpdateWorker {
     required String logicalDateBjt,
     required Map<String, dynamic>? inputData,
   }) async {
-    final userId = ((inputData?['userId'] ?? '').toString()).trim();
+    final prefs = await SharedPreferences.getInstance();
+    final userId = (prefs.getString('account') ?? '').trim();
+    final scheduledUserId = ((inputData?['userId'] ?? '').toString()).trim();
     final encryptedPassword =
-        ((inputData?['encryptedPassword'] ?? '').toString()).trim();
-    if (userId.isEmpty || encryptedPassword.isEmpty) {
+        ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
+    if (!ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs) ||
+        userId.isEmpty ||
+        encryptedPassword.isEmpty ||
+        (scheduledUserId.isNotEmpty && scheduledUserId != userId)) {
       await _cancelAllScheduledTasks();
       await clearScheduleUpdateWorkerDailyState();
       return;
@@ -619,19 +615,12 @@ class ScheduleUpdateWorker {
           'retryEligible': retryEligible,
         },
       );
-      await _scheduleNextDailyTask(
-        userId: userId,
-        encryptedPassword: encryptedPassword,
-      );
+      await _scheduleNextDailyTask(userId: userId);
       if (retryEligible &&
           _isTodayBjt(logicalDate) &&
           _canScheduleFallbackNoonForToday()) {
         final fallbackAtUtc = _todayNoonUtc();
-        await _scheduleFallbackTask(
-          userId: userId,
-          encryptedPassword: encryptedPassword,
-          runAtUtc: fallbackAtUtc,
-        );
+        await _scheduleFallbackTask(userId: userId, runAtUtc: fallbackAtUtc);
         await patchScheduleUpdateWorkerDailyState(
           logicalDateBjt: logicalDate,
           retry: {
@@ -655,10 +644,7 @@ class ScheduleUpdateWorker {
         },
       );
       await Workmanager().cancelByUniqueName(_fallbackTaskUniqueName);
-      await _scheduleNextDailyTask(
-        userId: userId,
-        encryptedPassword: encryptedPassword,
-      );
+      await _scheduleNextDailyTask(userId: userId);
     }
   }
 

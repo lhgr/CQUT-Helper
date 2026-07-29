@@ -3,11 +3,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ScheduleSettingsManager {
   static const String _prefsKeyShowWeekend = 'schedule_show_weekend';
   static const String _prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
-  static const String _prefsKeyBackgroundPollingEnabled =
+  static const String backgroundPollingEnabledKey =
       'schedule_background_polling_enabled';
+  static const String noticePrivacyConsentVersionKey =
+      'schedule_notice_privacy_consent_version';
+  static const int currentNoticePrivacyConsentVersion = 1;
   static const String _prefsKeyNoticeApiBaseUrl =
       'schedule_notice_api_base_url';
-  static const String officialNoticeApiBaseUrl = 'https://notice.dawndrizzle.top';
+  static const String officialNoticeApiBaseUrl =
+      'https://notice.dawndrizzle.top';
 
   bool showWeekend = false;
   bool timeInfoEnabled = true;
@@ -20,16 +24,12 @@ class ScheduleSettingsManager {
     final parsed = Uri.tryParse(value);
     if (parsed == null ||
         !parsed.hasScheme ||
-        (parsed.scheme != 'http' && parsed.scheme != 'https') ||
+        parsed.scheme != 'https' ||
         (parsed.host.isEmpty && !parsed.hasAuthority) ||
         (parsed.path.isNotEmpty && parsed.path != '/')) {
       return officialNoticeApiBaseUrl;
     }
-    final normalized = parsed.replace(
-      path: '',
-      query: null,
-      fragment: null,
-    );
+    final normalized = parsed.replace(path: '', query: null, fragment: null);
     final text = normalized.toString();
     return text.endsWith('/') ? text.substring(0, text.length - 1) : text;
   }
@@ -39,7 +39,7 @@ class ScheduleSettingsManager {
     if (value.isEmpty) return false;
     final parsed = Uri.tryParse(value);
     if (parsed == null) return false;
-    if (parsed.scheme != 'http' && parsed.scheme != 'https') return false;
+    if (parsed.scheme != 'https') return false;
     if (parsed.host.isEmpty && !parsed.hasAuthority) return false;
     if (parsed.path.isNotEmpty && parsed.path != '/') return false;
     if (parsed.query.isNotEmpty || parsed.fragment.isNotEmpty) return false;
@@ -55,12 +55,35 @@ class ScheduleSettingsManager {
     return normalizeNoticeApiBaseUrl(raw);
   }
 
+  static bool isNoticeEnhancementEnabledIn(SharedPreferences prefs) {
+    final enabled = prefs.getBool(backgroundPollingEnabledKey) ?? false;
+    final consentVersion = prefs.getInt(noticePrivacyConsentVersionKey) ?? 0;
+    return enabled && consentVersion >= currentNoticePrivacyConsentVersion;
+  }
+
+  static Future<bool> isNoticeEnhancementEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return isNoticeEnhancementEnabledIn(prefs);
+  }
+
+  static Future<void> markNoticePrivacyConsentAccepted() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      noticePrivacyConsentVersionKey,
+      currentNoticePrivacyConsentVersion,
+    );
+  }
+
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     showWeekend = prefs.getBool(_prefsKeyShowWeekend) ?? false;
     timeInfoEnabled = prefs.getBool(_prefsKeyTimeInfoEnabled) ?? true;
-    backgroundPollingEnabled =
-        prefs.getBool(_prefsKeyBackgroundPollingEnabled) ?? false;
+    final wasPreviouslyEnabled =
+        prefs.getBool(backgroundPollingEnabledKey) ?? false;
+    backgroundPollingEnabled = isNoticeEnhancementEnabledIn(prefs);
+    if (wasPreviouslyEnabled && !backgroundPollingEnabled) {
+      await prefs.setBool(backgroundPollingEnabledKey, false);
+    }
     final savedBaseUrl = prefs.getString(_prefsKeyNoticeApiBaseUrl) ?? '';
     noticeApiBaseUrl = isValidNoticeApiBaseUrl(savedBaseUrl)
         ? normalizeNoticeApiBaseUrl(savedBaseUrl)
@@ -82,10 +105,7 @@ class ScheduleSettingsManager {
     await prefs.setBool(_prefsKeyShowWeekend, showWeekend);
     await prefs.setBool(_prefsKeyTimeInfoEnabled, timeInfoEnabled);
     await prefs.remove('schedule_update_show_diff');
-    await prefs.setBool(
-      _prefsKeyBackgroundPollingEnabled,
-      backgroundPollingEnabled,
-    );
+    await prefs.setBool(backgroundPollingEnabledKey, backgroundPollingEnabled);
     await prefs.setString(_prefsKeyNoticeApiBaseUrl, this.noticeApiBaseUrl);
   }
 }
