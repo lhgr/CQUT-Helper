@@ -3,10 +3,7 @@ import 'package:cqut_helper/model/class_schedule_model.dart';
 typedef DateRange = ({DateTime start, DateTime end});
 
 class ScheduleDate {
-  static DateTime? tryParseWeekDate(
-    String? input, {
-    DateTime? reference,
-  }) {
+  static DateTime? tryParseWeekDate(String? input, {DateTime? reference}) {
     if (input == null) return null;
     final raw = input.trim();
     if (raw.isEmpty) return null;
@@ -66,4 +63,3 @@ class ScheduleDate {
     return !d.isBefore(range.start) && !d.isAfter(range.end);
   }
 }
-

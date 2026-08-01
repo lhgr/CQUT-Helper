@@ -32,9 +32,9 @@ class MineMenuSection extends StatelessWidget {
           icon: Icons.cleaning_services,
           title: "清理缓存",
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ClearCachePage()),
-            );
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ClearCachePage()));
           },
         ),
         MineMenuItem(

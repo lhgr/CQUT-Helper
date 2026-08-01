@@ -141,9 +141,9 @@ class _ClearCachePageState extends State<ClearCachePage> {
       if (kind == null) return;
       await AppLogger.I.exportLogsWithKind(kind: kind);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('日志已保存在/Download/CQUT-Helper/log文件夹中')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('日志已保存在/Download/CQUT-Helper/log文件夹中')),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(

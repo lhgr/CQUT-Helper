@@ -155,11 +155,7 @@ class ScheduleTimeInfoCoordinator {
     AppLogger.I.info(
       'TimeInfo',
       'refresh_start',
-      fields: {
-        'campus': campusName,
-        'hasCache': oldFp != null,
-        'force': force,
-      },
+      fields: {'campus': campusName, 'hasCache': oldFp != null, 'force': force},
     );
     List<CampusTimeInfo> fetched;
     try {
@@ -215,7 +211,9 @@ class ScheduleTimeInfoCoordinator {
     return true;
   }
 
-  Future<void> ensureTimeInfoLoaded({required bool Function() isDisposed}) async {
+  Future<void> ensureTimeInfoLoaded({
+    required bool Function() isDisposed,
+  }) async {
     if (isDisposed()) return;
     if (getTimeInfoList() != null) return;
     await loadTimeInfoFromCacheIfAny();

@@ -1,15 +1,24 @@
 import json
+import logging
+import multiprocessing
 import os
+import queue
 import re
+import secrets
 import subprocess
 import tempfile
+import threading
+import time
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 try:
     # pydantic v2
     from pydantic import BaseModel, Field, field_validator
@@ -18,6 +27,8 @@ except ImportError:
     from pydantic import BaseModel, Field, validator as field_validator
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
+
+logger = logging.getLogger("jwxt_automation")
 
 @dataclass
 class EnvConfig:
@@ -468,8 +479,8 @@ def run_pipeline(
 
 
 class PipelineRequest(BaseModel):
-    username: str = Field(..., min_length=1)
-    encrypted_password: str = Field(..., min_length=1)
+    username: str = Field(..., min_length=1, max_length=64)
+    encrypted_password: str = Field(..., min_length=1, max_length=16384)
     year_term: str = Field(..., pattern=r"^\d{4}-\d{4}-[12]$")
     env: str = Field(default="prod")
     headless: bool = True
@@ -490,18 +501,277 @@ class PipelineRequest(BaseModel):
         return normalized
 
 
-app = FastAPI(title="JWXT Automation API", version="1.0.0")
+class ServiceError(Exception):
+    def __init__(self, status_code: int, code: str, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+
+
+class SlidingWindowRateLimiter:
+    def __init__(self, limit: int, window_seconds: int):
+        self.limit = max(1, limit)
+        self.window_seconds = max(1, window_seconds)
+        self._events: Dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def allow(self, identity: str, now: Optional[float] = None) -> bool:
+        current = time.monotonic() if now is None else now
+        cutoff = current - self.window_seconds
+        with self._lock:
+            if len(self._events) > 4096:
+                stale_identities = [
+                    key
+                    for key, values in self._events.items()
+                    if not values or values[-1] <= cutoff
+                ]
+                for key in stale_identities:
+                    self._events.pop(key, None)
+            events = self._events[identity]
+            while events and events[0] <= cutoff:
+                events.popleft()
+            if len(events) >= self.limit:
+                return False
+            events.append(current)
+            if not events:
+                self._events.pop(identity, None)
+            return True
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _configured_api_keys() -> List[str]:
+    raw = os.getenv("JWXT_API_KEYS", "")
+    return [
+        value.strip()
+        for value in raw.split(",")
+        if len(value.strip()) >= 32
+    ]
+
+
+def _require_api_key(provided: Optional[str]) -> None:
+    if not _env_bool("JWXT_REQUIRE_API_KEY", True):
+        return
+    configured = _configured_api_keys()
+    if not configured:
+        raise ServiceError(503, "service_not_configured", "服务尚未完成安全配置")
+    candidate = (provided or "").strip()
+    if not candidate or not any(
+        secrets.compare_digest(candidate, expected) for expected in configured
+    ):
+        raise ServiceError(401, "unauthorized", "服务鉴权失败")
+
+
+def _client_identity(request: Request) -> str:
+    if _env_bool("JWXT_TRUST_PROXY_HEADERS", False):
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",", 1)[0].strip()
+    return request.client.host if request.client is not None else "unknown"
+
+
+def _pipeline_process_entry(result_queue: Any, kwargs: Dict[str, Any]) -> None:
+    try:
+        result_queue.put({"ok": True, "data": run_pipeline(**kwargs)})
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else None
+        if status_code == 403:
+            result_queue.put(
+                {
+                    "ok": False,
+                    "status": 403,
+                    "code": "upstream_closed",
+                    "message": "上游接口夜间关闭，请白天时段再试",
+                }
+            )
+        else:
+            logger.exception("upstream HTTP request failed")
+            result_queue.put(
+                {
+                    "ok": False,
+                    "status": 502,
+                    "code": "upstream_unavailable",
+                    "message": "上游教务服务暂时不可用",
+                }
+            )
+    except requests.RequestException:
+        logger.exception("upstream request failed")
+        result_queue.put(
+            {
+                "ok": False,
+                "status": 502,
+                "code": "upstream_unavailable",
+                "message": "上游教务服务暂时不可用",
+            }
+        )
+    except ValueError as exc:
+        result_queue.put(
+            {
+                "ok": False,
+                "status": 400,
+                "code": "invalid_request",
+                "message": str(exc),
+            }
+        )
+    except Exception:
+        logger.exception("isolated pipeline failed")
+        result_queue.put(
+            {
+                "ok": False,
+                "status": 500,
+                "code": "pipeline_failed",
+                "message": "调课查询处理失败",
+            }
+        )
+
+
+def run_pipeline_isolated(**kwargs: Any) -> Dict[str, Any]:
+    timeout_seconds = _env_int("JWXT_PIPELINE_TIMEOUT_SEC", 90, 10, 300)
+    context = multiprocessing.get_context("spawn")
+    result_queue = context.Queue(maxsize=1)
+    process = context.Process(
+        target=_pipeline_process_entry,
+        args=(result_queue, kwargs),
+        daemon=True,
+    )
+    process.start()
+    deadline = time.monotonic() + timeout_seconds
+    outcome: Optional[Dict[str, Any]] = None
+    while time.monotonic() < deadline:
+        remaining = max(0.01, deadline - time.monotonic())
+        try:
+            outcome = result_queue.get(timeout=min(0.25, remaining))
+            break
+        except queue.Empty:
+            if not process.is_alive():
+                break
+
+    if outcome is None and process.is_alive():
+        process.terminate()
+        process.join(5)
+        if process.is_alive():
+            process.kill()
+            process.join(2)
+        result_queue.close()
+        raise ServiceError(504, "pipeline_timeout", "调课查询超时，请稍后重试")
+
+    process.join(5)
+    if outcome is None:
+        try:
+            outcome = result_queue.get(timeout=1)
+        except queue.Empty as exc:
+            raise ServiceError(500, "pipeline_failed", "调课查询处理失败") from exc
+        finally:
+            result_queue.close()
+    else:
+        result_queue.close()
+
+    if outcome.get("ok") is True:
+        return outcome["data"]
+    raise ServiceError(
+        int(outcome.get("status", 500)),
+        str(outcome.get("code", "pipeline_failed")),
+        str(outcome.get("message", "调课查询处理失败")),
+    )
+
+
+_rate_limiter = SlidingWindowRateLimiter(
+    limit=_env_int("JWXT_RATE_LIMIT_PER_MINUTE", 12, 1, 600),
+    window_seconds=60,
+)
+_pipeline_slots = threading.BoundedSemaphore(
+    _env_int("JWXT_MAX_CONCURRENT_PIPELINES", 2, 1, 16)
+)
+
+app = FastAPI(title="JWXT Automation API", version="1.1.0")
+
+
+@app.middleware("http")
+async def security_headers_and_body_limit(request: Request, call_next: Any) -> JSONResponse:
+    content_length = request.headers.get("content-length", "").strip()
+    if content_length:
+        try:
+            if int(content_length) > 65536:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "success": False,
+                        "error": {
+                            "code": "request_too_large",
+                            "message": "请求体过大",
+                        },
+                    },
+                    headers={"Cache-Control": "no-store"},
+                )
+        except ValueError:
+            pass
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@app.exception_handler(ServiceError)
+async def service_error_handler(_request: Request, exc: ServiceError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": {"code": exc.code, "message": exc.message},
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(
+    _request: Request, _exc: RequestValidationError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "error": {"code": "validation_error", "message": "请求参数不合法"},
+        },
+    )
 
 
 @app.get("/health")
-def health() -> Dict[str, str]:
-    return {"status": "ok"}
+def health() -> Dict[str, Any]:
+    auth_required = _env_bool("JWXT_REQUIRE_API_KEY", True)
+    return {
+        "status": "ok",
+        "ready": not auth_required or bool(_configured_api_keys()),
+        "auth_required": auth_required,
+    }
 
 
 @app.post("/api/jwxt/term-schedule-notices")
-def fetch_term_schedule_notices(payload: PipelineRequest) -> Dict[str, Any]:
+def fetch_term_schedule_notices(
+    payload: PipelineRequest,
+    request: Request,
+    api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> Dict[str, Any]:
+    _require_api_key(api_key)
+    if not _rate_limiter.allow(_client_identity(request)):
+        raise ServiceError(429, "rate_limited", "请求过于频繁，请稍后再试")
+    if not _pipeline_slots.acquire(blocking=False):
+        raise ServiceError(503, "service_busy", "服务繁忙，请稍后再试")
     try:
-        result = run_pipeline(
+        result = run_pipeline_isolated(
             username=payload.username,
             encrypted_password=payload.encrypted_password,
             year_term=payload.year_term,
@@ -509,19 +779,5 @@ def fetch_term_schedule_notices(payload: PipelineRequest) -> Dict[str, Any]:
             headless=payload.headless,
         )
         return {"success": True, "data": result}
-    except HTTPException:
-        raise
-    except requests.HTTPError as exc:
-        status_code = exc.response.status_code if exc.response is not None else None
-        if status_code == 403:
-            raise HTTPException(
-                status_code=403,
-                detail="上游接口夜间关闭(403)，请白天时段再试",
-            ) from exc
-        raise HTTPException(status_code=502, detail=f"上游请求失败: {exc}") from exc
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"上游请求失败: {exc}") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"处理失败: {exc}") from exc
+    finally:
+        _pipeline_slots.release()

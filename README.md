@@ -107,6 +107,9 @@
 > \[!NOTE]
 > 该服务端仅用于处理调课通知，不会存储任何个人隐私信息。如你仍有隐私顾虑，可自行部署 [jwxt\_automation.py](FastAPI/jwxt_automation.py) 到自己的服务器，并在课程表设置的“启用后台定时轮询”中配置你的域名。
 
+> \[!IMPORTANT]
+> 配置自建调课服务后，应用只会向该域名发送凭证。自建服务不可用时会直接报错，不会静默回退到官方调课服务。
+
 1. **权限使用**
 
    应用仅会在确有必要时申请所需权限，并明确说明用途。
@@ -125,6 +128,8 @@
 > 本项目的绝大部分代码由**GPT**完成，主要用于学习与实验。代码质量和设计模式可能仍有不足，仅供参考。
 
 如果你在使用中遇到问题，或有任何建议，欢迎通过 [Issues](https://github.com/lhgr/CQUT-Helper/issues) 或 [邮件](mailto:dawndrizzle0104@gmail.com) 与我联系。
+
+正式发布的签名、CI Secrets 和构建流程见 [RELEASING.md](RELEASING.md)；调课服务的生产部署要求见 [FastAPI/README.md](FastAPI/README.md)。
 
 有关课表数据API可见[此文章](https://blog.dawndrizzle.top/blog/reverse-timetable)
 
@@ -157,4 +162,3 @@
 
 > \[!CAUTION]
 > 本项目为第三方非官方客户端，仅供学习交流使用；如涉及侵权问题，请通过[邮件](mailto:dawndrizzle0104@gmail.com)联系我们。
-

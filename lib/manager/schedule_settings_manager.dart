@@ -74,6 +74,12 @@ class ScheduleSettingsManager {
     );
   }
 
+  static Future<void> disableNoticeEnhancementForLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(backgroundPollingEnabledKey, false);
+    await prefs.remove(noticePrivacyConsentVersionKey);
+  }
+
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     showWeekend = prefs.getBool(_prefsKeyShowWeekend) ?? false;

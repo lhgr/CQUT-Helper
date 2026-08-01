@@ -31,7 +31,10 @@ class ScheduleUpdateLog {
     return out;
   }
 
-  static Future<void> appendRun(Map<String, dynamic> item, {int max = 80}) async {
+  static Future<void> appendRun(
+    Map<String, dynamic> item, {
+    int max = 80,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_runsKey);
 
@@ -91,4 +94,3 @@ class ScheduleUpdateLog {
     }
   }
 }
-

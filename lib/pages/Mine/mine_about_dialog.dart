@@ -57,7 +57,9 @@ Future<void> showMineAboutDialog(BuildContext context) async {
                   ),
                 ),
                 child: CachedNetworkImage(
-                  imageUrl: GithubProxy.proxyUrlOf('https://github.com/lhgr.png'),
+                  imageUrl: GithubProxy.proxyUrlOf(
+                    'https://github.com/lhgr.png',
+                  ),
                   imageBuilder: (context, imageProvider) => CircleAvatar(
                     radius: 24,
                     backgroundImage: imageProvider,
@@ -106,10 +108,7 @@ Future<void> showMineAboutDialog(BuildContext context) async {
                     "Dawn Drizzle",
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  Text(
-                    "开发者",
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text("开发者", style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ],
@@ -160,14 +159,8 @@ Future<void> showMineAboutDialog(BuildContext context) async {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "Wing",
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    "氛围组",
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text("Wing", style: Theme.of(context).textTheme.titleMedium),
+                  Text("氛围组", style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ],

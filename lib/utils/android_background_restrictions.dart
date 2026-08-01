@@ -19,7 +19,9 @@ class AndroidBackgroundRestrictions {
   static Future<bool?> isIgnoringBatteryOptimizations() async {
     if (!Platform.isAndroid) return null;
     try {
-      return await _channel.invokeMethod<bool>('isIgnoringBatteryOptimizations');
+      return await _channel.invokeMethod<bool>(
+        'isIgnoringBatteryOptimizations',
+      );
     } catch (_) {
       return null;
     }
@@ -61,7 +63,8 @@ class AndroidBackgroundRestrictions {
   static Future<bool> openAutoStartSettings() async {
     if (!Platform.isAndroid) return false;
     try {
-      return await _channel.invokeMethod<bool>('openAutoStartSettings') ?? false;
+      return await _channel.invokeMethod<bool>('openAutoStartSettings') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -70,7 +73,8 @@ class AndroidBackgroundRestrictions {
   static Future<bool> openAppDetailsSettings() async {
     if (!Platform.isAndroid) return false;
     try {
-      return await _channel.invokeMethod<bool>('openAppDetailsSettings') ?? false;
+      return await _channel.invokeMethod<bool>('openAppDetailsSettings') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -112,4 +116,3 @@ class AndroidBackgroundRestrictions {
     }
   }
 }
-

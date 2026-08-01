@@ -27,9 +27,7 @@ ScheduleNotice _notice({
 void main() {
   group('ScheduleNoticeParser.parseImpact', () {
     test('能解析周次区间、班级、节次和可读文案', () {
-      final notice = _notice(
-        content: '2023级计算机1班 高等数学从第3周调到第4-5周',
-      );
+      final notice = _notice(content: '2023级计算机1班 高等数学从第3周调到第4-5周');
 
       final impact = ScheduleNoticeParser.parseImpact(notice);
 

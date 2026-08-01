@@ -169,8 +169,11 @@ String? _diffEvent(EventItem before, EventItem after) {
 
   final beforeCover = (before.weekCover ?? '').trim();
   final afterCover = (after.weekCover ?? '').trim();
-  if (beforeCover != afterCover && (beforeCover.isNotEmpty || afterCover.isNotEmpty)) {
-    changes.add('周次 ${beforeCover.isEmpty ? '-' : beforeCover} → ${afterCover.isEmpty ? '-' : afterCover}');
+  if (beforeCover != afterCover &&
+      (beforeCover.isNotEmpty || afterCover.isNotEmpty)) {
+    changes.add(
+      '周次 ${beforeCover.isEmpty ? '-' : beforeCover} → ${afterCover.isEmpty ? '-' : afterCover}',
+    );
   } else {
     final beforeWeekList = (before.weekList ?? const <String>[])
         .map((e) => e.trim())

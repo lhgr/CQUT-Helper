@@ -1708,7 +1708,8 @@ class DioLogInterceptor extends Interceptor {
             'window_seconds': _dedupeWindow.inSeconds,
             'signature': suppression.signature,
             'method': err.requestOptions.method,
-            'uri': '${err.requestOptions.uri.scheme}://${err.requestOptions.uri.host}${err.requestOptions.uri.path}',
+            'uri':
+                '${err.requestOptions.uri.scheme}://${err.requestOptions.uri.host}${err.requestOptions.uri.path}',
             'dio_type': err.type.name,
             if (status != null) 'status': status,
             if (err.message != null)
@@ -1886,7 +1887,9 @@ class _ExportSummary {
   }
 
   String? _extractRequestLabel(String line) {
-    final match = RegExp(r'\] ([^\-]+) - ([A-Z]+ https?://[^\s]+)').firstMatch(line);
+    final match = RegExp(
+      r'\] ([^\-]+) - ([A-Z]+ https?://[^\s]+)',
+    ).firstMatch(line);
     if (match == null) return null;
     return '${match.group(1)!.trim()} ${match.group(2)!.trim()}';
   }
@@ -1963,4 +1966,3 @@ Map<String, Object?> _truncateJsonObject(
     'len': json.length,
   };
 }
-

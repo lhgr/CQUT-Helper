@@ -142,6 +142,54 @@ class CacheCleanupManager {
     return clearedCounts;
   }
 
+  /// Removes data that belongs to one signed-in account while preserving
+  /// device-wide appearance and service settings.
+  static Future<int> clearAccountData(String userId) async {
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) return 0;
+
+    final prefs = await SharedPreferences.getInstance();
+    final toRemove = prefs
+        .getKeys()
+        .where((key) => isAccountScopedKey(key, normalizedUserId))
+        .toList(growable: false);
+    for (final key in toRemove) {
+      await prefs.remove(key);
+    }
+    timetableCacheEpoch.value = timetableCacheEpoch.value + 1;
+    userInfoCacheEpoch.value = userInfoCacheEpoch.value + 1;
+    try {
+      await prefs.reload();
+    } catch (_) {}
+    return toRemove.length;
+  }
+
+  @visibleForTesting
+  static bool isAccountScopedKey(String key, String userId) {
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) return false;
+    if (key == 'user_info_$normalizedUserId') return true;
+
+    final exactKeys = <String>{
+      'schedule_last_week_$normalizedUserId',
+      'schedule_last_term_$normalizedUserId',
+      'schedule_widget_week_$normalizedUserId',
+      'schedule_widget_term_$normalizedUserId',
+      'schedule_pending_changes_$normalizedUserId',
+      'schedule_notice_login_marker_$normalizedUserId',
+      'schedule_last_successful_refresh_at_$normalizedUserId',
+      'schedule_widget_refresh_state_$normalizedUserId',
+      'schedule_widget_refresh_failure_$normalizedUserId',
+    };
+    if (exactKeys.contains(key)) return true;
+
+    return key.startsWith('schedule_${normalizedUserId}_') ||
+        key.startsWith('schedule_fetch_at_${normalizedUserId}_') ||
+        key.startsWith('schedule_notice_state_${normalizedUserId}_') ||
+        key.startsWith('schedule_notified_${normalizedUserId}_') ||
+        key.startsWith('schedule_course_color_map_v1_$normalizedUserId|');
+  }
+
   static String titleOf(AppCacheType type) {
     return _titles[type] ?? type.name;
   }

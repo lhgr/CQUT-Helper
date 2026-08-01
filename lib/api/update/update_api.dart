@@ -18,7 +18,9 @@ class UpdateApi {
     try {
       final response = await GithubProxy.getWithFallback(
         _dio,
-        Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest'),
+        Uri.parse(
+          'https://api.github.com/repos/$_owner/$_repo/releases/latest',
+        ),
       );
 
       if (response.statusCode == 200) {

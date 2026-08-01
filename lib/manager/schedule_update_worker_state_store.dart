@@ -9,8 +9,10 @@ const String _backgroundPollingEnabledAtKey =
     'schedule_background_poll_enabled_at';
 const String _backgroundPollingLastSuccessAtKey =
     'schedule_background_poll_last_success_at';
-const String _backgroundPollLastStateKey = 'schedule_background_poll_last_state';
-const String _backgroundPollSyncStateKey = 'schedule_background_poll_sync_state';
+const String _backgroundPollLastStateKey =
+    'schedule_background_poll_last_state';
+const String _backgroundPollSyncStateKey =
+    'schedule_background_poll_sync_state';
 const String _backgroundPollDailyStateKey =
     'schedule_background_poll_daily_state';
 const String _pendingKeyPrefix = 'schedule_pending_changes_';

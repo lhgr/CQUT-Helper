@@ -66,10 +66,7 @@ void main() {
       final key = ScheduleUpdateWorker.pendingKeyForUser('u1');
       SharedPreferences.setMockInitialValues({
         'account': 'u1',
-        key: json.encode({
-          'yearTerm': '2025-2026-2',
-          'changes': 'oops',
-        }),
+        key: json.encode({'yearTerm': '2025-2026-2', 'changes': 'oops'}),
       });
 
       final result = await manager.checkPendingChanges();

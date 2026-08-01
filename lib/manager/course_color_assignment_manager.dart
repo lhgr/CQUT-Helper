@@ -20,6 +20,12 @@ class CourseColorAssignmentManager {
   final Set<String> _loadedScopes = {};
   String? _accountCache;
 
+  void resetInMemoryCache() {
+    _cacheByScope.clear();
+    _loadedScopes.clear();
+    _accountCache = null;
+  }
+
   Future<Map<String, int>> assignForCourses({
     required String term,
     required Iterable<String> courseKeys,
@@ -31,7 +37,9 @@ class CourseColorAssignmentManager {
     final scope = await _buildScope(term);
     final scopedMap = await _ensureScopeLoaded(scope);
     var changed = false;
-    final legacyKeys = scopedMap.keys.where(_isLegacyCourseKey).toList(growable: false);
+    final legacyKeys = scopedMap.keys
+        .where(_isLegacyCourseKey)
+        .toList(growable: false);
     if (legacyKeys.isNotEmpty) {
       for (final key in legacyKeys) {
         scopedMap.remove(key);

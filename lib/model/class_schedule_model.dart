@@ -30,13 +30,13 @@ class ScheduleData {
           : null,
       weekDayList: json['weekDayList'] != null
           ? (json['weekDayList'] as List)
-              .map((e) => WeekDayItem.fromJson(e))
-              .toList()
+                .map((e) => WeekDayItem.fromJson(e))
+                .toList()
           : null,
       eventList: json['eventList'] != null
           ? (json['eventList'] as List)
-              .map((e) => EventItem.fromJson(e))
-              .toList()
+                .map((e) => EventItem.fromJson(e))
+                .toList()
           : null,
     );
   }

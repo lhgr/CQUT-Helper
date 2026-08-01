@@ -50,6 +50,7 @@ android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 lib/firebase_options.dart
 android/key.properties
+android/app/upload-keystore.jks
 **/*.keystore
 **/*.jks
 workers
@@ -61,3 +62,5 @@ FastAPI/__pycache__/
 APIs/
 
 .claude/
+
+key/

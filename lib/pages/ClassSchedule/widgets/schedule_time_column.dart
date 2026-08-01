@@ -60,9 +60,9 @@ class ScheduleTimeColumn extends StatelessWidget {
                 Text(
                   "$sessionNum",
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 if (end != null)
                   Text(

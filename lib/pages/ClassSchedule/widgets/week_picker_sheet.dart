@@ -28,7 +28,9 @@ void showWeekPicker({
             ),
             Expanded(
               child: ListView.builder(
-                controller: ScrollController(initialScrollOffset: initialOffset),
+                controller: ScrollController(
+                  initialScrollOffset: initialOffset,
+                ),
                 itemExtent: _weekItemExtent,
                 itemCount: weekList.length,
                 itemBuilder: (context, index) {

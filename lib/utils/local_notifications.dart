@@ -90,6 +90,14 @@ class LocalNotifications {
     return v;
   }
 
+  static Future<void> cancelAll() async {
+    if (!Platform.isAndroid) return;
+    await initialize();
+    await _plugin.cancelAll();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefsKeyOpenScheduleUpdate);
+  }
+
   static Future<void> _handleTap(String? payload) async {
     if (payload != payloadScheduleUpdate) return;
     final prefs = await SharedPreferences.getInstance();

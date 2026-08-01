@@ -2,6 +2,7 @@ import 'package:cqut_helper/model/schedule_notice.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 class NoticeApiForbiddenException implements Exception {
   final String message;
@@ -25,14 +26,20 @@ class NoticeApiConnectivityResult {
 }
 
 class NoticeApi {
-  static const String _officialBaseUrl =
-      ScheduleSettingsManager.officialNoticeApiBaseUrl;
   static const String _path = '/api/jwxt/term-schedule-notices';
   static const String _healthPath = '/health';
   static const String _tag = 'NoticeApi';
   static const int _maxRetryPerDomain = 2;
+  static const String _serviceApiKey = String.fromEnvironment('NOTICE_API_KEY');
 
   NoticeApi();
+
+  @visibleForTesting
+  static List<String> serviceCandidates(String selectedBaseUrl) {
+    return <String>[
+      ScheduleSettingsManager.normalizeNoticeApiBaseUrl(selectedBaseUrl),
+    ];
+  }
 
   static Dio _buildDio(String baseUrl) {
     final dio = Dio(
@@ -41,14 +48,19 @@ class NoticeApi {
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 30),
         sendTimeout: const Duration(seconds: 15),
-        headers: const {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          if (_serviceApiKey.isNotEmpty) 'X-API-Key': _serviceApiKey,
+        },
       ),
     );
     AppLogger.I.attachToDio(dio, tag: _tag);
     return dio;
   }
 
-  static Future<NoticeApiConnectivityResult> testConnectivity(String baseUrl) async {
+  static Future<NoticeApiConnectivityResult> testConnectivity(
+    String baseUrl,
+  ) async {
     final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
       baseUrl,
     );
@@ -113,15 +125,14 @@ class NoticeApi {
       throw ArgumentError.value(yearTerm, 'yearTerm', '学期格式应为YYYY-YYYY-1/2');
     }
     final customBaseUrl = await ScheduleSettingsManager.loadNoticeApiBaseUrl();
-    final candidates = <String>[
-      customBaseUrl,
-      if (customBaseUrl != _officialBaseUrl) _officialBaseUrl,
-    ];
+    // Never send credentials to a different service than the one selected by
+    // the user. In particular, a self-hosted endpoint must not silently fall
+    // back to the official service when it is unavailable.
+    final candidates = serviceCandidates(customBaseUrl);
     Object? lastError;
     StackTrace? lastStackTrace;
     for (var i = 0; i < candidates.length; i++) {
       final baseUrl = candidates[i];
-      final isFallback = i > 0;
       final dio = _buildDio(baseUrl);
       for (var attempt = 1; attempt <= _maxRetryPerDomain; attempt++) {
         try {
@@ -170,13 +181,6 @@ class NoticeApi {
               }
             }
           }
-          if (isFallback) {
-            AppLogger.I.warn(
-              _tag,
-              'fallback to official notice domain success',
-              fields: {'fromBaseUrl': customBaseUrl, 'toBaseUrl': baseUrl},
-            );
-          }
           return ScheduleNoticePollData(
             env: envName,
             yearTerm: responseYearTerm.isEmpty
@@ -189,6 +193,12 @@ class NoticeApi {
           final code = e.response?.statusCode;
           if (code == 403) {
             throw NoticeApiForbiddenException('调课通知接口夜间关闭(403)');
+          }
+          if (code == 401) {
+            throw Exception('调课服务鉴权失败，请更新应用或检查服务配置');
+          }
+          if (code == 429) {
+            throw Exception('调课服务请求过于频繁，请稍后再试');
           }
           lastError = e;
           lastStackTrace = st;
@@ -219,16 +229,12 @@ class NoticeApi {
           );
         }
       }
-      if (i < candidates.length - 1) {
-        AppLogger.I.warn(
-          _tag,
-          'notice domain unavailable fallback to official domain',
-          fields: {'fromBaseUrl': baseUrl, 'toBaseUrl': _officialBaseUrl},
-        );
-      }
     }
     if (lastError != null) {
-      Error.throwWithStackTrace(lastError, lastStackTrace ?? StackTrace.current);
+      Error.throwWithStackTrace(
+        lastError,
+        lastStackTrace ?? StackTrace.current,
+      );
     }
     throw Exception('调课通知请求失败');
   }

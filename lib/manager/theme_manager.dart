@@ -131,7 +131,6 @@ class ThemeManager extends ChangeNotifier {
     );
   }
 
-
   Future<void> setSystemColor(bool isSystem) async {
     if (_isSystemColor == isSystem) return;
     _isSystemColor = isSystem;

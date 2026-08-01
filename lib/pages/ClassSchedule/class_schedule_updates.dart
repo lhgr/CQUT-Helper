@@ -16,7 +16,8 @@ extension _ClassScheduleUpdates on _ClassscheduleViewState {
     Future<void> refreshWeeks() async {
       final payloadTerm = pending.yearTerm;
       final currentTerm = _currentScheduleData?.yearTerm ?? _currentTerm;
-      final termToUse = payloadTerm == null ||
+      final termToUse =
+          payloadTerm == null ||
               payloadTerm.isEmpty ||
               currentTerm == null ||
               currentTerm == payloadTerm

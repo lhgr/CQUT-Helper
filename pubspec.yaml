@@ -49,9 +49,6 @@ dependencies:
   path_provider: ^2.1.5
   workmanager: ^0.6.0
   flutter_local_notifications: ^19.0.0
-  image_picker: ^1.2.0
-  flutter_image_compress: ^2.4.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

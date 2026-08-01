@@ -116,11 +116,7 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
             }
 
             return AlertDialog(
-              title: Row(
-                children: [
-                  Expanded(child: Text(detail.title)),
-                ],
-              ),
+              title: Row(children: [Expanded(child: Text(detail.title))]),
               content: SingleChildScrollView(
                 child: MarkdownBody(
                   data: _formatMarkdown(detail.contentMarkdown),
@@ -239,7 +235,9 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
                         children: [
                           Icon(
                             Icons.campaign_outlined,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                           const SizedBox(width: 12),
                           Expanded(

@@ -73,40 +73,43 @@ class ThemeSettingsSheet extends StatelessWidget {
                 child: Wrap(
                   spacing: 12,
                   runSpacing: 12,
-                  children: [
-                    Colors.blue,
-                    Colors.red,
-                    Colors.green,
-                    Colors.orange,
-                    Colors.purple,
-                    Colors.teal,
-                    Colors.pink,
-                    Colors.indigo,
-                    Colors.brown,
-                    Colors.cyan,
-                    Colors.amber,
-                    Colors.lime,
-                  ].map((color) {
-                    return GestureDetector(
-                      onTap: () {
-                        ThemeManager().setCustomColor(color);
-                      },
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                          border: ThemeManager().customColor == color
-                              ? Border.all(
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                  width: 3,
-                                )
-                              : null,
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                  children:
+                      [
+                        Colors.blue,
+                        Colors.red,
+                        Colors.green,
+                        Colors.orange,
+                        Colors.purple,
+                        Colors.teal,
+                        Colors.pink,
+                        Colors.indigo,
+                        Colors.brown,
+                        Colors.cyan,
+                        Colors.amber,
+                        Colors.lime,
+                      ].map((color) {
+                        return GestureDetector(
+                          onTap: () {
+                            ThemeManager().setCustomColor(color);
+                          },
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: ThemeManager().customColor == color
+                                  ? Border.all(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      width: 3,
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        );
+                      }).toList(),
                 ),
               ),
               SizedBox(height: 16),

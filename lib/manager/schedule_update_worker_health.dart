@@ -42,7 +42,8 @@ loadScheduleUpdateWorkerHealthSnapshot() async {
   final lastRunAt = DateTime.tryParse(
     ((stored.lastState?['at'] ?? '') as String?)?.trim() ?? '',
   )?.toLocal();
-  final lastRunStatus = ((stored.lastState?['status'] ?? '') as String?)?.trim();
+  final lastRunStatus = ((stored.lastState?['status'] ?? '') as String?)
+      ?.trim();
   final syncStatus = ((stored.syncState?['status'] ?? '') as String?)?.trim();
   final dailyState = stored.dailyState;
   final now = DateTime.now();
@@ -89,7 +90,8 @@ loadScheduleUpdateWorkerHealthSnapshot() async {
     );
   }
 
-  final logicalDate = ((dailyState?['logicalDateBjt'] ?? '') as String?)?.trim();
+  final logicalDate = ((dailyState?['logicalDateBjt'] ?? '') as String?)
+      ?.trim();
   final main = (dailyState?['main'] as Map?)?.cast<String, dynamic>();
   final retry = (dailyState?['retry'] as Map?)?.cast<String, dynamic>();
   final mainStatus = ((main?['status'] ?? '') as String?)?.trim();

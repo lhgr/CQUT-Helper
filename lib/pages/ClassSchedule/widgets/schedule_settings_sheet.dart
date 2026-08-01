@@ -449,7 +449,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                               labelText: '调课服务地址',
                               hintText: ScheduleSettingsManager
                                   .officialNoticeApiBaseUrl,
-                              helperText: '仅支持 HTTPS；学号和教务系统加密密码会发送到该地址',
+                              helperText: '仅支持 HTTPS；凭证只会发送到该地址，失败时不会回退其他服务',
                               errorText: _noticeApiError,
                             ),
                           ),
