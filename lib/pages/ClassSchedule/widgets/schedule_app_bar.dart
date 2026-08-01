@@ -19,8 +19,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onTermPicker;
   final VoidCallback onSemesterCourses;
   final VoidCallback onAddCourse;
-  final VoidCallback onManageLocalCourses;
-  final VoidCallback onImportIcs;
+  final VoidCallback onManageCustomCourses;
   final VoidCallback onExportIcs;
 
   const ScheduleAppBar({
@@ -38,8 +37,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onTermPicker,
     required this.onSemesterCourses,
     this.onAddCourse = _noopScheduleAction,
-    this.onManageLocalCourses = _noopScheduleAction,
-    this.onImportIcs = _noopScheduleAction,
+    this.onManageCustomCourses = _noopScheduleAction,
     this.onExportIcs = _noopScheduleAction,
   });
 
@@ -217,10 +215,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
                           onAddCourse();
                           break;
                         case 'manage':
-                          onManageLocalCourses();
-                          break;
-                        case 'import_ics':
-                          onImportIcs();
+                          onManageCustomCourses();
                           break;
                         case 'export_ics':
                           onExportIcs();
@@ -232,24 +227,17 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
                         value: 'add',
                         child: ListTile(
                           leading: Icon(Icons.add),
-                          title: Text('添加课程或事件'),
+                          title: Text('添加自定义课程'),
                         ),
                       ),
                       PopupMenuItem(
                         value: 'manage',
                         child: ListTile(
                           leading: Icon(Icons.edit_calendar_outlined),
-                          title: Text('管理本地课程'),
+                          title: Text('管理自定义课程'),
                         ),
                       ),
                       PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: 'import_ics',
-                        child: ListTile(
-                          leading: Icon(Icons.file_open_outlined),
-                          title: Text('导入 ICS'),
-                        ),
-                      ),
                       PopupMenuItem(
                         value: 'export_ics',
                         child: ListTile(

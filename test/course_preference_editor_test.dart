@@ -1,5 +1,5 @@
-import 'package:cqut_helper/model/local_schedule_model.dart';
-import 'package:cqut_helper/pages/ClassSchedule/local_course_editor_page.dart';
+import 'package:cqut_helper/model/course_preference_model.dart';
+import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

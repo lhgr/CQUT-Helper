@@ -109,10 +109,7 @@ class EventItem {
   int? duplicateGroup;
   String? eventType;
   String? eventID;
-  String? localId;
   String? note;
-  bool? isLocal;
-  String? specificDate;
   int? reminderMinutes;
   int? colorIndex;
   String? customizationKey;
@@ -132,10 +129,7 @@ class EventItem {
     this.duplicateGroup,
     this.eventType,
     this.eventID,
-    this.localId,
     this.note,
-    this.isLocal,
-    this.specificDate,
     this.reminderMinutes,
     this.colorIndex,
     this.customizationKey,
@@ -161,10 +155,7 @@ class EventItem {
       duplicateGroup: json['duplicateGroup'],
       eventType: json['eventType'],
       eventID: json['eventID'],
-      localId: json['localId'],
       note: json['note'],
-      isLocal: json['isLocal'],
-      specificDate: json['specificDate'],
       reminderMinutes: (json['reminderMinutes'] as num?)?.toInt(),
       colorIndex: (json['colorIndex'] as num?)?.toInt(),
       customizationKey: json['customizationKey'],
@@ -195,10 +186,7 @@ class EventItem {
       duplicateGroup: duplicateGroup,
       eventType: eventType,
       eventID: eventID,
-      localId: localId,
       note: note ?? this.note,
-      isLocal: isLocal,
-      specificDate: specificDate,
       reminderMinutes: reminderMinutes ?? this.reminderMinutes,
       colorIndex: colorIndex ?? this.colorIndex,
       customizationKey: customizationKey ?? this.customizationKey,
@@ -220,10 +208,7 @@ class EventItem {
     'duplicateGroup': duplicateGroup,
     'eventType': eventType,
     'eventID': eventID,
-    if (localId != null) 'localId': localId,
     if (note != null) 'note': note,
-    if (isLocal != null) 'isLocal': isLocal,
-    if (specificDate != null) 'specificDate': specificDate,
     if (reminderMinutes != null) 'reminderMinutes': reminderMinutes,
     if (colorIndex != null) 'colorIndex': colorIndex,
     if (customizationKey != null) 'customizationKey': customizationKey,

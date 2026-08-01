@@ -65,6 +65,7 @@ class ScheduleController {
   bool? nowInTeachingWeek;
   String? nowStatusLabel;
   String? get userId => _weekLoader.userId;
+  String? get encryptedPassword => _weekLoader.encryptedPassword;
 
   bool _disposed = false;
 
@@ -126,6 +127,22 @@ class ScheduleController {
       yearTerm: yearTerm,
       persistLastViewed: persistLastViewed,
       updateWidgetPins: updateWidgetPins,
+    );
+  }
+
+  Future<void> invalidateCachedWeeks({
+    required String userId,
+    required String yearTerm,
+    required Iterable<int> weeks,
+  }) async {
+    final affected = weeks.toSet();
+    for (final week in affected) {
+      weekCache.remove(week);
+    }
+    await _service.invalidateCachedWeeks(
+      userId: userId,
+      yearTerm: yearTerm,
+      weeks: affected,
     );
   }
 

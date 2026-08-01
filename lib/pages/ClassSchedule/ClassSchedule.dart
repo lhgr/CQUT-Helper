@@ -7,7 +7,6 @@ import 'package:cqut_helper/manager/schedule_update_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
-import 'package:cqut_helper/model/local_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_app_bar.dart';
@@ -15,8 +14,8 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_inline_notice_p
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_page_view.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/semester_course_list_page.dart';
-import 'package:cqut_helper/pages/ClassSchedule/local_course_editor_page.dart';
-import 'package:cqut_helper/pages/ClassSchedule/local_course_list_page.dart';
+import 'package:cqut_helper/pages/ClassSchedule/custom_course_editor_page.dart';
+import 'package:cqut_helper/pages/ClassSchedule/custom_course_list_page.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/week_picker_sheet.dart';
 import 'package:flutter/material.dart';
@@ -280,9 +279,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         onWeekPicker: _showWeekPickerSheet,
         onTermPicker: _showTermPickerSheet,
         onSemesterCourses: _openSemesterCourseListPage,
-        onAddCourse: _openLocalCourseEditor,
-        onManageLocalCourses: _openLocalCourseList,
-        onImportIcs: _importIcs,
+        onAddCourse: _openCustomCourseEditor,
+        onManageCustomCourses: _openCustomCourseList,
         onExportIcs: _exportIcs,
       ),
       body: Column(

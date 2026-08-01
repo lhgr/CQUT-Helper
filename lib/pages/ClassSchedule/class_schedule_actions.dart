@@ -172,78 +172,75 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       .where((week) => week > 0)
       .toList(growable: false);
 
-  Future<void> _openLocalCourseEditor() async {
+  Future<void> _refreshAfterCustomCourseMutation() async {
     final userId = (_controller.userId ?? '').trim();
     final term = (_currentScheduleData?.yearTerm ?? '').trim();
-    if (userId.isEmpty || term.isEmpty) {
-      _showBoundaryMessage('请先加载当前学期课表');
+    final currentWeek = (_currentScheduleData?.weekNum ?? '').trim();
+    if (userId.isEmpty || term.isEmpty || currentWeek.isEmpty) return;
+    await _controller.invalidateCachedWeeks(
+      userId: userId,
+      yearTerm: term,
+      weeks: _availableWeekNumbers,
+    );
+    if (!mounted) return;
+    await _loadFromNetwork(weekNum: currentWeek, yearTerm: term);
+  }
+
+  Future<void> _openCustomCourseEditor() async {
+    await _controller.loadCredentials();
+    if (!mounted) return;
+    final userId = (_controller.userId ?? '').trim();
+    final encryptedPassword = (_controller.encryptedPassword ?? '').trim();
+    final term = (_currentScheduleData?.yearTerm ?? '').trim();
+    if (userId.isEmpty ||
+        encryptedPassword.isEmpty ||
+        term.isEmpty ||
+        _availableWeekNumbers.isEmpty) {
+      _showBoundaryMessage('请先登录并加载当前学期课表');
       return;
     }
-    await Navigator.of(context).push<LocalScheduleEvent>(
+    final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => LocalCourseEditorPage(
+        builder: (_) => CustomCourseEditorPage(
           userId: userId,
+          encryptedPassword: encryptedPassword,
           yearTerm: term,
           availableWeeks: _availableWeekNumbers,
         ),
       ),
     );
+    if (changed == true && mounted) {
+      await _refreshAfterCustomCourseMutation();
+    }
   }
 
-  Future<void> _openLocalCourseList() async {
+  Future<void> _openCustomCourseList() async {
+    await _controller.loadCredentials();
+    if (!mounted) return;
     final userId = (_controller.userId ?? '').trim();
+    final encryptedPassword = (_controller.encryptedPassword ?? '').trim();
     final term = (_currentScheduleData?.yearTerm ?? '').trim();
-    if (userId.isEmpty || term.isEmpty) {
-      _showBoundaryMessage('请先加载当前学期课表');
+    if (userId.isEmpty ||
+        encryptedPassword.isEmpty ||
+        term.isEmpty ||
+        _availableWeekNumbers.isEmpty) {
+      _showBoundaryMessage('请先登录并加载当前学期课表');
       return;
     }
+    var changed = false;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => LocalCourseListPage(
+        builder: (_) => CustomCourseListPage(
           userId: userId,
+          encryptedPassword: encryptedPassword,
           yearTerm: term,
           availableWeeks: _availableWeekNumbers,
+          onChanged: () => changed = true,
         ),
       ),
     );
-  }
-
-  Future<void> _importIcs() async {
-    final userId = (_controller.userId ?? '').trim();
-    final term = (_currentScheduleData?.yearTerm ?? '').trim();
-    if (userId.isEmpty || term.isEmpty) {
-      _showBoundaryMessage('请先加载当前学期课表');
-      return;
-    }
-    try {
-      final text = await ScheduleIcsService.pickIcsText();
-      if (text == null || text.trim().isEmpty || !mounted) return;
-      await _controller.ensureTimeInfoLoaded();
-      final result = ScheduleIcsService.parse(
-        content: text,
-        userId: userId,
-        yearTerm: term,
-        timeInfo: _controller.timeInfoList ?? const <CampusTimeInfo>[],
-      );
-      await ScheduleCustomizationManager.instance.saveLocalEvents(
-        result.events,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.skipped == 0
-                ? '已导入 ${result.events.length} 条 ICS 日程'
-                : '已导入 ${result.events.length} 条，跳过 ${result.skipped} 条',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('ICS 导入失败：$error')));
+    if (changed && mounted) {
+      await _refreshAfterCustomCourseMutation();
     }
   }
 

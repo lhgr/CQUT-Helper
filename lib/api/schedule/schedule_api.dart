@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:cqut_helper/api/api_service.dart';
+import 'package:cqut_helper/api/course/course_api.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_notice.dart';
@@ -10,6 +11,10 @@ import 'package:cqut_helper/utils/widget_updater.dart';
 
 class ScheduleApi {
   final ApiService _apiService = ApiService();
+  final CourseApi _courseApi;
+
+  ScheduleApi({CourseApi? courseApi})
+    : _courseApi = courseApi ?? ApiService().course;
 
   String _norm(String? s) => (s ?? '').trim();
 
@@ -78,7 +83,7 @@ class ScheduleApi {
   }) async {
     final reqWeek = _norm(weekNum);
     final reqTerm = _norm(yearTerm);
-    final jsonMap = await _apiService.course.fetchWeekEvents(
+    final jsonMap = await _courseApi.fetchWeekEvents(
       userId: userId,
       encryptedPassword: encryptedPassword,
       weekNum: weekNum,
@@ -146,7 +151,7 @@ class ScheduleApi {
     required String weekNum,
     required String yearTerm,
   }) async {
-    return await _apiService.course.fetchWeekEvents(
+    return await _courseApi.fetchWeekEvents(
       userId: userId,
       encryptedPassword: encryptedPassword,
       weekNum: weekNum,
@@ -154,8 +159,134 @@ class ScheduleApi {
     );
   }
 
+  Future<List<EventItem>> fetchCustomEvents({
+    required String userId,
+    required String encryptedPassword,
+    required String yearTerm,
+    required Iterable<int> weeks,
+    void Function(int completed, int total)? onProgress,
+  }) async {
+    final weekList = weeks.toSet().toList(growable: false)..sort();
+    final byId = <String, EventItem>{};
+    for (var index = 0; index < weekList.length; index++) {
+      final response = await fetchRawWeekEvents(
+        userId: userId,
+        encryptedPassword: encryptedPassword,
+        weekNum: weekList[index].toString(),
+        yearTerm: yearTerm,
+      );
+      final events = response['eventList'];
+      if (events is List) {
+        for (final raw in events) {
+          if (raw is! Map) continue;
+          final event = EventItem.fromJson(raw.cast<String, dynamic>());
+          final eventId = (event.eventID ?? '').trim();
+          if (event.eventType == '3' && eventId.isNotEmpty) {
+            byId[eventId] = event;
+          }
+        }
+      }
+      onProgress?.call(index + 1, weekList.length);
+    }
+    final result = byId.values.toList(growable: false);
+    result.sort((a, b) {
+      final byDay = (int.tryParse(a.weekDay ?? '') ?? 8).compareTo(
+        int.tryParse(b.weekDay ?? '') ?? 8,
+      );
+      if (byDay != 0) return byDay;
+      final bySession = (int.tryParse(a.sessionStart ?? '') ?? 99).compareTo(
+        int.tryParse(b.sessionStart ?? '') ?? 99,
+      );
+      if (bySession != 0) return bySession;
+      return (a.eventName ?? '').compareTo(b.eventName ?? '');
+    });
+    return result;
+  }
+
+  Future<void> addCustomEvent({
+    required String userId,
+    required String encryptedPassword,
+    required String yearTerm,
+    required List<int> weekList,
+    required int weekDay,
+    required int sessionStart,
+    required int sessionCount,
+    required String eventName,
+    required String address,
+    required String memberName,
+  }) {
+    return _courseApi.addCustomEvent(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+      yearTerm: yearTerm,
+      weekList: weekList,
+      weekDay: weekDay,
+      sessionStart: sessionStart,
+      sessionCount: sessionCount,
+      eventName: eventName,
+      address: address,
+      memberName: memberName,
+    );
+  }
+
+  Future<void> editCustomEvent({
+    required String userId,
+    required String encryptedPassword,
+    required String eventId,
+    required List<int> weekList,
+    required int weekDay,
+    required int sessionStart,
+    required int sessionCount,
+    required String eventName,
+    required String address,
+    required String memberName,
+  }) {
+    return _courseApi.editCustomEvent(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+      eventId: eventId,
+      weekList: weekList,
+      weekDay: weekDay,
+      sessionStart: sessionStart,
+      sessionCount: sessionCount,
+      eventName: eventName,
+      address: address,
+      memberName: memberName,
+    );
+  }
+
+  Future<void> deleteCustomEvent({
+    required String userId,
+    required String encryptedPassword,
+    required String eventId,
+  }) {
+    return _courseApi.deleteCustomEvent(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+      eventId: eventId,
+    );
+  }
+
+  Future<void> invalidateCachedWeeks({
+    required String userId,
+    required String yearTerm,
+    required Iterable<int> weeks,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final week in weeks.toSet()) {
+      final weekNum = week.toString();
+      await prefs.remove(_rawScheduleKey(userId, yearTerm, weekNum));
+      await prefs.remove(_scheduleKey(userId, yearTerm, weekNum));
+      await prefs.remove(lastFetchAtKey(userId, yearTerm, weekNum));
+      await prefs.remove('schedule_fp_${userId}_${yearTerm}_$weekNum');
+      await prefs.remove(
+        'schedule_fp_updated_at_${userId}_${yearTerm}_$weekNum',
+      );
+    }
+  }
+
   Future<List<CampusTimeInfo>> fetchCampusTimeInfo(String campusName) async {
-    final list = await _apiService.course.fetchCampusTimeInfo(campusName);
+    final list = await _courseApi.fetchCampusTimeInfo(campusName);
     return list.map((e) => CampusTimeInfo.fromJson(e)).toList();
   }
 

@@ -1,10 +1,9 @@
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
-import 'package:cqut_helper/model/local_schedule_model.dart';
+import 'package:cqut_helper/model/course_preference_model.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -17,13 +16,11 @@ class ScheduleCustomizationManager extends ChangeNotifier {
   static final ScheduleCustomizationManager instance =
       ScheduleCustomizationManager._();
 
-  static const int databaseVersion = 1;
+  static const int databaseVersion = 2;
   static const String _databaseName = 'schedule_customizations.db';
   static const String _rawSchedulePrefix = 'schedule_remote_';
 
   Database? _database;
-  final Random _random = Random.secure();
-
   Future<Database> get _db async {
     final existing = _database;
     if (existing != null) return existing;
@@ -32,31 +29,6 @@ class ScheduleCustomizationManager extends ChangeNotifier {
       path,
       version: databaseVersion,
       onCreate: (db, version) async {
-        await db.execute('''
-CREATE TABLE local_events (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  year_term TEXT NOT NULL,
-  title TEXT NOT NULL,
-  teacher TEXT NOT NULL DEFAULT '',
-  location TEXT NOT NULL DEFAULT '',
-  note TEXT NOT NULL DEFAULT '',
-  weeks_json TEXT NOT NULL DEFAULT '[]',
-  week_day INTEGER NOT NULL,
-  start_session INTEGER NOT NULL,
-  session_count INTEGER NOT NULL,
-  specific_date TEXT,
-  reminder_minutes INTEGER,
-  color_index INTEGER,
-  source TEXT NOT NULL DEFAULT 'manual',
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-)
-''');
-        await db.execute(
-          'CREATE INDEX local_events_scope_idx '
-          'ON local_events(user_id, year_term)',
-        );
         await db.execute('''
 CREATE TABLE course_preferences (
   user_id TEXT NOT NULL,
@@ -74,81 +46,12 @@ CREATE TABLE course_preferences (
 )
 ''');
       },
+      // Version 1 may contain the retired local_events table. Leave it intact
+      // so upgrading does not destroy a user's existing local data.
+      onUpgrade: (db, oldVersion, newVersion) async {},
     );
     _database = opened;
     return opened;
-  }
-
-  String newId() {
-    final now = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
-    final suffix = List.generate(
-      8,
-      (_) => _random.nextInt(36).toRadixString(36),
-    ).join();
-    return '$now$suffix';
-  }
-
-  Future<List<LocalScheduleEvent>> listLocalEvents({
-    required String userId,
-    required String yearTerm,
-  }) async {
-    final rows = await (await _db).query(
-      'local_events',
-      where: 'user_id = ? AND year_term = ?',
-      whereArgs: [userId, yearTerm],
-      orderBy: 'specific_date, week_day, start_session, title',
-    );
-    return rows.map(LocalScheduleEvent.fromDatabaseMap).toList();
-  }
-
-  Future<void> saveLocalEvent(LocalScheduleEvent event) async {
-    await (await _db).insert(
-      'local_events',
-      event.toDatabaseMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    if (event.colorIndex != null) {
-      await CourseColorAssignmentManager.instance.setAssignment(
-        term: event.yearTerm,
-        courseKey: event.title,
-        colorIndex: event.colorIndex!,
-      );
-    }
-    await _afterMutation(event.userId);
-  }
-
-  Future<void> saveLocalEvents(Iterable<LocalScheduleEvent> events) async {
-    final items = events.toList(growable: false);
-    if (items.isEmpty) return;
-    final db = await _db;
-    await db.transaction((txn) async {
-      for (final event in items) {
-        await txn.insert(
-          'local_events',
-          event.toDatabaseMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-    });
-    for (final event in items) {
-      if (event.colorIndex != null) {
-        await CourseColorAssignmentManager.instance.setAssignment(
-          term: event.yearTerm,
-          courseKey: event.title,
-          colorIndex: event.colorIndex!,
-        );
-      }
-    }
-    await _afterMutation(items.first.userId);
-  }
-
-  Future<void> deleteLocalEvent(LocalScheduleEvent event) async {
-    await (await _db).delete(
-      'local_events',
-      where: 'id = ? AND user_id = ?',
-      whereArgs: [event.id, event.userId],
-    );
-    await _afterMutation(event.userId);
   }
 
   Future<Map<String, CoursePreference>> preferenceMap({
@@ -213,17 +116,18 @@ CREATE TABLE course_preferences (
     required ScheduleData schedule,
   }) async {
     final term = (schedule.yearTerm ?? '').trim();
-    final week = int.tryParse((schedule.weekNum ?? '').trim());
-    if (userId.trim().isEmpty || term.isEmpty || week == null) {
+    if (userId.trim().isEmpty || term.isEmpty) {
       return schedule;
     }
     final preferences = await preferenceMap(userId: userId, yearTerm: term);
-    final localEvents = await listLocalEvents(userId: userId, yearTerm: term);
-    final weekDates = scheduleDates(schedule);
     final merged = <EventItem>[];
 
     for (final event in schedule.eventList ?? const <EventItem>[]) {
-      if (event.isLocal == true) continue;
+      final eventType = (event.eventType ?? '').trim();
+      final eventId = (event.eventID ?? '').trim();
+      if (eventType.startsWith('local_') || eventId.startsWith('local:')) {
+        continue;
+      }
       final key = courseKeyForEvent(event);
       final preference = preferences[key];
       if (preference?.hidden == true) continue;
@@ -236,51 +140,6 @@ CREATE TABLE course_preferences (
           reminderMinutes: preference?.reminderMinutes,
           colorIndex: preference?.colorIndex,
           customizationKey: key,
-        ),
-      );
-    }
-
-    for (final local in localEvents) {
-      if (!local.appliesToWeek(week, weekDates.values)) continue;
-      var weekday = local.weekDay;
-      if (local.specificDate != null) {
-        for (final entry in weekDates.entries) {
-          if (localScheduleSameDate(entry.value, local.specificDate!)) {
-            weekday = entry.key;
-            break;
-          }
-        }
-      }
-      merged.add(
-        EventItem(
-          weekNum: week.toString(),
-          weekDay: weekday.toString(),
-          weekList: [week.toString()],
-          weekCover: local.specificDate == null
-              ? '第$week周'
-              : localScheduleDateKey(local.specificDate!),
-          sessionList: List.generate(
-            local.sessionCount,
-            (index) => (local.startSession + index).toString(),
-          ),
-          sessionStart: local.startSession.toString(),
-          sessionLast: local.sessionCount.toString(),
-          eventName: local.title,
-          address: local.location,
-          memberName: local.teacher,
-          eventType: local.source == LocalScheduleSource.ics
-              ? 'local_ics'
-              : 'local_manual',
-          eventID: 'local:${local.id}',
-          localId: local.id,
-          note: local.note,
-          isLocal: true,
-          specificDate: local.specificDate == null
-              ? null
-              : localScheduleDateKey(local.specificDate!),
-          reminderMinutes: local.reminderMinutes,
-          colorIndex: local.colorIndex,
-          customizationKey: local.title,
         ),
       );
     }
@@ -313,15 +172,21 @@ CREATE TABLE course_preferences (
     final db = await _db;
     await db.transaction((txn) async {
       await txn.delete(
-        'local_events',
-        where: 'user_id = ?',
-        whereArgs: [userId],
-      );
-      await txn.delete(
         'course_preferences',
         where: 'user_id = ?',
         whereArgs: [userId],
       );
+      final legacyTable = await txn.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+        const ['local_events'],
+      );
+      if (legacyTable.isNotEmpty) {
+        await txn.delete(
+          'local_events',
+          where: 'user_id = ?',
+          whereArgs: [userId],
+        );
+      }
     });
     notifyListeners();
   }

@@ -2,8 +2,8 @@ import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
-import 'package:cqut_helper/model/local_schedule_model.dart';
-import 'package:cqut_helper/pages/ClassSchedule/local_course_editor_page.dart';
+import 'package:cqut_helper/model/course_preference_model.dart';
+import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:flutter/material.dart';
 
