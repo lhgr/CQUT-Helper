@@ -34,6 +34,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -54,7 +60,7 @@ jobs:
 
       - name: Run Android unit tests
         working-directory: android
-        run: ./gradlew testDebugUnitTest
+        run: bash ./gradlew :app:testDebugUnitTest
 
       - name: Resolve and validate version
         id: version
