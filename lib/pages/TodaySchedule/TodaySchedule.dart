@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
@@ -25,6 +26,8 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   DateTime? _lastSuccessfulRefreshAt;
   String _dataSource = '缓存';
   int _lastHandledWidgetNavigationToken = 0;
+  Timer? _clockTimer;
+  DateTime _now = DateTime.now();
 
   List<CampusTimeInfo>? get _timeInfoList => _controller.timeInfoList;
 
@@ -32,6 +35,10 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   void initState() {
     super.initState();
     WidgetNavigation.request.addListener(_onWidgetNavigation);
+    ScheduleCustomizationManager.instance.addListener(_onCustomizationChanged);
+    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
     _loadInitialData();
     WidgetsBinding.instance.addPostFrameCallback((_) => _onWidgetNavigation());
   }
@@ -39,8 +46,24 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   @override
   void dispose() {
     WidgetNavigation.request.removeListener(_onWidgetNavigation);
+    ScheduleCustomizationManager.instance.removeListener(
+      _onCustomizationChanged,
+    );
+    _clockTimer?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _onCustomizationChanged() async {
+    final current = _scheduleData;
+    if (current == null) return;
+    final refreshed = await _controller.loadFromCache(
+      weekNum: current.weekNum,
+      yearTerm: current.yearTerm,
+    );
+    if (refreshed != null && mounted) {
+      setState(() => _scheduleData = refreshed);
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -95,6 +118,8 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         context,
         courseName: (events.first.eventName ?? '').trim(),
         events: events,
+        eventDate: DateTime.now(),
+        timeInfoList: _timeInfoList,
       );
     });
   }
@@ -286,6 +311,57 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     return '$start - $end';
   }
 
+  _CourseMoment? _courseMoment(List<EventItem> events) {
+    final timeInfo = _timeInfoList;
+    if (timeInfo == null || timeInfo.isEmpty || events.isEmpty) return null;
+    final clocks = <int, ({int start, int end})>{};
+    for (final info in timeInfo) {
+      final session = info.sessionNum;
+      final start = _minuteOfDay(info.startTime);
+      final end = _minuteOfDay(info.endTime);
+      if (session != null && start != null && end != null) {
+        clocks[session] = (start: start, end: end);
+      }
+    }
+    final nowMinute = _now.hour * 60 + _now.minute;
+    _CourseMoment? next;
+    for (final event in events) {
+      final start = clocks[_sessionStart(event)]?.start;
+      final end = clocks[_sessionEnd(event)]?.end;
+      if (start == null || end == null) continue;
+      if (nowMinute >= start && nowMinute < end) {
+        return _CourseMoment(
+          kind: _CourseMomentKind.ongoing,
+          event: event,
+          minutes: end - nowMinute,
+        );
+      }
+      if (start > nowMinute) {
+        final candidate = _CourseMoment(
+          kind: _CourseMomentKind.next,
+          event: event,
+          minutes: start - nowMinute,
+        );
+        if (next == null || candidate.minutes < next.minutes) next = candidate;
+      }
+    }
+    return next ??
+        _CourseMoment(
+          kind: _CourseMomentKind.finished,
+          event: events.last,
+          minutes: 0,
+        );
+  }
+
+  int? _minuteOfDay(String? raw) {
+    final match = RegExp(r'(\d{1,2})\s*[:：]\s*(\d{1,2})').firstMatch(raw ?? '');
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null || hour > 23 || minute > 59) return null;
+    return hour * 60 + minute;
+  }
+
   bool _isTodayCovered(ScheduleData data) {
     return ScheduleDate.dataCoversDate(data, DateTime.now());
   }
@@ -341,6 +417,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     final weekDayItem = _todayWeekDayItem(data);
     final coveredToday = _isTodayCovered(data);
     final events = coveredToday ? _todayEvents(data) : const <EventItem>[];
+    final moment = coveredToday ? _courseMoment(events) : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -377,6 +454,10 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                   : '本周',
               freshnessText: _freshnessText,
             ),
+            if (moment != null) ...[
+              const SizedBox(height: 12),
+              _NowNextCard(moment: moment),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               _InfoBanner(icon: Icons.wifi_off_outlined, message: _error!),
@@ -407,6 +488,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     final sessionLabel = _sessionLabel(event);
     final location = (event.address ?? '').trim();
     final teacher = (event.memberName ?? '').trim();
+    final note = (event.note ?? '').trim();
     final startSession = _sessionStart(event);
     final endSession = _sessionEnd(event);
 
@@ -424,6 +506,8 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
             context,
             courseName: event.eventName ?? '未命名课程',
             events: [event],
+            eventDate: DateTime.now(),
+            timeInfoList: _timeInfoList,
           );
         },
         child: Padding(
@@ -494,6 +578,17 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                         '教师：$teacher',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (note.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        note,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.tertiary,
                         ),
                       ),
                     ],
@@ -650,6 +745,109 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+enum _CourseMomentKind { ongoing, next, finished }
+
+class _CourseMoment {
+  final _CourseMomentKind kind;
+  final EventItem event;
+  final int minutes;
+
+  const _CourseMoment({
+    required this.kind,
+    required this.event,
+    required this.minutes,
+  });
+}
+
+class _NowNextCard extends StatelessWidget {
+  final _CourseMoment moment;
+
+  const _NowNextCard({required this.moment});
+
+  String get _title => switch (moment.kind) {
+    _CourseMomentKind.ongoing => '正在上课',
+    _CourseMomentKind.next => '下一节课',
+    _CourseMomentKind.finished => '今日课程已结束',
+  };
+
+  String get _countdown {
+    if (moment.kind == _CourseMomentKind.finished) return '辛苦了';
+    final hours = moment.minutes ~/ 60;
+    final minutes = moment.minutes % 60;
+    final duration = hours > 0 ? '$hours小时$minutes分钟' : '$minutes分钟';
+    return moment.kind == _CourseMomentKind.ongoing
+        ? '距离下课 $duration'
+        : '$duration 后开始';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (moment.event.eventName ?? '').trim();
+    final location = (moment.event.address ?? '').trim();
+    return Card(
+      elevation: 0,
+      color: Theme.of(context).colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(
+              moment.kind == _CourseMomentKind.ongoing
+                  ? Icons.play_circle_fill
+                  : moment.kind == _CourseMomentKind.next
+                  ? Icons.upcoming
+                  : Icons.done_all,
+              size: 34,
+              color: Theme.of(context).colorScheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _title,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  if (moment.kind != _CourseMomentKind.finished)
+                    Text(
+                      name.isEmpty ? '未命名课程' : name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onTertiaryContainer,
+                      ),
+                    ),
+                  if (location.isNotEmpty &&
+                      moment.kind != _CourseMomentKind.finished)
+                    Text(
+                      location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              _countdown,
+              textAlign: TextAlign.end,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).colorScheme.onTertiaryContainer,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

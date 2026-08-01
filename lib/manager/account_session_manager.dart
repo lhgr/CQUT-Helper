@@ -4,6 +4,7 @@ import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
@@ -64,6 +65,9 @@ class AccountSessionManager {
     if (userId.isNotEmpty) {
       await runCleanupStep('clear_account_cache', () async {
         await CacheCleanupManager.clearAccountData(userId);
+      });
+      await runCleanupStep('clear_schedule_customizations', () async {
+        await ScheduleCustomizationManager.instance.clearUserData(userId);
       });
     }
     CourseColorAssignmentManager.instance.resetInMemoryCache();

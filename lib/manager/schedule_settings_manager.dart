@@ -1,6 +1,17 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
+
+enum ScheduleDisplayDensity {
+  compact(48),
+  comfortable(60),
+  spacious(76);
+
+  final double sessionHeight;
+  const ScheduleDisplayDensity(this.sessionHeight);
+}
 
 class ScheduleSettingsManager {
+  static final ValueNotifier<int> experienceEpoch = ValueNotifier<int>(0);
   static const String _prefsKeyShowWeekend = 'schedule_show_weekend';
   static const String _prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
   static const String backgroundPollingEnabledKey =
@@ -10,6 +21,11 @@ class ScheduleSettingsManager {
   static const int currentNoticePrivacyConsentVersion = 1;
   static const String _prefsKeyNoticeApiBaseUrl =
       'schedule_notice_api_base_url';
+  static const String remindersEnabledKey = 'schedule_course_reminders_enabled';
+  static const String defaultReminderMinutesKey =
+      'schedule_default_reminder_minutes';
+  static const String displayDensityKey = 'schedule_display_density';
+  static const String defaultHomeTabKey = 'schedule_default_home_tab';
   static const String officialNoticeApiBaseUrl =
       'https://notice.dawndrizzle.top';
 
@@ -17,6 +33,10 @@ class ScheduleSettingsManager {
   bool timeInfoEnabled = true;
   bool backgroundPollingEnabled = false;
   String noticeApiBaseUrl = officialNoticeApiBaseUrl;
+  bool remindersEnabled = false;
+  int defaultReminderMinutes = 10;
+  ScheduleDisplayDensity displayDensity = ScheduleDisplayDensity.comfortable;
+  int defaultHomeTab = 1;
 
   static String normalizeNoticeApiBaseUrl(String raw) {
     final value = raw.trim();
@@ -94,6 +114,33 @@ class ScheduleSettingsManager {
     noticeApiBaseUrl = isValidNoticeApiBaseUrl(savedBaseUrl)
         ? normalizeNoticeApiBaseUrl(savedBaseUrl)
         : officialNoticeApiBaseUrl;
+    remindersEnabled = prefs.getBool(remindersEnabledKey) ?? false;
+    defaultReminderMinutes = (prefs.getInt(defaultReminderMinutesKey) ?? 10)
+        .clamp(0, 120);
+    final densityName = prefs.getString(displayDensityKey);
+    displayDensity = ScheduleDisplayDensity.values.firstWhere(
+      (value) => value.name == densityName,
+      orElse: () => ScheduleDisplayDensity.comfortable,
+    );
+    defaultHomeTab = (prefs.getInt(defaultHomeTabKey) ?? 1).clamp(0, 2);
+  }
+
+  Future<void> saveExperienceSettings({
+    required bool remindersEnabled,
+    required int defaultReminderMinutes,
+    required ScheduleDisplayDensity displayDensity,
+    required int defaultHomeTab,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    this.remindersEnabled = remindersEnabled;
+    this.defaultReminderMinutes = defaultReminderMinutes.clamp(0, 120);
+    this.displayDensity = displayDensity;
+    this.defaultHomeTab = defaultHomeTab.clamp(0, 2);
+    await prefs.setBool(remindersEnabledKey, this.remindersEnabled);
+    await prefs.setInt(defaultReminderMinutesKey, this.defaultReminderMinutes);
+    await prefs.setString(displayDensityKey, displayDensity.name);
+    await prefs.setInt(defaultHomeTabKey, this.defaultHomeTab);
+    experienceEpoch.value++;
   }
 
   Future<void> save({

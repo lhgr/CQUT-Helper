@@ -184,6 +184,7 @@ class CacheCleanupManager {
     if (exactKeys.contains(key)) return true;
 
     return key.startsWith('schedule_${normalizedUserId}_') ||
+        key.startsWith('schedule_remote_${normalizedUserId}_') ||
         key.startsWith('schedule_fetch_at_${normalizedUserId}_') ||
         key.startsWith('schedule_notice_state_${normalizedUserId}_') ||
         key.startsWith('schedule_notified_${normalizedUserId}_') ||

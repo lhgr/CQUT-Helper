@@ -6,6 +6,7 @@ import 'mine_about_dialog.dart';
 import 'mine_logout_dialog.dart';
 import 'mine_menu_item.dart';
 import 'mine_theme_settings_sheet.dart';
+import 'schedule_experience_settings_sheet.dart';
 
 class MineMenuSection extends StatelessWidget {
   const MineMenuSection({super.key});
@@ -19,6 +20,13 @@ class MineMenuSection extends StatelessWidget {
           title: "主题设置",
           onTap: () {
             showThemeSettingsSheet(context);
+          },
+        ),
+        MineMenuItem(
+          icon: Icons.tune,
+          title: "课程与体验",
+          onTap: () {
+            showScheduleExperienceSettingsSheet(context);
           },
         ),
         MineMenuItem(

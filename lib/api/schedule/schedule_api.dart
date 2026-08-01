@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_notice.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 
 class ScheduleApi {
@@ -17,6 +19,8 @@ class ScheduleApi {
   String _widgetTermKey(String userId) => 'schedule_widget_term_$userId';
   String _scheduleKey(String userId, String yearTerm, String weekNum) =>
       'schedule_${userId}_${_norm(yearTerm)}_${_norm(weekNum)}';
+  String _rawScheduleKey(String userId, String yearTerm, String weekNum) =>
+      'schedule_remote_${userId}_${_norm(yearTerm)}_${_norm(weekNum)}';
 
   static String lastFetchAtKey(
     String userId,
@@ -42,14 +46,22 @@ class ScheduleApi {
 
     weekNum = _norm(weekNum);
     yearTerm = _norm(yearTerm);
-    final key = _scheduleKey(userId, yearTerm, weekNum);
-    final jsonStr = prefs.getString(key);
+    final rawKey = _rawScheduleKey(userId, yearTerm, weekNum);
+    final displayKey = _scheduleKey(userId, yearTerm, weekNum);
+    final jsonStr = prefs.getString(rawKey) ?? prefs.getString(displayKey);
     if (jsonStr == null) return null;
 
     try {
       final decoded = json.decode(jsonStr);
       if (decoded is Map<String, dynamic>) {
-        return ScheduleData.fromJson(decoded);
+        final source = ScheduleData.fromJson(decoded);
+        final merged = await ScheduleCustomizationManager.instance
+            .applyToSchedule(userId: userId, schedule: source);
+        await prefs.setString(displayKey, json.encode(merged.toJson()));
+        if (!prefs.containsKey(rawKey)) {
+          await prefs.setString(rawKey, jsonStr);
+        }
+        return merged;
       }
     } catch (_) {}
 
@@ -91,8 +103,12 @@ class ScheduleApi {
     final saveTerm = dataTerm.isNotEmpty ? dataTerm : reqTerm;
     if (saveWeek.isNotEmpty && saveTerm.isNotEmpty) {
       final prefs = await SharedPreferences.getInstance();
-      final key = _scheduleKey(userId, saveTerm, saveWeek);
-      await prefs.setString(key, json.encode(jsonMap));
+      final rawKey = _rawScheduleKey(userId, saveTerm, saveWeek);
+      final displayKey = _scheduleKey(userId, saveTerm, saveWeek);
+      await prefs.setString(rawKey, json.encode(jsonMap));
+      final merged = await ScheduleCustomizationManager.instance
+          .applyToSchedule(userId: userId, schedule: data);
+      await prefs.setString(displayKey, json.encode(merged.toJson()));
 
       if (persistLastViewed) {
         await prefs.setString(_lastViewedWeekKey(userId), saveWeek);
@@ -109,13 +125,19 @@ class ScheduleApi {
       );
       final widgetWeek = prefs.getString(_widgetWeekKey(userId))?.trim();
       final widgetTerm = prefs.getString(_widgetTermKey(userId))?.trim();
-      if (updateWidgetPins ||
-          (widgetWeek == saveWeek && widgetTerm == saveTerm)) {
+      final updatesCurrentDisplay =
+          updateWidgetPins ||
+          (widgetWeek == saveWeek && widgetTerm == saveTerm);
+      if (updatesCurrentDisplay) {
         await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+        await CourseReminderScheduler.rescheduleForUser(userId);
       }
     }
 
-    return data;
+    return await ScheduleCustomizationManager.instance.applyToSchedule(
+      userId: userId,
+      schedule: data,
+    );
   }
 
   Future<Map<String, dynamic>> fetchRawWeekEvents({
@@ -170,8 +192,9 @@ class ScheduleApi {
     required String weekNum,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final key = _scheduleKey(userId, _norm(yearTerm), _norm(weekNum));
-    return prefs.getString(key);
+    final key = _rawScheduleKey(userId, _norm(yearTerm), _norm(weekNum));
+    return prefs.getString(key) ??
+        prefs.getString(_scheduleKey(userId, _norm(yearTerm), _norm(weekNum)));
   }
 
   Future<void> saveScheduleJson({
@@ -181,8 +204,18 @@ class ScheduleApi {
     required String jsonStr,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final key = _scheduleKey(userId, _norm(yearTerm), _norm(weekNum));
-    await prefs.setString(key, jsonStr);
+    final rawKey = _rawScheduleKey(userId, _norm(yearTerm), _norm(weekNum));
+    final displayKey = _scheduleKey(userId, _norm(yearTerm), _norm(weekNum));
+    await prefs.setString(rawKey, jsonStr);
+    final decoded = json.decode(jsonStr);
+    if (decoded is Map<String, dynamic>) {
+      final merged = await ScheduleCustomizationManager.instance
+          .applyToSchedule(
+            userId: userId,
+            schedule: ScheduleData.fromJson(decoded),
+          );
+      await prefs.setString(displayKey, json.encode(merged.toJson()));
+    }
     await ScheduleRefreshState.markSuccess(userId);
     await prefs.setInt(
       lastFetchAtKey(userId, _norm(yearTerm), _norm(weekNum)),
@@ -192,6 +225,7 @@ class ScheduleApi {
     final widgetTerm = prefs.getString(_widgetTermKey(userId))?.trim();
     if (widgetWeek == _norm(weekNum) && widgetTerm == _norm(yearTerm)) {
       await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+      await CourseReminderScheduler.rescheduleForUser(userId);
     }
   }
 }

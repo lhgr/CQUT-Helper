@@ -1,6 +1,8 @@
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:flutter/material.dart';
 
+void _noopScheduleAction() {}
+
 class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   static const double _appBarHeight = 76;
 
@@ -16,6 +18,10 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onWeekPicker;
   final VoidCallback onTermPicker;
   final VoidCallback onSemesterCourses;
+  final VoidCallback onAddCourse;
+  final VoidCallback onManageLocalCourses;
+  final VoidCallback onImportIcs;
+  final VoidCallback onExportIcs;
 
   const ScheduleAppBar({
     super.key,
@@ -31,6 +37,10 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onWeekPicker,
     required this.onTermPicker,
     required this.onSemesterCourses,
+    this.onAddCourse = _noopScheduleAction,
+    this.onManageLocalCourses = _noopScheduleAction,
+    this.onImportIcs = _noopScheduleAction,
+    this.onExportIcs = _noopScheduleAction,
   });
 
   @override
@@ -38,7 +48,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double sideSlotWidth = 116;
+    const double sideSlotWidth = 120;
     const double sideHorizontalPadding = 12;
     const double pickerButtonGap = 2;
 
@@ -86,7 +96,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
             onTap: loading ? null : onRefresh,
             borderRadius: BorderRadius.circular(10),
             child: SizedBox(
-              width: 58,
+              width: 36,
               height: 54,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -187,13 +197,68 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
                 IconButton(
                   onPressed: onSettings,
                   constraints: const BoxConstraints.tightFor(
-                    width: 36,
+                    width: 32,
                     height: 36,
                   ),
                   padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.tune),
                   tooltip: '课表设置',
+                ),
+                SizedBox(
+                  width: 32,
+                  height: 36,
+                  child: PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    tooltip: '更多课表操作',
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'add':
+                          onAddCourse();
+                          break;
+                        case 'manage':
+                          onManageLocalCourses();
+                          break;
+                        case 'import_ics':
+                          onImportIcs();
+                          break;
+                        case 'export_ics':
+                          onExportIcs();
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'add',
+                        child: ListTile(
+                          leading: Icon(Icons.add),
+                          title: Text('添加课程或事件'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'manage',
+                        child: ListTile(
+                          leading: Icon(Icons.edit_calendar_outlined),
+                          title: Text('管理本地课程'),
+                        ),
+                      ),
+                      PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'import_ics',
+                        child: ListTile(
+                          leading: Icon(Icons.file_open_outlined),
+                          title: Text('导入 ICS'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'export_ics',
+                        child: ListTile(
+                          leading: Icon(Icons.ios_share_outlined),
+                          title: Text('导出 ICS'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

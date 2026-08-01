@@ -157,10 +157,164 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     }
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            SemesterCourseListPage(yearTerm: yearTerm, events: events),
+        builder: (_) => SemesterCourseListPage(
+          yearTerm: yearTerm,
+          events: events,
+          userId: _controller.userId ?? '',
+        ),
       ),
     );
+  }
+
+  List<int> get _availableWeekNumbers => (_weekList ?? const <String>[])
+      .map(int.tryParse)
+      .whereType<int>()
+      .where((week) => week > 0)
+      .toList(growable: false);
+
+  Future<void> _openLocalCourseEditor() async {
+    final userId = (_controller.userId ?? '').trim();
+    final term = (_currentScheduleData?.yearTerm ?? '').trim();
+    if (userId.isEmpty || term.isEmpty) {
+      _showBoundaryMessage('请先加载当前学期课表');
+      return;
+    }
+    await Navigator.of(context).push<LocalScheduleEvent>(
+      MaterialPageRoute(
+        builder: (_) => LocalCourseEditorPage(
+          userId: userId,
+          yearTerm: term,
+          availableWeeks: _availableWeekNumbers,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openLocalCourseList() async {
+    final userId = (_controller.userId ?? '').trim();
+    final term = (_currentScheduleData?.yearTerm ?? '').trim();
+    if (userId.isEmpty || term.isEmpty) {
+      _showBoundaryMessage('请先加载当前学期课表');
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => LocalCourseListPage(
+          userId: userId,
+          yearTerm: term,
+          availableWeeks: _availableWeekNumbers,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _importIcs() async {
+    final userId = (_controller.userId ?? '').trim();
+    final term = (_currentScheduleData?.yearTerm ?? '').trim();
+    if (userId.isEmpty || term.isEmpty) {
+      _showBoundaryMessage('请先加载当前学期课表');
+      return;
+    }
+    try {
+      final text = await ScheduleIcsService.pickIcsText();
+      if (text == null || text.trim().isEmpty || !mounted) return;
+      await _controller.ensureTimeInfoLoaded();
+      final result = ScheduleIcsService.parse(
+        content: text,
+        userId: userId,
+        yearTerm: term,
+        timeInfo: _controller.timeInfoList ?? const <CampusTimeInfo>[],
+      );
+      await ScheduleCustomizationManager.instance.saveLocalEvents(
+        result.events,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.skipped == 0
+                ? '已导入 ${result.events.length} 条 ICS 日程'
+                : '已导入 ${result.events.length} 条，跳过 ${result.skipped} 条',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ICS 导入失败：$error')));
+    }
+  }
+
+  Future<void> _exportIcs() async {
+    final term = (_currentScheduleData?.yearTerm ?? '').trim();
+    final weeks = _weekList ?? const <String>[];
+    if (term.isEmpty || weeks.isEmpty) {
+      _showBoundaryMessage('当前学期信息不可用');
+      return;
+    }
+    BuildContext? loadingContext;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          loadingContext = dialogContext;
+          return const PopScope(
+            canPop: false,
+            child: AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 18),
+                  Expanded(child: Text('正在整理本学期课表…')),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    try {
+      for (final week in weeks) {
+        if (!mounted) return;
+        await _controller.ensureWeekLoaded(week, term, updateLastViewed: false);
+        final merged = await _controller.loadFromCache(
+          weekNum: week,
+          yearTerm: term,
+        );
+        if (merged != null) _controller.processLoadedData(merged);
+      }
+      await _controller.ensureTimeInfoLoaded();
+      final schedules = _weekCache.values
+          .where((data) => (data.yearTerm ?? '').trim() == term)
+          .toList(growable: false);
+      final content = ScheduleIcsService.generate(
+        schedules: schedules,
+        timeInfo: _controller.timeInfoList ?? const <CampusTimeInfo>[],
+      );
+      final safeTerm = term.replaceAll(RegExp(r'[^0-9A-Za-z_-]'), '_');
+      final path = await ScheduleIcsService.exportToDownloads(
+        content: content,
+        fileName: 'CQUT-$safeTerm.ics',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ICS 已导出到 $path')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ICS 导出失败：$error')));
+    } finally {
+      final dialogContext = loadingContext;
+      if (dialogContext != null && dialogContext.mounted) {
+        Navigator.of(dialogContext).pop();
+      }
+    }
   }
 
   void _returnToCurrentWeek() {

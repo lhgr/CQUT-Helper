@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_repository.dart';
@@ -195,7 +197,22 @@ class ScheduleWeekLoader {
         final fpUpdatedAtKey = fingerprintUpdatedAtKey(uid, term, week);
         final fetchAtKey = lastFetchAtKey(uid, term, week);
         final now = DateTime.now().millisecondsSinceEpoch;
-        final fp = scheduleFingerprintFromScheduleData(data);
+        var fp = scheduleFingerprintFromScheduleData(data);
+        final raw = await service.getCachedScheduleJson(
+          userId: uid,
+          yearTerm: term,
+          weekNum: week,
+        );
+        if (raw != null && raw.trim().isNotEmpty) {
+          try {
+            final decoded = jsonDecode(raw);
+            if (decoded is Map) {
+              fp = scheduleFingerprintFromWeekJsonMap(
+                decoded.cast<String, dynamic>(),
+              );
+            }
+          } catch (_) {}
+        }
         await prefs.setString(fpKey, fp);
         await prefs.setInt(fpUpdatedAtKey, now);
         await prefs.setInt(fetchAtKey, now);

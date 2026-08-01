@@ -15,6 +15,8 @@ class ScheduleCourseGrid extends StatefulWidget {
   final List<Color> descriptionColors;
   final List<Color> buttonColors;
   final bool showWeekend;
+  final Map<int, DateTime> eventDates;
+  final List<CampusTimeInfo>? timeInfoList;
 
   const ScheduleCourseGrid({
     super.key,
@@ -28,6 +30,8 @@ class ScheduleCourseGrid extends StatefulWidget {
     required this.descriptionColors,
     required this.buttonColors,
     this.showWeekend = true,
+    this.eventDates = const <int, DateTime>{},
+    this.timeInfoList,
   });
 
   @override
@@ -99,6 +103,11 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
     return widget.events
         .where((event) => _buildCourseKey(event) == key)
         .toList(growable: false);
+  }
+
+  DateTime? _dateForEvent(EventItem event) {
+    final weekday = int.tryParse((event.weekDay ?? '').trim());
+    return weekday == null ? null : widget.eventDates[weekday];
   }
 
   int _safeParsePositiveInt(String? raw, {int fallback = 1}) {
@@ -428,6 +437,8 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                             courseName: key,
                             events: _eventsWithSameCourseName(event),
                             closeButtonColor: closeButtonColor,
+                            eventDate: _dateForEvent(event),
+                            timeInfoList: widget.timeInfoList,
                           );
                         },
                       );
@@ -536,7 +547,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
 
                   final key = _buildCourseKey(event);
                   final int colorIndex =
-                      _courseColorIndexMap[key] ?? _fallbackIndexForKey(key);
+                      event.colorIndex ??
+                      _courseColorIndexMap[key] ??
+                      _fallbackIndexForKey(key);
                   final safeIndex = _safeIndex(colorIndex);
                   final Color backgroundColor =
                       widget.backgroundColors[safeIndex];
@@ -579,6 +592,8 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                             courseName: key,
                             events: _eventsWithSameCourseName(event),
                             closeButtonColor: widget.buttonColors[safeIndex],
+                            eventDate: _dateForEvent(event),
+                            timeInfoList: widget.timeInfoList,
                           );
                         }
                       },
@@ -596,7 +611,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
 
                   final key = _buildCourseKey(border.event);
                   final int colorIndex =
-                      _courseColorIndexMap[key] ?? _fallbackIndexForKey(key);
+                      border.event.colorIndex ??
+                      _courseColorIndexMap[key] ??
+                      _fallbackIndexForKey(key);
                   final safeIndex = _safeIndex(colorIndex);
                   final fillAlpha = (200 - border.priorityRank * 18).clamp(
                     95,
@@ -654,7 +671,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
 
                   final key = _buildCourseKey(event);
                   final int colorIndex =
-                      _courseColorIndexMap[key] ?? _fallbackIndexForKey(key);
+                      event.colorIndex ??
+                      _courseColorIndexMap[key] ??
+                      _fallbackIndexForKey(key);
                   final safeIndex = _safeIndex(colorIndex);
                   final Color backgroundColor =
                       widget.backgroundColors[safeIndex];
@@ -697,6 +716,8 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                             courseName: key,
                             events: _eventsWithSameCourseName(event),
                             closeButtonColor: widget.buttonColors[safeIndex],
+                            eventDate: _dateForEvent(event),
+                            timeInfoList: widget.timeInfoList,
                           );
                         }
                       },

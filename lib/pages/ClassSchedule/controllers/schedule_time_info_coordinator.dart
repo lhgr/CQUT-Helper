@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -203,6 +204,10 @@ class ScheduleTimeInfoCoordinator {
         'items': fetched.map((e) => e.toJson()).toList(),
       }),
     );
+    final userId = prefs.getString('account')?.trim();
+    if (userId != null && userId.isNotEmpty) {
+      await CourseReminderScheduler.rescheduleForUser(userId);
+    }
     AppLogger.I.info(
       'TimeInfo',
       'refresh_updated',

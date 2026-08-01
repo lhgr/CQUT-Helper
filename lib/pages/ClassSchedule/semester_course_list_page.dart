@@ -1,17 +1,22 @@
 import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/model/local_schedule_model.dart';
+import 'package:cqut_helper/pages/ClassSchedule/local_course_editor_page.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:flutter/material.dart';
 
 class SemesterCourseListPage extends StatefulWidget {
   final String yearTerm;
   final List<EventItem> events;
+  final String userId;
 
   const SemesterCourseListPage({
     super.key,
     required this.yearTerm,
     required this.events,
+    required this.userId,
   });
 
   @override
@@ -20,6 +25,7 @@ class SemesterCourseListPage extends StatefulWidget {
 
 class _SemesterCourseListPageState extends State<SemesterCourseListPage> {
   Map<String, int> _colorMap = <String, int>{};
+  Map<String, CoursePreference> _preferences = <String, CoursePreference>{};
 
   @override
   void initState() {
@@ -28,10 +34,46 @@ class _SemesterCourseListPageState extends State<SemesterCourseListPage> {
       widget.yearTerm,
     );
     _initColorMap();
+    _loadPreferences();
   }
 
   String _buildCourseKey(EventItem event) {
     return CourseColorAssignmentManager.buildCourseNameKey(event.eventName);
+  }
+
+  String _customizationKey(EventItem event) =>
+      (event.customizationKey ?? '').trim().isNotEmpty
+      ? event.customizationKey!.trim()
+      : ScheduleCustomizationManager.courseKeyForEvent(event);
+
+  Future<void> _loadPreferences() async {
+    if (widget.userId.trim().isEmpty) return;
+    final preferences = await ScheduleCustomizationManager.instance
+        .preferenceMap(userId: widget.userId, yearTerm: widget.yearTerm);
+    if (!mounted) return;
+    setState(() => _preferences = preferences);
+  }
+
+  Future<void> _editCoursePreference(List<EventItem> events) async {
+    if (events.isEmpty || widget.userId.trim().isEmpty) return;
+    final first = events.first;
+    final key = _customizationKey(first);
+    final preference = await showCoursePreferenceEditor(
+      context,
+      userId: widget.userId,
+      yearTerm: widget.yearTerm,
+      courseKey: key,
+      currentName: (first.eventName ?? '').trim(),
+      currentTeacher: (first.memberName ?? '').trim(),
+      currentLocation: (first.address ?? '').trim(),
+      initial: _preferences[key],
+    );
+    if (preference == null) return;
+    await ScheduleCustomizationManager.instance.saveCoursePreference(
+      preference,
+    );
+    if (!mounted) return;
+    setState(() => _preferences[key] = preference);
   }
 
   Future<void> _initColorMap() async {
@@ -72,6 +114,8 @@ class _SemesterCourseListPageState extends State<SemesterCourseListPage> {
             : ScheduleCourseCardTheme.light());
     final courseMap = <String, List<EventItem>>{};
     for (final event in widget.events) {
+      final preference = _preferences[_customizationKey(event)];
+      if (preference?.hidden == true) continue;
       final key = _buildCourseKey(event);
       courseMap.putIfAbsent(key, () => <EventItem>[]).add(event);
     }
@@ -101,16 +145,21 @@ class _SemesterCourseListPageState extends State<SemesterCourseListPage> {
               itemBuilder: (context, index) {
                 final key = courseKeys[index];
                 final events = courseMap[key] ?? const <EventItem>[];
-                final colorIndex = _colorIndex(
-                  key,
-                  cardTheme.backgrounds.length,
-                );
+                final preference = events.isEmpty
+                    ? null
+                    : _preferences[_customizationKey(events.first)];
+                final colorIndex =
+                    preference?.colorIndex ??
+                    _colorIndex(key, cardTheme.backgrounds.length);
                 final backgroundColor = cardTheme.backgrounds[colorIndex];
                 final borderColor = cardTheme.borders[colorIndex];
                 final titleColor = cardTheme.titleColors[colorIndex];
                 final descriptionColor =
                     cardTheme.descriptionColors[colorIndex];
-                final displayName = key.trim().isEmpty ? '未命名课程' : key.trim();
+                final preferredName = preference?.displayName?.trim() ?? '';
+                final displayName = preferredName.isNotEmpty
+                    ? preferredName
+                    : (key.trim().isEmpty ? '未命名课程' : key.trim());
                 final teacherSet =
                     events
                         .map((e) => _safeValue(e.memberName))
@@ -146,13 +195,25 @@ class _SemesterCourseListPageState extends State<SemesterCourseListPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            displayName,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  color: titleColor,
-                                  fontWeight: FontWeight.w700,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  displayName,
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        color: titleColor,
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                 ),
+                              ),
+                              IconButton(
+                                tooltip: '编辑课程个性化',
+                                onPressed: () => _editCoursePreference(events),
+                                icon: const Icon(Icons.tune, size: 20),
+                                color: titleColor,
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 6),
                           Text(
@@ -172,6 +233,14 @@ class _SemesterCourseListPageState extends State<SemesterCourseListPage> {
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: descriptionColor),
                           ),
+                          if ((preference?.note ?? '').trim().isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              '备注：${preference!.note.trim()}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: descriptionColor),
+                            ),
+                          ],
                         ],
                       ),
                     ),

@@ -5,7 +5,9 @@ import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_update_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/model/local_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_app_bar.dart';
@@ -13,11 +15,14 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_inline_notice_p
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_page_view.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/semester_course_list_page.dart';
+import 'package:cqut_helper/pages/ClassSchedule/local_course_editor_page.dart';
+import 'package:cqut_helper/pages/ClassSchedule/local_course_list_page.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/week_picker_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cqut_helper/utils/schedule_ics_service.dart';
 
 part 'class_schedule_actions.dart';
 part 'class_schedule_loading.dart';
@@ -73,6 +78,10 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     CacheCleanupManager.timetableCacheEpoch.addListener(
       _onTimetableCacheCleared,
     );
+    ScheduleCustomizationManager.instance.addListener(_onCustomizationChanged);
+    ScheduleSettingsManager.experienceEpoch.addListener(
+      _onExperienceSettingsChanged,
+    );
     _loadPreferences();
     _loadInitialData();
   }
@@ -84,6 +93,12 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     ScheduleUpdateIntents.scheduleUpdated.removeListener(_onScheduleUpdated);
     CacheCleanupManager.timetableCacheEpoch.removeListener(
       _onTimetableCacheCleared,
+    );
+    ScheduleCustomizationManager.instance.removeListener(
+      _onCustomizationChanged,
+    );
+    ScheduleSettingsManager.experienceEpoch.removeListener(
+      _onExperienceSettingsChanged,
     );
     _updateManager.dispose();
     _controller.dispose();
@@ -146,6 +161,25 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       }
     }
     setState(() {});
+  }
+
+  Future<void> _onCustomizationChanged() async {
+    final current = _currentScheduleData;
+    final week = (current?.weekNum ?? '').trim();
+    final term = (current?.yearTerm ?? '').trim();
+    if (week.isEmpty || term.isEmpty) return;
+    final refreshed = await _controller.loadFromCache(
+      weekNum: week,
+      yearTerm: term,
+    );
+    if (refreshed == null || !mounted) return;
+    _controller.processLoadedData(refreshed);
+    setState(() => _currentScheduleData = refreshed);
+  }
+
+  Future<void> _onExperienceSettingsChanged() async {
+    await _settingsManager.load();
+    if (mounted) setState(() {});
   }
 
   @override
@@ -246,6 +280,10 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         onWeekPicker: _showWeekPickerSheet,
         onTermPicker: _showTermPickerSheet,
         onSemesterCourses: _openSemesterCourseListPage,
+        onAddCourse: _openLocalCourseEditor,
+        onManageLocalCourses: _openLocalCourseList,
+        onImportIcs: _importIcs,
+        onExportIcs: _exportIcs,
       ),
       body: Column(
         children: [
@@ -267,6 +305,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               timeInfoList: _settingsManager.timeInfoEnabled
                   ? _controller.timeInfoList
                   : null,
+              sessionHeight: _settingsManager.displayDensity.sessionHeight,
             ),
           ),
         ],

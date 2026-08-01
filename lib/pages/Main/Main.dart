@@ -1,6 +1,7 @@
 import 'package:cqut_helper/manager/announcement_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/update_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
@@ -60,6 +61,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _markActive();
       ScheduleUpdateWorker.syncFromPreferences();
+      LocalNotifications.consumeOpenCourseReminderFlag().then((open) {
+        if (open && mounted && _currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+        }
+      });
     }
   }
 
@@ -84,6 +90,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
     if (!mounted) return;
     setState(() {
+      _currentIndex =
+          (prefs.getInt(ScheduleSettingsManager.defaultHomeTabKey) ?? 1).clamp(
+            0,
+            2,
+          );
       _isCheckingLogin = false;
     });
 
@@ -95,6 +106,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       final open = await LocalNotifications.consumeOpenScheduleUpdateFlag();
       if (open) {
         _openScheduleAndChanges();
+      }
+      final openCourse =
+          await LocalNotifications.consumeOpenCourseReminderFlag();
+      if (openCourse && mounted && _currentIndex != 0) {
+        setState(() => _currentIndex = 0);
       }
     });
   }

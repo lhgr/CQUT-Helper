@@ -80,6 +80,18 @@ class CourseColorAssignmentManager {
     return Map<String, int>.from(cached);
   }
 
+  Future<void> setAssignment({
+    required String term,
+    required String courseKey,
+    required int colorIndex,
+  }) async {
+    final normalizedKey = buildCourseNameKey(courseKey);
+    final scope = await _buildScope(term);
+    final scopedMap = await _ensureScopeLoaded(scope);
+    scopedMap[normalizedKey] = colorIndex;
+    await _saveScope(scope, scopedMap);
+  }
+
   Future<String> _buildScope(String term) async {
     if (_accountCache == null) {
       final prefs = await SharedPreferences.getInstance();

@@ -15,7 +15,9 @@ import android.os.BatteryManager
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.MediaStore
+import android.provider.CalendarContract
 import android.provider.Settings
+import android.app.Activity
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -29,8 +31,11 @@ class MainActivity : FlutterActivity() {
   private val widgetChannelName = "cqut/widget"
   private val powerChannelName = "cqut/power"
   private val navigationChannelName = "cqut/navigation"
+  private val scheduleInteropChannelName = "cqut/schedule_interop"
+  private val pickIcsRequestCode = 4107
   private var navigationChannel: MethodChannel? = null
   private var pendingWidgetNavigation: Map<String, Any?>? = null
+  private var pendingIcsResult: MethodChannel.Result? = null
 
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
@@ -387,6 +392,63 @@ class MainActivity : FlutterActivity() {
           else -> result.notImplemented()
         }
       }
+
+    MethodChannel(
+      flutterEngine.dartExecutor.binaryMessenger,
+      scheduleInteropChannelName,
+    ).setMethodCallHandler { call, result ->
+      when (call.method) {
+        "pickIcs" -> {
+          if (pendingIcsResult != null) {
+            result.error("BUSY", "another ICS picker is already open", null)
+            return@setMethodCallHandler
+          }
+          pendingIcsResult = result
+          try {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+              addCategory(Intent.CATEGORY_OPENABLE)
+              type = "text/calendar"
+              putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                arrayOf("text/calendar", "application/ics", "text/plain"),
+              )
+            }
+            startActivityForResult(intent, pickIcsRequestCode)
+          } catch (e: Exception) {
+            pendingIcsResult = null
+            result.error("PICK_FAILED", e.toString(), null)
+          }
+        }
+
+        "addToCalendar" -> {
+          val title = call.argument<String>("title").orEmpty()
+          val description = call.argument<String>("description").orEmpty()
+          val location = call.argument<String>("location").orEmpty()
+          val beginMillis = call.argument<Number>("beginMillis")?.toLong()
+          val endMillis = call.argument<Number>("endMillis")?.toLong()
+          if (beginMillis == null || endMillis == null) {
+            result.error("INVALID_ARGS", "beginMillis/endMillis is required", null)
+            return@setMethodCallHandler
+          }
+          try {
+            val intent = Intent(Intent.ACTION_INSERT).apply {
+              data = CalendarContract.Events.CONTENT_URI
+              putExtra(CalendarContract.Events.TITLE, title)
+              putExtra(CalendarContract.Events.DESCRIPTION, description)
+              putExtra(CalendarContract.Events.EVENT_LOCATION, location)
+              putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginMillis)
+              putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
+            }
+            startActivity(intent)
+            result.success(true)
+          } catch (e: Exception) {
+            result.error("CALENDAR_FAILED", e.toString(), null)
+          }
+        }
+
+        else -> result.notImplemented()
+      }
+    }
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -398,6 +460,26 @@ class MainActivity : FlutterActivity() {
       pendingWidgetNavigation = navigation
     } else {
       channel.invokeMethod("widgetNavigation", navigation)
+    }
+  }
+
+  @Deprecated("Deprecated in Android SDK; retained for FlutterActivity compatibility")
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode != pickIcsRequestCode) return
+    val callback = pendingIcsResult ?: return
+    pendingIcsResult = null
+    if (resultCode != Activity.RESULT_OK || data?.data == null) {
+      callback.success(null)
+      return
+    }
+    try {
+      val text = contentResolver.openInputStream(data.data!!)?.bufferedReader(Charsets.UTF_8)?.use {
+        it.readText()
+      }
+      callback.success(text)
+    } catch (e: Exception) {
+      callback.error("READ_FAILED", e.toString(), null)
     }
   }
 
