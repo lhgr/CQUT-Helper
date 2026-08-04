@@ -4,7 +4,6 @@ import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_update_manager.dart';
-import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
@@ -12,12 +11,11 @@ import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_app_bar.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_inline_notice_panel.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_page_view.dart';
-import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
-import 'package:cqut_helper/pages/ClassSchedule/semester_course_list_page.dart';
+import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
 import 'package:cqut_helper/pages/ClassSchedule/custom_course_editor_page.dart';
-import 'package:cqut_helper/pages/ClassSchedule/custom_course_list_page.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/week_picker_sheet.dart';
+import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -78,9 +76,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       _onTimetableCacheCleared,
     );
     ScheduleCustomizationManager.instance.addListener(_onCustomizationChanged);
-    ScheduleSettingsManager.experienceEpoch.addListener(
-      _onExperienceSettingsChanged,
-    );
+    ScheduleSettingsManager.settingsEpoch.addListener(_onSettingsChanged);
     _loadPreferences();
     _loadInitialData();
   }
@@ -96,9 +92,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     ScheduleCustomizationManager.instance.removeListener(
       _onCustomizationChanged,
     );
-    ScheduleSettingsManager.experienceEpoch.removeListener(
-      _onExperienceSettingsChanged,
-    );
+    ScheduleSettingsManager.settingsEpoch.removeListener(_onSettingsChanged);
     _updateManager.dispose();
     _controller.dispose();
     _pageController?.dispose();
@@ -167,18 +161,27 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     final week = (current?.weekNum ?? '').trim();
     final term = (current?.yearTerm ?? '').trim();
     if (week.isEmpty || term.isEmpty) return;
-    final refreshed = await _controller.loadFromCache(
-      weekNum: week,
-      yearTerm: term,
-    );
-    if (refreshed == null || !mounted) return;
-    _controller.processLoadedData(refreshed);
-    setState(() => _currentScheduleData = refreshed);
+    await _controller.reloadMemoryCacheFromDisk(yearTerm: term);
+    if (!mounted) return;
+    final currentWeek = int.tryParse(week);
+    final refreshed = currentWeek == null ? null : _weekCache[currentWeek];
+    setState(() {
+      if (refreshed != null) _currentScheduleData = refreshed;
+    });
   }
 
-  Future<void> _onExperienceSettingsChanged() async {
+  Future<void> _onSettingsChanged() async {
     await _settingsManager.load();
     if (mounted) setState(() {});
+    if (_settingsManager.timeInfoEnabled) {
+      final loaded = await _controller.loadTimeInfoFromCacheIfAny();
+      if (loaded && mounted) setState(() {});
+      unawaited(
+        _controller.refreshTimeInfoIfEnabled(force: true).then((changed) {
+          if (changed && mounted) setState(() {});
+        }),
+      );
+    }
   }
 
   @override
@@ -275,12 +278,10 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               (_weekList![_currentWeekIndex] == _actualCurrentWeekStr &&
                   _currentScheduleData?.yearTerm == _actualCurrentTermStr),
         ),
-        onSettings: _showScheduleSettingsSheetWrapper,
+        onSettings: _showScheduleSettingsPage,
         onWeekPicker: _showWeekPickerSheet,
         onTermPicker: _showTermPickerSheet,
-        onSemesterCourses: _openSemesterCourseListPage,
         onAddCourse: _openCustomCourseEditor,
-        onManageCustomCourses: _openCustomCourseList,
         onExportIcs: _exportIcs,
       ),
       body: Column(
@@ -304,6 +305,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                   ? _controller.timeInfoList
                   : null,
               sessionHeight: _settingsManager.displayDensity.sessionHeight,
+              onEditCourse: _editCourse,
+              onDeleteCourse: _deleteCustomCourse,
             ),
           ),
         ],

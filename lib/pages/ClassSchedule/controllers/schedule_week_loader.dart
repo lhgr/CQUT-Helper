@@ -79,6 +79,30 @@ class ScheduleWeekLoader {
     );
   }
 
+  Future<int> reloadMemoryCacheFromDisk({required String yearTerm}) async {
+    final normalizedTerm = yearTerm.trim();
+    if (normalizedTerm.isEmpty) return 0;
+    final cache = getWeekCache();
+    final weeks = cache.entries
+        .where((entry) => (entry.value.yearTerm ?? '').trim() == normalizedTerm)
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    var refreshedCount = 0;
+    for (final week in weeks) {
+      final refreshed = await loadFromCache(
+        weekNum: week.toString(),
+        yearTerm: normalizedTerm,
+      );
+      if (refreshed == null ||
+          (refreshed.yearTerm ?? '').trim() != normalizedTerm) {
+        continue;
+      }
+      cache[week] = refreshed;
+      refreshedCount++;
+    }
+    return refreshedCount;
+  }
+
   Future<ScheduleData> loadFromNetwork({
     String? weekNum,
     String? yearTerm,

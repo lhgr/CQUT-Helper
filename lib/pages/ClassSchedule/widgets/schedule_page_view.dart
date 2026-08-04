@@ -4,7 +4,6 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_header.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_time_column.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:flutter/material.dart';
-import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 
 class SchedulePageView extends StatelessWidget {
   final PageController? pageController;
@@ -16,6 +15,8 @@ class SchedulePageView extends StatelessWidget {
   final int currentWeekIndex;
   final List<CampusTimeInfo>? timeInfoList;
   final double sessionHeight;
+  final Future<void> Function(EventItem event) onEditCourse;
+  final Future<void> Function(EventItem event) onDeleteCourse;
 
   static const double _headerHeight = 50.0;
   static const double _timeColumnWidth =
@@ -32,6 +33,8 @@ class SchedulePageView extends StatelessWidget {
     required this.currentWeekIndex,
     this.timeInfoList,
     this.sessionHeight = 60.0,
+    required this.onEditCourse,
+    required this.onDeleteCourse,
   });
 
   @override
@@ -97,9 +100,8 @@ class SchedulePageView extends StatelessWidget {
                           titleColors: cardTheme.titleColors,
                           descriptionColors: cardTheme.descriptionColors,
                           buttonColors: cardTheme.buttonColors,
-                          eventDates:
-                              ScheduleCustomizationManager.scheduleDates(data),
-                          timeInfoList: timeInfoList,
+                          onEditCourse: onEditCourse,
+                          onDeleteCourse: onDeleteCourse,
                         ),
                       ),
                     ],

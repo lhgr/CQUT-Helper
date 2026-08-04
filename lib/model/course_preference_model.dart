@@ -25,6 +25,31 @@ class CoursePreference {
     required this.updatedAt,
   });
 
+  CoursePreference copyWith({
+    String? displayName,
+    String? teacher,
+    String? location,
+    String? note,
+    bool? hidden,
+    int? reminderMinutes,
+    int? colorIndex,
+    DateTime? updatedAt,
+  }) {
+    return CoursePreference(
+      userId: userId,
+      yearTerm: yearTerm,
+      courseKey: courseKey,
+      displayName: displayName ?? this.displayName,
+      teacher: teacher ?? this.teacher,
+      location: location ?? this.location,
+      note: note ?? this.note,
+      hidden: hidden ?? this.hidden,
+      reminderMinutes: reminderMinutes ?? this.reminderMinutes,
+      colorIndex: colorIndex ?? this.colorIndex,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
   Map<String, Object?> toDatabaseMap() => {
     'user_id': userId,
     'year_term': yearTerm,

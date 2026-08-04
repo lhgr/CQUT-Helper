@@ -2,11 +2,15 @@ import 'dart:async';
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 
 class ScheduleSettingsSheet extends StatefulWidget {
+  final String userId;
+  final String yearTerm;
   final bool initialShowWeekend;
   final bool initialTimeInfoEnabled;
   final bool initialBackgroundPollingEnabled;
@@ -21,6 +25,8 @@ class ScheduleSettingsSheet extends StatefulWidget {
 
   const ScheduleSettingsSheet({
     super.key,
+    required this.userId,
+    required this.yearTerm,
     required this.initialShowWeekend,
     required this.initialTimeInfoEnabled,
     required this.initialBackgroundPollingEnabled,
@@ -50,6 +56,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   bool _checkingSetup = false;
   bool _noticePrivacyConsentAcceptedThisSession = false;
   ScheduleBackgroundPollHealthSnapshot? _healthSnapshot;
+  int? _hiddenCourseCount;
 
   late bool _baselineShowWeekend;
   late bool _baselineTimeInfoEnabled;
@@ -86,6 +93,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
     _baselineNoticeApiBaseUrl = noticeApiBaseUrl;
     unawaited(_loadHealthSnapshot());
+    unawaited(_loadHiddenCourseCount());
   }
 
   @override
@@ -118,6 +126,28 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     setState(() {
       _healthSnapshot = snapshot;
     });
+  }
+
+  Future<void> _loadHiddenCourseCount() async {
+    if (widget.userId.trim().isEmpty || widget.yearTerm.trim().isEmpty) {
+      if (mounted) setState(() => _hiddenCourseCount = 0);
+      return;
+    }
+    final courses = await ScheduleCustomizationManager.instance.hiddenCourses(
+      userId: widget.userId,
+      yearTerm: widget.yearTerm,
+    );
+    if (!mounted) return;
+    setState(() => _hiddenCourseCount = courses.length);
+  }
+
+  Future<void> _openHiddenCourses() async {
+    await showHiddenCoursesSheet(
+      context,
+      userId: widget.userId,
+      yearTerm: widget.yearTerm,
+    );
+    if (mounted) await _loadHiddenCourseCount();
   }
 
   Future<void> _testConnectivity() async {
@@ -397,6 +427,23 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                     },
                   ),
                   ListTile(
+                    leading: const Icon(Icons.visibility_off_outlined),
+                    title: const Text('已隐藏课程'),
+                    subtitle: Text(
+                      _hiddenCourseCount == null
+                          ? '正在读取本地设置…'
+                          : _hiddenCourseCount == 0
+                          ? '暂无隐藏课程'
+                          : '$_hiddenCourseCount 门课程，可在此取消隐藏',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap:
+                        widget.userId.trim().isEmpty ||
+                            widget.yearTerm.trim().isEmpty
+                        ? null
+                        : _openHiddenCourses,
+                  ),
+                  ListTile(
                     title: Text('调课通知增强（可选）'),
                     subtitle: Text(
                       !backgroundPollingEnabled
@@ -525,6 +572,8 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
 void showScheduleSettingsSheet(
   BuildContext context, {
+  required String userId,
+  required String yearTerm,
   required bool initialShowWeekend,
   required bool initialTimeInfoEnabled,
   required bool initialBackgroundPollingEnabled,
@@ -544,6 +593,8 @@ void showScheduleSettingsSheet(
     isScrollControlled: true,
     builder: (context) {
       return ScheduleSettingsSheet(
+        userId: userId,
+        yearTerm: yearTerm,
         initialShowWeekend: initialShowWeekend,
         initialTimeInfoEnabled: initialTimeInfoEnabled,
         initialBackgroundPollingEnabled: initialBackgroundPollingEnabled,

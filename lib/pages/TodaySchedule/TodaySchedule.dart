@@ -118,8 +118,6 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         context,
         courseName: (events.first.eventName ?? '').trim(),
         events: events,
-        eventDate: DateTime.now(),
-        timeInfoList: _timeInfoList,
       );
     });
   }
@@ -506,8 +504,6 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
             context,
             courseName: event.eventName ?? '未命名课程',
             events: [event],
-            eventDate: DateTime.now(),
-            timeInfoList: _timeInfoList,
           );
         },
         child: Padding(

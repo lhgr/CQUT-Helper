@@ -15,7 +15,6 @@ import android.os.BatteryManager
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.MediaStore
-import android.provider.CalendarContract
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -30,7 +29,6 @@ class MainActivity : FlutterActivity() {
   private val widgetChannelName = "cqut/widget"
   private val powerChannelName = "cqut/power"
   private val navigationChannelName = "cqut/navigation"
-  private val scheduleInteropChannelName = "cqut/schedule_interop"
   private var navigationChannel: MethodChannel? = null
   private var pendingWidgetNavigation: Map<String, Any?>? = null
 
@@ -390,40 +388,6 @@ class MainActivity : FlutterActivity() {
         }
       }
 
-    MethodChannel(
-      flutterEngine.dartExecutor.binaryMessenger,
-      scheduleInteropChannelName,
-    ).setMethodCallHandler { call, result ->
-      when (call.method) {
-        "addToCalendar" -> {
-          val title = call.argument<String>("title").orEmpty()
-          val description = call.argument<String>("description").orEmpty()
-          val location = call.argument<String>("location").orEmpty()
-          val beginMillis = call.argument<Number>("beginMillis")?.toLong()
-          val endMillis = call.argument<Number>("endMillis")?.toLong()
-          if (beginMillis == null || endMillis == null) {
-            result.error("INVALID_ARGS", "beginMillis/endMillis is required", null)
-            return@setMethodCallHandler
-          }
-          try {
-            val intent = Intent(Intent.ACTION_INSERT).apply {
-              data = CalendarContract.Events.CONTENT_URI
-              putExtra(CalendarContract.Events.TITLE, title)
-              putExtra(CalendarContract.Events.DESCRIPTION, description)
-              putExtra(CalendarContract.Events.EVENT_LOCATION, location)
-              putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginMillis)
-              putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
-            }
-            startActivity(intent)
-            result.success(true)
-          } catch (e: Exception) {
-            result.error("CALENDAR_FAILED", e.toString(), null)
-          }
-        }
-
-        else -> result.notImplemented()
-      }
-    }
   }
 
   override fun onNewIntent(intent: Intent) {

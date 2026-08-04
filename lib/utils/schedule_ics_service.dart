@@ -5,11 +5,29 @@ import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+class ScheduleIcsGenerationResult {
+  final String content;
+  final int eventCount;
+  final int sourceEventCount;
+  final int skippedEventCount;
+
+  const ScheduleIcsGenerationResult({
+    required this.content,
+    required this.eventCount,
+    required this.sourceEventCount,
+    required this.skippedEventCount,
+  });
+}
+
 class ScheduleIcsService {
-  static const MethodChannel _interop = MethodChannel('cqut/schedule_interop');
   static const MethodChannel _downloads = MethodChannel('cqut/downloads');
 
   static String generate({
+    required Iterable<ScheduleData> schedules,
+    required List<CampusTimeInfo> timeInfo,
+  }) => generateResult(schedules: schedules, timeInfo: timeInfo).content;
+
+  static ScheduleIcsGenerationResult generateResult({
     required Iterable<ScheduleData> schedules,
     required List<CampusTimeInfo> timeInfo,
   }) {
@@ -30,12 +48,19 @@ class ScheduleIcsService {
       ..writeln('METHOD:PUBLISH')
       ..writeln('X-WR-CALNAME:CQUT 课表');
     final seen = <String>{};
+    var sourceEventCount = 0;
+    var eventCount = 0;
+    var skippedEventCount = 0;
     for (final schedule in schedules) {
       final dates = ScheduleCustomizationManager.scheduleDates(schedule);
       for (final event in schedule.eventList ?? const <EventItem>[]) {
+        sourceEventCount++;
         final weekday = int.tryParse((event.weekDay ?? '').trim());
         final date = weekday == null ? null : dates[weekday];
-        if (date == null) continue;
+        if (date == null) {
+          skippedEventCount++;
+          continue;
+        }
         final startSession = _eventStart(event);
         final endSession = startSession + _eventCount(event) - 1;
         final startClock = clock[startSession]?.start ?? '080000';
@@ -43,6 +68,7 @@ class ScheduleIcsService {
         final identity =
             '${event.eventID}|${event.eventName}|${_date(date)}|$startSession';
         if (!seen.add(identity)) continue;
+        eventCount++;
         final uidBase = '${identity.hashCode.abs()}-${_date(date)}@cqut-helper';
         final description = <String>[
           if ((event.memberName ?? '').trim().isNotEmpty)
@@ -62,7 +88,12 @@ class ScheduleIcsService {
       }
     }
     buffer.writeln('END:VCALENDAR');
-    return buffer.toString();
+    return ScheduleIcsGenerationResult(
+      content: buffer.toString(),
+      eventCount: eventCount,
+      sourceEventCount: sourceEventCount,
+      skippedEventCount: skippedEventCount,
+    );
   }
 
   static Future<String> exportToDownloads({
@@ -78,24 +109,6 @@ class ScheduleIcsService {
       {'srcPath': file.path, 'fileName': fileName, 'mimeType': 'text/calendar'},
     );
     return result?['path']?.toString() ?? file.path;
-  }
-
-  static Future<bool> addToSystemCalendar({
-    required String title,
-    required String description,
-    required String location,
-    required DateTime start,
-    required DateTime end,
-  }) async {
-    if (!Platform.isAndroid) return false;
-    return await _interop.invokeMethod<bool>('addToCalendar', {
-          'title': title,
-          'description': description,
-          'location': location,
-          'beginMillis': start.millisecondsSinceEpoch,
-          'endMillis': end.millisecondsSinceEpoch,
-        }) ??
-        false;
   }
 
   static int? _minuteOfDay(String? raw) {

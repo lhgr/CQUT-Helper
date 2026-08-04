@@ -7,6 +7,7 @@ void main() {
   Future<void> openEditor(
     WidgetTester tester, {
     required ValueChanged<CoursePreference?> onResult,
+    CoursePreference? initial,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -22,7 +23,7 @@ void main() {
                   currentName: 'Calculus',
                   currentTeacher: 'Teacher A',
                   currentLocation: 'Room 201',
-                  initial: null,
+                  initial: initial,
                 );
                 onResult(result);
               },
@@ -75,5 +76,39 @@ void main() {
     expect(result?.displayName, 'Advanced Calculus');
     expect(result?.teacher, isNull);
     expect(result?.location, isNull);
+  });
+
+  testWidgets('editing one field preserves existing local overrides', (
+    tester,
+  ) async {
+    CoursePreference? result;
+    final initial = CoursePreference(
+      userId: '20260001',
+      yearTerm: '2026-2027-1',
+      courseKey: 'course:Calculus|Teacher A',
+      displayName: 'Advanced Calculus',
+      teacher: null,
+      location: 'Room 301',
+      note: '',
+      hidden: false,
+      reminderMinutes: null,
+      colorIndex: null,
+      updatedAt: DateTime(2026),
+    );
+    await openEditor(
+      tester,
+      initial: initial,
+      onResult: (value) => result = value,
+    );
+
+    await tester.enterText(find.byType(TextField).at(1), 'Teacher B');
+    final saveButton = find.byType(FilledButton);
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(result?.displayName, 'Advanced Calculus');
+    expect(result?.teacher, 'Teacher B');
+    expect(result?.location, 'Room 301');
   });
 }

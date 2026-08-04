@@ -86,6 +86,54 @@ CREATE TABLE course_preferences (
     return CoursePreference.fromDatabaseMap(rows.first);
   }
 
+  Future<List<HiddenCourseInfo>> hiddenCourses({
+    required String userId,
+    required String yearTerm,
+  }) async {
+    final normalizedUserId = userId.trim();
+    final normalizedTerm = yearTerm.trim();
+    if (normalizedUserId.isEmpty || normalizedTerm.isEmpty) return const [];
+
+    final preferences = await preferenceMap(
+      userId: normalizedUserId,
+      yearTerm: normalizedTerm,
+    );
+    final hiddenPreferences = preferences.values
+        .where((preference) => preference.hidden)
+        .toList(growable: false);
+    if (hiddenPreferences.isEmpty) return const [];
+
+    final cachedEvents = <String, EventItem>{};
+    final prefs = await SharedPreferences.getInstance();
+    final rawPrefix =
+        '$_rawSchedulePrefix${normalizedUserId}_${normalizedTerm}_';
+    for (final key in prefs.getKeys().where(
+      (key) => key.startsWith(rawPrefix),
+    )) {
+      final raw = prefs.getString(key);
+      if (raw == null || raw.isEmpty) continue;
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map) continue;
+        final schedule = ScheduleData.fromJson(decoded.cast<String, dynamic>());
+        for (final event in schedule.eventList ?? const <EventItem>[]) {
+          cachedEvents.putIfAbsent(courseKeyForEvent(event), () => event);
+        }
+      } catch (_) {}
+    }
+
+    final result = hiddenPreferences
+        .map(
+          (preference) => HiddenCourseInfo(
+            preference: preference,
+            cachedEvent: cachedEvents[preference.courseKey],
+          ),
+        )
+        .toList(growable: false);
+    result.sort((a, b) => a.displayName.compareTo(b.displayName));
+    return result;
+  }
+
   Future<void> saveCoursePreference(CoursePreference preference) async {
     await (await _db).insert(
       'course_preferences',
@@ -205,12 +253,37 @@ CREATE TABLE course_preferences (
 
   static Map<int, DateTime> scheduleDates(ScheduleData schedule) {
     final result = <int, DateTime>{};
-    for (final item in schedule.weekDayList ?? const <WeekDayItem>[]) {
-      final weekday = int.tryParse((item.weekDay ?? '').trim());
+    final days = schedule.weekDayList ?? const <WeekDayItem>[];
+    for (var index = 0; index < days.length; index++) {
+      final item = days[index];
+      final weekday = _parseWeekday(item.weekDay) ?? index + 1;
       final date = parseScheduleDate(item.weekDate);
-      if (weekday != null && date != null) result[weekday] = date;
+      if (weekday >= 1 && weekday <= 7 && date != null) {
+        result[weekday] = date;
+      }
     }
     return result;
+  }
+
+  static int? _parseWeekday(String? raw) {
+    final value = (raw ?? '').trim();
+    final numeric = int.tryParse(value);
+    if (numeric != null) return numeric;
+
+    const chineseWeekdays = <String, int>{
+      '一': 1,
+      '二': 2,
+      '三': 3,
+      '四': 4,
+      '五': 5,
+      '六': 6,
+      '日': 7,
+      '天': 7,
+    };
+    for (final entry in chineseWeekdays.entries) {
+      if (value.endsWith(entry.key)) return entry.value;
+    }
+    return null;
   }
 
   static DateTime? parseScheduleDate(String? raw, {DateTime? around}) {
@@ -262,5 +335,46 @@ CREATE TABLE course_preferences (
     );
     if (start != 0) return start;
     return (a.eventName ?? '').compareTo(b.eventName ?? '');
+  }
+}
+
+class HiddenCourseInfo {
+  final CoursePreference preference;
+  final EventItem? cachedEvent;
+
+  const HiddenCourseInfo({required this.preference, required this.cachedEvent});
+
+  String get displayName {
+    final preferred = (preference.displayName ?? '').trim();
+    if (preferred.isNotEmpty) return preferred;
+    final cached = (cachedEvent?.eventName ?? '').trim();
+    if (cached.isNotEmpty) return cached;
+    return _courseKeyParts.$1.isEmpty ? '未命名课程' : _courseKeyParts.$1;
+  }
+
+  String get teacher {
+    final preferred = (preference.teacher ?? '').trim();
+    if (preferred.isNotEmpty) return preferred;
+    final cached = (cachedEvent?.memberName ?? '').trim();
+    if (cached.isNotEmpty) return cached;
+    return _courseKeyParts.$2;
+  }
+
+  String get location {
+    final preferred = (preference.location ?? '').trim();
+    if (preferred.isNotEmpty) return preferred;
+    return (cachedEvent?.address ?? '').trim();
+  }
+
+  (String, String) get _courseKeyParts {
+    final value = preference.courseKey.startsWith('course:')
+        ? preference.courseKey.substring('course:'.length)
+        : preference.courseKey;
+    final separator = value.lastIndexOf('|');
+    if (separator < 0) return (value.trim(), '');
+    return (
+      value.substring(0, separator).trim(),
+      value.substring(separator + 1).trim(),
+    );
   }
 }

@@ -1,14 +1,13 @@
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:flutter/material.dart';
-import 'package:cqut_helper/utils/schedule_ics_service.dart';
 
 void showCourseDetailDialog(
   BuildContext context, {
   required String courseName,
   required List<EventItem> events,
   Color? closeButtonColor,
-  DateTime? eventDate,
-  List<CampusTimeInfo>? timeInfoList,
+  Future<void> Function(EventItem event)? onEdit,
+  Future<void> Function(EventItem event)? onDelete,
 }) {
   final normalizedName = courseName.trim().isEmpty
       ? '未命名课程'
@@ -31,10 +30,6 @@ void showCourseDetailDialog(
       .where((note) => note.isNotEmpty)
       .toSet()
       .toList(growable: false);
-  final calendarRange = eventDate == null || events.isEmpty
-      ? null
-      : _calendarRange(eventDate, events.first, timeInfoList ?? const []);
-
   showDialog<void>(
     context: context,
     builder: (dialogContext) {
@@ -93,22 +88,25 @@ void showCourseDetailDialog(
           ),
         ),
         actions: [
-          if (calendarRange != null)
+          if (events.isNotEmpty && onDelete != null)
             TextButton.icon(
-              onPressed: () async {
+              onPressed: () {
                 final event = events.first;
-                final ok = await ScheduleIcsService.addToSystemCalendar(
-                  title: normalizedName,
-                  description: notes.join('\n'),
-                  location: (event.address ?? '').trim(),
-                  start: calendarRange.$1,
-                  end: calendarRange.$2,
-                );
-                if (!ok || !dialogContext.mounted) return;
                 Navigator.of(dialogContext).pop();
+                onDelete(event);
               },
-              icon: const Icon(Icons.event_available_outlined),
-              label: const Text('加入日历'),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('删除'),
+            ),
+          if (events.isNotEmpty && onEdit != null)
+            TextButton.icon(
+              onPressed: () {
+                final event = events.first;
+                Navigator.of(dialogContext).pop();
+                onEdit(event);
+              },
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('编辑'),
             ),
           FilledButton(
             style: FilledButton.styleFrom(
@@ -122,51 +120,6 @@ void showCourseDetailDialog(
       );
     },
   );
-}
-
-(DateTime, DateTime)? _calendarRange(
-  DateTime date,
-  EventItem event,
-  List<CampusTimeInfo> timeInfo,
-) {
-  final startSession = _sessionStartForSort(event);
-  final last =
-      int.tryParse((event.sessionLast ?? '').trim()) ??
-      (event.sessionList ?? const <String>[]).length.clamp(1, 12);
-  final endSession = startSession + last - 1;
-  CampusTimeInfo? startInfo;
-  CampusTimeInfo? endInfo;
-  for (final info in timeInfo) {
-    if (info.sessionNum == startSession) startInfo = info;
-    if (info.sessionNum == endSession) endInfo = info;
-  }
-  final startClock = _clock(startInfo?.startTime);
-  final endClock = _clock(endInfo?.endTime);
-  if (startClock == null || endClock == null) return null;
-  final start = DateTime(
-    date.year,
-    date.month,
-    date.day,
-    startClock.$1,
-    startClock.$2,
-  );
-  final end = DateTime(
-    date.year,
-    date.month,
-    date.day,
-    endClock.$1,
-    endClock.$2,
-  );
-  return (start, end);
-}
-
-(int, int)? _clock(String? value) {
-  final match = RegExp(r'(\d{1,2})\s*[:：]\s*(\d{1,2})').firstMatch(value ?? '');
-  if (match == null) return null;
-  final hour = int.tryParse(match.group(1)!);
-  final minute = int.tryParse(match.group(2)!);
-  if (hour == null || minute == null || hour > 23 || minute > 59) return null;
-  return (hour, minute);
 }
 
 Widget _buildDetailRow(

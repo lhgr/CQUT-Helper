@@ -89,27 +89,28 @@ class _CoursePreferenceEditorSheetState
     super.dispose();
   }
 
-  String? _overrideValue(String value, String original) {
+  String? _overrideValue(
+    String value,
+    String currentValue,
+    String? initialOverride,
+  ) {
     final normalized = value.trim();
-    if (normalized.isEmpty || normalized == original.trim()) return null;
+    if (normalized.isEmpty) return null;
+    final initialNormalized = (initialOverride ?? '').trim();
+    final displayedInitial = initialNormalized.isNotEmpty
+        ? initialNormalized
+        : currentValue.trim();
+    if (normalized == displayedInitial) {
+      return initialNormalized.isEmpty ? null : initialNormalized;
+    }
     return normalized;
-  }
-
-  String? _normalizedInitialValue(String? value, String original) {
-    return _overrideValue(value ?? '', original);
   }
 
   bool _hasEffectiveChanges(CoursePreference value) {
     final initial = widget.initial;
-    return value.displayName !=
-            _normalizedInitialValue(initial?.displayName, widget.currentName) ||
-        value.teacher !=
-            _normalizedInitialValue(initial?.teacher, widget.currentTeacher) ||
-        value.location !=
-            _normalizedInitialValue(
-              initial?.location,
-              widget.currentLocation,
-            ) ||
+    return value.displayName != initial?.displayName ||
+        value.teacher != initial?.teacher ||
+        value.location != initial?.location ||
         value.note != (initial?.note ?? '').trim() ||
         value.hidden != (initial?.hidden ?? false) ||
         value.reminderMinutes != initial?.reminderMinutes ||
@@ -121,9 +122,21 @@ class _CoursePreferenceEditorSheetState
       userId: widget.userId,
       yearTerm: widget.yearTerm,
       courseKey: widget.courseKey,
-      displayName: _overrideValue(_name.text, widget.currentName),
-      teacher: _overrideValue(_teacher.text, widget.currentTeacher),
-      location: _overrideValue(_location.text, widget.currentLocation),
+      displayName: _overrideValue(
+        _name.text,
+        widget.currentName,
+        widget.initial?.displayName,
+      ),
+      teacher: _overrideValue(
+        _teacher.text,
+        widget.currentTeacher,
+        widget.initial?.teacher,
+      ),
+      location: _overrideValue(
+        _location.text,
+        widget.currentLocation,
+        widget.initial?.location,
+      ),
       note: _note.text.trim(),
       hidden: _hidden,
       reminderMinutes: _reminder,

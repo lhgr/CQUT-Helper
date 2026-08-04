@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeWeekLoaderScheduleApi extends ScheduleApi {
   ScheduleData? cacheResult;
+  final Map<String, ScheduleData> cacheResults = <String, ScheduleData>{};
   ScheduleData? networkResult;
   int cacheCalls = 0;
   int networkCalls = 0;
@@ -19,7 +20,7 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
     String? yearTerm,
   }) async {
     cacheCalls++;
-    return cacheResult;
+    return cacheResults[weekNum] ?? cacheResult;
   }
 
   @override
@@ -144,6 +145,42 @@ void main() {
       expect(api.cacheCalls, 1);
       expect(api.networkCalls, 0);
       expect(weekCache[2], isNotNull);
+    });
+
+    test('个性化变化会从本地重新应用到所有内存周缓存', () async {
+      SharedPreferences.setMockInitialValues({'account': 'u1'});
+      final api = _FakeWeekLoaderScheduleApi();
+      final loader = buildLoader(api);
+      weekCache[1] = ScheduleData(
+        weekNum: '1',
+        yearTerm: '2024-2025-2',
+        eventList: [EventItem(eventName: '高等数学')],
+      );
+      weekCache[2] = ScheduleData(
+        weekNum: '2',
+        yearTerm: '2024-2025-2',
+        eventList: [EventItem(eventName: '高等数学')],
+      );
+      api.cacheResults['1'] = ScheduleData(
+        weekNum: '1',
+        yearTerm: '2024-2025-2',
+        eventList: const [],
+      );
+      api.cacheResults['2'] = ScheduleData(
+        weekNum: '2',
+        yearTerm: '2024-2025-2',
+        eventList: const [],
+      );
+
+      final count = await loader.reloadMemoryCacheFromDisk(
+        yearTerm: '2024-2025-2',
+      );
+
+      expect(count, 2);
+      expect(api.cacheCalls, 2);
+      expect(api.networkCalls, 0);
+      expect(weekCache[1]!.eventList, isEmpty);
+      expect(weekCache[2]!.eventList, isEmpty);
     });
 
     test('ensureWeekLoaded 在无缓存时通过凭证存储读取密码并写入缓存', () async {

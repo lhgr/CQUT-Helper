@@ -54,4 +54,20 @@ void main() {
       );
     });
   });
+
+  test('保存任意课表设置会通知统一设置监听器', () async {
+    SharedPreferences.setMockInitialValues({});
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+    final before = ScheduleSettingsManager.settingsEpoch.value;
+
+    await manager.save(
+      showWeekend: true,
+      timeInfoEnabled: true,
+      backgroundPollingEnabled: false,
+      noticeApiBaseUrl: ScheduleSettingsManager.officialNoticeApiBaseUrl,
+    );
+
+    expect(ScheduleSettingsManager.settingsEpoch.value, before + 1);
+  });
 }

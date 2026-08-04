@@ -12,6 +12,7 @@ enum ScheduleDisplayDensity {
 
 class ScheduleSettingsManager {
   static final ValueNotifier<int> experienceEpoch = ValueNotifier<int>(0);
+  static final ValueNotifier<int> settingsEpoch = ValueNotifier<int>(0);
   static const String _prefsKeyShowWeekend = 'schedule_show_weekend';
   static const String _prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
   static const String backgroundPollingEnabledKey =
@@ -141,6 +142,7 @@ class ScheduleSettingsManager {
     await prefs.setString(displayDensityKey, displayDensity.name);
     await prefs.setInt(defaultHomeTabKey, this.defaultHomeTab);
     experienceEpoch.value++;
+    settingsEpoch.value++;
   }
 
   Future<void> save({
@@ -160,5 +162,6 @@ class ScheduleSettingsManager {
     await prefs.remove('schedule_update_show_diff');
     await prefs.setBool(backgroundPollingEnabledKey, backgroundPollingEnabled);
     await prefs.setString(_prefsKeyNoticeApiBaseUrl, this.noticeApiBaseUrl);
+    settingsEpoch.value++;
   }
 }

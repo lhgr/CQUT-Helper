@@ -116,6 +116,10 @@ class ScheduleController {
     return _weekLoader.loadFromCache(weekNum: weekNum, yearTerm: yearTerm);
   }
 
+  Future<int> reloadMemoryCacheFromDisk({required String yearTerm}) {
+    return _weekLoader.reloadMemoryCacheFromDisk(yearTerm: yearTerm);
+  }
+
   Future<ScheduleData> loadFromNetwork({
     String? weekNum,
     String? yearTerm,
@@ -143,6 +147,18 @@ class ScheduleController {
       userId: userId,
       yearTerm: yearTerm,
       weeks: affected,
+    );
+  }
+
+  Future<void> deleteCustomEvent({
+    required String userId,
+    required String encryptedPassword,
+    required String eventId,
+  }) {
+    return _service.deleteCustomEvent(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+      eventId: eventId,
     );
   }
 

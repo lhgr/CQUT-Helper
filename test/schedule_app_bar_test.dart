@@ -18,7 +18,6 @@ void main() {
             onSettings: () {},
             onWeekPicker: () {},
             onTermPicker: () {},
-            onSemesterCourses: () {},
           ),
         ),
       ),
@@ -44,12 +43,42 @@ void main() {
             onSettings: () {},
             onWeekPicker: () {},
             onTermPicker: () {},
-            onSemesterCourses: () {},
           ),
         ),
       ),
     );
 
     expect(find.text('9/11 23:12'), findsOneWidget);
+  });
+
+  testWidgets('不再显示独立课程管理入口', (tester) async {
+    var settingsOpened = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          appBar: ScheduleAppBar(
+            loading: false,
+            weekList: const ['1'],
+            currentWeekIndex: 0,
+            currentScheduleData: ScheduleData(yearTerm: '2026-2027-1'),
+            onRefresh: () {},
+            onSettings: () => settingsOpened = true,
+            onWeekPicker: () {},
+            onTermPicker: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('本学期课程'), findsNothing);
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    expect(find.text('添加自定义课程'), findsOneWidget);
+    expect(find.text('管理自定义课程'), findsNothing);
+    expect(find.text('课表设置'), findsOneWidget);
+
+    await tester.tap(find.text('课表设置'));
+    await tester.pumpAndSettle();
+    expect(settingsOpened, isTrue);
   });
 }

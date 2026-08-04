@@ -57,115 +57,6 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     );
   }
 
-  Future<void> _openSemesterCourseListPage() async {
-    final yearTerm = (_currentScheduleData?.yearTerm ?? '').trim();
-    if (yearTerm.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('当前学期信息不可用'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-    final weeks = _weekList ?? const <String>[];
-    final progress = ValueNotifier<int>(0);
-    BuildContext? progressDialogContext;
-    if (weeks.isNotEmpty) {
-      final dialogReady = Completer<BuildContext>();
-      unawaited(
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) {
-            if (!dialogReady.isCompleted) {
-              dialogReady.complete(dialogContext);
-            }
-            progressDialogContext = dialogContext;
-            return PopScope(
-              canPop: false,
-              child: AlertDialog(
-                title: const Text('正在准备本学期课程'),
-                content: ValueListenableBuilder<int>(
-                  valueListenable: progress,
-                  builder: (context, completed, _) {
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        LinearProgressIndicator(
-                          value: weeks.isEmpty
-                              ? null
-                              : completed / weeks.length,
-                        ),
-                        const SizedBox(height: 12),
-                        Text('已读取 $completed/${weeks.length} 周'),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            );
-          },
-        ),
-      );
-      await dialogReady.future;
-    }
-
-    final failedWeeks = <String>[];
-    try {
-      for (var index = 0; index < weeks.length; index++) {
-        if (!mounted) return;
-        final week = weeks[index];
-        final success = await _controller.ensureWeekLoaded(
-          week,
-          yearTerm,
-          updateLastViewed: false,
-        );
-        if (!success) failedWeeks.add(week);
-        progress.value = index + 1;
-      }
-    } finally {
-      final dialogContext = progressDialogContext;
-      if (dialogContext != null && dialogContext.mounted) {
-        Navigator.of(dialogContext).pop();
-      }
-      progress.dispose();
-    }
-    if (!mounted) return;
-
-    final events = <EventItem>[];
-    for (final data in _weekCache.values) {
-      if ((data.yearTerm ?? '').trim() != yearTerm) continue;
-      final list = data.eventList;
-      if (list == null || list.isEmpty) continue;
-      events.addAll(list);
-    }
-    if (events.isEmpty) {
-      final fallback = _currentScheduleData?.eventList;
-      if (fallback != null && fallback.isNotEmpty) {
-        events.addAll(fallback);
-      }
-    }
-    if (failedWeeks.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('部分课表读取失败：第${failedWeeks.join('、')}周，已展示其余课程'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SemesterCourseListPage(
-          yearTerm: yearTerm,
-          events: events,
-          userId: _controller.userId ?? '',
-        ),
-      ),
-    );
-  }
-
   List<int> get _availableWeekNumbers => (_weekList ?? const <String>[])
       .map(int.tryParse)
       .whereType<int>()
@@ -214,7 +105,74 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     }
   }
 
-  Future<void> _openCustomCourseList() async {
+  String _courseCustomizationKey(EventItem event) {
+    final cachedKey = (event.customizationKey ?? '').trim();
+    return cachedKey.isNotEmpty
+        ? cachedKey
+        : ScheduleCustomizationManager.courseKeyForEvent(event);
+  }
+
+  Future<void> _editCourse(EventItem event) async {
+    if (event.isSchoolCustomCourse) {
+      await _editCustomCourse(event);
+      return;
+    }
+    await _editCoursePreference(event);
+  }
+
+  Future<void> _editCoursePreference(EventItem event) async {
+    final userId = (_controller.userId ?? '').trim();
+    final term = (_currentScheduleData?.yearTerm ?? '').trim();
+    if (userId.isEmpty || term.isEmpty) {
+      _showBoundaryMessage('请先登录并加载当前学期课表');
+      return;
+    }
+    final courseKey = _courseCustomizationKey(event);
+    final initial = await ScheduleCustomizationManager.instance.preferenceFor(
+      userId: userId,
+      yearTerm: term,
+      courseKey: courseKey,
+    );
+    if (!mounted) return;
+    final preference = await showCoursePreferenceEditor(
+      context,
+      userId: userId,
+      yearTerm: term,
+      courseKey: courseKey,
+      currentName: (event.eventName ?? '').trim(),
+      currentTeacher: (event.memberName ?? '').trim(),
+      currentLocation: (event.address ?? '').trim(),
+      initial: initial,
+    );
+    if (preference == null) return;
+    await ScheduleCustomizationManager.instance.saveCoursePreference(
+      preference,
+    );
+    if (preference.hidden && initial?.hidden != true) {
+      await _maybeShowHiddenCourseGuide(userId);
+    }
+  }
+
+  Future<void> _maybeShowHiddenCourseGuide(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'schedule_hidden_course_guide_shown_${userId.trim()}';
+    if (prefs.getBool(key) ?? false) return;
+    await prefs.setBool(key, true);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('课程已隐藏，可在“课表设置 → 已隐藏课程”中取消隐藏'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: '去设置',
+          onPressed: _showScheduleSettingsPage,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editCustomCourse(EventItem event) async {
     await _controller.loadCredentials();
     if (!mounted) return;
     final userId = (_controller.userId ?? '').trim();
@@ -227,20 +185,67 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       _showBoundaryMessage('请先登录并加载当前学期课表');
       return;
     }
-    var changed = false;
-    await Navigator.of(context).push<void>(
+    final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => CustomCourseListPage(
+        builder: (_) => CustomCourseEditorPage(
           userId: userId,
           encryptedPassword: encryptedPassword,
           yearTerm: term,
           availableWeeks: _availableWeekNumbers,
-          onChanged: () => changed = true,
+          initial: event,
         ),
       ),
     );
-    if (changed && mounted) {
+    if (changed == true && mounted) {
       await _refreshAfterCustomCourseMutation();
+    }
+  }
+
+  Future<void> _deleteCustomCourse(EventItem event) async {
+    if (!event.isSchoolCustomCourse) return;
+    final title = (event.eventName ?? '').trim();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除自定义课程'),
+        content: Text('确定从学校课表中删除“$title”吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await _controller.loadCredentials();
+    if (!mounted) return;
+    final userId = (_controller.userId ?? '').trim();
+    final encryptedPassword = (_controller.encryptedPassword ?? '').trim();
+    if (userId.isEmpty || encryptedPassword.isEmpty) {
+      _showBoundaryMessage('请先登录并加载当前学期课表');
+      return;
+    }
+    try {
+      await _controller.deleteCustomEvent(
+        userId: userId,
+        encryptedPassword: encryptedPassword,
+        eventId: event.eventID!.trim(),
+      );
+      if (mounted) await _refreshAfterCustomCourseMutation();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('删除失败：$error'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -275,32 +280,55 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     );
     await Future<void>.delayed(Duration.zero);
     try {
+      final schedulesByWeek = <String, ScheduleData>{};
+      final failedWeeks = <String>[];
       for (final week in weeks) {
         if (!mounted) return;
-        await _controller.ensureWeekLoaded(week, term, updateLastViewed: false);
-        final merged = await _controller.loadFromCache(
-          weekNum: week,
-          yearTerm: term,
+        final loaded = await _controller.ensureWeekLoaded(
+          week,
+          term,
+          updateLastViewed: false,
         );
-        if (merged != null) _controller.processLoadedData(merged);
+        final data = _weekCache[int.tryParse(week)];
+        if (!loaded || data == null || (data.yearTerm ?? '').trim() != term) {
+          failedWeeks.add(week);
+          continue;
+        }
+        schedulesByWeek[week] = data;
+      }
+      final current = _currentScheduleData;
+      final currentWeek = (current?.weekNum ?? '').trim();
+      if (current != null &&
+          currentWeek.isNotEmpty &&
+          (current.yearTerm ?? '').trim() == term) {
+        schedulesByWeek.putIfAbsent(currentWeek, () => current);
       }
       await _controller.ensureTimeInfoLoaded();
-      final schedules = _weekCache.values
-          .where((data) => (data.yearTerm ?? '').trim() == term)
-          .toList(growable: false);
-      final content = ScheduleIcsService.generate(
-        schedules: schedules,
+      final result = ScheduleIcsService.generateResult(
+        schedules: schedulesByWeek.values,
         timeInfo: _controller.timeInfoList ?? const <CampusTimeInfo>[],
       );
+      if (result.eventCount == 0) {
+        final message = result.sourceEventCount == 0
+            ? failedWeeks.isEmpty
+                  ? '当前学期没有可导出的课程'
+                  : '课表读取失败，未生成 ICS 文件'
+            : '课程日期信息不完整，未生成 ICS 文件';
+        if (mounted) _showBoundaryMessage(message);
+        return;
+      }
       final safeTerm = term.replaceAll(RegExp(r'[^0-9A-Za-z_-]'), '_');
       final path = await ScheduleIcsService.exportToDownloads(
-        content: content,
+        content: result.content,
         fileName: 'CQUT-$safeTerm.ics',
       );
       if (!mounted) return;
+      final suffix = failedWeeks.isEmpty
+          ? ''
+          : '（第${failedWeeks.join('、')}周读取失败）';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('ICS 已导出到 $path')));
+      ).showSnackBar(SnackBar(content: Text('ICS 已导出到 $path$suffix')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -377,43 +405,21 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     return '第$week周';
   }
 
-  void _showScheduleSettingsSheetWrapper() {
-    showScheduleSettingsSheet(
+  void _showScheduleSettingsPage() {
+    openAppSettings(
       context,
-      initialShowWeekend: _settingsManager.showWeekend,
-      initialTimeInfoEnabled: _settingsManager.timeInfoEnabled,
-      initialBackgroundPollingEnabled:
-          _settingsManager.backgroundPollingEnabled,
-      initialNoticeApiBaseUrl: _settingsManager.noticeApiBaseUrl,
-      onSave:
-          ({
-            required showWeekend,
-            required timeInfoEnabled,
-            required backgroundPollingEnabled,
-            required noticeApiBaseUrl,
-          }) async {
-            await _settingsManager.save(
-              showWeekend: showWeekend,
-              timeInfoEnabled: timeInfoEnabled,
-              backgroundPollingEnabled: backgroundPollingEnabled,
-              noticeApiBaseUrl: noticeApiBaseUrl,
-            );
-            await ScheduleUpdateWorker.syncFromPreferences();
-            if (mounted) {
-              _setState(() {});
-            }
-            if (timeInfoEnabled) {
-              final loaded = await _controller.loadTimeInfoFromCacheIfAny();
-              if (loaded && mounted) _setState(() {});
-              unawaited(
-                _controller.refreshTimeInfoIfEnabled(force: true).then((
-                  changed,
-                ) {
-                  if (changed && mounted) _setState(() {});
-                }),
-              );
-            }
-          },
+      section: AppSettingsSection.schedule,
+      userId: _controller.userId ?? '',
+      yearTerm: _currentScheduleData?.yearTerm ?? '',
+    );
+  }
+
+  void _showNotificationSettingsPage() {
+    openAppSettings(
+      context,
+      section: AppSettingsSection.notifications,
+      userId: _controller.userId ?? '',
+      yearTerm: _currentScheduleData?.yearTerm ?? '',
     );
   }
 }

@@ -135,6 +135,9 @@ class EventItem {
     this.customizationKey,
   });
 
+  bool get isSchoolCustomCourse =>
+      (eventType ?? '').trim() == '3' && (eventID ?? '').trim().isNotEmpty;
+
   factory EventItem.fromJson(Map<String, dynamic> json) {
     return EventItem(
       weekNum: json['weekNum'],

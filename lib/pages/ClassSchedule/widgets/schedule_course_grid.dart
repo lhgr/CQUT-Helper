@@ -15,8 +15,8 @@ class ScheduleCourseGrid extends StatefulWidget {
   final List<Color> descriptionColors;
   final List<Color> buttonColors;
   final bool showWeekend;
-  final Map<int, DateTime> eventDates;
-  final List<CampusTimeInfo>? timeInfoList;
+  final Future<void> Function(EventItem event) onEditCourse;
+  final Future<void> Function(EventItem event) onDeleteCourse;
 
   const ScheduleCourseGrid({
     super.key,
@@ -30,8 +30,8 @@ class ScheduleCourseGrid extends StatefulWidget {
     required this.descriptionColors,
     required this.buttonColors,
     this.showWeekend = true,
-    this.eventDates = const <int, DateTime>{},
-    this.timeInfoList,
+    required this.onEditCourse,
+    required this.onDeleteCourse,
   });
 
   @override
@@ -105,9 +105,21 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
         .toList(growable: false);
   }
 
-  DateTime? _dateForEvent(EventItem event) {
-    final weekday = int.tryParse((event.weekDay ?? '').trim());
-    return weekday == null ? null : widget.eventDates[weekday];
+  void _showCourseDetails(
+    BuildContext context,
+    EventItem event, {
+    required Color closeButtonColor,
+  }) {
+    showCourseDetailDialog(
+      context,
+      courseName: _buildCourseKey(event),
+      events: _eventsWithSameCourseName(event),
+      closeButtonColor: closeButtonColor,
+      onEdit: (_) => widget.onEditCourse(event),
+      onDelete: event.isSchoolCustomCourse
+          ? (_) => widget.onDeleteCourse(event)
+          : null,
+    );
   }
 
   int _safeParsePositiveInt(String? raw, {int fallback = 1}) {
@@ -431,14 +443,10 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                         isThreeLine: true,
                         onTap: () {
                           Navigator.of(sheetContext).pop();
-                          final key = _buildCourseKey(event);
-                          showCourseDetailDialog(
+                          _showCourseDetails(
                             context,
-                            courseName: key,
-                            events: _eventsWithSameCourseName(event),
+                            event,
                             closeButtonColor: closeButtonColor,
-                            eventDate: _dateForEvent(event),
-                            timeInfoList: widget.timeInfoList,
                           );
                         },
                       );
@@ -587,13 +595,10 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                             closeButtonColor: widget.buttonColors[safeIndex],
                           );
                         } else {
-                          showCourseDetailDialog(
+                          _showCourseDetails(
                             context,
-                            courseName: key,
-                            events: _eventsWithSameCourseName(event),
+                            event,
                             closeButtonColor: widget.buttonColors[safeIndex],
-                            eventDate: _dateForEvent(event),
-                            timeInfoList: widget.timeInfoList,
                           );
                         }
                       },
@@ -711,13 +716,10 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                             closeButtonColor: widget.buttonColors[safeIndex],
                           );
                         } else {
-                          showCourseDetailDialog(
+                          _showCourseDetails(
                             context,
-                            courseName: key,
-                            events: _eventsWithSameCourseName(event),
+                            event,
                             closeButtonColor: widget.buttonColors[safeIndex],
-                            eventDate: _dateForEvent(event),
-                            timeInfoList: widget.timeInfoList,
                           );
                         }
                       },

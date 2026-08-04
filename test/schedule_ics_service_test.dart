@@ -42,4 +42,105 @@ void main() {
     expect(content, contains(r'LOCATION:Room\; 201'));
     expect(content, contains('END:VCALENDAR'));
   });
+
+  test('reports an empty schedule instead of pretending it has events', () {
+    final result = ScheduleIcsService.generateResult(
+      schedules: [
+        ScheduleData(
+          yearTerm: '2026-2027-1',
+          weekNum: '1',
+          weekDayList: const [],
+          eventList: const [],
+        ),
+      ],
+      timeInfo: timeInfo,
+    );
+
+    expect(result.eventCount, 0);
+    expect(result.sourceEventCount, 0);
+    expect(result.skippedEventCount, 0);
+    expect(result.content, isNot(contains('BEGIN:VEVENT')));
+  });
+
+  test('reports events skipped because their date is unavailable', () {
+    final result = ScheduleIcsService.generateResult(
+      schedules: [
+        ScheduleData(
+          yearTerm: '2026-2027-1',
+          weekNum: '1',
+          weekDayList: const [],
+          eventList: [
+            EventItem(
+              eventName: 'Linear Algebra',
+              weekDay: '1',
+              sessionStart: '1',
+              sessionLast: '2',
+            ),
+          ],
+        ),
+      ],
+      timeInfo: timeInfo,
+    );
+
+    expect(result.eventCount, 0);
+    expect(result.sourceEventCount, 1);
+    expect(result.skippedEventCount, 1);
+  });
+
+  test('matches numeric event weekdays to Chinese weekday labels', () {
+    final result = ScheduleIcsService.generateResult(
+      schedules: [
+        ScheduleData(
+          yearTerm: '2026-2027-1',
+          weekNum: '1',
+          weekDayList: [
+            WeekDayItem(weekDay: '一', weekDate: '2026-09-14'),
+            WeekDayItem(weekDay: '周二', weekDate: '2026-09-15'),
+            WeekDayItem(weekDay: '星期三', weekDate: '2026-09-16'),
+          ],
+          eventList: [
+            EventItem(
+              eventName: 'Linear Algebra',
+              weekDay: '2',
+              sessionStart: '1',
+              sessionLast: '2',
+            ),
+          ],
+        ),
+      ],
+      timeInfo: timeInfo,
+    );
+
+    expect(result.eventCount, 1);
+    expect(result.skippedEventCount, 0);
+    expect(result.content, contains('DTSTART:20260915T080000'));
+  });
+
+  test('uses weekday list order when the weekday label is absent', () {
+    final result = ScheduleIcsService.generateResult(
+      schedules: [
+        ScheduleData(
+          yearTerm: '2026-2027-1',
+          weekNum: '1',
+          weekDayList: [
+            WeekDayItem(weekDate: '2026-09-14'),
+            WeekDayItem(weekDate: '2026-09-15'),
+          ],
+          eventList: [
+            EventItem(
+              eventName: 'College English',
+              weekDay: '2',
+              sessionStart: '3',
+              sessionLast: '1',
+            ),
+          ],
+        ),
+      ],
+      timeInfo: timeInfo,
+    );
+
+    expect(result.eventCount, 1);
+    expect(result.skippedEventCount, 0);
+    expect(result.content, contains('DTSTART:20260915T101000'));
+  });
 }

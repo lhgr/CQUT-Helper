@@ -102,7 +102,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         duration: const Duration(seconds: 6),
         action: SnackBarAction(
           label: '去设置',
-          onPressed: _showScheduleSettingsSheetWrapper,
+          onPressed: _showNotificationSettingsPage,
         ),
       ),
     );

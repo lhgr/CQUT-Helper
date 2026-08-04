@@ -17,9 +17,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onSettings;
   final VoidCallback onWeekPicker;
   final VoidCallback onTermPicker;
-  final VoidCallback onSemesterCourses;
   final VoidCallback onAddCourse;
-  final VoidCallback onManageCustomCourses;
   final VoidCallback onExportIcs;
 
   const ScheduleAppBar({
@@ -35,9 +33,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onSettings,
     required this.onWeekPicker,
     required this.onTermPicker,
-    required this.onSemesterCourses,
     this.onAddCourse = _noopScheduleAction,
-    this.onManageCustomCourses = _noopScheduleAction,
     this.onExportIcs = _noopScheduleAction,
   });
 
@@ -155,32 +151,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       toolbarHeight: _appBarHeight,
       titleSpacing: 0,
       leadingWidth: sideSlotWidth,
-      leading: SizedBox(
-        width: sideSlotWidth,
-        child: Padding(
-          padding: const EdgeInsets.only(left: sideHorizontalPadding),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: onSemesterCourses,
-              style: TextButton.styleFrom(
-                minimumSize: const Size(0, 24),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Text(
-                '本学期课程',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ),
-        ),
-      ),
+      leading: const SizedBox.shrink(),
       scrolledUnderElevation: 0,
       backgroundColor: Theme.of(context).colorScheme.surface,
       actions: [
@@ -192,17 +163,6 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 buildRefreshAction(),
-                IconButton(
-                  onPressed: onSettings,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 32,
-                    height: 36,
-                  ),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.tune),
-                  tooltip: '课表设置',
-                ),
                 SizedBox(
                   width: 32,
                   height: 36,
@@ -214,11 +174,11 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
                         case 'add':
                           onAddCourse();
                           break;
-                        case 'manage':
-                          onManageCustomCourses();
-                          break;
                         case 'export_ics':
                           onExportIcs();
+                          break;
+                        case 'settings':
+                          onSettings();
                           break;
                       }
                     },
@@ -230,19 +190,20 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
                           title: Text('添加自定义课程'),
                         ),
                       ),
-                      PopupMenuItem(
-                        value: 'manage',
-                        child: ListTile(
-                          leading: Icon(Icons.edit_calendar_outlined),
-                          title: Text('管理自定义课程'),
-                        ),
-                      ),
                       PopupMenuDivider(),
                       PopupMenuItem(
                         value: 'export_ics',
                         child: ListTile(
                           leading: Icon(Icons.ios_share_outlined),
                           title: Text('导出 ICS'),
+                        ),
+                      ),
+                      PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'settings',
+                        child: ListTile(
+                          leading: Icon(Icons.tune),
+                          title: Text('课表设置'),
                         ),
                       ),
                     ],
