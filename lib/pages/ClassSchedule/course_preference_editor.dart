@@ -1,4 +1,5 @@
 import 'package:cqut_helper/model/course_preference_model.dart';
+import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:flutter/material.dart';
 
 Future<CoursePreference?> showCoursePreferenceEditor(
@@ -148,6 +149,16 @@ class _CoursePreferenceEditorSheetState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final courseCardTheme =
+        theme.extension<ScheduleCourseCardTheme>() ??
+        (theme.brightness == Brightness.dark
+            ? ScheduleCourseCardTheme.dark()
+            : ScheduleCourseCardTheme.light());
+    final colorOptionCount = courseCardTheme.backgrounds.length < 11
+        ? courseCardTheme.backgrounds.length
+        : 11;
+
     return SafeArea(
       child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
@@ -205,16 +216,48 @@ class _CoursePreferenceEditorSheetState
             const SizedBox(height: 14),
             Align(
               alignment: Alignment.centerLeft,
-              child: Wrap(
-                spacing: 8,
-                children: List.generate(
-                  11,
-                  (index) => ChoiceChip(
-                    label: Text('${index + 1}'),
-                    selected: _color == index,
-                    onSelected: (_) => setState(() => _color = index),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('课程颜色', style: theme.textTheme.bodyMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List.generate(
+                      colorOptionCount,
+                      (index) => Tooltip(
+                        message: '颜色 ${index + 1}',
+                        child: ChoiceChip(
+                          label: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: courseCardTheme.backgrounds[index],
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: courseCardTheme.borders[index],
+                                width: 2,
+                              ),
+                            ),
+                            child: _color == index
+                                ? Icon(
+                                    Icons.check_rounded,
+                                    size: 17,
+                                    color: courseCardTheme.titleColors[index],
+                                  )
+                                : null,
+                          ),
+                          labelPadding: EdgeInsets.zero,
+                          padding: const EdgeInsets.all(5),
+                          showCheckmark: false,
+                          selected: _color == index,
+                          onSelected: (_) => setState(() => _color = index),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
             const SizedBox(height: 18),
