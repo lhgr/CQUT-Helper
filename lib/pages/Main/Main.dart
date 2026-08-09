@@ -171,6 +171,8 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       body: SafeArea(
         child: IndexedStack(
@@ -178,14 +180,41 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
           children: _getStackChildren(),
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        selectedIndex: _currentIndex,
-        destinations: _getDestinations(),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withAlpha(120),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: colorScheme.shadow.withAlpha(
+                    Theme.of(context).brightness == Brightness.dark ? 50 : 20,
+                  ),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: NavigationBar(
+                onDestinationSelected: (index) {
+                  setState(() {
+                    _currentIndex = index;
+                  });
+                },
+                selectedIndex: _currentIndex,
+                destinations: _getDestinations(),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 
 @immutable
 class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
-  static const double _darkBackgroundLightnessFactor = 0.9;
-  static const double _darkBorderLightnessFactor = 0.2;
-  static const double _darkTitleLightnessFactor = 0.78;
-  static const double _darkDescriptionLightnessFactor = 0.78;
-  static const double _darkButtonLightnessFactor = 0.78;
+  static const double _darkBackgroundLightness = 0.2;
+  static const double _darkBorderLightness = 0.38;
+  static const double _darkTitleLightness = 0.8;
+  static const double _darkDescriptionLightness = 0.72;
+  static const double _darkButtonLightness = 0.68;
 
   static const List<Color> _lightBackgrounds = [
     Color(0xFFE6F4FF),
@@ -98,41 +98,46 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
     return ScheduleCourseCardTheme(
       backgrounds: light.backgrounds
           .map(
-            (color) => _adjustColorLightness(
+            (color) => _colorForDarkSurface(
               color,
-              lightnessFactor: _darkBackgroundLightnessFactor,
+              lightness: _darkBackgroundLightness,
+              saturation: 0.42,
             ),
           )
           .toList(growable: false),
       borders: light.borders
           .map(
-            (color) => _adjustColorLightness(
+            (color) => _colorForDarkSurface(
               color,
-              lightnessFactor: _darkBorderLightnessFactor,
+              lightness: _darkBorderLightness,
+              saturation: 0.5,
             ),
           )
           .toList(growable: false),
       titleColors: light.titleColors
           .map(
-            (color) => _adjustColorLightness(
+            (color) => _colorForDarkSurface(
               color,
-              lightnessFactor: _darkTitleLightnessFactor,
+              lightness: _darkTitleLightness,
+              saturation: 0.58,
             ),
           )
           .toList(growable: false),
       descriptionColors: light.descriptionColors
           .map(
-            (color) => _adjustColorLightness(
+            (color) => _colorForDarkSurface(
               color,
-              lightnessFactor: _darkDescriptionLightnessFactor,
+              lightness: _darkDescriptionLightness,
+              saturation: 0.42,
             ),
           )
           .toList(growable: false),
       buttonColors: light.buttonColors
           .map(
-            (color) => _adjustColorLightness(
+            (color) => _colorForDarkSurface(
               color,
-              lightnessFactor: _darkButtonLightnessFactor,
+              lightness: _darkButtonLightness,
+              saturation: 0.58,
             ),
           )
           .toList(growable: false),
@@ -230,14 +235,15 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
     );
   }
 
-  static Color _adjustColorLightness(
+  static Color _colorForDarkSurface(
     Color color, {
-    required double lightnessFactor,
+    required double lightness,
+    required double saturation,
   }) {
     final hsl = HSLColor.fromColor(color);
-    final adjusted = hsl.withLightness(
-      (hsl.lightness * lightnessFactor).clamp(0.0, 1.0),
-    );
+    final adjusted = hsl
+        .withSaturation(saturation.clamp(0.0, 1.0))
+        .withLightness(lightness.clamp(0.0, 1.0));
     return adjusted.toColor();
   }
 

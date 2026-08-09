@@ -1,6 +1,7 @@
 package com.dawndrizzle.wing.cqut.widget
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.text.format.DateUtils
 import org.json.JSONArray
 import org.json.JSONObject
@@ -157,6 +158,17 @@ object TodayWidgetData {
           "更新失败，点右上角重试",
         )
       }
+    }
+
+    // Keep manual refresh directly reachable while exercising widget behavior
+    // from a debug build. Release builds continue to use the real sync age.
+    val isDebuggable =
+      context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    if (isDebuggable) {
+      return RefreshPresentation(
+        RefreshPresentationState.NEEDS_SYNC,
+        "调试模式：点右上角刷新",
+      )
     }
 
     val lastSuccessfulAt =

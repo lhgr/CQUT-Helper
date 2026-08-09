@@ -1,7 +1,7 @@
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Main/Main.dart';
-import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
+import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -56,20 +56,8 @@ class MyApp extends StatelessWidget {
                 GlobalWidgetsLocalizations.delegate,
                 GlobalCupertinoLocalizations.delegate,
               ],
-              theme: ThemeData(
-                useMaterial3: true,
-                colorScheme: lightScheme,
-                extensions: <ThemeExtension<dynamic>>[
-                  ScheduleCourseCardTheme.light(),
-                ],
-              ),
-              darkTheme: ThemeData(
-                useMaterial3: true,
-                colorScheme: darkScheme,
-                extensions: <ThemeExtension<dynamic>>[
-                  ScheduleCourseCardTheme.dark(),
-                ],
-              ),
+              theme: AppTheme.light(lightScheme),
+              darkTheme: AppTheme.dark(darkScheme),
               themeMode: ThemeManager().themeMode,
             );
           },
