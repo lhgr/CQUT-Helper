@@ -19,6 +19,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onTermPicker;
   final VoidCallback onAddCourse;
   final VoidCallback onExportIcs;
+  final bool transparentBackground;
 
   const ScheduleAppBar({
     super.key,
@@ -35,6 +36,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onTermPicker,
     this.onAddCourse = _noopScheduleAction,
     this.onExportIcs = _noopScheduleAction,
+    this.transparentBackground = false,
   });
 
   @override
@@ -153,7 +155,10 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       leadingWidth: sideSlotWidth,
       leading: const SizedBox.shrink(),
       scrolledUnderElevation: 0,
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: transparentBackground
+          ? Colors.transparent
+          : Theme.of(context).colorScheme.surface,
+      surfaceTintColor: Colors.transparent,
       actions: [
         SizedBox(
           width: sideSlotWidth,

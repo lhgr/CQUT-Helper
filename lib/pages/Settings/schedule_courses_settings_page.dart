@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'schedule_background_crop_page.dart';
 import 'schedule_layout_preview.dart';
 import 'settings_schedule_scope.dart';
 
@@ -29,6 +30,7 @@ class _ScheduleCoursesSettingsPageState
   bool _loading = true;
   bool _saving = false;
   bool _dirty = false;
+  bool _handlingPop = false;
   bool _showWeekend = false;
   bool _timeInfoEnabled = true;
   ScheduleLayoutSettings _layout = const ScheduleLayoutSettings();
@@ -91,9 +93,19 @@ class _ScheduleCoursesSettingsPageState
         imageQuality: 92,
       );
       if (image == null || !mounted) return;
+      final screenSize = MediaQuery.sizeOf(context);
+      final croppedPath = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (_) => ScheduleBackgroundCropPage(
+            imagePath: image.path,
+            targetAspectRatio: screenSize.width / screenSize.height,
+          ),
+        ),
+      );
+      if (croppedPath == null || !mounted) return;
       _change(() {
-        _pickedImagePath = image.path;
-        _layout = _layout.copyWith(backgroundImagePath: image.path);
+        _pickedImagePath = croppedPath;
+        _layout = _layout.copyWith(backgroundImagePath: croppedPath);
       });
     } catch (error) {
       if (!mounted) return;
@@ -129,8 +141,8 @@ class _ScheduleCoursesSettingsPageState
     return target.path;
   }
 
-  Future<void> _save() async {
-    if (_saving) return;
+  Future<bool> _save() async {
+    if (_saving) return false;
     setState(() => _saving = true);
     try {
       final backgroundPath = await _persistPickedBackground();
@@ -145,7 +157,7 @@ class _ScheduleCoursesSettingsPageState
         notify: false,
       );
       await _manager.saveLayoutSettings(layout);
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _layout = layout;
         _pickedImagePath = null;
@@ -154,14 +166,53 @@ class _ScheduleCoursesSettingsPageState
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('课表布局已保存')));
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('保存失败：$error')));
+      return false;
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _handlePopInvoked(bool didPop) async {
+    if (didPop || !_dirty || _handlingPop) return;
+    _handlingPop = true;
+    final action = await showDialog<_UnsavedAction>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('修改尚未保存'),
+        content: const Text('离开前是否保存“课表布局自定义”的修改？'),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _UnsavedAction.keepEditing),
+            child: const Text('继续编辑'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _UnsavedAction.discard),
+            child: const Text('不保存'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, _UnsavedAction.save),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (action == _UnsavedAction.discard) {
+      setState(() => _dirty = false);
+      Navigator.of(context).pop();
+    } else if (action == _UnsavedAction.save) {
+      final saved = await _save();
+      if (saved && mounted) Navigator.of(context).pop();
+    }
+    _handlingPop = false;
   }
 
   void _reset() {
@@ -194,7 +245,7 @@ class _ScheduleCoursesSettingsPageState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(
         title: const Text('课表布局自定义'),
         actions: [
@@ -513,6 +564,11 @@ class _ScheduleCoursesSettingsPageState
               },
             ),
     );
+    return PopScope(
+      canPop: !_dirty && !_saving,
+      onPopInvokedWithResult: (didPop, _) => _handlePopInvoked(didPop),
+      child: page,
+    );
   }
 
   Widget _sectionTitle(BuildContext context, String text) {
@@ -562,3 +618,5 @@ class _ScheduleCoursesSettingsPageState
     );
   }
 }
+
+enum _UnsavedAction { keepEditing, discard, save }

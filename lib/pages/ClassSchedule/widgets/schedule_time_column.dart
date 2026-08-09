@@ -7,6 +7,7 @@ class ScheduleTimeColumn extends StatelessWidget {
   final int sessionCount;
   final List<CampusTimeInfo>? timeInfoList;
   final bool showGridLines;
+  final bool transparentBackground;
 
   const ScheduleTimeColumn({
     super.key,
@@ -15,6 +16,7 @@ class ScheduleTimeColumn extends StatelessWidget {
     this.sessionCount = 12,
     this.timeInfoList,
     this.showGridLines = true,
+    this.transparentBackground = false,
   });
 
   @override
@@ -22,7 +24,9 @@ class ScheduleTimeColumn extends StatelessWidget {
     return Container(
       width: width,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: transparentBackground
+            ? Colors.transparent
+            : Theme.of(context).colorScheme.surface,
         border: showGridLines
             ? Border(
                 right: BorderSide(

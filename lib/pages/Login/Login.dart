@@ -181,14 +181,6 @@ class _LoginPageState extends State<LoginPage> {
                               width: 88,
                               height: 88,
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    colorScheme.primary,
-                                    colorScheme.tertiary,
-                                  ],
-                                ),
                                 borderRadius: BorderRadius.circular(28),
                                 boxShadow: [
                                   BoxShadow(
@@ -200,10 +192,12 @@ class _LoginPageState extends State<LoginPage> {
                                   ),
                                 ],
                               ),
-                              child: Icon(
-                                Icons.school_rounded,
-                                size: 46,
-                                color: colorScheme.onPrimary,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(28),
+                                child: Image.asset(
+                                  'lib/assets/Icon.png',
+                                  fit: BoxFit.cover,
+                                ),
                               ),
                             ),
                           ),
@@ -212,14 +206,6 @@ class _LoginPageState extends State<LoginPage> {
                             'CQUT 助手',
                             textAlign: TextAlign.center,
                             style: theme.textTheme.headlineMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '课表、提醒与校园信息，一处轻松掌握',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
                           ),
                           const SizedBox(height: 32),
                           Card(
@@ -320,14 +306,6 @@ class _LoginPageState extends State<LoginPage> {
                                   ),
                                 ],
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Text(
-                            '统一身份认证 · 安全登录',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: colorScheme.outline,
                             ),
                           ),
                         ],

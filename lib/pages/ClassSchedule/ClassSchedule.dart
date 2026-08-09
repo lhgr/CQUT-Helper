@@ -9,6 +9,7 @@ import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_app_bar.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_inline_notice_panel.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_page_view.dart';
 import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
@@ -193,16 +194,31 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
 
   @override
   Widget build(BuildContext context) {
+    final hasBackground = ScheduleBackground.hasImage(
+      _settingsManager.layoutSettings,
+    );
     if ((_currentScheduleData == null || _weekList == null) && _loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text("课表"), centerTitle: true),
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text("课表"),
+          centerTitle: true,
+          backgroundColor: hasBackground ? Colors.transparent : null,
+          surfaceTintColor: Colors.transparent,
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if ((_currentScheduleData == null || _weekList == null) && _error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text("课表"), centerTitle: true),
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text("课表"),
+          centerTitle: true,
+          backgroundColor: hasBackground ? Colors.transparent : null,
+          surfaceTintColor: Colors.transparent,
+        ),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -232,7 +248,13 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     // 防止 _weekList 为空时导致的 Null Check Error
     if (_weekList == null || _weekList!.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text("课表"), centerTitle: true),
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text("课表"),
+          centerTitle: true,
+          backgroundColor: hasBackground ? Colors.transparent : null,
+          surfaceTintColor: Colors.transparent,
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -254,6 +276,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     }
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       floatingActionButton: showFab
           ? FloatingActionButton(
               onPressed: _returnToCurrentWeek,
@@ -283,6 +306,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         onTermPicker: _showTermPickerSheet,
         onAddCourse: _openCustomCourseEditor,
         onExportIcs: _exportIcs,
+        transparentBackground: hasBackground,
       ),
       body: Column(
         children: [

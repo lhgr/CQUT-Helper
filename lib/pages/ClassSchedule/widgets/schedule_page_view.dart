@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
@@ -86,109 +84,72 @@ class SchedulePageView extends StatelessWidget {
               );
               final contentWidth = _timeColumnWidth + gridWidth;
 
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  _ScheduleBackground(settings: layoutSettings),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: contentWidth,
-                      child: Column(
-                        children: [
-                          ScheduleHeader(
-                            scheduleData: data,
-                            height: _headerHeight,
-                            timeColumnWidth: _timeColumnWidth,
-                            showWeekend: showWeekend,
-                            showGridLines: layoutSettings.showGridLines,
-                          ),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  ScheduleTimeColumn(
-                                    width: _timeColumnWidth,
-                                    sessionHeight:
-                                        layoutSettings.gridCellHeight,
-                                    timeInfoList: timeInfoList,
-                                    showGridLines: layoutSettings.showGridLines,
-                                  ),
-                                  SizedBox(
-                                    width: gridWidth,
-                                    child: ScheduleCourseGrid(
-                                      events: data.eventList ?? [],
-                                      yearTerm: data.yearTerm ?? '',
-                                      sessionHeight:
-                                          layoutSettings.gridCellHeight,
-                                      showWeekend: showWeekend,
-                                      showGridLines:
-                                          layoutSettings.showGridLines,
-                                      hideLocation: layoutSettings.hideLocation,
-                                      hideTeacher: layoutSettings.hideTeacher,
-                                      removeCampusPrefix:
-                                          layoutSettings.removeCampusPrefix,
-                                      horizontalCenter:
-                                          layoutSettings.horizontalCenter,
-                                      verticalCenter:
-                                          layoutSettings.verticalCenter,
-                                      cardRadius: layoutSettings.cardRadius,
-                                      textScale: layoutSettings.textScale,
-                                      backgroundColors: cardTheme.backgrounds,
-                                      borderColors: cardTheme.borders,
-                                      titleColors: cardTheme.titleColors,
-                                      descriptionColors:
-                                          cardTheme.descriptionColors,
-                                      buttonColors: cardTheme.buttonColors,
-                                      onEditCourse: onEditCourse,
-                                      onDeleteCourse: onDeleteCourse,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: contentWidth,
+                  child: Column(
+                    children: [
+                      ScheduleHeader(
+                        scheduleData: data,
+                        height: _headerHeight,
+                        timeColumnWidth: _timeColumnWidth,
+                        showWeekend: showWeekend,
+                        showGridLines: layoutSettings.showGridLines,
+                        transparentBackground:
+                            layoutSettings.backgroundImagePath != null,
                       ),
-                    ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ScheduleTimeColumn(
+                                width: _timeColumnWidth,
+                                sessionHeight: layoutSettings.gridCellHeight,
+                                timeInfoList: timeInfoList,
+                                showGridLines: layoutSettings.showGridLines,
+                                transparentBackground:
+                                    layoutSettings.backgroundImagePath != null,
+                              ),
+                              SizedBox(
+                                width: gridWidth,
+                                child: ScheduleCourseGrid(
+                                  events: data.eventList ?? [],
+                                  yearTerm: data.yearTerm ?? '',
+                                  sessionHeight: layoutSettings.gridCellHeight,
+                                  showWeekend: showWeekend,
+                                  showGridLines: layoutSettings.showGridLines,
+                                  hideLocation: layoutSettings.hideLocation,
+                                  hideTeacher: layoutSettings.hideTeacher,
+                                  removeCampusPrefix:
+                                      layoutSettings.removeCampusPrefix,
+                                  horizontalCenter:
+                                      layoutSettings.horizontalCenter,
+                                  verticalCenter: layoutSettings.verticalCenter,
+                                  cardRadius: layoutSettings.cardRadius,
+                                  textScale: layoutSettings.textScale,
+                                  backgroundColors: cardTheme.backgrounds,
+                                  borderColors: cardTheme.borders,
+                                  titleColors: cardTheme.titleColors,
+                                  descriptionColors:
+                                      cardTheme.descriptionColors,
+                                  buttonColors: cardTheme.buttonColors,
+                                  onEditCourse: onEditCourse,
+                                  onDeleteCourse: onDeleteCourse,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               );
             },
           );
         },
-      ),
-    );
-  }
-}
-
-class _ScheduleBackground extends StatelessWidget {
-  final ScheduleLayoutSettings settings;
-
-  const _ScheduleBackground({required this.settings});
-
-  @override
-  Widget build(BuildContext context) {
-    final path = settings.backgroundImagePath?.trim();
-    if (path == null || path.isEmpty || !File(path).existsSync()) {
-      return ColoredBox(color: Theme.of(context).colorScheme.surface);
-    }
-    return ClipRect(
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(
-          sigmaX: settings.backgroundBlur,
-          sigmaY: settings.backgroundBlur,
-        ),
-        child: Opacity(
-          opacity: settings.backgroundOpacity,
-          child: Image.file(
-            File(path),
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) =>
-                ColoredBox(color: Theme.of(context).colorScheme.surface),
-          ),
-        ),
       ),
     );
   }

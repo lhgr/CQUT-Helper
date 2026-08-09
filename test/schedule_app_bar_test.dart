@@ -81,4 +81,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(settingsOpened, isTrue);
   });
+
+  testWidgets('自定义背景启用时课表顶栏透明', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          appBar: ScheduleAppBar(
+            loading: false,
+            weekList: const ['1'],
+            currentWeekIndex: 0,
+            currentScheduleData: ScheduleData(yearTerm: '2026-2027-1'),
+            transparentBackground: true,
+            onRefresh: () {},
+            onSettings: () {},
+            onWeekPicker: () {},
+            onTermPicker: () {},
+          ),
+        ),
+      ),
+    );
+
+    final appBar = tester.widget<AppBar>(find.byType(AppBar));
+    expect(appBar.backgroundColor, Colors.transparent);
+  });
 }

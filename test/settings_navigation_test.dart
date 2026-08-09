@@ -102,4 +102,33 @@ void main() {
     expect(find.text('背景图片不透明度'), findsOneWidget);
     expect(find.text('背景模糊度'), findsOneWidget);
   });
+
+  testWidgets('课表布局修改未保存时离开会显示提示', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ScheduleCoursesSettingsPage(
+          scope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('显示网格线'));
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('修改尚未保存'), findsOneWidget);
+    expect(find.text('继续编辑'), findsOneWidget);
+    expect(find.text('不保存'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, '保存'),
+      ),
+      findsOneWidget,
+    );
+  });
 }

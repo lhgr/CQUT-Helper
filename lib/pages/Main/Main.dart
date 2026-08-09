@@ -4,6 +4,7 @@ import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/update_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
 import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
@@ -23,6 +24,10 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   int _lastOpenFromNotificationToken = 0;
   int _currentIndex = 1;
   int _lastWidgetNavigationToken = 0;
+  final ScheduleSettingsManager _scheduleSettingsManager =
+      ScheduleSettingsManager();
+  ScheduleLayoutSettings _scheduleLayoutSettings =
+      const ScheduleLayoutSettings();
 
   final List<Map<String, dynamic>> _tabList = const [
     {'icon': Icons.today_outlined, 'active_icon': Icons.today, 'text': '今日'},
@@ -42,6 +47,10 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       _onOpenFromSystemNotification,
     );
     WidgetNavigation.request.addListener(_onWidgetNavigation);
+    ScheduleSettingsManager.settingsEpoch.addListener(
+      _loadScheduleLayoutSettings,
+    );
+    _loadScheduleLayoutSettings();
     _checkLoginStatus();
     WidgetsBinding.instance.addPostFrameCallback((_) => _onWidgetNavigation());
   }
@@ -53,6 +62,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       _onOpenFromSystemNotification,
     );
     WidgetNavigation.request.removeListener(_onWidgetNavigation);
+    ScheduleSettingsManager.settingsEpoch.removeListener(
+      _loadScheduleLayoutSettings,
+    );
     super.dispose();
   }
 
@@ -75,6 +87,14 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       'app_last_active_at',
       DateTime.now().millisecondsSinceEpoch,
     );
+  }
+
+  Future<void> _loadScheduleLayoutSettings() async {
+    await _scheduleSettingsManager.load();
+    if (!mounted) return;
+    setState(() {
+      _scheduleLayoutSettings = _scheduleSettingsManager.layoutSettings;
+    });
   }
 
   Future<void> _checkLoginStatus() async {
@@ -172,13 +192,26 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     }
 
     final colorScheme = Theme.of(context).colorScheme;
+    final showScheduleBackground =
+        _currentIndex == 1 &&
+        ScheduleBackground.hasImage(_scheduleLayoutSettings);
 
     return Scaffold(
-      body: SafeArea(
-        child: IndexedStack(
-          index: _currentIndex,
-          children: _getStackChildren(),
-        ),
+      extendBody: true,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (showScheduleBackground)
+            ScheduleBackground(settings: _scheduleLayoutSettings)
+          else
+            ColoredBox(color: colorScheme.surface),
+          SafeArea(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: _getStackChildren(),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: SafeArea(
         top: false,
@@ -204,6 +237,10 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
               child: NavigationBar(
+                backgroundColor: showScheduleBackground
+                    ? Colors.transparent
+                    : colorScheme.surfaceContainer,
+                elevation: 0,
                 onDestinationSelected: (index) {
                   setState(() {
                     _currentIndex = index;
