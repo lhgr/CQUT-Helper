@@ -304,7 +304,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               timeInfoList: _settingsManager.timeInfoEnabled
                   ? _controller.timeInfoList
                   : null,
-              sessionHeight: _settingsManager.displayDensity.sessionHeight,
+              layoutSettings: _settingsManager.layoutSettings,
               onEditCourse: _editCourse,
               onDeleteCourse: _deleteCustomCourse,
             ),

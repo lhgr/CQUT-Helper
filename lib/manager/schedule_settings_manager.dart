@@ -27,6 +27,21 @@ class ScheduleSettingsManager {
       'schedule_default_reminder_minutes';
   static const String displayDensityKey = 'schedule_display_density';
   static const String defaultHomeTabKey = 'schedule_default_home_tab';
+  static const String _gridCellWidthKey = 'schedule_grid_cell_width';
+  static const String _gridCellHeightKey = 'schedule_grid_cell_height';
+  static const String _showGridLinesKey = 'schedule_show_grid_lines';
+  static const String _backgroundImagePathKey =
+      'schedule_background_image_path';
+  static const String _backgroundOpacityKey = 'schedule_background_opacity';
+  static const String _backgroundBlurKey = 'schedule_background_blur';
+  static const String _hideLocationKey = 'schedule_card_hide_location';
+  static const String _hideTeacherKey = 'schedule_card_hide_teacher';
+  static const String _removeCampusPrefixKey =
+      'schedule_card_remove_campus_prefix';
+  static const String _horizontalCenterKey = 'schedule_card_horizontal_center';
+  static const String _verticalCenterKey = 'schedule_card_vertical_center';
+  static const String _cardRadiusKey = 'schedule_card_radius';
+  static const String _cardTextScaleKey = 'schedule_card_text_scale';
   static const String officialNoticeApiBaseUrl =
       'https://notice.dawndrizzle.top';
 
@@ -37,6 +52,7 @@ class ScheduleSettingsManager {
   bool remindersEnabled = false;
   int defaultReminderMinutes = 10;
   ScheduleDisplayDensity displayDensity = ScheduleDisplayDensity.comfortable;
+  ScheduleLayoutSettings layoutSettings = const ScheduleLayoutSettings();
   int defaultHomeTab = 1;
 
   static String normalizeNoticeApiBaseUrl(String raw) {
@@ -123,6 +139,40 @@ class ScheduleSettingsManager {
       (value) => value.name == densityName,
       orElse: () => ScheduleDisplayDensity.comfortable,
     );
+    layoutSettings = ScheduleLayoutSettings(
+      gridCellWidth: (prefs.getDouble(_gridCellWidthKey) ?? 52)
+          .clamp(
+            ScheduleLayoutSettings.minGridCellWidth,
+            ScheduleLayoutSettings.maxGridCellWidth,
+          )
+          .toDouble(),
+      gridCellHeight:
+          (prefs.getDouble(_gridCellHeightKey) ?? displayDensity.sessionHeight)
+              .clamp(
+                ScheduleLayoutSettings.minGridCellHeight,
+                ScheduleLayoutSettings.maxGridCellHeight,
+              )
+              .toDouble(),
+      showGridLines: prefs.getBool(_showGridLinesKey) ?? true,
+      backgroundImagePath: prefs.getString(_backgroundImagePathKey),
+      backgroundOpacity: (prefs.getDouble(_backgroundOpacityKey) ?? 0.32)
+          .clamp(0.0, 1.0)
+          .toDouble(),
+      backgroundBlur: (prefs.getDouble(_backgroundBlurKey) ?? 0)
+          .clamp(0.0, 20.0)
+          .toDouble(),
+      hideLocation: prefs.getBool(_hideLocationKey) ?? false,
+      hideTeacher: prefs.getBool(_hideTeacherKey) ?? false,
+      removeCampusPrefix: prefs.getBool(_removeCampusPrefixKey) ?? false,
+      horizontalCenter: prefs.getBool(_horizontalCenterKey) ?? false,
+      verticalCenter: prefs.getBool(_verticalCenterKey) ?? false,
+      cardRadius: (prefs.getDouble(_cardRadiusKey) ?? 12)
+          .clamp(0.0, 28.0)
+          .toDouble(),
+      textScale: (prefs.getDouble(_cardTextScaleKey) ?? 1)
+          .clamp(0.7, 1.5)
+          .toDouble(),
+    );
     defaultHomeTab = (prefs.getInt(defaultHomeTabKey) ?? 1).clamp(0, 2);
   }
 
@@ -145,11 +195,37 @@ class ScheduleSettingsManager {
     settingsEpoch.value++;
   }
 
+  Future<void> saveLayoutSettings(ScheduleLayoutSettings value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = value.normalized();
+    layoutSettings = normalized;
+    await prefs.setDouble(_gridCellWidthKey, normalized.gridCellWidth);
+    await prefs.setDouble(_gridCellHeightKey, normalized.gridCellHeight);
+    await prefs.setBool(_showGridLinesKey, normalized.showGridLines);
+    final backgroundPath = normalized.backgroundImagePath?.trim();
+    if (backgroundPath == null || backgroundPath.isEmpty) {
+      await prefs.remove(_backgroundImagePathKey);
+    } else {
+      await prefs.setString(_backgroundImagePathKey, backgroundPath);
+    }
+    await prefs.setDouble(_backgroundOpacityKey, normalized.backgroundOpacity);
+    await prefs.setDouble(_backgroundBlurKey, normalized.backgroundBlur);
+    await prefs.setBool(_hideLocationKey, normalized.hideLocation);
+    await prefs.setBool(_hideTeacherKey, normalized.hideTeacher);
+    await prefs.setBool(_removeCampusPrefixKey, normalized.removeCampusPrefix);
+    await prefs.setBool(_horizontalCenterKey, normalized.horizontalCenter);
+    await prefs.setBool(_verticalCenterKey, normalized.verticalCenter);
+    await prefs.setDouble(_cardRadiusKey, normalized.cardRadius);
+    await prefs.setDouble(_cardTextScaleKey, normalized.textScale);
+    settingsEpoch.value++;
+  }
+
   Future<void> save({
     required bool showWeekend,
     required bool timeInfoEnabled,
     required bool backgroundPollingEnabled,
     required String noticeApiBaseUrl,
+    bool notify = true,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     this.showWeekend = showWeekend;
@@ -162,6 +238,93 @@ class ScheduleSettingsManager {
     await prefs.remove('schedule_update_show_diff');
     await prefs.setBool(backgroundPollingEnabledKey, backgroundPollingEnabled);
     await prefs.setString(_prefsKeyNoticeApiBaseUrl, this.noticeApiBaseUrl);
-    settingsEpoch.value++;
+    if (notify) settingsEpoch.value++;
   }
+}
+
+@immutable
+class ScheduleLayoutSettings {
+  static const double minGridCellWidth = 40;
+  static const double maxGridCellWidth = 96;
+  static const double minGridCellHeight = 40;
+  static const double maxGridCellHeight = 96;
+
+  final double gridCellWidth;
+  final double gridCellHeight;
+  final bool showGridLines;
+  final String? backgroundImagePath;
+  final double backgroundOpacity;
+  final double backgroundBlur;
+  final bool hideLocation;
+  final bool hideTeacher;
+  final bool removeCampusPrefix;
+  final bool horizontalCenter;
+  final bool verticalCenter;
+  final double cardRadius;
+  final double textScale;
+
+  const ScheduleLayoutSettings({
+    this.gridCellWidth = 52,
+    this.gridCellHeight = 60,
+    this.showGridLines = true,
+    this.backgroundImagePath,
+    this.backgroundOpacity = 0.32,
+    this.backgroundBlur = 0,
+    this.hideLocation = false,
+    this.hideTeacher = false,
+    this.removeCampusPrefix = false,
+    this.horizontalCenter = false,
+    this.verticalCenter = false,
+    this.cardRadius = 12,
+    this.textScale = 1,
+  });
+
+  ScheduleLayoutSettings copyWith({
+    double? gridCellWidth,
+    double? gridCellHeight,
+    bool? showGridLines,
+    String? backgroundImagePath,
+    bool clearBackgroundImage = false,
+    double? backgroundOpacity,
+    double? backgroundBlur,
+    bool? hideLocation,
+    bool? hideTeacher,
+    bool? removeCampusPrefix,
+    bool? horizontalCenter,
+    bool? verticalCenter,
+    double? cardRadius,
+    double? textScale,
+  }) {
+    return ScheduleLayoutSettings(
+      gridCellWidth: gridCellWidth ?? this.gridCellWidth,
+      gridCellHeight: gridCellHeight ?? this.gridCellHeight,
+      showGridLines: showGridLines ?? this.showGridLines,
+      backgroundImagePath: clearBackgroundImage
+          ? null
+          : backgroundImagePath ?? this.backgroundImagePath,
+      backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
+      backgroundBlur: backgroundBlur ?? this.backgroundBlur,
+      hideLocation: hideLocation ?? this.hideLocation,
+      hideTeacher: hideTeacher ?? this.hideTeacher,
+      removeCampusPrefix: removeCampusPrefix ?? this.removeCampusPrefix,
+      horizontalCenter: horizontalCenter ?? this.horizontalCenter,
+      verticalCenter: verticalCenter ?? this.verticalCenter,
+      cardRadius: cardRadius ?? this.cardRadius,
+      textScale: textScale ?? this.textScale,
+    );
+  }
+
+  ScheduleLayoutSettings normalized() => copyWith(
+    gridCellWidth: gridCellWidth
+        .clamp(minGridCellWidth, maxGridCellWidth)
+        .toDouble(),
+    gridCellHeight: gridCellHeight
+        .clamp(minGridCellHeight, maxGridCellHeight)
+        .toDouble(),
+    backgroundOpacity: backgroundOpacity.clamp(0.0, 1.0).toDouble(),
+    backgroundBlur: backgroundBlur.clamp(0.0, 20.0).toDouble(),
+    cardRadius: cardRadius.clamp(0.0, 28.0).toDouble(),
+    textScale: textScale.clamp(0.7, 1.5).toDouble(),
+    backgroundImagePath: backgroundImagePath?.trim(),
+  );
 }

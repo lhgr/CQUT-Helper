@@ -84,12 +84,8 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
 
   String get _scheduleSummary {
     final weekend = _manager.showWeekend ? '显示周末' : '仅工作日';
-    final density = switch (_manager.displayDensity) {
-      ScheduleDisplayDensity.compact => '紧凑',
-      ScheduleDisplayDensity.comfortable => '标准',
-      ScheduleDisplayDensity.spacious => '宽松',
-    };
-    return '$weekend · $density密度 · 课程显示';
+    final layout = _manager.layoutSettings;
+    return '$weekend · ${layout.gridCellWidth.round()}×${layout.gridCellHeight.round()} 网格 · 卡片样式';
   }
 
   String get _notificationSummary {

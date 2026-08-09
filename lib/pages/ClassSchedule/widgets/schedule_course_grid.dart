@@ -15,6 +15,14 @@ class ScheduleCourseGrid extends StatefulWidget {
   final List<Color> descriptionColors;
   final List<Color> buttonColors;
   final bool showWeekend;
+  final bool showGridLines;
+  final bool hideLocation;
+  final bool hideTeacher;
+  final bool removeCampusPrefix;
+  final bool horizontalCenter;
+  final bool verticalCenter;
+  final double cardRadius;
+  final double textScale;
   final Future<void> Function(EventItem event) onEditCourse;
   final Future<void> Function(EventItem event) onDeleteCourse;
 
@@ -30,6 +38,14 @@ class ScheduleCourseGrid extends StatefulWidget {
     required this.descriptionColors,
     required this.buttonColors,
     this.showWeekend = true,
+    this.showGridLines = true,
+    this.hideLocation = false,
+    this.hideTeacher = false,
+    this.removeCampusPrefix = false,
+    this.horizontalCenter = false,
+    this.verticalCenter = false,
+    this.cardRadius = 12,
+    this.textScale = 1,
     required this.onEditCourse,
     required this.onDeleteCourse,
   });
@@ -494,44 +510,46 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
           child: Stack(
             children: [
               // Grid lines
-              ...List.generate(widget.sessionCount, (index) {
-                return Positioned(
-                  top: index * widget.sessionHeight,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    height: widget.sessionHeight,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outlineVariant.withAlpha(51),
+              if (widget.showGridLines)
+                ...List.generate(widget.sessionCount, (index) {
+                  return Positioned(
+                    top: index * widget.sessionHeight,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: widget.sessionHeight,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outlineVariant.withAlpha(51),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              }),
-              ...List.generate(dayCount, (index) {
-                return Positioned(
-                  left: index * dayWidth,
-                  top: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: dayWidth,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        right: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outlineVariant.withAlpha(51),
+                  );
+                }),
+              if (widget.showGridLines)
+                ...List.generate(dayCount, (index) {
+                  return Positioned(
+                    left: index * dayWidth,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: dayWidth,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          right: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outlineVariant.withAlpha(51),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                }),
 
               // Events
               if (visibleEvents.isEmpty)
@@ -587,6 +605,13 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       showContent: false,
                       showConflictBadge: false,
                       enableTap: false,
+                      hideLocation: widget.hideLocation,
+                      hideTeacher: widget.hideTeacher,
+                      removeCampusPrefix: widget.removeCampusPrefix,
+                      horizontalCenter: widget.horizontalCenter,
+                      verticalCenter: widget.verticalCenter,
+                      borderRadius: widget.cardRadius,
+                      textScale: widget.textScale,
                       onTap: () {
                         if (card.group.events.length > 1) {
                           _showConflictSheet(
@@ -657,7 +682,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                             color: frameColor,
                             width: frameWidth,
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(
+                            widget.cardRadius,
+                          ),
                         ),
                       ),
                     ),
@@ -708,6 +735,13 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       showContent: true,
                       showConflictBadge: true,
                       enableTap: true,
+                      hideLocation: widget.hideLocation,
+                      hideTeacher: widget.hideTeacher,
+                      removeCampusPrefix: widget.removeCampusPrefix,
+                      horizontalCenter: widget.horizontalCenter,
+                      verticalCenter: widget.verticalCenter,
+                      borderRadius: widget.cardRadius,
+                      textScale: widget.textScale,
                       onTap: () {
                         if (card.group.events.length > 1) {
                           _showConflictSheet(

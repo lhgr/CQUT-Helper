@@ -6,6 +6,7 @@ class ScheduleHeader extends StatelessWidget {
   final double height;
   final double timeColumnWidth;
   final bool showWeekend;
+  final bool showGridLines;
 
   const ScheduleHeader({
     super.key,
@@ -13,6 +14,7 @@ class ScheduleHeader extends StatelessWidget {
     this.height = 50.0,
     this.timeColumnWidth = 30.0,
     this.showWeekend = true,
+    this.showGridLines = true,
   });
 
   @override
@@ -25,9 +27,11 @@ class ScheduleHeader extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
-        ),
+        border: showGridLines
+            ? Border(
+                bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
+              )
+            : null,
       ),
       child: Row(
         children: [

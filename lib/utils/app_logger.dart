@@ -33,6 +33,9 @@ class LogEvent {
     required this.level,
     required this.tag,
     required this.message,
+    required this.sessionId,
+    required this.eventId,
+    required this.sequence,
     this.error,
     this.stackTrace,
     this.fields,
@@ -42,6 +45,9 @@ class LogEvent {
   final LogLevel level;
   final String tag;
   final String message;
+  final String sessionId;
+  final String eventId;
+  final int sequence;
   final Object? error;
   final StackTrace? stackTrace;
   final Map<String, Object?>? fields;
@@ -89,7 +95,9 @@ class ConsoleLogSink implements LogSink {
   String _formatLine(LogEvent e) {
     final iso = e.at.toIso8601String();
     final base = '$iso [${e.level.name.toUpperCase()}] ${e.tag} - ${e.message}';
-    final fields = e.fields;
+    final fields = e.fields == null
+        ? null
+        : (Map<String, Object?>.from(e.fields!)..remove('stack'));
     if (fields == null || fields.isEmpty) return base;
     return '$base ${_safeJson(fields)}';
   }
@@ -610,6 +618,8 @@ class AppLogger {
   int _maxMessageChars = 2000;
   final _LogMetrics _metrics = _LogMetrics();
   final Object _traceZoneKey = Object();
+  String _sessionId = '';
+  int _sequence = 0;
   DateTime _lastSinkErrorAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastAlertAt = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -640,6 +650,8 @@ class AppLogger {
     _maxMessageChars = maxMessageChars;
 
     await dispose();
+    _sessionId = newTraceId(bytes: 8);
+    _sequence = 0;
     final sinks = <LogSink>[];
     if (enableConsole) sinks.add(ConsoleLogSink());
     if (enableFile) {
@@ -682,7 +694,7 @@ class AppLogger {
       metrics: _metrics,
     );
     _initialized = true;
-    info('Logger', 'initialized', fields: {'file': fileName});
+    info('Logger', 'initialized', fields: {'file': fileName, 'log_schema': 2});
     await flush(timeout: const Duration(seconds: 2));
   }
 
@@ -705,6 +717,8 @@ class AppLogger {
 
   LogMetricsSnapshot get metrics => _metrics.snapshot();
 
+  String get sessionId => _ensureSessionId();
+
   String? get currentTraceId => Zone.current[_traceZoneKey] as String?;
 
   T runWithTraceId<T>(String traceId, T Function() fn) {
@@ -712,15 +726,13 @@ class AppLogger {
   }
 
   Future<T> runWithTraceIdAsync<T>(String traceId, Future<T> Function() fn) {
-    return runZoned(() {
-      final f = fn();
-      unawaited(
-        f.catchError((Object e, StackTrace st) {
-          fatal('Zone', e.toString(), error: e, stackTrace: st);
-          throw e;
-        }),
-      );
-      return f;
+    return runZoned(() async {
+      try {
+        return await fn();
+      } catch (e, st) {
+        fatal('Zone', e.toString(), error: e, stackTrace: st);
+        rethrow;
+      }
     }, zoneValues: {_traceZoneKey: traceId});
   }
 
@@ -732,6 +744,13 @@ class AppLogger {
       buf.write(v.toRadixString(16).padLeft(2, '0'));
     }
     return buf.toString();
+  }
+
+  String _ensureSessionId() {
+    if (_sessionId.isEmpty) {
+      _sessionId = newTraceId(bytes: 8);
+    }
+    return _sessionId;
   }
 
   Future<void> flush({Duration timeout = const Duration(seconds: 2)}) async {
@@ -898,6 +917,7 @@ class AppLogger {
     int maxTotalBytes = 8 * 1024 * 1024,
     LogExportKind kind = LogExportKind.all,
   }) async {
+    await flush(timeout: const Duration(seconds: 2));
     await _detachFileSink();
     try {
       final outFile = File(outputPath);
@@ -918,20 +938,27 @@ class AppLogger {
         '^${RegExp.escape(netBase)}(_.*)?\\.log(\\.gz)?\$',
         caseSensitive: false,
       );
-      final files = (await _listLogFiles(includeExports: false)).where((f) {
-        final p = f.path.toLowerCase();
-        if (p == outputLower) return false;
-        final name = pBasename(p);
-        if (name.startsWith('cqut_export')) return false;
-        final isOther = otherRegex.hasMatch(name);
-        final isNet = netRegex.hasMatch(name);
-        if (!isOther && !isNet) return false;
-        if (kind == LogExportKind.network && !isNet) return false;
-        if (kind == LogExportKind.other && !isOther) return false;
-        return true;
-      }).toList()..sort((a, b) => a.path.compareTo(b.path));
+      final files =
+          (await _listLogFiles(includeExports: false)).where((f) {
+            final p = f.path.toLowerCase();
+            if (p == outputLower) return false;
+            final name = pBasename(p);
+            if (name.startsWith('cqut_export')) return false;
+            final isOther = otherRegex.hasMatch(name);
+            final isNet = netRegex.hasMatch(name);
+            if (!isOther && !isNet) return false;
+            if (kind == LogExportKind.network && !isNet) return false;
+            if (kind == LogExportKind.other && !isOther) return false;
+            return true;
+          }).toList()..sort((a, b) {
+            final byTime = _lastModifiedMillis(
+              b,
+            ).compareTo(_lastModifiedMillis(a));
+            return byTime != 0 ? byTime : b.path.compareTo(a.path);
+          });
 
       final summary = await _buildExportSummary(files);
+      final logMetrics = metrics;
       int written = 0;
       final sink = outFile.openWrite(mode: FileMode.write, encoding: utf8);
       try {
@@ -953,7 +980,14 @@ class AppLogger {
         } catch (_) {}
         sink.writeln('exported_at=${DateTime.now().toIso8601String()}');
         sink.writeln('export_kind=${kind.name}');
+        sink.writeln('log_schema=2');
+        sink.writeln('log_session_id=$sessionId');
+        sink.writeln('log_order=newest_first');
         sink.writeln('files=${files.length}');
+        sink.writeln('logger_queue_depth=${logMetrics.queueDepth}');
+        sink.writeln('logger_dropped=${logMetrics.dropped}');
+        sink.writeln('logger_write_errors=${logMetrics.writeErrors}');
+        sink.writeln('logger_p95_emit_ms=${logMetrics.p95EmitMs}');
         sink.writeln('');
         sink.writeln('===== summary =====');
         for (final line in summary.toLines()) {
@@ -1230,11 +1264,30 @@ class AppLogger {
   }) {
     final at = DateTime.now();
     final traceId = currentTraceId;
+    final activeSessionId = _ensureSessionId();
+    final sequence = ++_sequence;
+    final eventId =
+        '$activeSessionId-${sequence.toRadixString(36).padLeft(4, '0')}';
+    final sanitizedMessage = _truncate(
+      _redactString(message),
+      _maxMessageChars,
+    );
 
-    final outFields = <String, Object?>{};
+    final userFields = <String, Object?>{};
     if (fields != null && fields.isNotEmpty) {
-      outFields.addAll(_sanitizeFields(fields));
+      userFields.addAll(_sanitizeFields(fields));
     }
+    userFields.remove('schema');
+    userFields.remove('session_id');
+    userFields.remove('event_id');
+    userFields.remove('sequence');
+    final outFields = <String, Object?>{
+      'schema': 2,
+      'session_id': activeSessionId,
+      'event_id': eventId,
+      'sequence': sequence,
+      ...userFields,
+    };
     if (traceId != null && !outFields.containsKey('trace_id')) {
       outFields['trace_id'] = traceId;
     }
@@ -1244,8 +1297,20 @@ class AppLogger {
     if (stackTrace != null && !outFields.containsKey('stack')) {
       outFields['stack'] = stackTrace.toString();
     }
+    if (error != null && !outFields.containsKey('error_type')) {
+      outFields['error_type'] = error.runtimeType.toString();
+    }
+    if (level.priority >= LogLevel.warn.priority &&
+        !outFields.containsKey('fingerprint')) {
+      outFields['fingerprint'] = _issueFingerprint(
+        tag: tag,
+        message: sanitizedMessage,
+        error: error,
+        stackTrace: stackTrace,
+        fields: outFields,
+      );
+    }
 
-    final msg = _truncate(_redactString(message), _maxMessageChars);
     final normalizedFields = outFields.isEmpty
         ? null
         : _truncateJsonObject(outFields, _maxFieldsChars);
@@ -1254,7 +1319,10 @@ class AppLogger {
       at: at,
       level: level,
       tag: tag,
-      message: msg,
+      message: sanitizedMessage,
+      sessionId: activeSessionId,
+      eventId: eventId,
+      sequence: sequence,
       error: error,
       stackTrace: stackTrace,
       fields: normalizedFields,
@@ -1598,6 +1666,14 @@ String pBasename(String path) {
   return path.substring(i + 1);
 }
 
+int _lastModifiedMillis(File file) {
+  try {
+    return file.lastModifiedSync().millisecondsSinceEpoch;
+  } catch (_) {
+    return 0;
+  }
+}
+
 class _SuppressedNetError {
   _SuppressedNetError({
     required this.signature,
@@ -1640,12 +1716,17 @@ class DioLogInterceptor extends Interceptor {
     options.headers['x-trace-id'] = traceId;
     options.extra[_traceKey] = traceId;
     options.extra[_requestKey] = requestId;
+    final safeUri = sanitizeUriForLogging(options.uri);
     logger.debug(
       tag,
-      '${options.method} ${options.uri}',
+      '${options.method} $safeUri',
       fields: {
         'net': 1,
         'type': 'request',
+        'method': options.method,
+        'uri': safeUri,
+        if (options.uri.queryParameters.isNotEmpty)
+          'query_keys': options.uri.queryParameters.keys.toList()..sort(),
         'trace_id': traceId,
         'request_id': requestId,
       },
@@ -1659,6 +1740,7 @@ class DioLogInterceptor extends Interceptor {
     final status = response.statusCode ?? 0;
     final traceId = _traceId(response.requestOptions);
     final requestId = _requestId(response.requestOptions);
+    final safeUri = sanitizeUriForLogging(response.realUri);
     final ok = status >= 200 && status < 400;
     final level = status >= 500
         ? LogLevel.error
@@ -1669,10 +1751,12 @@ class DioLogInterceptor extends Interceptor {
     logger.log(
       level,
       tag,
-      '${response.requestOptions.method} ${response.realUri}',
+      '${response.requestOptions.method} $safeUri',
       fields: {
         'net': 1,
         'type': 'response',
+        'method': response.requestOptions.method,
+        'uri': safeUri,
         if (traceId != null) 'trace_id': traceId,
         if (requestId != null) 'request_id': requestId,
         'ok': ok,
@@ -1689,6 +1773,7 @@ class DioLogInterceptor extends Interceptor {
     final status = err.response?.statusCode;
     final traceId = _traceId(err.requestOptions);
     final requestId = _requestId(err.requestOptions);
+    final safeUri = sanitizeUriForLogging(err.requestOptions.uri);
     final msgMax = maxBodyChars < 200 ? maxBodyChars : 200;
     final now = DateTime.now();
     final signature = _errorSignature(err);
@@ -1708,8 +1793,7 @@ class DioLogInterceptor extends Interceptor {
             'window_seconds': _dedupeWindow.inSeconds,
             'signature': suppression.signature,
             'method': err.requestOptions.method,
-            'uri':
-                '${err.requestOptions.uri.scheme}://${err.requestOptions.uri.host}${err.requestOptions.uri.path}',
+            'uri': safeUri,
             'dio_type': err.type.name,
             if (status != null) 'status': status,
             if (err.message != null)
@@ -1730,12 +1814,14 @@ class DioLogInterceptor extends Interceptor {
 
     logger.error(
       tag,
-      '${err.requestOptions.method} ${err.requestOptions.uri}',
+      '${err.requestOptions.method} $safeUri',
       error: err,
       stackTrace: err.stackTrace,
       fields: {
         'net': 1,
         'type': 'error',
+        'method': err.requestOptions.method,
+        'uri': safeUri,
         if (traceId != null) 'trace_id': traceId,
         if (requestId != null) 'request_id': requestId,
         'ok': false,
@@ -1761,11 +1847,8 @@ class DioLogInterceptor extends Interceptor {
     final method = err.requestOptions.method;
     final uri = err.requestOptions.uri;
     final status = err.response?.statusCode?.toString() ?? '-';
-    final host = uri.host;
-    final path = uri.path;
     final dioType = err.type.name;
-    final message = (err.message ?? '').trim();
-    return '$tag|$method|$host|$path|$status|$dioType|$message';
+    return '$tag|$method|${sanitizeUriForLogging(uri)}|$status|$dioType';
   }
 
   void _pruneSuppressedErrors(DateTime now) {
@@ -1791,7 +1874,7 @@ class DioLogInterceptor extends Interceptor {
     final sanitized = _sanitizeSecrets(value);
     final str = _safeJson(sanitized);
     if (str.length <= maxChars) return sanitized;
-    return '${str.substring(0, maxChars)}…(${str.length})';
+    return '${str.substring(0, maxChars)}...(length=${str.length})';
   }
 
   static Object? _sanitizeSecrets(Object? value) {
@@ -1823,16 +1906,13 @@ class DioLogInterceptor extends Interceptor {
   }
 
   static String _maskTokenLike(String s) {
-    if (s.length <= 10) return s;
-    final lower = s.toLowerCase();
-    if (lower.startsWith('bearer ')) return 'Bearer <redacted>';
-    if (lower.contains('eyj') && s.length > 40) return '<jwt:redacted>';
-    return s;
+    return _redactString(s);
   }
 }
 
 class _ExportSummary {
   int errors = 0;
+  int fatals = 0;
   int warnings = 0;
   int networkErrors = 0;
   int errorSummaries = 0;
@@ -1840,10 +1920,134 @@ class _ExportSummary {
   int scheduleUpdateFailures = 0;
   int? slowestRequestMs;
   String? slowestRequestLabel;
+  DateTime? latestErrorAt;
+  String? latestErrorLabel;
+  final Set<String> _sessions = {};
+  final Set<String> _traces = {};
+  final Map<String, _IssueAggregate> _issues = {};
+  final Map<int, int> _networkStatuses = {};
 
   void consume(String line) {
     if (line.isEmpty) return;
+    final parsed = _ParsedLogLine.tryParse(line);
+    if (parsed == null) {
+      _consumeLegacy(line);
+      return;
+    }
+
+    final fields = parsed.fields;
+    final level = parsed.level;
+    if (level == 'ERROR') errors += 1;
+    if (level == 'FATAL') fatals += 1;
+    if (level == 'WARN') warnings += 1;
+
+    final sessionId = fields['session_id']?.toString();
+    if (sessionId != null && sessionId.isNotEmpty) _sessions.add(sessionId);
+    final traceId = fields['trace_id']?.toString();
+    if (traceId != null && traceId.isNotEmpty) _traces.add(traceId);
+
+    final isNetwork = fields['net'] == 1 || fields['net'] == true;
+    final type = fields['type']?.toString();
+    if (isNetwork && type == 'error') {
+      networkErrors += 1;
+    }
+    if (isNetwork && type == 'error_summary') {
+      errorSummaries += 1;
+    }
+    final status = _asInt(fields['status']);
+    if (isNetwork && status != null) {
+      _networkStatuses.update(status, (count) => count + 1, ifAbsent: () => 1);
+    }
+
+    final event = fields['event']?.toString();
+    if (event == 'schedule_time_info_refresh_fail' ||
+        parsed.message.contains('schedule_time_info_refresh_fail')) {
+      timeInfoRefreshFailures += 1;
+    }
+    if (parsed.tag == 'ScheduleUpdate' && parsed.message == 'failure') {
+      scheduleUpdateFailures += 1;
+    }
+
+    final duration = _asInt(fields['duration_ms']);
+    if (duration != null &&
+        (slowestRequestMs == null || duration > slowestRequestMs!)) {
+      slowestRequestMs = duration;
+      slowestRequestLabel = _requestLabel(parsed);
+    }
+
+    if (level == 'ERROR' || level == 'FATAL') {
+      if (latestErrorAt == null ||
+          (parsed.at != null && parsed.at!.isAfter(latestErrorAt!))) {
+        latestErrorAt = parsed.at;
+        latestErrorLabel = '${parsed.tag}: ${parsed.message}';
+      }
+    }
+
+    if (level == 'WARN' || level == 'ERROR' || level == 'FATAL') {
+      final rawFingerprint = fields['fingerprint']?.toString();
+      final fingerprint = rawFingerprint == null || rawFingerprint.isEmpty
+          ? sha256
+                .convert(
+                  utf8.encode(
+                    '${parsed.tag}|${event ?? type ?? parsed.message}',
+                  ),
+                )
+                .toString()
+                .substring(0, 16)
+          : rawFingerprint;
+      final issue = _issues.putIfAbsent(
+        fingerprint,
+        () => _IssueAggregate(
+          fingerprint: fingerprint,
+          level: level,
+          tag: parsed.tag,
+          event: event ?? type,
+          message: _truncate(_redactString(parsed.message), 160),
+          firstAt: parsed.at,
+        ),
+      );
+      issue.count += 1;
+      issue.lastAt = parsed.at ?? issue.lastAt;
+    }
+  }
+
+  List<String> toLines() {
+    final issues = _issues.values.toList()
+      ..sort((a, b) {
+        final byCount = b.count.compareTo(a.count);
+        if (byCount != 0) return byCount;
+        return (b.lastAt?.millisecondsSinceEpoch ?? 0).compareTo(
+          a.lastAt?.millisecondsSinceEpoch ?? 0,
+        );
+      });
+    final lines = <String>[
+      'errors=$errors',
+      'fatals=$fatals',
+      'warnings=$warnings',
+      'network_errors=$networkErrors',
+      'network_error_summaries=$errorSummaries',
+      'sessions=${_sessions.length}',
+      'traces=${_traces.length}',
+      'time_info_refresh_failures=$timeInfoRefreshFailures',
+      'schedule_update_failures=$scheduleUpdateFailures',
+      'slowest_request_ms=${slowestRequestMs ?? 0}',
+      if (slowestRequestLabel != null && slowestRequestLabel!.isNotEmpty)
+        'slowest_request=${slowestRequestLabel!}',
+      if (latestErrorAt != null)
+        'latest_error_at=${latestErrorAt!.toIso8601String()}',
+      if (latestErrorLabel != null)
+        'latest_error=${_truncate(_redactString(latestErrorLabel!), 240)}',
+    ];
+    for (int i = 0; i < issues.length && i < 5; i++) {
+      lines.add('top_issue_${i + 1}=${_safeJson(issues[i].toJson())}');
+    }
+    lines.addAll(_diagnosisHints());
+    return lines;
+  }
+
+  void _consumeLegacy(String line) {
     if (line.contains('[ERROR]')) errors += 1;
+    if (line.contains('[FATAL]')) fatals += 1;
     if (line.contains('[WARN]')) warnings += 1;
     if (line.contains('"type":"error"') && line.contains('"net":1')) {
       networkErrors += 1;
@@ -1857,42 +2061,131 @@ class _ExportSummary {
     if (line.contains('[WARN] ScheduleUpdate - failure')) {
       scheduleUpdateFailures += 1;
     }
+  }
 
-    final duration = _extractDurationMs(line);
-    if (duration == null) return;
-    if (slowestRequestMs == null || duration > slowestRequestMs!) {
-      slowestRequestMs = duration;
-      slowestRequestLabel = _extractRequestLabel(line);
+  List<String> _diagnosisHints() {
+    final hints = <String>[];
+    final authenticationFailures =
+        (_networkStatuses[401] ?? 0) + (_networkStatuses[403] ?? 0);
+    final serverFailures = _networkStatuses.entries
+        .where((entry) => entry.key >= 500)
+        .fold<int>(0, (sum, entry) => sum + entry.value);
+    if (authenticationFailures > 0) {
+      hints.add('diagnosis_hint=authentication_or_session_expired');
     }
+    if (serverFailures > 0) {
+      hints.add('diagnosis_hint=remote_server_failure');
+    }
+    if (networkErrors > 0 && _networkStatuses.isEmpty) {
+      hints.add('diagnosis_hint=network_connectivity_or_timeout');
+    }
+    if (fatals > 0) {
+      hints.add('diagnosis_hint=application_crash');
+    }
+    return hints;
   }
 
-  List<String> toLines() {
-    return [
-      'errors=$errors',
-      'warnings=$warnings',
-      'network_errors=$networkErrors',
-      'network_error_summaries=$errorSummaries',
-      'time_info_refresh_failures=$timeInfoRefreshFailures',
-      'schedule_update_failures=$scheduleUpdateFailures',
-      'slowest_request_ms=${slowestRequestMs ?? 0}',
-      if (slowestRequestLabel != null && slowestRequestLabel!.isNotEmpty)
-        'slowest_request=${slowestRequestLabel!}',
-    ];
+  static int? _asInt(Object? value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '');
   }
 
-  int? _extractDurationMs(String line) {
-    final match = RegExp(r'"duration_ms":(\d+)').firstMatch(line);
-    if (match == null) return null;
-    return int.tryParse(match.group(1)!);
+  static String _requestLabel(_ParsedLogLine line) {
+    final method = line.fields['method']?.toString();
+    final uri = line.fields['uri']?.toString();
+    if (method != null && uri != null) return '${line.tag} $method $uri';
+    return '${line.tag} ${line.message}';
   }
+}
 
-  String? _extractRequestLabel(String line) {
+class _ParsedLogLine {
+  _ParsedLogLine({
+    required this.at,
+    required this.level,
+    required this.tag,
+    required this.message,
+    required this.fields,
+  });
+
+  final DateTime? at;
+  final String level;
+  final String tag;
+  final String message;
+  final Map<String, Object?> fields;
+
+  static _ParsedLogLine? tryParse(String line) {
     final match = RegExp(
-      r'\] ([^\-]+) - ([A-Z]+ https?://[^\s]+)',
+      r'^(\S+) \[(DEBUG|INFO|WARN|ERROR|FATAL)\] (\S+) - (.*)$',
     ).firstMatch(line);
     if (match == null) return null;
-    return '${match.group(1)!.trim()} ${match.group(2)!.trim()}';
+    var message = match.group(4)!;
+    var fields = <String, Object?>{};
+    var fieldsStart = message.lastIndexOf(' {');
+    while (fieldsStart >= 0) {
+      final candidate = message.substring(fieldsStart + 1);
+      try {
+        final decoded = jsonDecode(candidate);
+        if (decoded is Map) {
+          fields = decoded.map((key, value) => MapEntry(key.toString(), value));
+          message = message.substring(0, fieldsStart);
+          break;
+        }
+      } catch (_) {}
+      fieldsStart = fieldsStart <= 0
+          ? -1
+          : message.lastIndexOf(' {', fieldsStart - 1);
+    }
+    return _ParsedLogLine(
+      at: DateTime.tryParse(match.group(1)!),
+      level: match.group(2)!,
+      tag: match.group(3)!,
+      message: message,
+      fields: fields,
+    );
   }
+}
+
+class _IssueAggregate {
+  _IssueAggregate({
+    required this.fingerprint,
+    required this.level,
+    required this.tag,
+    required this.event,
+    required this.message,
+    required this.firstAt,
+  }) : lastAt = firstAt;
+
+  final String fingerprint;
+  final String level;
+  final String tag;
+  final String? event;
+  final String message;
+  final DateTime? firstAt;
+  DateTime? lastAt;
+  int count = 0;
+
+  Map<String, Object?> toJson() {
+    return {
+      'fingerprint': fingerprint,
+      'count': count,
+      'level': level,
+      'tag': tag,
+      if (event != null && event!.isNotEmpty) 'event': event,
+      'message': message,
+      if (firstAt != null) 'first_at': firstAt!.toIso8601String(),
+      if (lastAt != null) 'last_at': lastAt!.toIso8601String(),
+    };
+  }
+}
+
+String sanitizeUriForLogging(Uri uri) {
+  final sanitized = uri
+      .replace(userInfo: '', queryParameters: const <String, String>{})
+      .removeFragment()
+      .toString();
+  return sanitized.endsWith('?')
+      ? sanitized.substring(0, sanitized.length - 1)
+      : sanitized;
 }
 
 String _safeJson(Object? value) {
@@ -1905,14 +2198,64 @@ String _safeJson(Object? value) {
 
 String _truncate(String s, int maxChars) {
   if (s.length <= maxChars) return s;
-  return '${s.substring(0, maxChars)}…(${s.length})';
+  return '${s.substring(0, maxChars)}...(length=${s.length})';
 }
 
 String _redactString(String s) {
-  final lower = s.toLowerCase();
-  if (lower.startsWith('bearer ')) return 'Bearer <redacted>';
-  if (lower.contains('eyj') && s.length > 40) return '<jwt:redacted>';
-  return s;
+  var out = s.replaceAll(
+    RegExp(r'Bearer\s+[^\s,;]+', caseSensitive: false),
+    'Bearer <redacted>',
+  );
+  out = out.replaceAll(
+    RegExp(r'eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'),
+    '<jwt:redacted>',
+  );
+  out = out.replaceAllMapped(
+    RegExp(r'([?&][A-Za-z0-9_.~-]+)=([^&#\s]*)', caseSensitive: false),
+    (match) => '${match.group(1)}=<redacted>',
+  );
+  return out;
+}
+
+String _issueFingerprint({
+  required String tag,
+  required String message,
+  required Object? error,
+  required StackTrace? stackTrace,
+  required Map<String, Object?> fields,
+}) {
+  final event = fields['event'] ?? fields['type'] ?? '';
+  final reason = fields['reason'] ?? '';
+  final status = fields['status'] ?? '';
+  final errorType = error?.runtimeType.toString() ?? fields['error_type'] ?? '';
+  final normalizedMessage = message
+      .replaceAll(RegExp(r'[0-9a-f]{16,}', caseSensitive: false), '<id>')
+      .replaceAll(RegExp(r'\b\d{4,}\b'), '<number>');
+  final stackHead = _firstUsefulStackFrame(
+    stackTrace,
+  ).replaceAll(RegExp(r':\d+(?::\d+)?'), ':<line>');
+  final source = [
+    tag,
+    event,
+    reason,
+    status,
+    errorType,
+    normalizedMessage,
+    stackHead,
+  ].join('|');
+  return sha256.convert(utf8.encode(source)).toString().substring(0, 16);
+}
+
+String _firstUsefulStackFrame(StackTrace? stackTrace) {
+  if (stackTrace == null) return '';
+  final lines = stackTrace.toString().split('\n');
+  for (final line in lines) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+    if (trimmed.contains('dart:async') || trimmed.contains('dart:ui')) continue;
+    return trimmed;
+  }
+  return '';
 }
 
 Map<String, Object?> _sanitizeFields(Map<String, Object?> fields) {
@@ -1960,9 +2303,35 @@ Map<String, Object?> _truncateJsonObject(
 ) {
   final json = _safeJson(obj);
   if (json.length <= maxChars) return obj;
+  const diagnosticKeys = <String>{
+    'schema',
+    'session_id',
+    'event_id',
+    'sequence',
+    'trace_id',
+    'request_id',
+    'fingerprint',
+    'event',
+    'module',
+    'action',
+    'status',
+    'reason',
+    'error_type',
+    'net',
+    'type',
+    'method',
+    'uri',
+    'duration_ms',
+  };
+  final envelope = <String, Object?>{};
+  for (final key in diagnosticKeys) {
+    if (obj.containsKey(key)) envelope[key] = obj[key];
+  }
+  final previewChars = max(0, min(1000, maxChars - 500));
   return <String, Object?>{
-    'truncated': true,
-    'preview': _truncate(json, maxChars),
-    'len': json.length,
+    ...envelope,
+    'fields_truncated': true,
+    'fields_original_chars': json.length,
+    if (previewChars > 0) 'fields_preview': _truncate(json, previewChars),
   };
 }

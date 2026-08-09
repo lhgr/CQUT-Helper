@@ -2,6 +2,7 @@ import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/pages/Mine/mine_menu_section.dart';
 import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_courses_settings_page.dart';
+import 'package:cqut_helper/pages/Settings/schedule_layout_preview.dart';
 import 'package:cqut_helper/pages/Settings/settings_schedule_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,5 +56,50 @@ void main() {
     final manager = ScheduleSettingsManager();
     await manager.load();
     expect(manager.showWeekend, isTrue);
+  });
+
+  testWidgets('课表预览固定在顶部且无背景时隐藏背景调节项', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ScheduleCoursesSettingsPage(
+          scope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final preview = find.byType(ScheduleLayoutPreview);
+    expect(preview, findsOneWidget);
+    expect(
+      find.ancestor(of: preview, matching: find.byType(ListView)),
+      findsNothing,
+    );
+    expect(find.byType(ListView), findsOneWidget);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    expect(find.text('自定义背景图片'), findsOneWidget);
+    expect(find.text('背景图片不透明度'), findsNothing);
+    expect(find.text('背景模糊度'), findsNothing);
+  });
+
+  testWidgets('已选择背景时显示透明度和模糊度设置', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'account': 'test-user',
+      'schedule_background_image_path': 'test-background.jpg',
+    });
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ScheduleCoursesSettingsPage(
+          scope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    expect(find.text('背景图片不透明度'), findsOneWidget);
+    expect(find.text('背景模糊度'), findsOneWidget);
   });
 }

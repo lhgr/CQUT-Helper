@@ -13,6 +13,13 @@ class ScheduleCourseCard extends StatelessWidget {
   final bool showContent;
   final bool showConflictBadge;
   final bool enableTap;
+  final bool hideLocation;
+  final bool hideTeacher;
+  final bool removeCampusPrefix;
+  final bool horizontalCenter;
+  final bool verticalCenter;
+  final double borderRadius;
+  final double textScale;
 
   const ScheduleCourseCard({
     super.key,
@@ -27,6 +34,13 @@ class ScheduleCourseCard extends StatelessWidget {
     this.showContent = true,
     this.showConflictBadge = true,
     this.enableTap = true,
+    this.hideLocation = false,
+    this.hideTeacher = false,
+    this.removeCampusPrefix = false,
+    this.horizontalCenter = false,
+    this.verticalCenter = false,
+    this.borderRadius = 12,
+    this.textScale = 1,
   });
 
   @override
@@ -46,17 +60,22 @@ class ScheduleCourseCard extends StatelessWidget {
         final lineBudget = _lineBudgetForHeight(constraints.maxHeight);
 
         final titleText = (event.eventName ?? '').trim();
-        final addressText = (event.address ?? '').trim();
-        final teacherText = (event.memberName ?? '').trim();
+        final rawAddress = (event.address ?? '').trim();
+        final addressText = hideLocation
+            ? ''
+            : removeCampusPrefix
+            ? removeKnownCampusPrefix(rawAddress)
+            : rawAddress;
+        final teacherText = hideTeacher ? '' : (event.memberName ?? '').trim();
 
         final titleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          fontSize: tinyWidth ? 9 : 10,
+          fontSize: (tinyWidth ? 9 : 10) * textScale,
           fontWeight: FontWeight.bold,
           color: titleColor,
           height: 1.15,
         );
         final detailStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontSize: tinyWidth ? 8 : 9,
+          fontSize: (tinyWidth ? 8 : 9) * textScale,
           color: descriptionColor,
           height: 1.15,
         );
@@ -68,7 +87,7 @@ class ScheduleCourseCard extends StatelessWidget {
               ? BoxDecoration(
                   color: backgroundColor,
                   border: Border.all(color: borderColor, width: 1),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(borderRadius),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withAlpha(13),
@@ -85,17 +104,30 @@ class ScheduleCourseCard extends StatelessWidget {
                 Padding(
                   padding: EdgeInsets.only(right: showBadge ? 18 : 0),
                   child: SizedBox.expand(
-                    child: Text.rich(
-                      _buildContentSpan(
-                        title: titleText,
-                        address: addressText,
-                        teacher: teacherText,
-                        titleStyle: titleStyle,
-                        detailStyle: detailStyle,
+                    child: Align(
+                      alignment: verticalCenter
+                          ? (horizontalCenter
+                                ? Alignment.center
+                                : Alignment.centerLeft)
+                          : (horizontalCenter
+                                ? Alignment.topCenter
+                                : Alignment.topLeft),
+                      child: Text.rich(
+                        _buildContentSpan(
+                          title: titleText,
+                          address: addressText,
+                          teacher: teacherText,
+                          prefixAddressWithAt: !removeCampusPrefix,
+                          titleStyle: titleStyle,
+                          detailStyle: detailStyle,
+                        ),
+                        softWrap: true,
+                        textAlign: horizontalCenter
+                            ? TextAlign.center
+                            : TextAlign.start,
+                        maxLines: lineBudget,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      softWrap: true,
-                      maxLines: lineBudget,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
@@ -131,10 +163,18 @@ class ScheduleCourseCard extends StatelessWidget {
     return GestureDetector(onTap: onTap, child: card);
   }
 
+  @visibleForTesting
+  static String removeKnownCampusPrefix(String address) {
+    return address
+        .replaceFirst(RegExp(r'^(花溪校区|两江校区)\s*[-—·:：]?\s*'), '')
+        .trim();
+  }
+
   TextSpan _buildContentSpan({
     required String title,
     required String address,
     required String teacher,
+    required bool prefixAddressWithAt,
     required TextStyle? titleStyle,
     required TextStyle? detailStyle,
   }) {
@@ -143,7 +183,8 @@ class ScheduleCourseCard extends StatelessWidget {
     ];
 
     if (address.isNotEmpty) {
-      children.add(TextSpan(text: '\n@$address', style: detailStyle));
+      final prefix = prefixAddressWithAt ? '@' : '';
+      children.add(TextSpan(text: '\n$prefix$address', style: detailStyle));
     }
 
     if (teacher.isNotEmpty) {

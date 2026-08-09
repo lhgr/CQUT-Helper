@@ -70,4 +70,45 @@ void main() {
 
     expect(ScheduleSettingsManager.settingsEpoch.value, before + 1);
   });
+
+  test('课表布局设置会持久化并限制异常数值', () async {
+    SharedPreferences.setMockInitialValues({});
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+
+    await manager.saveLayoutSettings(
+      const ScheduleLayoutSettings(
+        gridCellWidth: 200,
+        gridCellHeight: 20,
+        showGridLines: false,
+        backgroundImagePath: '  /tmp/background.jpg  ',
+        backgroundOpacity: 2,
+        backgroundBlur: 99,
+        hideLocation: true,
+        hideTeacher: true,
+        removeCampusPrefix: true,
+        horizontalCenter: true,
+        verticalCenter: true,
+        cardRadius: 50,
+        textScale: 3,
+      ),
+    );
+
+    final reloaded = ScheduleSettingsManager();
+    await reloaded.load();
+    final layout = reloaded.layoutSettings;
+    expect(layout.gridCellWidth, ScheduleLayoutSettings.maxGridCellWidth);
+    expect(layout.gridCellHeight, ScheduleLayoutSettings.minGridCellHeight);
+    expect(layout.showGridLines, isFalse);
+    expect(layout.backgroundImagePath, '/tmp/background.jpg');
+    expect(layout.backgroundOpacity, 1);
+    expect(layout.backgroundBlur, 20);
+    expect(layout.hideLocation, isTrue);
+    expect(layout.hideTeacher, isTrue);
+    expect(layout.removeCampusPrefix, isTrue);
+    expect(layout.horizontalCenter, isTrue);
+    expect(layout.verticalCenter, isTrue);
+    expect(layout.cardRadius, 28);
+    expect(layout.textScale, 1.5);
+  });
 }

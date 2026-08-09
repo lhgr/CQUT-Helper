@@ -1,3 +1,8 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui';
+
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_grid.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_header.dart';
@@ -14,7 +19,7 @@ class SchedulePageView extends StatelessWidget {
   final Function(String) onBoundaryMessage;
   final int currentWeekIndex;
   final List<CampusTimeInfo>? timeInfoList;
-  final double sessionHeight;
+  final ScheduleLayoutSettings layoutSettings;
   final Future<void> Function(EventItem event) onEditCourse;
   final Future<void> Function(EventItem event) onDeleteCourse;
 
@@ -32,7 +37,7 @@ class SchedulePageView extends StatelessWidget {
     required this.onBoundaryMessage,
     required this.currentWeekIndex,
     this.timeInfoList,
-    this.sessionHeight = 60.0,
+    this.layoutSettings = const ScheduleLayoutSettings(),
     required this.onEditCourse,
     required this.onDeleteCourse,
   });
@@ -47,6 +52,7 @@ class SchedulePageView extends StatelessWidget {
 
     return NotificationListener<OverscrollNotification>(
       onNotification: (notification) {
+        if (notification.depth != 0) return false;
         if (notification.overscroll < 0) {
           if (currentWeekIndex == 0) {
             onBoundaryMessage("已经是第一周了");
@@ -71,46 +77,118 @@ class SchedulePageView extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          return Column(
-            children: [
-              ScheduleHeader(
-                scheduleData: data,
-                height: _headerHeight,
-                timeColumnWidth: _timeColumnWidth,
-                showWeekend: showWeekend,
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ScheduleTimeColumn(
-                        width: _timeColumnWidth,
-                        sessionHeight: sessionHeight,
-                        timeInfoList: timeInfoList,
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final dayCount = showWeekend ? 7 : 5;
+              final gridWidth = math.max(
+                layoutSettings.gridCellWidth * dayCount,
+                constraints.maxWidth - _timeColumnWidth,
+              );
+              final contentWidth = _timeColumnWidth + gridWidth;
+
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  _ScheduleBackground(settings: layoutSettings),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: contentWidth,
+                      child: Column(
+                        children: [
+                          ScheduleHeader(
+                            scheduleData: data,
+                            height: _headerHeight,
+                            timeColumnWidth: _timeColumnWidth,
+                            showWeekend: showWeekend,
+                            showGridLines: layoutSettings.showGridLines,
+                          ),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  ScheduleTimeColumn(
+                                    width: _timeColumnWidth,
+                                    sessionHeight:
+                                        layoutSettings.gridCellHeight,
+                                    timeInfoList: timeInfoList,
+                                    showGridLines: layoutSettings.showGridLines,
+                                  ),
+                                  SizedBox(
+                                    width: gridWidth,
+                                    child: ScheduleCourseGrid(
+                                      events: data.eventList ?? [],
+                                      yearTerm: data.yearTerm ?? '',
+                                      sessionHeight:
+                                          layoutSettings.gridCellHeight,
+                                      showWeekend: showWeekend,
+                                      showGridLines:
+                                          layoutSettings.showGridLines,
+                                      hideLocation: layoutSettings.hideLocation,
+                                      hideTeacher: layoutSettings.hideTeacher,
+                                      removeCampusPrefix:
+                                          layoutSettings.removeCampusPrefix,
+                                      horizontalCenter:
+                                          layoutSettings.horizontalCenter,
+                                      verticalCenter:
+                                          layoutSettings.verticalCenter,
+                                      cardRadius: layoutSettings.cardRadius,
+                                      textScale: layoutSettings.textScale,
+                                      backgroundColors: cardTheme.backgrounds,
+                                      borderColors: cardTheme.borders,
+                                      titleColors: cardTheme.titleColors,
+                                      descriptionColors:
+                                          cardTheme.descriptionColors,
+                                      buttonColors: cardTheme.buttonColors,
+                                      onEditCourse: onEditCourse,
+                                      onDeleteCourse: onDeleteCourse,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      Expanded(
-                        child: ScheduleCourseGrid(
-                          events: data.eventList ?? [],
-                          yearTerm: data.yearTerm ?? '',
-                          sessionHeight: sessionHeight,
-                          showWeekend: showWeekend,
-                          backgroundColors: cardTheme.backgrounds,
-                          borderColors: cardTheme.borders,
-                          titleColors: cardTheme.titleColors,
-                          descriptionColors: cardTheme.descriptionColors,
-                          buttonColors: cardTheme.buttonColors,
-                          onEditCourse: onEditCourse,
-                          onDeleteCourse: onDeleteCourse,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           );
         },
+      ),
+    );
+  }
+}
+
+class _ScheduleBackground extends StatelessWidget {
+  final ScheduleLayoutSettings settings;
+
+  const _ScheduleBackground({required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    final path = settings.backgroundImagePath?.trim();
+    if (path == null || path.isEmpty || !File(path).existsSync()) {
+      return ColoredBox(color: Theme.of(context).colorScheme.surface);
+    }
+    return ClipRect(
+      child: ImageFiltered(
+        imageFilter: ImageFilter.blur(
+          sigmaX: settings.backgroundBlur,
+          sigmaY: settings.backgroundBlur,
+        ),
+        child: Opacity(
+          opacity: settings.backgroundOpacity,
+          child: Image.file(
+            File(path),
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                ColoredBox(color: Theme.of(context).colorScheme.surface),
+          ),
+        ),
       ),
     );
   }
