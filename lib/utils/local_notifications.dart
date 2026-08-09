@@ -102,6 +102,17 @@ class LocalNotifications {
     return ok ?? false;
   }
 
+  static Future<bool> areNotificationsEnabled() async {
+    if (!Platform.isAndroid) return false;
+    await initialize();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android == null) return false;
+    return await android.areNotificationsEnabled() ?? false;
+  }
+
   static Future<bool> canScheduleExactNotifications() async {
     if (!Platform.isAndroid) return false;
     await initialize();

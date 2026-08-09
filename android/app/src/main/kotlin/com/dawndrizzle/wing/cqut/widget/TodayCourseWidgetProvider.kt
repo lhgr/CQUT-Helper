@@ -26,7 +26,13 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     super.onReceive(context, intent)
     when (intent.action) {
       ACTION_REFRESH -> WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
-      ACTION_MANUAL_REFRESH -> ScheduleWidgetRefreshWork.enqueue(context)
+      ACTION_MANUAL_REFRESH -> {
+        val appWidgetId =
+          intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+          ScheduleWidgetRefreshWork.enqueue(context, appWidgetId)
+        }
+      }
       Intent.ACTION_CONFIGURATION_CHANGED ->
         WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
       ACTION_UI_MODE_CHANGED ->
@@ -99,6 +105,65 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       updateAppWidget(context, appWidgetManager, appWidgetId, theme)
     }
 
+    fun updateRefreshPresentation(
+      context: Context,
+      appWidgetIds: IntArray? = null,
+      refreshData: Boolean = false,
+    ) {
+      val appWidgetManager = AppWidgetManager.getInstance(context)
+      val ids =
+        appWidgetIds
+          ?: appWidgetManager.getAppWidgetIds(
+            ComponentName(context, TodayCourseWidgetProvider::class.java),
+          )
+      for (appWidgetId in ids) {
+        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) continue
+        val views = RemoteViews(context.packageName, R.layout.widget_today_course)
+        val dayOffset = getDayOffset(context, appWidgetId)
+        if (refreshData) {
+          val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
+          val weekCount = TodayWidgetData.loadWeekCountText(context)
+          views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
+          views.setTextViewText(R.id.tv_date, header.dateText)
+          views.setTextViewText(
+            R.id.tv_week_count,
+            if (weekCount.isNotBlank()) " | $weekCount    " else " | ",
+          )
+          views.setTextViewText(R.id.tv_week, header.weekText)
+          views.setTextViewText(
+            R.id.empty_text,
+            TodayWidgetData.loadEmptyStateText(context, dayOffset),
+          )
+        }
+        val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context)
+        bindRefreshPresentation(
+          context,
+          views,
+          appWidgetId,
+          dayOffset,
+          refreshPresentation,
+        )
+        appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
+        if (
+          refreshData &&
+            refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL
+        ) {
+          appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+        }
+      }
+    }
+
+    fun completeManualRefresh(context: Context) {
+      val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context)
+      if (refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL) {
+        val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+        TodayListWidgetProvider.updateAll(context, theme)
+        TodayAndNextWidgetProvider.updateAll(context, theme)
+      }
+      updateRefreshPresentation(context, refreshData = true)
+      WidgetAutoRefreshScheduler.schedule(context)
+    }
+
     private fun updateAppWidget(
       context: Context,
       appWidgetManager: AppWidgetManager,
@@ -167,40 +232,18 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           toggleIntent,
           PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-      val manualRefreshIntent =
-        Intent(context, TodayCourseWidgetProvider::class.java).apply {
-          action = ACTION_MANUAL_REFRESH
-          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#refresh-$appWidgetId")
-        }
-      val manualRefreshPendingIntent =
-        PendingIntent.getBroadcast(
-          context,
-          appWidgetId + 10000,
-          manualRefreshIntent,
-          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-      val isNormal =
-        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL
-      val isLoading =
-        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.LOADING
+      bindRefreshPresentation(
+        context,
+        views,
+        appWidgetId,
+        dayOffset,
+        refreshPresentation,
+        togglePendingIntent,
+      )
+
       val isCredentialInvalid =
         refreshPresentation.state ==
           TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID
-      views.setImageViewResource(
-        R.id.iv_next,
-        if (isNormal) R.drawable.ic_back else android.R.drawable.ic_popup_sync,
-      )
-      views.setFloat(R.id.iv_next, "setRotation", if (isNormal && dayOffset == 0) 180f else 0f)
-      views.setBoolean(R.id.iv_next, "setEnabled", !isLoading)
-      when {
-        refreshPresentation.usesRefreshAction ->
-          views.setOnClickPendingIntent(R.id.iv_next, manualRefreshPendingIntent)
-        isLoading ->
-          views.setOnClickPendingIntent(R.id.iv_next, manualRefreshPendingIntent)
-        !isCredentialInvalid ->
-          views.setOnClickPendingIntent(R.id.iv_next, togglePendingIntent)
-      }
 
       val rootPendingIntent =
         WidgetNavigationPendingIntent.create(
@@ -231,6 +274,71 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
 
       appWidgetManager.updateAppWidget(appWidgetId, views)
       appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+    }
+
+    private fun bindRefreshPresentation(
+      context: Context,
+      views: RemoteViews,
+      appWidgetId: Int,
+      dayOffset: Int,
+      refreshPresentation: TodayWidgetData.RefreshPresentation,
+      existingTogglePendingIntent: PendingIntent? = null,
+    ) {
+      views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
+      views.setViewVisibility(
+        R.id.tv_sync_status,
+        if (refreshPresentation.text.isBlank()) android.view.View.GONE else android.view.View.VISIBLE,
+      )
+      val isNormal =
+        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL
+      val isLoading =
+        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.LOADING
+      val isCredentialInvalid =
+        refreshPresentation.state ==
+          TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID
+      views.setImageViewResource(
+        R.id.iv_next,
+        if (isNormal) R.drawable.ic_back else android.R.drawable.ic_popup_sync,
+      )
+      views.setFloat(R.id.iv_next, "setRotation", if (isNormal && dayOffset == 0) 180f else 0f)
+      views.setBoolean(R.id.iv_next, "setEnabled", !isLoading)
+
+      val manualRefreshIntent =
+        Intent(context, TodayCourseWidgetProvider::class.java).apply {
+          action = ACTION_MANUAL_REFRESH
+          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#refresh-$appWidgetId")
+        }
+      val manualRefreshPendingIntent =
+        PendingIntent.getBroadcast(
+          context,
+          appWidgetId + 10000,
+          manualRefreshIntent,
+          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+      val togglePendingIntent =
+        existingTogglePendingIntent
+          ?: PendingIntent.getBroadcast(
+            context,
+            appWidgetId,
+            Intent(context, TodayCourseWidgetProvider::class.java).apply {
+              action = ACTION_TOGGLE_DAY
+              putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+              data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#toggle-$appWidgetId")
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+          )
+      when {
+        refreshPresentation.usesRefreshAction || isLoading ->
+          views.setOnClickPendingIntent(R.id.iv_next, manualRefreshPendingIntent)
+        !isCredentialInvalid ->
+          views.setOnClickPendingIntent(R.id.iv_next, togglePendingIntent)
+      }
+      if (isCredentialInvalid) {
+        WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)?.let {
+          views.setOnClickPendingIntent(R.id.iv_next, it)
+        }
+      }
     }
 
     private fun getDayOffset(context: Context, appWidgetId: Int): Int {

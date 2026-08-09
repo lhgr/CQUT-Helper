@@ -18,11 +18,11 @@ object ScheduleWidgetRefreshWork {
   private const val STATE_KEY_PREFIX = "${FLUTTER_PREFIX}schedule_widget_refresh_state_"
   private const val FAILURE_KEY_PREFIX = "${FLUTTER_PREFIX}schedule_widget_refresh_failure_"
 
-  fun enqueue(context: Context) {
+  fun enqueue(context: Context, appWidgetId: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
     if (account.isEmpty()) {
-      WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
+      TodayCourseWidgetProvider.updateRefreshPresentation(context, intArrayOf(appWidgetId))
       return
     }
 
@@ -31,7 +31,7 @@ object ScheduleWidgetRefreshWork {
       .putString("$STATE_KEY_PREFIX$account", "loading")
       .remove("$FAILURE_KEY_PREFIX$account")
       .commit()
-    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
+    TodayCourseWidgetProvider.updateRefreshPresentation(context, intArrayOf(appWidgetId))
 
     val payload =
       JSONObject()
@@ -68,10 +68,7 @@ class ScheduleWidgetRefreshCompletionWorker(
   workerParams: WorkerParameters,
 ) : Worker(appContext, workerParams) {
   override fun doWork(): Result {
-    WidgetThemeSyncDispatcher.dispatch(
-      applicationContext,
-      WidgetThemeTrigger.DATA_REFRESH,
-    )
+    TodayCourseWidgetProvider.completeManualRefresh(applicationContext)
     return Result.success()
   }
 }

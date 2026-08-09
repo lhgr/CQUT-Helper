@@ -7,6 +7,7 @@ import 'package:cqut_helper/model/schedule_notice.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 
 class ScheduleApi {
@@ -135,7 +136,7 @@ class ScheduleApi {
           (widgetWeek == saveWeek && widgetTerm == saveTerm);
       if (updatesCurrentDisplay) {
         await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
-        await CourseReminderScheduler.rescheduleForUser(userId);
+        await _rescheduleCourseRemindersSafely(userId);
       }
     }
 
@@ -356,7 +357,23 @@ class ScheduleApi {
     final widgetTerm = prefs.getString(_widgetTermKey(userId))?.trim();
     if (widgetWeek == _norm(weekNum) && widgetTerm == _norm(yearTerm)) {
       await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+      await _rescheduleCourseRemindersSafely(userId);
+    }
+  }
+
+  Future<void> _rescheduleCourseRemindersSafely(String userId) async {
+    try {
       await CourseReminderScheduler.rescheduleForUser(userId);
+    } catch (error, stackTrace) {
+      // The schedule has already been fetched and persisted. A notification
+      // permission/plugin failure must not turn that successful refresh into a
+      // misleading widget refresh failure.
+      AppLogger.I.warn(
+        'ScheduleApi',
+        'course reminder reschedule failed after schedule refresh',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 }

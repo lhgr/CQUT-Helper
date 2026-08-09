@@ -16,7 +16,11 @@ class CourseReminderScheduler {
     final enabled =
         prefs.getBool(ScheduleSettingsManager.remindersEnabledKey) ?? false;
     if (!enabled || userId.trim().isEmpty) return;
-    final granted = await LocalNotifications.ensurePermission();
+    // Rescheduling can run in a headless WorkManager isolate, where there is no
+    // Activity from which Android can display a permission dialog. Permission
+    // requests belong to the settings UI; background work only checks the
+    // permission that has already been granted.
+    final granted = await LocalNotifications.areNotificationsEnabled();
     if (!granted) return;
     if (!await LocalNotifications.canScheduleExactNotifications()) return;
 
