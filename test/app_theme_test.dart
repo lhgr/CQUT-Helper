@@ -62,6 +62,35 @@ void main() {
     expect(theme.dialogTheme.shape, isA<RoundedRectangleBorder>());
     expect(theme.extension<ScheduleCourseCardTheme>(), isNotNull);
   });
+
+  test('动态取色仅增强中性表面层级并保留系统强调色', () {
+    final original = ColorScheme.fromSeed(seedColor: Colors.teal);
+    final flat = original.copyWith(
+      surfaceContainerLow: original.surface,
+      surfaceContainer: original.surface,
+      surfaceContainerHigh: original.surface,
+      surfaceContainerHighest: original.surface,
+    );
+    final normal = AppTheme.light(flat);
+    final strengthened = AppTheme.light(flat, strengthenSurfaceContrast: true);
+
+    expect(strengthened.colorScheme.primary, flat.primary);
+    expect(strengthened.colorScheme.secondary, flat.secondary);
+    expect(strengthened.colorScheme.surface, flat.surface);
+    expect(
+      _contrastRatio(
+        strengthened.scaffoldBackgroundColor,
+        strengthened.cardTheme.color!,
+      ),
+      greaterThan(
+        _contrastRatio(normal.scaffoldBackgroundColor, normal.cardTheme.color!),
+      ),
+    );
+    expect(
+      strengthened.inputDecorationTheme.fillColor!.a,
+      greaterThan(normal.inputDecorationTheme.fillColor!.a),
+    );
+  });
 }
 
 double _contrastRatio(Color a, Color b) {

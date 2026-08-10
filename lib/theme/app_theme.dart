@@ -9,20 +9,36 @@ abstract final class AppTheme {
   static const double cardRadius = 20;
   static const double controlRadius = 16;
 
-  static ThemeData light(ColorScheme colorScheme) {
+  static ThemeData light(
+    ColorScheme colorScheme, {
+    bool strengthenSurfaceContrast = false,
+  }) {
     return _build(
-      colorScheme,
+      strengthenSurfaceContrast
+          ? _withStrongerSurfaceContrast(colorScheme)
+          : colorScheme,
       courseCardTheme: ScheduleCourseCardTheme.light(),
+      strengthenedSurfaceContrast: strengthenSurfaceContrast,
     );
   }
 
-  static ThemeData dark(ColorScheme colorScheme) {
-    return _build(colorScheme, courseCardTheme: ScheduleCourseCardTheme.dark());
+  static ThemeData dark(
+    ColorScheme colorScheme, {
+    bool strengthenSurfaceContrast = false,
+  }) {
+    return _build(
+      strengthenSurfaceContrast
+          ? _withStrongerSurfaceContrast(colorScheme)
+          : colorScheme,
+      courseCardTheme: ScheduleCourseCardTheme.dark(),
+      strengthenedSurfaceContrast: strengthenSurfaceContrast,
+    );
   }
 
   static ThemeData _build(
     ColorScheme colorScheme, {
     required ScheduleCourseCardTheme courseCardTheme,
+    required bool strengthenedSurfaceContrast,
   }) {
     final isDark = colorScheme.brightness == Brightness.dark;
     final base = ThemeData(
@@ -31,7 +47,7 @@ abstract final class AppTheme {
       colorScheme: colorScheme,
     );
     final subtleBorder = colorScheme.outlineVariant.withAlpha(
-      isDark ? 112 : 150,
+      strengthenedSurfaceContrast ? (isDark ? 150 : 180) : (isDark ? 112 : 150),
     );
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(cardRadius),
@@ -86,7 +102,9 @@ abstract final class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: colorScheme.surfaceContainerHighest.withAlpha(
-          isDark ? 130 : 170,
+          strengthenedSurfaceContrast
+              ? (isDark ? 225 : 235)
+              : (isDark ? 130 : 170),
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 18,
@@ -265,6 +283,21 @@ abstract final class AppTheme {
       bodyLarge: base.bodyLarge?.copyWith(height: 1.45),
       bodyMedium: base.bodyMedium?.copyWith(height: 1.4),
       bodySmall: base.bodySmall?.copyWith(height: 1.35),
+    );
+  }
+
+  static ColorScheme _withStrongerSurfaceContrast(ColorScheme colorScheme) {
+    Color deepen(Color color, double amount) =>
+        Color.lerp(color, colorScheme.onSurface, amount)!;
+
+    return colorScheme.copyWith(
+      surfaceContainerLow: deepen(colorScheme.surfaceContainerLow, 0.035),
+      surfaceContainer: deepen(colorScheme.surfaceContainer, 0.05),
+      surfaceContainerHigh: deepen(colorScheme.surfaceContainerHigh, 0.065),
+      surfaceContainerHighest: deepen(
+        colorScheme.surfaceContainerHighest,
+        0.09,
+      ),
     );
   }
 

@@ -19,6 +19,10 @@ class MyApp extends StatelessWidget {
         return DynamicColorBuilder(
           builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
             final themeManager = ThemeManager();
+            final usesLightDynamicColor =
+                themeManager.isSystemColor && lightDynamic != null;
+            final usesDarkDynamicColor =
+                themeManager.isSystemColor && darkDynamic != null;
             ColorScheme lightScheme;
             if (themeManager.isSystemColor && lightDynamic != null) {
               lightScheme = lightDynamic.harmonized();
@@ -56,8 +60,14 @@ class MyApp extends StatelessWidget {
                 GlobalWidgetsLocalizations.delegate,
                 GlobalCupertinoLocalizations.delegate,
               ],
-              theme: AppTheme.light(lightScheme),
-              darkTheme: AppTheme.dark(darkScheme),
+              theme: AppTheme.light(
+                lightScheme,
+                strengthenSurfaceContrast: usesLightDynamicColor,
+              ),
+              darkTheme: AppTheme.dark(
+                darkScheme,
+                strengthenSurfaceContrast: usesDarkDynamicColor,
+              ),
               themeMode: ThemeManager().themeMode,
             );
           },
