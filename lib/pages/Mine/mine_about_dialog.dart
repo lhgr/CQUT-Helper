@@ -74,7 +74,7 @@ Future<void> showMineAboutDialog(BuildContext context) async {
 
   showAboutDialog(
     context: context,
-    applicationName: "CQUT 助手",
+    applicationName: "CQUT Helper",
     applicationVersion: version,
     applicationIcon: ClipRRect(
       borderRadius: BorderRadius.circular(14),

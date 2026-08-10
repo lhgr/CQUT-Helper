@@ -20,6 +20,7 @@ class ScheduleCourseCard extends StatelessWidget {
   final bool verticalCenter;
   final double borderRadius;
   final double textScale;
+  final double cardOpacity;
 
   const ScheduleCourseCard({
     super.key,
@@ -41,6 +42,7 @@ class ScheduleCourseCard extends StatelessWidget {
     this.verticalCenter = false,
     this.borderRadius = 12,
     this.textScale = 1,
+    this.cardOpacity = 1,
   });
 
   @override
@@ -85,7 +87,12 @@ class ScheduleCourseCard extends StatelessWidget {
           padding: edgeInsets,
           decoration: showDecoration
               ? BoxDecoration(
-                  color: backgroundColor,
+                  color: backgroundColor.withAlpha(
+                    (backgroundColor.a * 255 * cardOpacity).round().clamp(
+                      0,
+                      255,
+                    ),
+                  ),
                   border: Border.all(color: borderColor, width: 1),
                   borderRadius: BorderRadius.circular(borderRadius),
                   boxShadow: [

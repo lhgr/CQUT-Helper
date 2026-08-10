@@ -37,6 +37,7 @@ void main() {
               verticalCenter: true,
               borderRadius: 20,
               textScale: 1.2,
+              cardOpacity: 0.5,
             ),
           ),
         ),
@@ -53,5 +54,12 @@ void main() {
         .widgetList<Align>(find.byType(Align))
         .any((widget) => widget.alignment == Alignment.center);
     expect(centered, isTrue);
+
+    final decoration = tester
+        .widgetList<Container>(find.byType(Container))
+        .map((widget) => widget.decoration)
+        .whereType<BoxDecoration>()
+        .firstWhere((value) => value.border != null);
+    expect(decoration.color!.a, closeTo(0.5, 0.01));
   });
 }

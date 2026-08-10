@@ -30,8 +30,7 @@ class ScheduleSettingsManager {
   static const String _gridCellWidthKey = 'schedule_grid_cell_width';
   static const String _gridCellHeightKey = 'schedule_grid_cell_height';
   static const String _showGridLinesKey = 'schedule_show_grid_lines';
-  static const String _backgroundImagePathKey =
-      'schedule_background_image_path';
+  static const String backgroundImagePathKey = 'schedule_background_image_path';
   static const String _backgroundOpacityKey = 'schedule_background_opacity';
   static const String _backgroundBlurKey = 'schedule_background_blur';
   static const String _hideLocationKey = 'schedule_card_hide_location';
@@ -42,6 +41,7 @@ class ScheduleSettingsManager {
   static const String _verticalCenterKey = 'schedule_card_vertical_center';
   static const String _cardRadiusKey = 'schedule_card_radius';
   static const String _cardTextScaleKey = 'schedule_card_text_scale';
+  static const String _cardOpacityKey = 'schedule_card_opacity';
   static const String officialNoticeApiBaseUrl =
       'https://notice.dawndrizzle.top';
 
@@ -154,7 +154,7 @@ class ScheduleSettingsManager {
               )
               .toDouble(),
       showGridLines: prefs.getBool(_showGridLinesKey) ?? true,
-      backgroundImagePath: prefs.getString(_backgroundImagePathKey),
+      backgroundImagePath: prefs.getString(backgroundImagePathKey),
       backgroundOpacity: (prefs.getDouble(_backgroundOpacityKey) ?? 0.32)
           .clamp(0.0, 1.0)
           .toDouble(),
@@ -171,6 +171,9 @@ class ScheduleSettingsManager {
           .toDouble(),
       textScale: (prefs.getDouble(_cardTextScaleKey) ?? 1)
           .clamp(0.7, 1.5)
+          .toDouble(),
+      cardOpacity: (prefs.getDouble(_cardOpacityKey) ?? 1)
+          .clamp(0.1, 1.0)
           .toDouble(),
     );
     defaultHomeTab = (prefs.getInt(defaultHomeTabKey) ?? 1).clamp(0, 2);
@@ -204,9 +207,9 @@ class ScheduleSettingsManager {
     await prefs.setBool(_showGridLinesKey, normalized.showGridLines);
     final backgroundPath = normalized.backgroundImagePath?.trim();
     if (backgroundPath == null || backgroundPath.isEmpty) {
-      await prefs.remove(_backgroundImagePathKey);
+      await prefs.remove(backgroundImagePathKey);
     } else {
-      await prefs.setString(_backgroundImagePathKey, backgroundPath);
+      await prefs.setString(backgroundImagePathKey, backgroundPath);
     }
     await prefs.setDouble(_backgroundOpacityKey, normalized.backgroundOpacity);
     await prefs.setDouble(_backgroundBlurKey, normalized.backgroundBlur);
@@ -217,6 +220,7 @@ class ScheduleSettingsManager {
     await prefs.setBool(_verticalCenterKey, normalized.verticalCenter);
     await prefs.setDouble(_cardRadiusKey, normalized.cardRadius);
     await prefs.setDouble(_cardTextScaleKey, normalized.textScale);
+    await prefs.setDouble(_cardOpacityKey, normalized.cardOpacity);
     settingsEpoch.value++;
   }
 
@@ -262,6 +266,7 @@ class ScheduleLayoutSettings {
   final bool verticalCenter;
   final double cardRadius;
   final double textScale;
+  final double cardOpacity;
 
   const ScheduleLayoutSettings({
     this.gridCellWidth = 52,
@@ -277,6 +282,7 @@ class ScheduleLayoutSettings {
     this.verticalCenter = false,
     this.cardRadius = 12,
     this.textScale = 1,
+    this.cardOpacity = 1,
   });
 
   ScheduleLayoutSettings copyWith({
@@ -294,6 +300,7 @@ class ScheduleLayoutSettings {
     bool? verticalCenter,
     double? cardRadius,
     double? textScale,
+    double? cardOpacity,
   }) {
     return ScheduleLayoutSettings(
       gridCellWidth: gridCellWidth ?? this.gridCellWidth,
@@ -311,6 +318,7 @@ class ScheduleLayoutSettings {
       verticalCenter: verticalCenter ?? this.verticalCenter,
       cardRadius: cardRadius ?? this.cardRadius,
       textScale: textScale ?? this.textScale,
+      cardOpacity: cardOpacity ?? this.cardOpacity,
     );
   }
 
@@ -325,6 +333,7 @@ class ScheduleLayoutSettings {
     backgroundBlur: backgroundBlur.clamp(0.0, 20.0).toDouble(),
     cardRadius: cardRadius.clamp(0.0, 28.0).toDouble(),
     textScale: textScale.clamp(0.7, 1.5).toDouble(),
+    cardOpacity: cardOpacity.clamp(0.1, 1.0).toDouble(),
     backgroundImagePath: backgroundImagePath?.trim(),
   );
 }

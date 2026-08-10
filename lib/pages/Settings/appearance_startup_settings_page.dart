@@ -57,6 +57,18 @@ class _AppearanceStartupSettingsPageState
     );
   }
 
+  Future<void> _unlockWingColor() async {
+    final themeManager = ThemeManager();
+    final newlyUnlocked = await themeManager.unlockWingColor();
+    await themeManager.setCustomColor(ThemeManager.wingColor);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(newlyUnlocked ? 'Wing 已解锁 · #FF98A1' : 'Wing 已经解锁并应用'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -71,6 +83,10 @@ class _AppearanceStartupSettingsPageState
         listenable: ThemeManager(),
         builder: (context, _) {
           final themeManager = ThemeManager();
+          final availableColors = [
+            ..._colors,
+            if (themeManager.wingColorUnlocked) ThemeManager.wingColor,
+          ];
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
@@ -103,59 +119,95 @@ class _AppearanceStartupSettingsPageState
               const SizedBox(height: 8),
               Card(
                 elevation: 0,
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      title: const Text('跟随系统主题色'),
-                      subtitle: const Text('使用设备的动态配色'),
-                      value: themeManager.isSystemColor,
-                      onChanged: themeManager.setSystemColor,
-                    ),
-                    if (!themeManager.isSystemColor) ...[
-                      const Divider(height: 1),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: _colors.map((color) {
-                            final selected = themeManager.customColor == color;
-                            return Semantics(
-                              button: true,
-                              selected: selected,
-                              label: '选择主题颜色',
-                              child: InkWell(
-                                onTap: () => themeManager.setCustomColor(color),
-                                customBorder: const CircleBorder(),
-                                child: Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                    border: selected
-                                        ? Border.all(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurface,
-                                            width: 3,
-                                          )
-                                        : null,
-                                  ),
-                                  child: selected
-                                      ? const Icon(
-                                          Icons.check,
-                                          color: Colors.white,
-                                        )
-                                      : null,
-                                ),
-                              ),
-                            );
-                          }).toList(),
+                child: RadioGroup<ThemeColorSource>(
+                  groupValue: themeManager.colorSource,
+                  onChanged: (source) {
+                    if (source != null) themeManager.setColorSource(source);
+                  },
+                  child: Column(
+                    children: [
+                      const RadioListTile(
+                        title: Text('系统自动取色'),
+                        subtitle: Text('使用设备壁纸生成的动态配色'),
+                        value: ThemeColorSource.system,
+                        secondary: Icon(Icons.auto_awesome_outlined),
+                      ),
+                      RadioListTile(
+                        title: const Text('课表背景取色'),
+                        subtitle: Text(
+                          themeManager.canUseScheduleBackgroundColor
+                              ? '使用已从课表背景图片提取的颜色'
+                              : '请先在课表设置中选择背景图片并完成取色',
+                        ),
+                        value: ThemeColorSource.scheduleBackground,
+                        enabled: themeManager.canUseScheduleBackgroundColor,
+                        secondary: _ColorDot(
+                          color: themeManager.scheduleBackgroundColor,
                         ),
                       ),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onLongPress: _unlockWingColor,
+                        child: RadioListTile(
+                          title: const Text('手动选择颜色'),
+                          subtitle: const Text('使用下方选择的固定主题颜色'),
+                          value: ThemeColorSource.custom,
+                          secondary: _ColorDot(color: themeManager.customColor),
+                        ),
+                      ),
+                      if (themeManager.colorSource ==
+                          ThemeColorSource.custom) ...[
+                        const Divider(height: 1),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: availableColors.map((color) {
+                              final selected =
+                                  themeManager.customColor == color;
+                              final isWing = color == ThemeManager.wingColor;
+                              return Tooltip(
+                                message: isWing ? 'Wing · #FF98A1' : '选择主题颜色',
+                                child: Semantics(
+                                  button: true,
+                                  selected: selected,
+                                  label: isWing ? 'Wing 主题颜色' : '选择主题颜色',
+                                  child: InkWell(
+                                    onTap: () =>
+                                        themeManager.setCustomColor(color),
+                                    customBorder: const CircleBorder(),
+                                    child: Container(
+                                      width: 42,
+                                      height: 42,
+                                      decoration: BoxDecoration(
+                                        color: color,
+                                        shape: BoxShape.circle,
+                                        border: selected
+                                            ? Border.all(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurface,
+                                                width: 3,
+                                              )
+                                            : null,
+                                      ),
+                                      child: selected
+                                          ? const Icon(
+                                              Icons.check,
+                                              color: Colors.white,
+                                            )
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -193,6 +245,27 @@ class _AppearanceStartupSettingsPageState
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _ColorDot extends StatelessWidget {
+  final Color? color;
+
+  const _ColorDot({this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final value = color;
+    if (value == null) return const Icon(Icons.colorize_outlined);
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: value,
+        shape: BoxShape.circle,
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
       ),
     );
   }

@@ -19,32 +19,33 @@ class MyApp extends StatelessWidget {
         return DynamicColorBuilder(
           builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
             final themeManager = ThemeManager();
+            final usesSystemColor =
+                themeManager.colorSource == ThemeColorSource.system;
             final usesLightDynamicColor =
-                themeManager.isSystemColor && lightDynamic != null;
-            final usesDarkDynamicColor =
-                themeManager.isSystemColor && darkDynamic != null;
+                usesSystemColor && lightDynamic != null;
+            final usesDarkDynamicColor = usesSystemColor && darkDynamic != null;
             ColorScheme lightScheme;
-            if (themeManager.isSystemColor && lightDynamic != null) {
+            if (usesSystemColor && lightDynamic != null) {
               lightScheme = lightDynamic.harmonized();
-            } else if (themeManager.isSystemColor) {
+            } else if (usesSystemColor) {
               lightScheme = ColorScheme.fromSeed(seedColor: defaultSeedColor);
             } else {
               lightScheme = ColorScheme.fromSeed(
-                seedColor: themeManager.customColor,
+                seedColor: themeManager.activeSeedColor,
               );
             }
 
             ColorScheme darkScheme;
-            if (themeManager.isSystemColor && darkDynamic != null) {
+            if (usesSystemColor && darkDynamic != null) {
               darkScheme = darkDynamic.harmonized();
-            } else if (themeManager.isSystemColor) {
+            } else if (usesSystemColor) {
               darkScheme = ColorScheme.fromSeed(
                 seedColor: defaultSeedColor,
                 brightness: Brightness.dark,
               );
             } else {
               darkScheme = ColorScheme.fromSeed(
-                seedColor: themeManager.customColor,
+                seedColor: themeManager.activeSeedColor,
                 brightness: Brightness.dark,
               );
             }

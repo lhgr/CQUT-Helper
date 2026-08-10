@@ -23,6 +23,7 @@ class ScheduleCourseGrid extends StatefulWidget {
   final bool verticalCenter;
   final double cardRadius;
   final double textScale;
+  final double cardOpacity;
   final Future<void> Function(EventItem event) onEditCourse;
   final Future<void> Function(EventItem event) onDeleteCourse;
 
@@ -46,6 +47,7 @@ class ScheduleCourseGrid extends StatefulWidget {
     this.verticalCenter = false,
     this.cardRadius = 12,
     this.textScale = 1,
+    this.cardOpacity = 1,
     required this.onEditCourse,
     required this.onDeleteCourse,
   });
@@ -612,6 +614,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       verticalCenter: widget.verticalCenter,
                       borderRadius: widget.cardRadius,
                       textScale: widget.textScale,
+                      cardOpacity: widget.cardOpacity,
                       onTap: () {
                         if (card.group.events.length > 1) {
                           _showConflictSheet(
@@ -658,7 +661,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                     2.0,
                   );
                   final fillColor = widget.backgroundColors[safeIndex]
-                      .withAlpha(fillAlpha);
+                      .withAlpha(
+                        (fillAlpha * widget.cardOpacity).round().clamp(0, 255),
+                      );
                   final frameColor = widget.borderColors[safeIndex].withAlpha(
                     (frameAlpha + 8).clamp(160, 250),
                   );
@@ -742,6 +747,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       verticalCenter: widget.verticalCenter,
                       borderRadius: widget.cardRadius,
                       textScale: widget.textScale,
+                      cardOpacity: widget.cardOpacity,
                       onTap: () {
                         if (card.group.events.length > 1) {
                           _showConflictSheet(

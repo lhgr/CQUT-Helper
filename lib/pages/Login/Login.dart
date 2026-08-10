@@ -203,7 +203,7 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           const SizedBox(height: 24),
                           Text(
-                            'CQUT 助手',
+                            'CQUT Helper',
                             textAlign: TextAlign.center,
                             style: theme.textTheme.headlineMedium,
                           ),

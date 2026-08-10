@@ -129,6 +129,7 @@ class SchedulePageView extends StatelessWidget {
                                   verticalCenter: layoutSettings.verticalCenter,
                                   cardRadius: layoutSettings.cardRadius,
                                   textScale: layoutSettings.textScale,
+                                  cardOpacity: layoutSettings.cardOpacity,
                                   backgroundColors: cardTheme.backgrounds,
                                   borderColors: cardTheme.borders,
                                   titleColors: cardTheme.titleColors,

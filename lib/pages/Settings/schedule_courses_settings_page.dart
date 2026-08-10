@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
+import 'package:cqut_helper/utils/background_color_extractor.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
@@ -31,10 +33,14 @@ class _ScheduleCoursesSettingsPageState
   bool _saving = false;
   bool _dirty = false;
   bool _handlingPop = false;
+  bool _extractingThemeColor = false;
+  bool _backgroundChanged = false;
+  bool _backgroundRemoved = false;
   bool _showWeekend = false;
   bool _timeInfoEnabled = true;
   ScheduleLayoutSettings _layout = const ScheduleLayoutSettings();
   String? _pickedImagePath;
+  Color? _pendingExtractedThemeColor;
   int? _hiddenCourseCount;
 
   @override
@@ -59,6 +65,9 @@ class _ScheduleCoursesSettingsPageState
       _hiddenCourseCount = hiddenCourses?.length;
       _loading = false;
       _dirty = false;
+      _backgroundChanged = false;
+      _backgroundRemoved = false;
+      _pendingExtractedThemeColor = null;
     });
   }
 
@@ -106,7 +115,30 @@ class _ScheduleCoursesSettingsPageState
       _change(() {
         _pickedImagePath = croppedPath;
         _layout = _layout.copyWith(backgroundImagePath: croppedPath);
+        _pendingExtractedThemeColor = null;
+        _backgroundChanged = true;
+        _backgroundRemoved = false;
       });
+      final shouldExtract = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('从背景图片取色？'),
+          content: const Text('可以提取背景图片的代表色，保存课表设置后将其作为应用主题色。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('暂不取色'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('开始取色'),
+            ),
+          ],
+        ),
+      );
+      if (shouldExtract == true && mounted) {
+        await _extractThemeColor(croppedPath);
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -119,7 +151,40 @@ class _ScheduleCoursesSettingsPageState
     _change(() {
       _pickedImagePath = null;
       _layout = _layout.copyWith(clearBackgroundImage: true);
+      _pendingExtractedThemeColor = null;
+      _backgroundChanged = true;
+      _backgroundRemoved = true;
     });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('保存后将删除背景图，并切换为系统自动取色')));
+  }
+
+  Future<void> _extractThemeColor([String? sourcePath]) async {
+    final path = sourcePath ?? _layout.backgroundImagePath;
+    if (path == null || path.trim().isEmpty || _extractingThemeColor) return;
+    setState(() => _extractingThemeColor = true);
+    try {
+      final color = await BackgroundColorExtractor.extractFromPath(path);
+      if (!mounted) return;
+      if (color == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('未能从这张图片提取合适的主题色')));
+        return;
+      }
+      _change(() => _pendingExtractedThemeColor = color);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已完成取色，保存课表设置后应用')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('背景取色失败：$error')));
+    } finally {
+      if (mounted) setState(() => _extractingThemeColor = false);
+    }
   }
 
   Future<String?> _persistPickedBackground() async {
@@ -157,11 +222,24 @@ class _ScheduleCoursesSettingsPageState
         notify: false,
       );
       await _manager.saveLayoutSettings(layout);
+      final themeManager = ThemeManager();
+      if (layout.backgroundImagePath == null || _backgroundRemoved) {
+        await themeManager.clearScheduleBackgroundColor();
+      } else if (_pendingExtractedThemeColor != null) {
+        await themeManager.applyScheduleBackgroundColor(
+          _pendingExtractedThemeColor!,
+        );
+      } else if (_backgroundChanged) {
+        await themeManager.invalidateScheduleBackgroundColor();
+      }
       if (!mounted) return false;
       setState(() {
         _layout = layout;
         _pickedImagePath = null;
         _dirty = false;
+        _backgroundChanged = false;
+        _backgroundRemoved = false;
+        _pendingExtractedThemeColor = null;
       });
       ScaffoldMessenger.of(
         context,
@@ -221,6 +299,9 @@ class _ScheduleCoursesSettingsPageState
       _timeInfoEnabled = true;
       _layout = const ScheduleLayoutSettings();
       _pickedImagePath = null;
+      _pendingExtractedThemeColor = null;
+      _backgroundChanged = true;
+      _backgroundRemoved = true;
     });
   }
 
@@ -374,6 +455,38 @@ class _ScheduleCoursesSettingsPageState
                                   ),
                                 ),
                                 if (_layout.backgroundImagePath != null) ...[
+                                  const Divider(height: 1),
+                                  ListTile(
+                                    leading: _ThemeColorPreview(
+                                      color:
+                                          _pendingExtractedThemeColor ??
+                                          (_backgroundChanged
+                                              ? null
+                                              : ThemeManager()
+                                                    .scheduleBackgroundColor),
+                                    ),
+                                    title: const Text('从背景图片取色'),
+                                    subtitle: Text(
+                                      _extractingThemeColor
+                                          ? '正在分析背景图片…'
+                                          : _pendingExtractedThemeColor != null
+                                          ? '已提取颜色，保存后将作为主题色'
+                                          : !_backgroundChanged &&
+                                                ThemeManager().colorSource ==
+                                                    ThemeColorSource
+                                                        .scheduleBackground
+                                          ? '当前正在使用背景图片主题色'
+                                          : '提取代表色并应用为全局主题色',
+                                    ),
+                                    trailing: FilledButton.tonal(
+                                      onPressed: _extractingThemeColor
+                                          ? null
+                                          : _extractThemeColor,
+                                      child: Text(
+                                        _extractingThemeColor ? '取色中…' : '提取颜色',
+                                      ),
+                                    ),
+                                  ),
                                   _slider(
                                     context,
                                     label: '背景图片不透明度',
@@ -503,6 +616,21 @@ class _ScheduleCoursesSettingsPageState
                                 ),
                                 _slider(
                                   context,
+                                  label: '课程卡片不透明度',
+                                  value: _layout.cardOpacity,
+                                  min: 0.1,
+                                  max: 1,
+                                  divisions: 18,
+                                  valueLabel:
+                                      '${(_layout.cardOpacity * 100).round()}%',
+                                  onChanged: (value) => _change(
+                                    () => _layout = _layout.copyWith(
+                                      cardOpacity: value,
+                                    ),
+                                  ),
+                                ),
+                                _slider(
+                                  context,
                                   label: '卡片圆角',
                                   value: _layout.cardRadius,
                                   min: 0,
@@ -620,3 +748,24 @@ class _ScheduleCoursesSettingsPageState
 }
 
 enum _UnsavedAction { keepEditing, discard, save }
+
+class _ThemeColorPreview extends StatelessWidget {
+  final Color? color;
+
+  const _ThemeColorPreview({this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final value = color;
+    if (value == null) return const Icon(Icons.colorize_outlined);
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: value,
+        shape: BoxShape.circle,
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+      ),
+    );
+  }
+}

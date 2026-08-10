@@ -1,6 +1,8 @@
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/Mine/mine_menu_section.dart';
 import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
+import 'package:cqut_helper/pages/Settings/appearance_startup_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_courses_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_layout_preview.dart';
 import 'package:cqut_helper/pages/Settings/settings_schedule_scope.dart';
@@ -81,6 +83,7 @@ void main() {
     expect(find.text('自定义背景图片'), findsOneWidget);
     expect(find.text('背景图片不透明度'), findsNothing);
     expect(find.text('背景模糊度'), findsNothing);
+    expect(find.text('从背景图片取色'), findsNothing);
   });
 
   testWidgets('已选择背景时显示透明度和模糊度设置', (tester) async {
@@ -101,6 +104,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('背景图片不透明度'), findsOneWidget);
     expect(find.text('背景模糊度'), findsOneWidget);
+    expect(find.text('从背景图片取色'), findsOneWidget);
   });
 
   testWidgets('课表布局修改未保存时离开会显示提示', (tester) async {
@@ -130,5 +134,22 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('长按手动选择颜色会解锁并应用 Wing', (tester) async {
+    await ThemeManager().init();
+    await tester.pumpWidget(
+      const MaterialApp(home: AppearanceStartupSettingsPage()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('手动选择颜色'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Wing 已解锁 · #FF98A1'), findsOneWidget);
+    expect(find.byTooltip('Wing · #FF98A1'), findsOneWidget);
+    expect(ThemeManager().wingColorUnlocked, isTrue);
+    expect(ThemeManager().customColor, ThemeManager.wingColor);
+    expect(ThemeManager().colorSource, ThemeColorSource.custom);
   });
 }

@@ -91,6 +91,7 @@ void main() {
         verticalCenter: true,
         cardRadius: 50,
         textScale: 3,
+        cardOpacity: 0,
       ),
     );
 
@@ -110,5 +111,6 @@ void main() {
     expect(layout.verticalCenter, isTrue);
     expect(layout.cardRadius, 28);
     expect(layout.textScale, 1.5);
+    expect(layout.cardOpacity, 0.1);
   });
 }

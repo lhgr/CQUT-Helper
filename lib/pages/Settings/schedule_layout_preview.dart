@@ -346,6 +346,7 @@ class _PreviewGrid extends StatelessWidget {
               verticalCenter: settings.verticalCenter,
               borderRadius: settings.cardRadius,
               textScale: settings.textScale,
+              cardOpacity: settings.cardOpacity,
             ),
           );
         }),

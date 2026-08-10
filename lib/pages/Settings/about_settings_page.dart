@@ -41,7 +41,7 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            'CQUT 助手',
+            'CQUT Helper',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.headlineSmall,
           ),
