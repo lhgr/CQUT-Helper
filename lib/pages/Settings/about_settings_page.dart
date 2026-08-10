@@ -28,10 +28,16 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
         children: [
-          Icon(
-            Icons.school,
-            size: 64,
-            color: Theme.of(context).colorScheme.primary,
+          Center(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Image.asset(
+                'lib/assets/Icon.png',
+                width: 64,
+                height: 64,
+                fit: BoxFit.cover,
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           Text(

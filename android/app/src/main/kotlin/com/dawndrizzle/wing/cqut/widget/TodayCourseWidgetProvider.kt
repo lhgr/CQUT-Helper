@@ -173,10 +173,11 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
       val palette = theme.palette
-      views.setImageViewResource(
-        R.id.iv_appwidget,
-        palette.imageBackgroundRes,
-      )
+      // Keep the background on the containers instead of a full-size
+      // ImageView. Some launchers briefly clear ImageView content while
+      // reapplying RemoteViews, which presents as a black flash.
+      views.setInt(R.id.widget_root, "setBackgroundResource", palette.imageBackgroundRes)
+      views.setInt(R.id.widget_card, "setBackgroundResource", palette.imageBackgroundRes)
       views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
       views.setTextColor(R.id.tv_date, palette.primaryText)
       views.setTextColor(R.id.tv_week_count, palette.secondaryText)

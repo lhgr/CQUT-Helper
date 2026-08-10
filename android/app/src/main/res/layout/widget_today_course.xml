@@ -1,26 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
+    android:background="@drawable/appwidget_bg"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
     <FrameLayout
         android:id="@+id/widget_card"
         android:layout_gravity="center"
+        android:background="@drawable/appwidget_bg"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
-        <ImageView
-            android:id="@+id/iv_appwidget_pic_bg"
-            android:background="@drawable/appwidget_bg"
-            android:visibility="gone"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="centerCrop" />
-        <ImageView
-            android:id="@+id/iv_appwidget"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="fitXY"
-            android:src="@drawable/appwidget_bg" />
         <RelativeLayout
             android:id="@+id/rl_appwidget"
             android:padding="12dp"

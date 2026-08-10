@@ -31,7 +31,6 @@ object ScheduleWidgetRefreshWork {
       .putString("$STATE_KEY_PREFIX$account", "loading")
       .remove("$FAILURE_KEY_PREFIX$account")
       .commit()
-    TodayCourseWidgetProvider.updateRefreshPresentation(context, intArrayOf(appWidgetId))
 
     val payload =
       JSONObject()
