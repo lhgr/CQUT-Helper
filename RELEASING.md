@@ -11,7 +11,7 @@ Release 构建不再使用 debug 签名。缺少正式签名配置时，Gradle �
    - `ANDROID_KEY_ALIAS`
    - `ANDROID_KEY_PASSWORD`
    - `NOTICE_API_KEY`
-3. `ANDROID_KEYSTORE_BASE64` 是 JKS 文件的单行 Base64 内容；密钥文件和 `android/key.properties` 均已加入 `.gitignore`，不得提交。
+3. `ANDROID_KEYSTORE_BASE64` 是 JKS 文件的单行 Base64 内容。
 4. `NOTICE_API_KEY` 应与调课服务端 `JWXT_API_KEYS` 中的当前令牌一致。
 
 ## 本地 Release 构建
@@ -33,3 +33,47 @@ flutter build apk --release --dart-define=NOTICE_API_KEY=...
 ```
 
 推送与 `pubspec.yaml` 版本一致的 `v*` 标签后，Release 工作流会先运行格式检查、静态分析、Flutter/Kotlin 测试，再构建正式签名的 AAB、通用 APK、分架构 APK 和 SHA-256 校验文件。产物默认进入 Draft Release，发布前仍需在真机验证覆盖安装、登录、课表刷新、通知和三种桌面小组件。
+
+## 应用内更新日志语法
+
+应用直接读取 GitHub Release 正文，并支持标准 Markdown 及以下增强语法。
+
+行内语义强调：
+
+```markdown
+{{danger:旧版本将不再兼容}}
+{{warning:升级前请先同步数据}}
+{{success:数据迁移已完成}}
+{{info:该功能需要 Android 12 以上}}
+{{accent:全新的课表自定义功能}}
+{{muted:此功能仍处于测试阶段}}
+```
+
+更新类型标签：
+
+```markdown
+[[NEW]] 新增功能
+[[FIX]] 问题修复
+[[OPTIMIZE]] 性能优化
+[[BREAKING]] 重大调整
+[[BETA]] 测试功能
+```
+
+GitHub 风格提示框：
+
+```markdown
+> [!WARNING]
+> 升级前请先同步数据。
+
+> [!CAUTION]
+> 此操作可能导致数据丢失。
+```
+
+提示框支持 `NOTE`、`TIP`、`IMPORTANT`、`WARNING` 和 `CAUTION`。图片与 GIF 使用标准 Markdown 图片语法，必须提供可公开访问、直接返回图片内容的 HTTP/HTTPS 地址：
+
+```markdown
+![课表预览](https://example.com/preview.png)
+![操作演示](https://example.com/demo.gif)
+```
+
+发布前应在应用内检查浅色与深色主题下的显示效果，并确认所有媒体地址无需登录即可访问。
