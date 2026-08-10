@@ -1,5 +1,6 @@
 import 'package:cqut_helper/model/course_preference_model.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
+import 'package:cqut_helper/widgets/app_select_field.dart';
 import 'package:flutter/material.dart';
 
 Future<CoursePreference?> showCoursePreferenceEditor(
@@ -200,16 +201,17 @@ class _CoursePreferenceEditorSheetState
               value: _hidden,
               onChanged: (value) => setState(() => _hidden = value),
             ),
-            DropdownButtonFormField<int?>(
-              initialValue: _reminder,
-              decoration: const InputDecoration(labelText: '课前提醒'),
-              items: const [
-                DropdownMenuItem(value: null, child: Text('跟随全局设置')),
-                DropdownMenuItem(value: 0, child: Text('不提醒')),
-                DropdownMenuItem(value: 5, child: Text('提前 5 分钟')),
-                DropdownMenuItem(value: 10, child: Text('提前 10 分钟')),
-                DropdownMenuItem(value: 15, child: Text('提前 15 分钟')),
-                DropdownMenuItem(value: 30, child: Text('提前 30 分钟')),
+            AppSelectField<int?>(
+              value: _reminder,
+              labelText: '课前提醒',
+              sheetTitle: '选择课前提醒',
+              options: const [
+                AppSelectOption(value: null, label: '跟随全局设置'),
+                AppSelectOption(value: 0, label: '不提醒'),
+                AppSelectOption(value: 5, label: '提前 5 分钟'),
+                AppSelectOption(value: 10, label: '提前 10 分钟'),
+                AppSelectOption(value: 15, label: '提前 15 分钟'),
+                AppSelectOption(value: 30, label: '提前 30 分钟'),
               ],
               onChanged: (value) => setState(() => _reminder = value),
             ),

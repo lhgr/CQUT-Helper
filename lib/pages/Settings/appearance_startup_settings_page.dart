@@ -1,5 +1,6 @@
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
+import 'package:cqut_helper/widgets/app_select_field.dart';
 import 'package:flutter/material.dart';
 
 class AppearanceStartupSettingsPage extends StatefulWidget {
@@ -164,17 +165,28 @@ class _AppearanceStartupSettingsPageState
                 elevation: 0,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _defaultHomeTab,
-                    decoration: const InputDecoration(labelText: '启动后的默认页面'),
-                    items: const [
-                      DropdownMenuItem(value: 0, child: Text('今日')),
-                      DropdownMenuItem(value: 1, child: Text('课表')),
-                      DropdownMenuItem(value: 2, child: Text('我的')),
+                  child: AppSelectField<int>(
+                    value: _defaultHomeTab,
+                    labelText: '启动后的默认页面',
+                    sheetTitle: '选择默认页面',
+                    options: const [
+                      AppSelectOption(
+                        value: 0,
+                        label: '今日',
+                        icon: Icons.today_outlined,
+                      ),
+                      AppSelectOption(
+                        value: 1,
+                        label: '课表',
+                        icon: Icons.calendar_month_outlined,
+                      ),
+                      AppSelectOption(
+                        value: 2,
+                        label: '我的',
+                        icon: Icons.person_outline,
+                      ),
                     ],
-                    onChanged: (value) {
-                      if (value != null) _saveDefaultHomeTab(value);
-                    },
+                    onChanged: _saveDefaultHomeTab,
                   ),
                 ),
               ),

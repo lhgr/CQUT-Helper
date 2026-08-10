@@ -169,49 +169,18 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
               children: [
                 buildRefreshAction(),
                 SizedBox(
-                  width: 32,
-                  height: 36,
-                  child: PopupMenuButton<String>(
+                  width: 40,
+                  height: 44,
+                  child: IconButton(
                     padding: EdgeInsets.zero,
                     tooltip: '更多课表操作',
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'add':
-                          onAddCourse();
-                          break;
-                        case 'export_ics':
-                          onExportIcs();
-                          break;
-                        case 'settings':
-                          onSettings();
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: 'add',
-                        child: ListTile(
-                          leading: Icon(Icons.add),
-                          title: Text('添加自定义课程'),
-                        ),
-                      ),
-                      PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: 'export_ics',
-                        child: ListTile(
-                          leading: Icon(Icons.ios_share_outlined),
-                          title: Text('导出 ICS'),
-                        ),
-                      ),
-                      PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: 'settings',
-                        child: ListTile(
-                          leading: Icon(Icons.tune),
-                          title: Text('课表设置'),
-                        ),
-                      ),
-                    ],
+                    icon: const Icon(Icons.more_vert_rounded),
+                    onPressed: () => _showScheduleActionsSheet(
+                      context,
+                      onAddCourse: onAddCourse,
+                      onExportIcs: onExportIcs,
+                      onSettings: onSettings,
+                    ),
                   ),
                 ),
               ],
@@ -251,6 +220,137 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
         },
       ),
       centerTitle: true,
+    );
+  }
+}
+
+void _showScheduleActionsSheet(
+  BuildContext context, {
+  required VoidCallback onAddCourse,
+  required VoidCallback onExportIcs,
+  required VoidCallback onSettings,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      final theme = Theme.of(sheetContext);
+      final colorScheme = theme.colorScheme;
+
+      void runAction(VoidCallback action) {
+        Navigator.of(sheetContext).pop();
+        action();
+      }
+
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      Icons.calendar_month_outlined,
+                      color: colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('课表操作', style: theme.textTheme.titleLarge),
+                        const SizedBox(height: 2),
+                        Text(
+                          '添加、导出或调整当前课表',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Card(
+              margin: EdgeInsets.zero,
+              elevation: 0,
+              color: colorScheme.surfaceContainerHigh,
+              child: Column(
+                children: [
+                  _ScheduleActionTile(
+                    icon: Icons.add_rounded,
+                    title: '添加自定义课程',
+                    onTap: () => runAction(onAddCourse),
+                  ),
+                  const Divider(indent: 72),
+                  _ScheduleActionTile(
+                    icon: Icons.ios_share_outlined,
+                    title: '导出 ICS',
+                    onTap: () => runAction(onExportIcs),
+                  ),
+                  const Divider(indent: 72),
+                  _ScheduleActionTile(
+                    icon: Icons.tune_rounded,
+                    title: '课表设置',
+                    onTap: () => runAction(onSettings),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _ScheduleActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  const _ScheduleActionTile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListTile(
+      minTileHeight: 72,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: colorScheme.onSecondaryContainer, size: 22),
+      ),
+      title: Text(title),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
     );
   }
 }

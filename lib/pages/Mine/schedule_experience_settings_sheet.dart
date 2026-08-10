@@ -1,6 +1,7 @@
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
+import 'package:cqut_helper/widgets/app_select_field.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -132,17 +133,17 @@ class _ScheduleExperienceSettingsSheetState
               onChanged: _toggleReminders,
             ),
             if (_remindersEnabled)
-              DropdownButtonFormField<int>(
-                initialValue: _defaultMinutes,
-                decoration: const InputDecoration(labelText: '默认提前时间'),
-                items: const [
-                  DropdownMenuItem(value: 5, child: Text('提前 5 分钟')),
-                  DropdownMenuItem(value: 10, child: Text('提前 10 分钟')),
-                  DropdownMenuItem(value: 15, child: Text('提前 15 分钟')),
-                  DropdownMenuItem(value: 30, child: Text('提前 30 分钟')),
+              AppSelectField<int>(
+                value: _defaultMinutes,
+                labelText: '默认提前时间',
+                sheetTitle: '选择默认提前时间',
+                options: const [
+                  AppSelectOption(value: 5, label: '提前 5 分钟'),
+                  AppSelectOption(value: 10, label: '提前 10 分钟'),
+                  AppSelectOption(value: 15, label: '提前 15 分钟'),
+                  AppSelectOption(value: 30, label: '提前 30 分钟'),
                 ],
-                onChanged: (value) =>
-                    setState(() => _defaultMinutes = value ?? 10),
+                onChanged: (value) => setState(() => _defaultMinutes = value),
               ),
             if (_remindersEnabled && !_exactAlarmGranted)
               Padding(
@@ -181,16 +182,28 @@ class _ScheduleExperienceSettingsSheetState
                   setState(() => _density = value.first),
             ),
             const SizedBox(height: 18),
-            DropdownButtonFormField<int>(
-              initialValue: _defaultHomeTab,
-              decoration: const InputDecoration(labelText: '启动后默认页面'),
-              items: const [
-                DropdownMenuItem(value: 0, child: Text('今日')),
-                DropdownMenuItem(value: 1, child: Text('课表')),
-                DropdownMenuItem(value: 2, child: Text('我的')),
+            AppSelectField<int>(
+              value: _defaultHomeTab,
+              labelText: '启动后默认页面',
+              sheetTitle: '选择默认页面',
+              options: const [
+                AppSelectOption(
+                  value: 0,
+                  label: '今日',
+                  icon: Icons.today_outlined,
+                ),
+                AppSelectOption(
+                  value: 1,
+                  label: '课表',
+                  icon: Icons.calendar_month_outlined,
+                ),
+                AppSelectOption(
+                  value: 2,
+                  label: '我的',
+                  icon: Icons.person_outline,
+                ),
               ],
-              onChanged: (value) =>
-                  setState(() => _defaultHomeTab = value ?? 1),
+              onChanged: (value) => setState(() => _defaultHomeTab = value),
             ),
             const SizedBox(height: 22),
             SizedBox(

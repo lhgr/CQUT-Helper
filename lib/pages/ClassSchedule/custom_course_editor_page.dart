@@ -1,5 +1,6 @@
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/widgets/app_select_field.dart';
 import 'package:flutter/material.dart';
 
 class CustomCourseEditorPage extends StatefulWidget {
@@ -212,50 +213,51 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
           Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<int>(
-                  initialValue: _weekDay,
-                  decoration: const InputDecoration(labelText: '星期'),
-                  items: List.generate(
+                child: AppSelectField<int>(
+                  value: _weekDay,
+                  labelText: '星期',
+                  sheetTitle: '选择星期',
+                  options: List.generate(
                     7,
-                    (index) => DropdownMenuItem(
+                    (index) => AppSelectOption(
                       value: index + 1,
-                      child: Text('周${'一二三四五六日'[index]}'),
+                      label: '周${'一二三四五六日'[index]}',
                     ),
                   ),
-                  onChanged: (value) => setState(() => _weekDay = value ?? 1),
+                  onChanged: (value) => setState(() => _weekDay = value),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: DropdownButtonFormField<int>(
-                  initialValue: _startSession,
-                  decoration: const InputDecoration(labelText: '开始节次'),
-                  items: List.generate(
+                child: AppSelectField<int>(
+                  value: _startSession,
+                  labelText: '开始节次',
+                  sheetTitle: '选择开始节次',
+                  options: List.generate(
                     12,
-                    (index) => DropdownMenuItem(
+                    (index) => AppSelectOption(
                       value: index + 1,
-                      child: Text('第${index + 1}节'),
+                      label: '第${index + 1}节',
                     ),
                   ),
-                  onChanged: (value) =>
-                      setState(() => _startSession = value ?? 1),
+                  onChanged: (value) => setState(() => _startSession = value),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: DropdownButtonFormField<int>(
+                child: AppSelectField<int>(
                   key: ValueKey((maxCount, _sessionCount)),
-                  initialValue: _sessionCount.clamp(1, maxCount),
-                  decoration: const InputDecoration(labelText: '持续'),
-                  items: List.generate(
+                  value: _sessionCount.clamp(1, maxCount),
+                  labelText: '持续',
+                  sheetTitle: '选择持续节数',
+                  options: List.generate(
                     maxCount,
-                    (index) => DropdownMenuItem(
+                    (index) => AppSelectOption(
                       value: index + 1,
-                      child: Text('${index + 1}节'),
+                      label: '${index + 1}节',
                     ),
                   ),
-                  onChanged: (value) =>
-                      setState(() => _sessionCount = value ?? 1),
+                  onChanged: (value) => setState(() => _sessionCount = value),
                 ),
               ),
             ],

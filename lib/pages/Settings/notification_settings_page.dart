@@ -4,6 +4,7 @@ import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
+import 'package:cqut_helper/widgets/app_select_field.dart';
 import 'package:flutter/material.dart';
 
 import 'settings_schedule_scope.dart';
@@ -260,36 +261,17 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                         const Divider(height: 1),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                          child: DropdownButtonFormField<int>(
-                            initialValue: _reminderMinutes,
-                            decoration: const InputDecoration(
-                              labelText: '默认提前时间',
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 5,
-                                child: Text('提前 5 分钟'),
-                              ),
-                              DropdownMenuItem(
-                                value: 10,
-                                child: Text('提前 10 分钟'),
-                              ),
-                              DropdownMenuItem(
-                                value: 15,
-                                child: Text('提前 15 分钟'),
-                              ),
-                              DropdownMenuItem(
-                                value: 30,
-                                child: Text('提前 30 分钟'),
-                              ),
+                          child: AppSelectField<int>(
+                            value: _reminderMinutes,
+                            labelText: '默认提前时间',
+                            sheetTitle: '选择默认提前时间',
+                            options: const [
+                              AppSelectOption(value: 5, label: '提前 5 分钟'),
+                              AppSelectOption(value: 10, label: '提前 10 分钟'),
+                              AppSelectOption(value: 15, label: '提前 15 分钟'),
+                              AppSelectOption(value: 30, label: '提前 30 分钟'),
                             ],
-                            onChanged: _working
-                                ? null
-                                : (value) {
-                                    if (value != null) {
-                                      _changeReminderMinutes(value);
-                                    }
-                                  },
+                            onChanged: _working ? null : _changeReminderMinutes,
                           ),
                         ),
                       ],
