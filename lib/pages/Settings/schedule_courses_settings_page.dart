@@ -26,6 +26,8 @@ class ScheduleCoursesSettingsPage extends StatefulWidget {
 
 class _ScheduleCoursesSettingsPageState
     extends State<ScheduleCoursesSettingsPage> {
+  static const ScheduleLayoutSettings _defaultLayout = ScheduleLayoutSettings();
+
   final ScheduleSettingsManager _manager = ScheduleSettingsManager();
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -305,6 +307,27 @@ class _ScheduleCoursesSettingsPageState
     });
   }
 
+  Future<void> _confirmReset() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('重置课表设置？'),
+        content: const Text('界面显示与课程卡片设置将恢复默认值，自定义背景图片也会被移除。确认后仍需保存才能生效。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('确认重置'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) _reset();
+  }
+
   Future<void> _openHiddenCourses() async {
     if (!widget.scope.canManageCourses) return;
     await showHiddenCoursesSheet(
@@ -331,7 +354,7 @@ class _ScheduleCoursesSettingsPageState
         title: const Text('课表布局自定义'),
         actions: [
           TextButton(
-            onPressed: _loading ? null : _reset,
+            onPressed: _loading ? null : _confirmReset,
             child: const Text('重置'),
           ),
           Padding(
@@ -491,6 +514,8 @@ class _ScheduleCoursesSettingsPageState
                                     context,
                                     label: '背景图片不透明度',
                                     value: _layout.backgroundOpacity,
+                                    defaultValue:
+                                        _defaultLayout.backgroundOpacity,
                                     min: 0.05,
                                     max: 1,
                                     divisions: 19,
@@ -506,6 +531,7 @@ class _ScheduleCoursesSettingsPageState
                                     context,
                                     label: '背景模糊度',
                                     value: _layout.backgroundBlur,
+                                    defaultValue: _defaultLayout.backgroundBlur,
                                     min: 0,
                                     max: 20,
                                     divisions: 20,
@@ -523,6 +549,7 @@ class _ScheduleCoursesSettingsPageState
                                   context,
                                   label: '网格宽度',
                                   value: _layout.gridCellWidth,
+                                  defaultValue: _defaultLayout.gridCellWidth,
                                   min: ScheduleLayoutSettings.minGridCellWidth,
                                   max: ScheduleLayoutSettings.maxGridCellWidth,
                                   divisions: 28,
@@ -538,6 +565,7 @@ class _ScheduleCoursesSettingsPageState
                                   context,
                                   label: '网格高度',
                                   value: _layout.gridCellHeight,
+                                  defaultValue: _defaultLayout.gridCellHeight,
                                   min: ScheduleLayoutSettings.minGridCellHeight,
                                   max: ScheduleLayoutSettings.maxGridCellHeight,
                                   divisions: 28,
@@ -618,6 +646,7 @@ class _ScheduleCoursesSettingsPageState
                                   context,
                                   label: '课程卡片不透明度',
                                   value: _layout.cardOpacity,
+                                  defaultValue: _defaultLayout.cardOpacity,
                                   min: 0.1,
                                   max: 1,
                                   divisions: 18,
@@ -633,6 +662,7 @@ class _ScheduleCoursesSettingsPageState
                                   context,
                                   label: '卡片圆角',
                                   value: _layout.cardRadius,
+                                  defaultValue: _defaultLayout.cardRadius,
                                   min: 0,
                                   max: 28,
                                   divisions: 28,
@@ -648,6 +678,7 @@ class _ScheduleCoursesSettingsPageState
                                   context,
                                   label: '文字缩放',
                                   value: _layout.textScale,
+                                  defaultValue: _defaultLayout.textScale,
                                   min: 0.7,
                                   max: 1.5,
                                   divisions: 16,
@@ -710,6 +741,7 @@ class _ScheduleCoursesSettingsPageState
     BuildContext context, {
     required String label,
     required double value,
+    required double defaultValue,
     required double min,
     required double max,
     required int divisions,
@@ -717,6 +749,7 @@ class _ScheduleCoursesSettingsPageState
     required ValueChanged<double> onChanged,
     bool enabled = true,
   }) {
+    final isDefault = (value - defaultValue).abs() < 0.0001;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
       child: Column(
@@ -725,6 +758,13 @@ class _ScheduleCoursesSettingsPageState
           Row(
             children: [
               Expanded(child: Text(label)),
+              if (!isDefault)
+                IconButton(
+                  tooltip: '重置$label',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: enabled ? () => onChanged(defaultValue) : null,
+                  icon: const Icon(Icons.restart_alt_rounded, size: 19),
+                ),
               Text(
                 valueLabel,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(

@@ -12,6 +12,7 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_app_bar.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_inline_notice_panel.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_page_view.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_return_week_button.dart';
 import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
 import 'package:cqut_helper/pages/ClassSchedule/custom_course_editor_page.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/term_picker_sheet.dart';
@@ -278,10 +279,9 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: showFab
-          ? FloatingActionButton(
+          ? ScheduleReturnWeekButton(
               onPressed: _returnToCurrentWeek,
-              tooltip: '返回本周',
-              child: const Icon(Icons.today),
+              transparentBackground: hasBackground,
             )
           : null,
       appBar: ScheduleAppBar(

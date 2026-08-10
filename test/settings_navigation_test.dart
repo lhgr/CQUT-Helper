@@ -136,6 +136,93 @@ void main() {
     );
   });
 
+  testWidgets('顶部重置需要二次确认', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'account': 'test-user',
+      'schedule_grid_cell_width': 72.0,
+    });
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ScheduleCoursesSettingsPage(
+          scope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<ScheduleLayoutPreview>(find.byType(ScheduleLayoutPreview))
+          .settings
+          .gridCellWidth,
+      72,
+    );
+
+    await tester.tap(find.widgetWithText(TextButton, '重置'));
+    await tester.pumpAndSettle();
+    expect(find.text('重置课表设置？'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ScheduleLayoutPreview>(find.byType(ScheduleLayoutPreview))
+          .settings
+          .gridCellWidth,
+      72,
+    );
+
+    await tester.tap(find.widgetWithText(TextButton, '重置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '确认重置'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('重置课表设置？'), findsNothing);
+    expect(
+      tester
+          .widget<ScheduleLayoutPreview>(find.byType(ScheduleLayoutPreview))
+          .settings
+          .gridCellWidth,
+      const ScheduleLayoutSettings().gridCellWidth,
+    );
+  });
+
+  testWidgets('滑杆独立重置按钮直接恢复且不弹确认框', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'account': 'test-user',
+      'schedule_grid_cell_width': 72.0,
+    });
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ScheduleCoursesSettingsPage(
+          scope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -250));
+    await tester.pumpAndSettle();
+
+    final resetWidth = find.byTooltip('重置网格宽度');
+    expect(resetWidth, findsOneWidget);
+    expect(find.byTooltip('重置网格高度'), findsNothing);
+
+    await tester.tap(resetWidth);
+    await tester.pumpAndSettle();
+
+    expect(find.text('重置课表设置？'), findsNothing);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byTooltip('重置网格宽度'), findsNothing);
+    expect(
+      tester
+          .widget<ScheduleLayoutPreview>(find.byType(ScheduleLayoutPreview))
+          .settings
+          .gridCellWidth,
+      const ScheduleLayoutSettings().gridCellWidth,
+    );
+  });
+
   testWidgets('长按手动选择颜色会解锁并应用 Wing', (tester) async {
     await ThemeManager().init();
     await tester.pumpWidget(
