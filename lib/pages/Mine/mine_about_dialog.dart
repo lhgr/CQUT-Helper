@@ -33,16 +33,32 @@ CachedNetworkImageProvider _aboutAvatarProvider(String url) {
 Future<void> _precacheAboutAvatars(BuildContext context) async {
   await Future.wait(
     const [_developerAvatarUrl, _wingAvatarUrl].map((url) async {
+      var errorHandled = false;
       try {
-        await precacheImage(_aboutAvatarProvider(url), context);
-      } catch (error, stackTrace) {
-        AppLogger.I.debug(
-          'MineAbout',
-          'about avatar prefetch failed',
-          error: error,
-          stackTrace: stackTrace,
-          fields: {'target_url': url},
+        await precacheImage(
+          _aboutAvatarProvider(url),
+          context,
+          onError: (error, stackTrace) {
+            errorHandled = true;
+            AppLogger.I.debug(
+              'MineAbout',
+              'about avatar prefetch failed',
+              error: error,
+              stackTrace: stackTrace,
+              fields: {'target_url': url},
+            );
+          },
         );
+      } catch (error, stackTrace) {
+        if (!errorHandled) {
+          AppLogger.I.debug(
+            'MineAbout',
+            'about avatar prefetch failed',
+            error: error,
+            stackTrace: stackTrace,
+            fields: {'target_url': url},
+          );
+        }
       }
     }),
   );

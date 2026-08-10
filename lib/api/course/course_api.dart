@@ -44,15 +44,52 @@ class CourseApi {
   Future<List<dynamic>> fetchCampusTimeInfo(String campusName) async {
     final body = <String, dynamic>{'campusName': campusName};
     final resp = await _client.dio.post(_campusTimeInfoApi, data: body);
-    if (resp.data is List) {
-      return resp.data as List<dynamic>;
+    final items = parseCampusTimeInfoResponse(resp.data);
+    if (items != null) return items;
+    throw const CourseApiException(
+      CourseApiErrorKind.invalidResponse,
+      '校区节次信息返回格式异常，请稍后重试',
+    );
+  }
+
+  /// Accepts both the historical top-level list and common API envelope
+  /// shapes such as `{data: [...]}` and `{result: {list: [...]}}`.
+  static List<dynamic>? parseCampusTimeInfoResponse(dynamic raw) {
+    dynamic decoded = raw;
+    for (var depth = 0; depth < 4; depth++) {
+      if (decoded is List) return List<dynamic>.from(decoded);
+      if (decoded is String) {
+        final text = decoded.trim();
+        if (text.isEmpty) return null;
+        try {
+          decoded = json.decode(text);
+          continue;
+        } catch (_) {
+          return null;
+        }
+      }
+      if (decoded is Map) {
+        dynamic next;
+        for (final key in const [
+          'data',
+          'result',
+          'rows',
+          'list',
+          'items',
+          'records',
+        ]) {
+          if (decoded.containsKey(key)) {
+            next = decoded[key];
+            break;
+          }
+        }
+        if (next == null || identical(next, decoded)) return null;
+        decoded = next;
+        continue;
+      }
+      return null;
     }
-    // Handle potential JSON string or map wrapping
-    if (resp.data is String) {
-      final decoded = json.decode(resp.data);
-      if (decoded is List) return decoded;
-    }
-    throw Exception('Failed to fetch campus time info');
+    return decoded is List ? List<dynamic>.from(decoded) : null;
   }
 
   Future<Map<String, dynamic>> fetchWeekEvents({

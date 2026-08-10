@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
@@ -22,6 +23,21 @@ class _FakeTimeInfoScheduleApi extends ScheduleApi {
   @override
   Future<List<CampusTimeInfo>> fetchCampusTimeInfo(String campusName) async {
     fetchCount++;
+    return response;
+  }
+}
+
+class _BlockingTimeInfoScheduleApi extends _FakeTimeInfoScheduleApi {
+  _BlockingTimeInfoScheduleApi({required super.response});
+
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<List<CampusTimeInfo>> fetchCampusTimeInfo(String campusName) async {
+    fetchCount++;
+    if (!started.isCompleted) started.complete();
+    await release.future;
     return response;
   }
 }
@@ -83,6 +99,77 @@ void main() {
       expect(first, isTrue);
       expect(second, isFalse);
       expect(api.fetchCount, 1);
+    });
+
+    test('不同页面的 coordinator 共享同一个进行中的刷新', () async {
+      SharedPreferences.setMockInitialValues({});
+      final api = _BlockingTimeInfoScheduleApi(
+        response: [
+          CampusTimeInfo(
+            campusName: '两江校区',
+            sessionNum: 1,
+            startTime: '08:00',
+            endTime: '08:45',
+          ),
+        ],
+      );
+      List<CampusTimeInfo>? firstState;
+      List<CampusTimeInfo>? secondState;
+      final first = ScheduleTimeInfoCoordinator(
+        service: api,
+        getTimeInfoList: () => firstState,
+        setTimeInfoList: (value) => firstState = value,
+      );
+      final second = ScheduleTimeInfoCoordinator(
+        service: api,
+        getTimeInfoList: () => secondState,
+        setTimeInfoList: (value) => secondState = value,
+      );
+
+      final firstRefresh = first.refreshTimeInfoIfEnabled();
+      await api.started.future;
+      final secondRefresh = second.refreshTimeInfoIfEnabled();
+      api.release.complete();
+      await Future.wait([firstRefresh, secondRefresh]);
+
+      expect(api.fetchCount, 1);
+      expect(firstState, isNotNull);
+      expect(secondState, isNotNull);
+    });
+
+    test('新鲜缓存跨 coordinator 跳过自动网络刷新', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      SharedPreferences.setMockInitialValues({
+        'schedule_time_info_cache_v1': json.encode({
+          'campusName': '两江校区',
+          'fingerprint': 'cached',
+          'updatedAt': now,
+          'items': [
+            {
+              'campusName': '两江校区',
+              'sessionNum': 1,
+              'startTime': '08:00',
+              'endTime': '08:45',
+            },
+          ],
+        }),
+        'schedule_time_info_last_campus': '两江校区',
+        'schedule_time_info_last_successful_check_at': now,
+      });
+      List<CampusTimeInfo>? state;
+      final api = _FakeTimeInfoScheduleApi(response: const []);
+      final coordinator = ScheduleTimeInfoCoordinator(
+        service: api,
+        getTimeInfoList: () => state,
+        setTimeInfoList: (value) => state = value,
+      );
+
+      await coordinator.loadTimeInfoFromCacheIfAny();
+      final changed = await coordinator.refreshTimeInfoIfEnabled();
+
+      expect(changed, isFalse);
+      expect(api.fetchCount, 0);
+      expect(state, isNotNull);
     });
 
     test('刷新结果未变化时返回 false 并保留缓存可读', () async {

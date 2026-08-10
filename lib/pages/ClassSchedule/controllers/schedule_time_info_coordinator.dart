@@ -10,8 +10,7 @@ class ScheduleTimeInfoCoordinator {
   final ScheduleApi service;
   final List<CampusTimeInfo>? Function() getTimeInfoList;
   final void Function(List<CampusTimeInfo> value) setTimeInfoList;
-  Future<bool>? _refreshInFlight;
-  int _lastRefreshAtMs = 0;
+  static Future<bool>? _sharedRefreshInFlight;
 
   ScheduleTimeInfoCoordinator({
     required this.service,
@@ -22,7 +21,13 @@ class ScheduleTimeInfoCoordinator {
   static const String _prefsKeyTimeInfoCache = 'schedule_time_info_cache_v1';
   static const String _prefsKeyTimeInfoLastCampus =
       'schedule_time_info_last_campus';
-  static const int _refreshCooldownMs = 60 * 1000;
+  static const String _prefsKeyTimeInfoLastAttemptAt =
+      'schedule_time_info_last_attempt_at';
+  static const String _prefsKeyTimeInfoLastSuccessfulCheckAt =
+      'schedule_time_info_last_successful_check_at';
+  static const int _freshnessIntervalMs = 12 * 60 * 60 * 1000;
+  static const int _failureRetryCooldownMs = 5 * 60 * 1000;
+  static const int _forcedRefreshBurstCooldownMs = 2 * 1000;
 
   String _timeInfoFingerprint(List<CampusTimeInfo> list) {
     final items = list.map((e) => e.toJson()).toList();
@@ -86,15 +91,21 @@ class ScheduleTimeInfoCoordinator {
   }
 
   Future<bool> refreshTimeInfoIfEnabled({bool force = false}) async {
-    final inFlight = _refreshInFlight;
-    if (inFlight != null) return await inFlight;
+    final inFlight = _sharedRefreshInFlight;
+    if (inFlight != null) {
+      final changed = await inFlight;
+      if (getTimeInfoList() == null) {
+        await loadTimeInfoFromCacheIfAny();
+      }
+      return changed;
+    }
     final future = _refreshTimeInfoIfEnabledInternal(force: force);
-    _refreshInFlight = future;
+    _sharedRefreshInFlight = future;
     try {
       return await future;
     } finally {
-      if (identical(_refreshInFlight, future)) {
-        _refreshInFlight = null;
+      if (identical(_sharedRefreshInFlight, future)) {
+        _sharedRefreshInFlight = null;
       }
     }
   }
@@ -102,20 +113,6 @@ class ScheduleTimeInfoCoordinator {
   Future<bool> _refreshTimeInfoIfEnabledInternal({required bool force}) async {
     final prefs = await SharedPreferences.getInstance();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    if (!force &&
-        _lastRefreshAtMs > 0 &&
-        nowMs - _lastRefreshAtMs < _refreshCooldownMs) {
-      AppLogger.I.info(
-        'TimeInfo',
-        'refresh_skipped_cooldown',
-        fields: {
-          'cooldownMs': _refreshCooldownMs,
-          'sinceMs': nowMs - _lastRefreshAtMs,
-        },
-      );
-      return false;
-    }
-    _lastRefreshAtMs = nowMs;
 
     String? campusName = prefs.getString(_prefsKeyTimeInfoLastCampus);
     if (campusName == null || campusName.trim().isEmpty) {
@@ -143,20 +140,56 @@ class ScheduleTimeInfoCoordinator {
     campusName ??= '两江校区';
 
     String? oldFp;
+    int cachedUpdatedAt = 0;
     final cachedRaw = prefs.getString(_prefsKeyTimeInfoCache);
     if (cachedRaw != null && cachedRaw.trim().isNotEmpty) {
       try {
         final decoded = json.decode(cachedRaw);
         if (decoded is Map<String, dynamic>) {
           oldFp = decoded['fingerprint']?.toString();
+          cachedUpdatedAt = (decoded['updatedAt'] as num?)?.toInt() ?? 0;
         }
       } catch (_) {}
     }
 
+    final lastAttemptAt = prefs.getInt(_prefsKeyTimeInfoLastAttemptAt) ?? 0;
+    final lastSuccessfulCheckAt =
+        prefs.getInt(_prefsKeyTimeInfoLastSuccessfulCheckAt) ?? cachedUpdatedAt;
+    final sinceAttemptMs = nowMs - lastAttemptAt;
+    final sinceSuccessfulCheckMs = nowMs - lastSuccessfulCheckAt;
+    final hasCache = oldFp != null;
+    final skipReason = force
+        ? (lastAttemptAt > 0 && sinceAttemptMs < _forcedRefreshBurstCooldownMs
+              ? 'forced_burst'
+              : null)
+        : (hasCache &&
+                  lastSuccessfulCheckAt > 0 &&
+                  sinceSuccessfulCheckMs < _freshnessIntervalMs
+              ? 'cache_fresh'
+              : (lastAttemptAt > lastSuccessfulCheckAt &&
+                        sinceAttemptMs < _failureRetryCooldownMs
+                    ? 'recent_failure'
+                    : null));
+    if (skipReason != null) {
+      AppLogger.I.info(
+        'TimeInfo',
+        'refresh_skipped',
+        fields: {
+          'reason': skipReason,
+          'force': force,
+          'hasCache': hasCache,
+          'sinceAttemptMs': sinceAttemptMs,
+          'sinceSuccessfulCheckMs': sinceSuccessfulCheckMs,
+        },
+      );
+      return false;
+    }
+    await prefs.setInt(_prefsKeyTimeInfoLastAttemptAt, nowMs);
+
     AppLogger.I.info(
       'TimeInfo',
       'refresh_start',
-      fields: {'campus': campusName, 'hasCache': oldFp != null, 'force': force},
+      fields: {'campus': campusName, 'hasCache': hasCache, 'force': force},
     );
     List<CampusTimeInfo> fetched;
     try {
@@ -179,6 +212,8 @@ class ScheduleTimeInfoCoordinator {
       return false;
     }
     if (fetched.isEmpty) return false;
+
+    await prefs.setInt(_prefsKeyTimeInfoLastSuccessfulCheckAt, nowMs);
 
     final newFp = _timeInfoFingerprint(fetched);
     if (oldFp != null && oldFp == newFp) {

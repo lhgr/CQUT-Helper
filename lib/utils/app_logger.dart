@@ -8,7 +8,13 @@ import 'dart:ui';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart'
-    show FlutterError, debugPrint, kDebugMode, kProfileMode, kReleaseMode;
+    show
+        FlutterError,
+        FlutterErrorDetails,
+        debugPrint,
+        kDebugMode,
+        kProfileMode,
+        kReleaseMode;
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1372,6 +1378,20 @@ class AppLogger {
 
   void installGlobalErrorHandlers() {
     FlutterError.onError = (details) {
+      if (_isRecoverableNetworkImageError(details)) {
+        warn(
+          'FlutterImage',
+          details.exceptionAsString(),
+          error: details.exception,
+          stackTrace: details.stack,
+          fields: {
+            'library': details.library,
+            'context': details.context?.toDescription(),
+            'recoverable': true,
+          },
+        );
+        return;
+      }
       fatal(
         'FlutterError',
         details.exceptionAsString(),
@@ -1394,6 +1414,19 @@ class AppLogger {
       );
       return true;
     };
+  }
+
+  bool _isRecoverableNetworkImageError(FlutterErrorDetails details) {
+    if (details.library != 'image resource service') return false;
+    final context = details.context?.toDescription().toLowerCase() ?? '';
+    if (!context.contains('image failed')) return false;
+    final error = details.exceptionAsString().toLowerCase();
+    return error.contains('clientexception') ||
+        error.contains('socketexception') ||
+        error.contains('failed host lookup') ||
+        error.contains('connection closed') ||
+        error.contains('connection reset') ||
+        error.contains('timed out');
   }
 
   DioLogInterceptor dioInterceptor({
