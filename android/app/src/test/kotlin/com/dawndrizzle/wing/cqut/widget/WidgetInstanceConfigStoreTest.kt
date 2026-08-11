@@ -31,4 +31,12 @@ class WidgetInstanceConfigStoreTest {
     assertEquals(1, WidgetInstanceConfigStore.normalizeDayOffset(1))
     assertEquals(1, WidgetInstanceConfigStore.normalizeDayOffset(8))
   }
+
+  @Test
+  fun `refresh suggestion accepts positive custom days and repairs invalid values`() {
+    assertEquals(1, WidgetInstanceConfigStore.normalizeRefreshSuggestionDays(1))
+    assertEquals(12, WidgetInstanceConfigStore.normalizeRefreshSuggestionDays(12))
+    assertEquals(3, WidgetInstanceConfigStore.normalizeRefreshSuggestionDays(0))
+    assertEquals(3, WidgetInstanceConfigStore.normalizeRefreshSuggestionDays(-5))
+  }
 }

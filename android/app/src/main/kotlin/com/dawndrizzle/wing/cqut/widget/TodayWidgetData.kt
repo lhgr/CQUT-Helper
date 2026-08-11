@@ -6,6 +6,7 @@ import android.text.format.DateUtils
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
+import java.security.MessageDigest
 import java.util.Calendar
 import java.util.Locale
 
@@ -70,7 +71,7 @@ object TodayWidgetData {
     "${FLUTTER_PREFIX}schedule_widget_refresh_state_"
   private const val KEY_WIDGET_REFRESH_FAILURE_PREFIX =
     "${FLUTTER_PREFIX}schedule_widget_refresh_failure_"
-  private const val STALE_AFTER_MILLIS = 72L * 60 * 60 * 1000
+  private const val MILLIS_PER_DAY = 24L * 60 * 60 * 1000
   private const val ANONYMOUS_SCOPE = "anonymous"
   private val COURSE_TITLE_COLORS =
     intArrayOf(
@@ -125,7 +126,10 @@ object TodayWidgetData {
     return "第${week}周"
   }
 
-  fun loadRefreshPresentation(context: Context): RefreshPresentation {
+  fun loadRefreshPresentation(
+    context: Context,
+    appWidgetId: Int = android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID,
+  ): RefreshPresentation {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val account =
       prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
@@ -185,7 +189,11 @@ object TodayWidgetData {
     }
     if (!pollingEnabled &&
       lastSuccessfulAt != null &&
-      System.currentTimeMillis() - lastSuccessfulAt > STALE_AFTER_MILLIS
+      isRefreshStale(
+        lastSuccessfulAt,
+        System.currentTimeMillis(),
+        WidgetInstanceConfigStore.load(context, appWidgetId).refreshSuggestionDays,
+      )
     ) {
       return RefreshPresentation(
         RefreshPresentationState.STALE,
@@ -278,18 +286,43 @@ object TodayWidgetData {
     return migratedAt
   }
 
-  private fun formatLastUpdated(timestamp: Long): String {
-    val now = Calendar.getInstance()
+  internal fun formatLastUpdated(
+    timestamp: Long,
+    nowMillis: Long = System.currentTimeMillis(),
+  ): String {
+    val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
     val at = Calendar.getInstance().apply { timeInMillis = timestamp }
-    val prefix =
-      if (now.get(Calendar.YEAR) == at.get(Calendar.YEAR) &&
-        now.get(Calendar.DAY_OF_YEAR) == at.get(Calendar.DAY_OF_YEAR)
-      ) {
-        "今天"
-      } else {
-        SimpleDateFormat("M.d ", Locale.CHINA).format(at.time)
+    if (isSameCalendarDate(now, at)) {
+      return SimpleDateFormat("HH:mm", Locale.CHINA).format(at.time)
+    }
+    return "${calendarDayDistance(now, at)}天前"
+  }
+
+  internal fun isRefreshStale(
+    lastSuccessfulAt: Long,
+    nowMillis: Long,
+    suggestionDays: Int,
+  ): Boolean {
+    val normalizedDays = WidgetInstanceConfigStore.normalizeRefreshSuggestionDays(suggestionDays)
+    return nowMillis - lastSuccessfulAt > normalizedDays.toLong() * MILLIS_PER_DAY
+  }
+
+  private fun calendarDayDistance(
+    now: Calendar,
+    at: Calendar,
+  ): Long {
+    fun localDateAsUtcMillis(calendar: Calendar): Long =
+      Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).run {
+        clear()
+        set(
+          calendar.get(Calendar.YEAR),
+          calendar.get(Calendar.MONTH),
+          calendar.get(Calendar.DAY_OF_MONTH),
+        )
+        timeInMillis
       }
-    return "$prefix${SimpleDateFormat("HH:mm", Locale.CHINA).format(at.time)}更新"
+    return ((localDateAsUtcMillis(now) - localDateAsUtcMillis(at)) / MILLIS_PER_DAY)
+      .coerceAtLeast(0L)
   }
 
   fun loadCoursesByDayOffset(context: Context, dayOffset: Int): List<CourseItem> {
@@ -571,6 +604,37 @@ object TodayWidgetData {
 
   private fun isSameAsSystemDate(weekDateText: String): Boolean {
     return isSameAsDate(weekDateText, Calendar.getInstance())
+  }
+
+  fun loadDisplayedScheduleFingerprint(context: Context): String {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
+    val term =
+      prefs.getString("$KEY_WIDGET_TERM_PREFIX$account", null)?.trim().orEmpty()
+        .ifBlank { prefs.getString("$KEY_LAST_TERM_PREFIX$account", null)?.trim().orEmpty() }
+    val week =
+      prefs.getString("$KEY_WIDGET_WEEK_PREFIX$account", null)?.trim().orEmpty()
+        .ifBlank { prefs.getString("$KEY_LAST_WEEK_PREFIX$account", null)?.trim().orEmpty() }
+    val scheduleJson =
+      if (account.isNotBlank() && term.isNotBlank() && week.isNotBlank()) {
+        prefs.getString("${FLUTTER_PREFIX}schedule_${account}_${term}_$week", null)
+      } else {
+        null
+      }
+    return displayedScheduleFingerprint(account, term, week, scheduleJson)
+  }
+
+  internal fun displayedScheduleFingerprint(
+    account: String,
+    term: String,
+    week: String,
+    scheduleJson: String?,
+  ): String {
+    val bytes = "$account\u0000$term\u0000$week\u0000${scheduleJson.orEmpty()}".toByteArray()
+    return MessageDigest
+      .getInstance("SHA-256")
+      .digest(bytes)
+      .joinToString("") { "%02x".format(it) }
   }
 
   private fun isSameAsDate(weekDateText: String, targetDate: Calendar): Boolean {

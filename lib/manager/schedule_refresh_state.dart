@@ -25,6 +25,8 @@ class ScheduleRefreshState {
       'schedule_widget_refresh_state_';
   static const String _widgetRefreshFailurePrefix =
       'schedule_widget_refresh_failure_';
+  static const String _widgetRefreshTokenPrefix =
+      'schedule_widget_refresh_token_';
 
   static String _lastSuccessfulRefreshAtKey(String userId) =>
       '$_lastSuccessfulRefreshAtPrefix${userId.trim()}';
@@ -34,6 +36,9 @@ class ScheduleRefreshState {
 
   static String _widgetRefreshFailureKey(String userId) =>
       '$_widgetRefreshFailurePrefix${userId.trim()}';
+
+  static String _widgetRefreshTokenKey(String userId) =>
+      '$_widgetRefreshTokenPrefix${userId.trim()}';
 
   static Future<ScheduleRefreshSnapshot> load(String userId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -82,10 +87,15 @@ class ScheduleRefreshState {
     await prefs.remove(_widgetRefreshFailureKey(normalizedUserId));
   }
 
-  static Future<void> markSuccess(String userId, {DateTime? at}) async {
+  static Future<void> markSuccess(
+    String userId, {
+    DateTime? at,
+    String? refreshId,
+  }) async {
     final normalizedUserId = userId.trim();
     if (normalizedUserId.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
+    if (!_matchesRefreshToken(prefs, normalizedUserId, refreshId)) return;
     await prefs.setString(
       _lastSuccessfulRefreshAtKey(normalizedUserId),
       (at ?? DateTime.now()).toIso8601String(),
@@ -100,10 +110,12 @@ class ScheduleRefreshState {
   static Future<void> markFailure(
     String userId, {
     required ScheduleWidgetRefreshFailure failure,
+    String? refreshId,
   }) async {
     final normalizedUserId = userId.trim();
     if (normalizedUserId.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
+    if (!_matchesRefreshToken(prefs, normalizedUserId, refreshId)) return;
     await prefs.setString(
       _widgetRefreshStateKey(normalizedUserId),
       ScheduleWidgetRefreshState.failed.name,
@@ -112,6 +124,16 @@ class ScheduleRefreshState {
       _widgetRefreshFailureKey(normalizedUserId),
       failure.name,
     );
+  }
+
+  static bool _matchesRefreshToken(
+    SharedPreferences prefs,
+    String userId,
+    String? refreshId,
+  ) {
+    final expected = (refreshId ?? '').trim();
+    if (expected.isEmpty) return true;
+    return prefs.getString(_widgetRefreshTokenKey(userId)) == expected;
   }
 
   static bool looksLikeCredentialFailure(Object error) {

@@ -18,6 +18,7 @@ enum class WidgetInstanceTheme {
 data class WidgetInstanceConfig(
   val theme: WidgetInstanceTheme = WidgetInstanceTheme.FOLLOW_APP,
   val dayOffset: Int = 0,
+  val refreshSuggestionDays: Int = WidgetInstanceConfigStore.DEFAULT_REFRESH_SUGGESTION_DAYS,
 )
 
 object WidgetInstanceConfigStore {
@@ -25,9 +26,14 @@ object WidgetInstanceConfigStore {
   private const val LEGACY_DAY_PREFS_NAME = "TodayCourseWidgetPrefs"
   private const val KEY_THEME_PREFIX = "theme_"
   private const val KEY_DAY_OFFSET_PREFIX = "day_offset_"
+  private const val KEY_REFRESH_SUGGESTION_DAYS_PREFIX = "refresh_suggestion_days_"
   private const val KEY_CONFIGURED_PREFIX = "configured_"
+  const val DEFAULT_REFRESH_SUGGESTION_DAYS = 3
 
   fun normalizeDayOffset(value: Int): Int = value.coerceIn(0, 1)
+
+  fun normalizeRefreshSuggestionDays(value: Int): Int =
+    if (value > 0) value else DEFAULT_REFRESH_SUGGESTION_DAYS
 
   fun load(
     context: Context,
@@ -55,6 +61,13 @@ object WidgetInstanceConfigStore {
     return WidgetInstanceConfig(
       theme = WidgetInstanceTheme.parse(prefs.getString("$KEY_THEME_PREFIX$appWidgetId", null)),
       dayOffset = normalizeDayOffset(dayOffset),
+      refreshSuggestionDays =
+        normalizeRefreshSuggestionDays(
+          prefs.getInt(
+            "$KEY_REFRESH_SUGGESTION_DAYS_PREFIX$appWidgetId",
+            DEFAULT_REFRESH_SUGGESTION_DAYS,
+          ),
+        ),
     )
   }
 
@@ -68,6 +81,10 @@ object WidgetInstanceConfigStore {
       .edit()
       .putString("$KEY_THEME_PREFIX$appWidgetId", config.theme.name)
       .putInt("$KEY_DAY_OFFSET_PREFIX$appWidgetId", normalizeDayOffset(config.dayOffset))
+      .putInt(
+        "$KEY_REFRESH_SUGGESTION_DAYS_PREFIX$appWidgetId",
+        normalizeRefreshSuggestionDays(config.refreshSuggestionDays),
+      )
       .putBoolean("$KEY_CONFIGURED_PREFIX$appWidgetId", true)
       .apply()
   }
@@ -99,6 +116,7 @@ object WidgetInstanceConfigStore {
     appWidgetIds.forEach { appWidgetId ->
       editor.remove("$KEY_THEME_PREFIX$appWidgetId")
       editor.remove("$KEY_DAY_OFFSET_PREFIX$appWidgetId")
+      editor.remove("$KEY_REFRESH_SUGGESTION_DAYS_PREFIX$appWidgetId")
       editor.remove("$KEY_CONFIGURED_PREFIX$appWidgetId")
       legacyEditor.remove("dayOffset_$appWidgetId")
     }

@@ -81,6 +81,8 @@ class ScheduleApi {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    bool notifyWidget = true,
+    String? refreshId,
   }) async {
     final reqWeek = _norm(weekNum);
     final reqTerm = _norm(yearTerm);
@@ -124,7 +126,7 @@ class ScheduleApi {
         await prefs.setString(_widgetWeekKey(userId), saveWeek);
         await prefs.setString(_widgetTermKey(userId), saveTerm);
       }
-      await ScheduleRefreshState.markSuccess(userId);
+      await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
       await prefs.setInt(
         lastFetchAtKey(userId, saveTerm, saveWeek),
         DateTime.now().millisecondsSinceEpoch,
@@ -135,7 +137,9 @@ class ScheduleApi {
           updateWidgetPins ||
           (widgetWeek == saveWeek && widgetTerm == saveTerm);
       if (updatesCurrentDisplay) {
-        await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+        if (notifyWidget) {
+          await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+        }
         await _rescheduleCourseRemindersSafely(userId);
       }
     }

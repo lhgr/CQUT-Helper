@@ -38,6 +38,39 @@ void main() {
       expect(snapshot.failure, isNull);
     });
 
+    test(
+      'stale worker token cannot overwrite the active refresh state',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'schedule_widget_refresh_state_u1': 'loading',
+          'schedule_widget_refresh_token_u1': 'new-refresh',
+        });
+
+        await ScheduleRefreshState.markSuccess('u1', refreshId: 'old-refresh');
+        final snapshot = await ScheduleRefreshState.load('u1');
+
+        expect(snapshot.widgetState, ScheduleWidgetRefreshState.loading);
+        expect(snapshot.lastSuccessfulRefreshAt, isNull);
+      },
+    );
+
+    test('matching worker token can publish failure', () async {
+      SharedPreferences.setMockInitialValues({
+        'schedule_widget_refresh_state_u1': 'loading',
+        'schedule_widget_refresh_token_u1': 'active-refresh',
+      });
+
+      await ScheduleRefreshState.markFailure(
+        'u1',
+        failure: ScheduleWidgetRefreshFailure.generic,
+        refreshId: 'active-refresh',
+      );
+      final snapshot = await ScheduleRefreshState.load('u1');
+
+      expect(snapshot.widgetState, ScheduleWidgetRefreshState.failed);
+      expect(snapshot.failure, ScheduleWidgetRefreshFailure.generic);
+    });
+
     test('能区分凭证错误与普通错误', () {
       expect(
         ScheduleRefreshState.looksLikeCredentialFailure(Exception('登录凭证已失效')),

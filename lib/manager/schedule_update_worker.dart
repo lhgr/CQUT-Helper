@@ -136,12 +136,14 @@ class ScheduleUpdateWorker {
       await _ensureLoggerReady();
       final trigger = ((inputData?['trigger'] ?? 'unknown').toString()).trim();
       final isWidgetManual = trigger == _triggerWidgetManual;
+      final refreshId = ((inputData?['refreshId'] ?? '').toString()).trim();
       final logicalDateBjt = ((inputData?['logicalDateBjt'] ?? '').toString())
           .trim();
       await recordScheduleUpdateWorkerState(
         status: 'started',
         trigger: trigger,
         task: task,
+        fields: {if (refreshId.isNotEmpty) 'refreshId': refreshId},
       );
       Future<bool> done({
         required String status,
@@ -161,6 +163,7 @@ class ScheduleUpdateWorker {
             await ScheduleRefreshState.markFailure(
               widgetUserId,
               failure: failure,
+              refreshId: refreshId,
             );
           }
         }
@@ -168,7 +171,7 @@ class ScheduleUpdateWorker {
           status: status,
           trigger: trigger,
           task: task,
-          fields: fields,
+          fields: {...fields, if (refreshId.isNotEmpty) 'refreshId': refreshId},
         );
         if (scheduleFollowUp) {
           await _handleFollowUpScheduling(
@@ -222,6 +225,7 @@ class ScheduleUpdateWorker {
           await ScheduleRefreshState.markFailure(
             userId,
             failure: ScheduleWidgetRefreshFailure.credentialInvalid,
+            refreshId: refreshId,
           );
         }
         AppLogger.I.event(
@@ -288,6 +292,8 @@ class ScheduleUpdateWorker {
             yearTerm: preferredTerm.isEmpty ? null : preferredTerm,
             persistLastViewed: false,
             updateWidgetPins: isWidgetManual && preferredTerm.isEmpty,
+            notifyWidget: !isWidgetManual,
+            refreshId: isWidgetManual ? refreshId : null,
           );
           loadedCurrentDataFromNetwork = true;
         } catch (e, st) {
@@ -375,15 +381,21 @@ class ScheduleUpdateWorker {
               yearTerm: preferredTerm.isEmpty ? null : preferredTerm,
               persistLastViewed: false,
               updateWidgetPins: preferredTerm.isEmpty,
+              notifyWidget: false,
+              refreshId: refreshId,
             );
           }
-          await ScheduleRefreshState.markSuccess(userId);
+          await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
           return done(status: 'widget_manual_success');
         } catch (e, st) {
           final failure = ScheduleRefreshState.looksLikeCredentialFailure(e)
               ? ScheduleWidgetRefreshFailure.credentialInvalid
               : ScheduleWidgetRefreshFailure.generic;
-          await ScheduleRefreshState.markFailure(userId, failure: failure);
+          await ScheduleRefreshState.markFailure(
+            userId,
+            failure: failure,
+            refreshId: refreshId,
+          );
           AppLogger.I.event(
             LogLevel.error,
             'ScheduleUpdateWorker',

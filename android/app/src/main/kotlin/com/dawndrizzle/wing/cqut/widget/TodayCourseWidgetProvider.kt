@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.widget.RemoteViews
 import com.dawndrizzle.wing.cqut.R
 
@@ -135,7 +136,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
             TodayWidgetData.loadEmptyStateText(context, dayOffset),
           )
         }
-        val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context)
+        val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
         bindRefreshPresentation(
           context,
           views,
@@ -153,15 +154,56 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       }
     }
 
-    fun completeManualRefresh(context: Context) {
+    fun completeManualRefresh(
+      context: Context,
+      previousContentFingerprint: String? = null,
+      refreshId: String = "",
+    ) {
       val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context)
-      if (refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL) {
+      val currentContentFingerprint = TodayWidgetData.loadDisplayedScheduleFingerprint(context)
+      val refreshSucceeded =
+        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL ||
+          (
+            context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 &&
+              refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NEEDS_SYNC
+          )
+      val refreshData =
+        shouldRefreshData(
+          refreshSucceeded,
+          previousContentFingerprint,
+          currentContentFingerprint,
+        )
+      val contentChanged =
+        previousContentFingerprint == null ||
+          previousContentFingerprint != currentContentFingerprint
+      Log.i(
+        "WidgetManualRefresh",
+        "event=completion refreshId=$refreshId state=${refreshPresentation.state} " +
+          "contentChanged=$contentChanged refreshData=$refreshData",
+      )
+      if (refreshData) {
         val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
         TodayListWidgetProvider.updateAll(context, theme)
         TodayAndNextWidgetProvider.updateAll(context, theme)
       }
-      updateRefreshPresentation(context, refreshData = true)
+      // A collection rebind briefly clears RemoteViews on some launchers. Keep
+      // the existing list intact when a successful refresh did not change the
+      // visible schedule, and only patch the status/icon in that common case.
+      updateRefreshPresentation(
+        context,
+        refreshData = refreshData,
+      )
       WidgetAutoRefreshScheduler.schedule(context)
+    }
+
+    internal fun shouldRefreshData(
+      refreshSucceeded: Boolean,
+      previousContentFingerprint: String?,
+      currentContentFingerprint: String,
+    ): Boolean {
+      if (!refreshSucceeded) return false
+      return previousContentFingerprint == null ||
+        previousContentFingerprint != currentContentFingerprint
     }
 
     private fun updateAppWidget(
@@ -203,7 +245,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         R.id.empty_text,
         TodayWidgetData.loadEmptyStateText(context, dayOffset),
       )
-      val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context)
+      val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
       views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
       views.setViewVisibility(
         R.id.tv_sync_status,
