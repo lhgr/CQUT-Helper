@@ -31,6 +31,8 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    bool notifyWidget = true,
+    String? refreshId,
   }) async {
     networkCalls++;
     lastEncryptedPassword = encryptedPassword;

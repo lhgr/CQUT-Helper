@@ -18,6 +18,8 @@ class _BlockingScheduleApi extends ScheduleApi {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    bool notifyWidget = true,
+    String? refreshId,
   }) {
     calls++;
     return completer.future;
