@@ -135,7 +135,7 @@ class WidgetConfigurationActivity : Activity() {
     customRefreshDaysInput = EditText(this)
     if (supportsRefreshSuggestion) {
       content.addView(
-        sectionTitle("建议更新时间").apply {
+        sectionTitle("更新提示间隔").apply {
           setPadding(0, dp(22), 0, dp(4))
         },
       )
@@ -149,21 +149,21 @@ class WidgetConfigurationActivity : Activity() {
       )
       refreshSuggestionGroup.apply {
         orientation = RadioGroup.VERTICAL
-        addView(option(refreshDailyId, "1 天（频繁）"))
+        addView(option(refreshDailyId, "1 天"))
         addView(option(refreshThreeDaysId, "3 天（推荐）"))
-        addView(option(refreshWeeklyId, "7 天（宽松）"))
+        addView(option(refreshWeeklyId, "7 天"))
         addView(option(refreshCustomId, "自定义"))
       }
       content.addView(refreshSuggestionGroup)
       customRefreshDaysInput.apply {
-        hint = "输入天数（正整数）"
+        hint = "输入天数"
         inputType = android.text.InputType.TYPE_CLASS_NUMBER
         setSingleLine(true)
-        isEnabled = false
         setPadding(dp(16), 0, dp(16), 0)
         setOnFocusChangeListener { _, hasFocus ->
           if (hasFocus) refreshSuggestionGroup.check(refreshCustomId)
         }
+        setOnClickListener { refreshSuggestionGroup.check(refreshCustomId) }
       }
       content.addView(
         customRefreshDaysInput,
@@ -182,9 +182,6 @@ class WidgetConfigurationActivity : Activity() {
         }
       if (selectedRefreshId == refreshCustomId) {
         customRefreshDaysInput.setText(existing.refreshSuggestionDays.toString())
-      }
-      refreshSuggestionGroup.setOnCheckedChangeListener { _, checkedId ->
-        customRefreshDaysInput.isEnabled = checkedId == refreshCustomId
       }
       refreshSuggestionGroup.check(selectedRefreshId)
     }
