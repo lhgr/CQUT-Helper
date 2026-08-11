@@ -61,7 +61,7 @@ class ScheduleUpdateWorker {
       'userId': userId,
       'trigger': trigger,
       'logicalDateBjt': logicalDateBjt,
-      if (scheduledAtBjt != null) 'scheduledAtBjt': scheduledAtBjt,
+      'scheduledAtBjt': ?scheduledAtBjt,
     };
   }
 

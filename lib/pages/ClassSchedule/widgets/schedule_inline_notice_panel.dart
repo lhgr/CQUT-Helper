@@ -50,7 +50,7 @@ class ScheduleInlineNoticePanel extends StatelessWidget {
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: notices.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              separatorBuilder: (_, _) => const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 return Container(
                   padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),

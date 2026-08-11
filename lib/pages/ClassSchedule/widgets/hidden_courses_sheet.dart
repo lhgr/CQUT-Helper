@@ -142,7 +142,7 @@ class _HiddenCoursesSheetState extends State<HiddenCoursesSheet> {
                     shrinkWrap: true,
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
                     itemCount: courses.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final course = courses[index];
                       final restoring = _restoring.contains(

@@ -1204,7 +1204,7 @@ class AppLogger {
       if (action != null && action.isNotEmpty) 'action': action,
       if (status != null && status.isNotEmpty) 'status': status,
       if (reason != null && reason.isNotEmpty) 'reason': reason,
-      if (fields != null) ...fields,
+      ...?fields,
     };
     log(
       level,
@@ -1790,11 +1790,11 @@ class DioLogInterceptor extends Interceptor {
         'type': 'response',
         'method': response.requestOptions.method,
         'uri': safeUri,
-        if (traceId != null) 'trace_id': traceId,
-        if (requestId != null) 'request_id': requestId,
+        'trace_id': ?traceId,
+        'request_id': ?requestId,
         'ok': ok,
         'status': status,
-        if (ms != null) 'duration_ms': ms,
+        'duration_ms': ?ms,
       },
     );
     handler.next(response);
@@ -1828,7 +1828,7 @@ class DioLogInterceptor extends Interceptor {
             'method': err.requestOptions.method,
             'uri': safeUri,
             'dio_type': err.type.name,
-            if (status != null) 'status': status,
+            'status': ?status,
             if (err.message != null)
               'message': _sanitizeObject(err.message, msgMax),
           },
@@ -1855,11 +1855,11 @@ class DioLogInterceptor extends Interceptor {
         'type': 'error',
         'method': err.requestOptions.method,
         'uri': safeUri,
-        if (traceId != null) 'trace_id': traceId,
-        if (requestId != null) 'request_id': requestId,
+        'trace_id': ?traceId,
+        'request_id': ?requestId,
         'ok': false,
-        if (status != null) 'status': status,
-        if (ms != null) 'duration_ms': ms,
+        'status': ?status,
+        'duration_ms': ?ms,
         'dio_type': err.type.name,
         if (err.message != null)
           'message': _sanitizeObject(err.message, msgMax),

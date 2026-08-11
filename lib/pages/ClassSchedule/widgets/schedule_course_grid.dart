@@ -448,7 +448,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                   child: ListView.separated(
                     shrinkWrap: true,
                     itemCount: group.events.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (itemContext, index) {
                       final event = group.events[index];
                       return ListTile(

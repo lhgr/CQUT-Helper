@@ -12,8 +12,8 @@ class WidgetUpdater {
     if (!Platform.isAndroid) return;
     try {
       await _channel.invokeMethod<void>('updateTodayWidget', {
-        if (themeMode != null) 'themeMode': themeMode,
-        if (trigger != null) 'trigger': trigger,
+        'themeMode': ?themeMode,
+        'trigger': ?trigger,
       });
     } catch (_) {}
   }

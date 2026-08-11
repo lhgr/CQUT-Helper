@@ -166,7 +166,7 @@ Future<void> patchScheduleUpdateWorkerDailyState({
   try {
     final current = await loadScheduleUpdateWorkerDailyState();
     final next = <String, dynamic>{
-      if (current != null) ...current,
+      ...?current,
       'logicalDateBjt': logicalDateBjt,
       ...fields,
     };

@@ -74,7 +74,7 @@ void main() {
       final pipeline = ScheduleNoticeRefreshPipeline(
         scheduleApi: fakeApi,
         credentialStore: credentialStore,
-        refreshWeek: (_, __) async {},
+        refreshWeek: (_, _) async {},
         nowProvider: () => DateTime(2026, 4, 14, 10),
       );
 
@@ -110,7 +110,7 @@ void main() {
       final pipeline = ScheduleNoticeRefreshPipeline(
         scheduleApi: fakeApi,
         credentialStore: _FakePipelineCredentialStore(value: 'secure-p1'),
-        refreshWeek: (_, __) async {},
+        refreshWeek: (_, _) async {},
         nowProvider: () => DateTime(2026, 4, 14, 10),
       );
 
@@ -143,7 +143,7 @@ void main() {
       final pipeline = ScheduleNoticeRefreshPipeline(
         scheduleApi: fakeApi,
         credentialStore: credentialStore,
-        refreshWeek: (_, __) async {},
+        refreshWeek: (_, _) async {},
         nowProvider: () => DateTime(2026, 4, 14, 10),
       );
 
@@ -179,7 +179,7 @@ void main() {
       final pipeline = ScheduleNoticeRefreshPipeline(
         scheduleApi: fakeApi,
         credentialStore: credentialStore,
-        refreshWeek: (_, __) async {},
+        refreshWeek: (_, _) async {},
         nowProvider: () => DateTime(2026, 4, 14, 10),
       );
 
