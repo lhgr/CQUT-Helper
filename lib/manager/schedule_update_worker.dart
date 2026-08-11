@@ -66,10 +66,7 @@ class ScheduleUpdateWorker {
   }
 
   static Future<void> initialize() async {
-    await Workmanager().initialize(
-      scheduleUpdateCallbackDispatcher,
-      isInDebugMode: false,
-    );
+    await Workmanager().initialize(scheduleUpdateCallbackDispatcher);
   }
 
   static Future<void> markEnabledAtIfNeeded({required bool enabled}) {

@@ -43,7 +43,7 @@ class LocalNotifications {
     );
 
     await _plugin.initialize(
-      initSettings,
+      settings: initSettings,
       onDidReceiveNotificationResponse: (response) async {
         await _handleTap(response.payload);
       },
@@ -194,10 +194,10 @@ class LocalNotifications {
     );
 
     await _plugin.show(
-      id ?? DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
-      title,
-      body,
-      details,
+      id: id ?? DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+      title: title,
+      body: body,
+      notificationDetails: details,
       payload: payload,
     );
   }
@@ -223,10 +223,10 @@ class LocalNotifications {
     );
 
     await _plugin.show(
-      id ?? DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
-      title,
-      body,
-      details,
+      id: id ?? DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+      title: title,
+      body: body,
+      notificationDetails: details,
       payload: payload,
     );
   }
@@ -251,11 +251,11 @@ class LocalNotifications {
       ),
     );
     await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      tz.TZDateTime.from(scheduledAt, tz.local),
-      details,
+      id: id,
+      title: title,
+      body: body,
+      scheduledDate: tz.TZDateTime.from(scheduledAt, tz.local),
+      notificationDetails: details,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: payload,
     );
@@ -265,7 +265,7 @@ class LocalNotifications {
     if (!Platform.isAndroid) return;
     await initialize();
     for (final id in ids) {
-      await _plugin.cancel(id);
+      await _plugin.cancel(id: id);
     }
   }
 }

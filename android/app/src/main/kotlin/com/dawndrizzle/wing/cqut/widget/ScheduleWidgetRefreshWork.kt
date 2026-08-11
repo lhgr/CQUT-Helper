@@ -75,7 +75,6 @@ object ScheduleWidgetRefreshWork {
       Data.Builder()
         .putString(BackgroundWorker.DART_TASK_KEY, DART_TASK_NAME)
         .putString(BackgroundWorker.PAYLOAD_KEY, payload)
-        .putBoolean(BackgroundWorker.IS_IN_DEBUG_MODE_KEY, false)
         .build()
     val refreshRequest =
       OneTimeWorkRequestBuilder<BackgroundWorker>()
