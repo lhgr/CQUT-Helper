@@ -13,7 +13,7 @@ class ScheduleTimeColumn extends StatelessWidget {
     super.key,
     this.width = 35.0,
     this.sessionHeight = 60.0,
-    this.sessionCount = 12,
+    this.sessionCount = 10,
     this.timeInfoList,
     this.showGridLines = true,
     this.transparentBackground = false,

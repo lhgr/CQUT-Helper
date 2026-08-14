@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cqut_helper/api/notice/notice_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
@@ -45,11 +46,11 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   late TextEditingController _noticeApiController;
   late String noticeApiBaseUrl;
   String? _noticeApiError;
-  bool _testingConnectivity = false;
-  bool? _connectivityOk;
-  String _connectivityMessage = '';
+  bool _testingAvailability = false;
+  bool? _availabilityOk;
+  String _availabilityMessage = '';
   String _sheetNoticeMessage = '';
-  int? _connectivityElapsedMs;
+  int? _availabilityElapsedMs;
   bool _noticeConfigExpanded = false;
   bool confirmDialogOpen = false;
   bool _allowPop = false;
@@ -150,30 +151,46 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     if (mounted) await _loadHiddenCourseCount();
   }
 
-  Future<void> _testConnectivity() async {
+  Future<void> _testAvailability() async {
     final error = _validateNoticeApiBaseUrl(noticeApiBaseUrl);
     if (error != null) {
       setState(() {
         _noticeApiError = error;
-        _connectivityOk = false;
-        _connectivityElapsedMs = null;
-        _connectivityMessage = '请先修正域名格式';
+        _availabilityOk = false;
+        _availabilityElapsedMs = null;
+        _availabilityMessage = '请先修正域名格式';
       });
       return;
     }
     setState(() {
-      _testingConnectivity = true;
-      _connectivityMessage = '正在检测连通性...';
-      _connectivityElapsedMs = null;
-      _connectivityOk = null;
+      _testingAvailability = true;
+      _availabilityMessage = '正在调用调课服务...';
+      _availabilityElapsedMs = null;
+      _availabilityOk = null;
     });
-    final result = await NoticeApi.testConnectivity(noticeApiBaseUrl);
+    NoticeApiAvailabilityResult result;
+    try {
+      final encryptedPassword =
+          ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
+      result = await NoticeApi().testAvailability(
+        baseUrl: noticeApiBaseUrl,
+        username: widget.userId,
+        encryptedPassword: encryptedPassword,
+        yearTerm: widget.yearTerm,
+      );
+    } catch (_) {
+      result = const NoticeApiAvailabilityResult(
+        success: false,
+        elapsedMs: 0,
+        message: '读取登录凭据失败，请重新登录后再检查',
+      );
+    }
     if (!mounted) return;
     setState(() {
-      _testingConnectivity = false;
-      _connectivityOk = result.success;
-      _connectivityElapsedMs = result.elapsedMs;
-      _connectivityMessage = result.message;
+      _testingAvailability = false;
+      _availabilityOk = result.success;
+      _availabilityElapsedMs = result.elapsedMs;
+      _availabilityMessage = result.message;
     });
   }
 
@@ -496,7 +513,8 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                               labelText: '调课服务地址',
                               hintText: ScheduleSettingsManager
                                   .officialNoticeApiBaseUrl,
-                              helperText: '仅支持 HTTPS；凭证只会发送到该地址，失败时不会回退其他服务',
+                              helperText:
+                                  '仅支持 HTTPS；检查时会使用当前登录凭据实际查询，失败时不会回退其他服务',
                               errorText: _noticeApiError,
                             ),
                           ),
@@ -504,25 +522,25 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                           Row(
                             children: [
                               FilledButton.tonal(
-                                onPressed: _testingConnectivity
+                                onPressed: _testingAvailability
                                     ? null
-                                    : _testConnectivity,
+                                    : _testAvailability,
                                 child: Text(
-                                  _testingConnectivity ? '测试中...' : '测试连通性',
+                                  _testingAvailability ? '检查中...' : '检查服务可用性',
                                 ),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  _connectivityMessage.isEmpty
-                                      ? '输入后可测试 /health 接口连通性'
-                                      : _connectivityElapsedMs == null
-                                      ? _connectivityMessage
-                                      : '$_connectivityMessage（${_connectivityElapsedMs}ms）',
+                                  _availabilityMessage.isEmpty
+                                      ? '输入后可实际查询当前学期调课信息'
+                                      : _availabilityElapsedMs == null
+                                      ? _availabilityMessage
+                                      : '$_availabilityMessage（${_availabilityElapsedMs}ms）',
                                   style: TextStyle(
-                                    color: _connectivityOk == null
+                                    color: _availabilityOk == null
                                         ? Theme.of(context).hintColor
-                                        : _connectivityOk == true
+                                        : _availabilityOk == true
                                         ? Colors.green
                                         : Theme.of(context).colorScheme.error,
                                   ),

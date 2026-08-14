@@ -10,9 +10,7 @@ Release 构建不再使用 debug 签名。缺少正式签名配置时，Gradle �
    - `ANDROID_KEYSTORE_PASSWORD`
    - `ANDROID_KEY_ALIAS`
    - `ANDROID_KEY_PASSWORD`
-   - `NOTICE_API_KEY`
 3. `ANDROID_KEYSTORE_BASE64` 是 JKS 文件的单行 Base64 内容。
-4. `NOTICE_API_KEY` 应与调课服务端 `JWXT_API_KEYS` 中的当前令牌一致。
 
 ## 本地 Release 构建
 
@@ -28,8 +26,8 @@ keyPassword=...
 将密钥保存为 `android/app/upload-keystore.jks`，然后执行：
 
 ```shell
-flutter build appbundle --release --dart-define=NOTICE_API_KEY=...
-flutter build apk --release --dart-define=NOTICE_API_KEY=...
+flutter build appbundle --release
+flutter build apk --release
 ```
 
 推送与 `pubspec.yaml` 版本一致的 `v*` 标签后，Release 工作流会先运行格式检查、静态分析、Flutter/Kotlin 测试，再构建正式签名的 AAB、通用 APK、分架构 APK 和 SHA-256 校验文件。产物默认进入 Draft Release，发布前仍需在真机验证覆盖安装、登录、课表刷新、通知和三种桌面小组件。

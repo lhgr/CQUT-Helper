@@ -67,7 +67,7 @@ jobs:
             'keyPassword=ci-password' > android/key.properties
 
       - name: Build release APK as smoke test
-        run: flutter build apk --release --dart-define=NOTICE_API_KEY=ci-placeholder
+        run: flutter build apk --release
 
   backend:
     name: Notice service checks

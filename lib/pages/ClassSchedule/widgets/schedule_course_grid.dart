@@ -32,7 +32,7 @@ class ScheduleCourseGrid extends StatefulWidget {
     required this.events,
     required this.yearTerm,
     this.sessionHeight = 60.0,
-    this.sessionCount = 12,
+    this.sessionCount = 10,
     required this.backgroundColors,
     required this.borderColors,
     required this.titleColors,

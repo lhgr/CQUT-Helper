@@ -5,19 +5,15 @@
 ## 必需配置
 
 ```text
-JWXT_REQUIRE_API_KEY=true
-JWXT_API_KEYS=<至少 32 字节的随机令牌>
 JWXT_RATE_LIMIT_PER_MINUTE=12
 JWXT_MAX_CONCURRENT_PIPELINES=2
 JWXT_PIPELINE_TIMEOUT_SEC=90
 JWXT_TRUST_PROXY_HEADERS=false
 ```
 
-- `JWXT_API_KEYS` 支持逗号分隔的多个令牌，便于无停机轮换。
 - 只有反向代理已经覆盖并清洗 `X-Forwarded-For` 时，才可启用 `JWXT_TRUST_PROXY_HEADERS`。
-- 移动客户端中的共享 API Key 只能降低匿名滥用，不能视为不可提取的用户身份凭证。公网部署仍应在反向代理或 API 网关设置 IP 限流、请求体大小限制和连接超时。
-- 应用 Release 构建通过 `--dart-define=NOTICE_API_KEY=...` 注入与服务端匹配的令牌。
-- 私有局域网、自用部署可显式设置 `JWXT_REQUIRE_API_KEY=false`，不建议公网使用。
+- 服务不再校验移动客户端内置的共享 API Key。该 Key 可从客户端提取，不能作为可靠的用户身份凭证。
+- 公网部署仍应在反向代理或 API 网关设置 IP 限流、请求体大小限制、连接超时与必要的访问控制；应用内仍保留按来源地址限流、并发限制和请求体大小限制。
 
 ## 启动示例
 
@@ -31,7 +27,9 @@ uvicorn jwxt_automation:app --host 127.0.0.1 --port 8000 --workers 1
 
 建议由 Caddy、Nginx 或云 API 网关终止 TLS。应用内限流按进程保存，因此使用多个 Uvicorn worker 或多实例部署时，必须把全局限流放到网关或 Redis 等共享设施中。
 
-健康检查 `GET /health` 不接收凭证，会返回服务是否完成鉴权配置。调课接口错误统一为：
+健康检查 `GET /health` 只反映进程存活状态。客户端的“检查服务可用性”会实际调用调课接口并校验能否获取当前学期的调课信息。调课接口错误统一为：
+
+成功响应中的 `data.term_schedule_notices_complete` 固定为 `true`，表示 `term_schedule_notices` 是完整结果。客户端只有在该标记存在且列表格式正确时，才会接受空列表并处理调课通知撤销。
 
 ```json
 {
@@ -42,4 +40,3 @@ uvicorn jwxt_automation:app --host 127.0.0.1 --port 8000 --workers 1
   }
 }
 ```
-

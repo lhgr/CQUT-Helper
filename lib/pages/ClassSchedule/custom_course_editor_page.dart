@@ -56,11 +56,11 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         .clamp(1, 7);
     _startSession = (int.tryParse(initial?.sessionStart ?? '') ?? 1).clamp(
       1,
-      12,
+      10,
     );
     _sessionCount = (int.tryParse(initial?.sessionLast ?? '') ?? 2).clamp(
       1,
-      12,
+      10,
     );
   }
 
@@ -134,7 +134,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final maxCount = (13 - _startSession).clamp(1, 12);
+    final maxCount = (11 - _startSession).clamp(1, 10);
     if (_sessionCount > maxCount) _sessionCount = maxCount;
     return Scaffold(
       appBar: AppBar(
@@ -234,7 +234,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                   labelText: '开始节次',
                   sheetTitle: '选择开始节次',
                   options: List.generate(
-                    12,
+                    10,
                     (index) => AppSelectOption(
                       value: index + 1,
                       label: '第${index + 1}节',

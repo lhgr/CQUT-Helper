@@ -1,4 +1,5 @@
 import 'package:cqut_helper/api/notice/notice_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
@@ -30,8 +31,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   bool _pollingEnabled = false;
   ScheduleBackgroundPollHealthSnapshot? _health;
   String? _serviceError;
-  String _connectivityMessage = '';
-  bool _testingConnectivity = false;
+  String _availabilityMessage = '';
+  bool _testingAvailability = false;
 
   @override
   void initState() {
@@ -217,7 +218,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     _showMessage('调课服务地址已保存');
   }
 
-  Future<void> _testConnectivity() async {
+  Future<void> _testAvailability() async {
     final value = _serviceController.text.trim();
     final error = _validateServiceUrl(value);
     if (error != null) {
@@ -225,14 +226,30 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       return;
     }
     setState(() {
-      _testingConnectivity = true;
-      _connectivityMessage = '正在测试…';
+      _testingAvailability = true;
+      _availabilityMessage = '正在调用调课服务…';
     });
-    final result = await NoticeApi.testConnectivity(value);
+    NoticeApiAvailabilityResult result;
+    try {
+      final encryptedPassword =
+          ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
+      result = await NoticeApi().testAvailability(
+        baseUrl: value,
+        username: widget.scope.userId,
+        encryptedPassword: encryptedPassword,
+        yearTerm: widget.scope.yearTerm,
+      );
+    } catch (_) {
+      result = const NoticeApiAvailabilityResult(
+        success: false,
+        elapsedMs: 0,
+        message: '读取登录凭据失败，请重新登录后再检查',
+      );
+    }
     if (!mounted) return;
     setState(() {
-      _testingConnectivity = false;
-      _connectivityMessage = '${result.message}（${result.elapsedMs}ms）';
+      _testingAvailability = false;
+      _availabilityMessage = '${result.message}（${result.elapsedMs}ms）';
     });
   }
 
@@ -320,7 +337,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                               labelText: '调课服务地址',
                               hintText: ScheduleSettingsManager
                                   .officialNoticeApiBaseUrl,
-                              helperText: '留空使用官方服务，仅支持 HTTPS',
+                              helperText: '留空使用官方服务；检查时会使用当前登录凭据实际查询调课信息',
                               errorText: _serviceError,
                             ),
                             onChanged: (_) {
@@ -334,11 +351,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                             children: [
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: _testingConnectivity
+                                  onPressed: _testingAvailability
                                       ? null
-                                      : _testConnectivity,
+                                      : _testAvailability,
                                   child: Text(
-                                    _testingConnectivity ? '测试中…' : '测试连通性',
+                                    _testingAvailability ? '检查中…' : '检查服务可用性',
                                   ),
                                 ),
                               ),
@@ -351,11 +368,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                               ),
                             ],
                           ),
-                          if (_connectivityMessage.isNotEmpty) ...[
+                          if (_availabilityMessage.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             Align(
                               alignment: Alignment.centerLeft,
-                              child: Text(_connectivityMessage),
+                              child: Text(_availabilityMessage),
                             ),
                           ],
                         ],

@@ -1,14 +1,15 @@
-import os
 import unittest
+from inspect import signature
 from unittest.mock import patch
 
 from pydantic import ValidationError
 
 from jwxt_automation import (
     PipelineRequest,
-    ServiceError,
     SlidingWindowRateLimiter,
-    _require_api_key,
+    fetch_term_schedule_notices,
+    health,
+    run_pipeline,
 )
 
 
@@ -21,54 +22,27 @@ class SecurityBoundaryTests(unittest.TestCase):
         self.assertFalse(limiter.allow("client", now=2))
         self.assertTrue(limiter.allow("client", now=61))
 
-    def test_api_key_is_fail_closed_when_not_configured(self) -> None:
-        with patch.dict(
-            os.environ,
-            {"JWXT_REQUIRE_API_KEY": "true", "JWXT_API_KEYS": ""},
-            clear=False,
-        ):
-            with self.assertRaises(ServiceError) as raised:
-                _require_api_key("anything")
+    def test_notice_endpoint_no_longer_accepts_api_key(self) -> None:
+        self.assertNotIn("api_key", signature(fetch_term_schedule_notices).parameters)
 
-        self.assertEqual(raised.exception.status_code, 503)
-        self.assertEqual(raised.exception.code, "service_not_configured")
+    def test_health_is_ready_without_auth_configuration(self) -> None:
+        self.assertEqual(health(), {"status": "ok", "ready": True})
 
-    def test_api_key_accepts_one_of_rotatable_keys(self) -> None:
-        old_key = "o" * 32
-        new_key = "n" * 32
-        with patch.dict(
-            os.environ,
-            {
-                "JWXT_REQUIRE_API_KEY": "true",
-                "JWXT_API_KEYS": f"{old_key},{new_key}",
-            },
-            clear=False,
-        ):
-            _require_api_key(new_key)
-            with self.assertRaises(ServiceError) as raised:
-                _require_api_key("wrong-key")
+    def test_pipeline_marks_empty_notice_result_as_complete(self) -> None:
+        with patch("jwxt_automation.JwxtAutomation") as client_class:
+            client = client_class.return_value
+            client.signed_urls = {"pending": "signed", "read": "signed"}
+            client.fetch_all_by_kind.side_effect = [[], []]
 
-        self.assertEqual(raised.exception.status_code, 401)
-        self.assertEqual(raised.exception.code, "unauthorized")
+            result = run_pipeline(
+                username="student",
+                encrypted_password="encrypted",
+                year_term="2026-2027-1",
+                env_name="prod",
+            )
 
-    def test_short_api_keys_are_rejected_as_misconfiguration(self) -> None:
-        with patch.dict(
-            os.environ,
-            {"JWXT_REQUIRE_API_KEY": "true", "JWXT_API_KEYS": "too-short"},
-            clear=False,
-        ):
-            with self.assertRaises(ServiceError) as raised:
-                _require_api_key("too-short")
-
-        self.assertEqual(raised.exception.code, "service_not_configured")
-
-    def test_private_deployment_can_explicitly_disable_api_key(self) -> None:
-        with patch.dict(
-            os.environ,
-            {"JWXT_REQUIRE_API_KEY": "false", "JWXT_API_KEYS": ""},
-            clear=False,
-        ):
-            _require_api_key(None)
+        self.assertTrue(result["term_schedule_notices_complete"])
+        self.assertEqual(result["term_schedule_notices"], [])
 
     def test_request_model_rejects_oversized_account(self) -> None:
         with self.assertRaises(ValidationError):

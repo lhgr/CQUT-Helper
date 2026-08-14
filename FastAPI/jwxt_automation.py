@@ -4,7 +4,6 @@ import multiprocessing
 import os
 import queue
 import re
-import secrets
 import subprocess
 import tempfile
 import threading
@@ -16,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 try:
@@ -473,6 +472,7 @@ def run_pipeline(
             "read_total": len(read),
             "term_schedule_notice_total": len(notices),
         },
+        "term_schedule_notices_complete": True,
         "term_schedule_notices": notices,
     }
     return result
@@ -552,28 +552,6 @@ def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     except ValueError:
         value = default
     return max(minimum, min(maximum, value))
-
-
-def _configured_api_keys() -> List[str]:
-    raw = os.getenv("JWXT_API_KEYS", "")
-    return [
-        value.strip()
-        for value in raw.split(",")
-        if len(value.strip()) >= 32
-    ]
-
-
-def _require_api_key(provided: Optional[str]) -> None:
-    if not _env_bool("JWXT_REQUIRE_API_KEY", True):
-        return
-    configured = _configured_api_keys()
-    if not configured:
-        raise ServiceError(503, "service_not_configured", "服务尚未完成安全配置")
-    candidate = (provided or "").strip()
-    if not candidate or not any(
-        secrets.compare_digest(candidate, expected) for expected in configured
-    ):
-        raise ServiceError(401, "unauthorized", "服务鉴权失败")
 
 
 def _client_identity(request: Request) -> str:
@@ -751,21 +729,14 @@ async def validation_error_handler(
 
 @app.get("/health")
 def health() -> Dict[str, Any]:
-    auth_required = _env_bool("JWXT_REQUIRE_API_KEY", True)
-    return {
-        "status": "ok",
-        "ready": not auth_required or bool(_configured_api_keys()),
-        "auth_required": auth_required,
-    }
+    return {"status": "ok", "ready": True}
 
 
 @app.post("/api/jwxt/term-schedule-notices")
 def fetch_term_schedule_notices(
     payload: PipelineRequest,
     request: Request,
-    api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ) -> Dict[str, Any]:
-    _require_api_key(api_key)
     if not _rate_limiter.allow(_client_identity(request)):
         raise ServiceError(429, "rate_limited", "请求过于频繁，请稍后再试")
     if not _pipeline_slots.acquire(blocking=False):
