@@ -234,7 +234,7 @@ class CourseApi {
           password: null,
           encryptedPassword: encryptedPassword,
         );
-        return _mutateCustomEventOnce(
+        return await _mutateCustomEventOnce(
           url: url,
           body: body,
           userId: userId,

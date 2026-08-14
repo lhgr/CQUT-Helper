@@ -383,7 +383,7 @@ class ScheduleUpdateWorker {
             );
           }
           await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
-          return done(status: 'widget_manual_success');
+          return await done(status: 'widget_manual_success');
         } catch (e, st) {
           final failure = ScheduleRefreshState.looksLikeCredentialFailure(e)
               ? ScheduleWidgetRefreshFailure.credentialInvalid

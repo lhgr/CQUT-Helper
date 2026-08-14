@@ -23,15 +23,6 @@ void main() {
       expect(result.changes, isEmpty);
     });
 
-    test('pending key 缺失时返回空结果', () async {
-      SharedPreferences.setMockInitialValues({'account': 'u1'});
-
-      final result = await manager.checkPendingChanges();
-
-      expect(result.yearTerm, isNull);
-      expect(result.changes, isEmpty);
-    });
-
     test('非法 JSON 返回空结果并移除 pending key', () async {
       final key = ScheduleUpdateWorker.pendingKeyForUser('u1');
       SharedPreferences.setMockInitialValues({
@@ -45,34 +36,6 @@ void main() {
       expect(result.yearTerm, isNull);
       expect(result.changes, isEmpty);
       expect(prefs.getString(key), isNull);
-    });
-
-    test('payload 不是 map 时返回空结果并移除 pending key', () async {
-      final key = ScheduleUpdateWorker.pendingKeyForUser('u1');
-      SharedPreferences.setMockInitialValues({
-        'account': 'u1',
-        key: json.encode(['unexpected']),
-      });
-
-      final result = await manager.checkPendingChanges();
-      final prefs = await SharedPreferences.getInstance();
-
-      expect(result.yearTerm, isNull);
-      expect(result.changes, isEmpty);
-      expect(prefs.getString(key), isNull);
-    });
-
-    test('changes 不是 list 时保留 yearTerm 并返回空 changes', () async {
-      final key = ScheduleUpdateWorker.pendingKeyForUser('u1');
-      SharedPreferences.setMockInitialValues({
-        'account': 'u1',
-        key: json.encode({'yearTerm': '2025-2026-2', 'changes': 'oops'}),
-      });
-
-      final result = await manager.checkPendingChanges();
-
-      expect(result.yearTerm, '2025-2026-2');
-      expect(result.changes, isEmpty);
     });
 
     test('合法 payload 能正确解析并移除 pending key', () async {

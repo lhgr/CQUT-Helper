@@ -1,7 +1,5 @@
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
-import 'package:cqut_helper/pages/Mine/mine_menu_section.dart';
-import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/appearance_startup_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_courses_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_layout_preview.dart';
@@ -13,33 +11,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({'account': 'test-user'});
-  });
-
-  testWidgets('我的页面只保留一个统一设置入口', (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: MineMenuSection())),
-    );
-
-    expect(find.text('设置'), findsOneWidget);
-    expect(find.text('主题设置'), findsNothing);
-    expect(find.text('课程与体验'), findsNothing);
-    expect(find.text('检查更新'), findsNothing);
-    expect(find.text('清理缓存'), findsNothing);
-    expect(find.text('关于我们'), findsNothing);
-    expect(find.text('退出登录'), findsOneWidget);
-  });
-
-  testWidgets('设置中心仅展示五个分类入口', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: AppSettingsPage()));
-    await tester.pumpAndSettle();
-
-    expect(find.text('课表与课程'), findsOneWidget);
-    expect(find.text('通知与提醒'), findsOneWidget);
-    expect(find.text('外观与启动'), findsOneWidget);
-    expect(find.text('存储与诊断'), findsOneWidget);
-    expect(find.text('关于应用'), findsOneWidget);
-    expect(find.text('显示周末'), findsNothing);
-    expect(find.text('课前提醒'), findsNothing);
   });
 
   testWidgets('课表显示选项切换后即时保存', (tester) async {

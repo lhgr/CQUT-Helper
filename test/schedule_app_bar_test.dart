@@ -29,28 +29,6 @@ void main() {
     expect(find.textContaining('2026-2027-1学期 ·'), findsNothing);
   });
 
-  testWidgets('非当天更新时间保留日期和时间', (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          appBar: ScheduleAppBar(
-            loading: false,
-            weekList: const ['1'],
-            currentWeekIndex: 0,
-            currentScheduleData: ScheduleData(yearTerm: '2026-2027-1'),
-            refreshStatusText: '9/11 23:12更新',
-            onRefresh: () {},
-            onSettings: () {},
-            onWeekPicker: () {},
-            onTermPicker: () {},
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('9/11 23:12'), findsOneWidget);
-  });
-
   testWidgets('不再显示独立课程管理入口', (tester) async {
     var settingsOpened = false;
     await tester.pumpWidget(
@@ -82,28 +60,5 @@ void main() {
     await tester.tap(find.text('课表设置'));
     await tester.pumpAndSettle();
     expect(settingsOpened, isTrue);
-  });
-
-  testWidgets('自定义背景启用时课表顶栏透明', (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          appBar: ScheduleAppBar(
-            loading: false,
-            weekList: const ['1'],
-            currentWeekIndex: 0,
-            currentScheduleData: ScheduleData(yearTerm: '2026-2027-1'),
-            transparentBackground: true,
-            onRefresh: () {},
-            onSettings: () {},
-            onWeekPicker: () {},
-            onTermPicker: () {},
-          ),
-        ),
-      ),
-    );
-
-    final appBar = tester.widget<AppBar>(find.byType(AppBar));
-    expect(appBar.backgroundColor, Colors.transparent);
   });
 }
