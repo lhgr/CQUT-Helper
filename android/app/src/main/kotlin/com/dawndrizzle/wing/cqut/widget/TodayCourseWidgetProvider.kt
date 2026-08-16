@@ -20,6 +20,19 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     appWidgetManager: AppWidgetManager,
     appWidgetIds: IntArray,
   ) {
+    if (ScheduleWidgetRefreshWork.shouldSuppressProviderUpdate(context)) {
+      // WorkManager toggles its reschedule receiver when native work is
+      // enqueued. MIUI reacts to that package-component change by sending an
+      // APPWIDGET_UPDATE about a second later. Rebinding the collection here
+      // briefly clears it on the launcher, so retain the existing list and
+      // patch only the refresh status/icon during this narrow window.
+      Log.i(
+        "WidgetManualRefresh",
+        "event=provider_update_suppressed widgetIds=${appWidgetIds.joinToString()}",
+      )
+      updateRefreshPresentation(context, appWidgetIds)
+      return
+    }
     WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.INITIALIZATION)
   }
 
@@ -117,25 +130,29 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           ?: appWidgetManager.getAppWidgetIds(
             ComponentName(context, TodayCourseWidgetProvider::class.java),
           )
+      val fallbackTheme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
       for (appWidgetId in ids) {
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) continue
         val views = RemoteViews(context.packageName, R.layout.widget_today_course)
+        val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
+        bindTheme(views, theme)
         val dayOffset = getDayOffset(context, appWidgetId)
-        if (refreshData) {
-          val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
-          val weekCount = TodayWidgetData.loadWeekCountText(context)
-          views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
-          views.setTextViewText(R.id.tv_date, header.dateText)
-          views.setTextViewText(
-            R.id.tv_week_count,
-            if (weekCount.isNotBlank()) " | $weekCount    " else " | ",
-          )
-          views.setTextViewText(R.id.tv_week, header.weekText)
-          views.setTextViewText(
-            R.id.empty_text,
-            TodayWidgetData.loadEmptyStateText(context, dayOffset),
-          )
-        }
+        // MIUI may reapply the partial RemoteViews from its layout defaults.
+        // Include every non-collection field so a status-only patch cannot
+        // surface stale header text from another widget instance.
+        val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
+        val weekCount = TodayWidgetData.loadWeekCountText(context)
+        views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
+        views.setTextViewText(R.id.tv_date, header.dateText)
+        views.setTextViewText(
+          R.id.tv_week_count,
+          if (weekCount.isNotBlank()) " | $weekCount    " else " | ",
+        )
+        views.setTextViewText(R.id.tv_week, header.weekText)
+        views.setTextViewText(
+          R.id.empty_text,
+          TodayWidgetData.loadEmptyStateText(context, dayOffset),
+        )
         val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
         bindRefreshPresentation(
           context,
@@ -181,18 +198,10 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         "event=completion refreshId=$refreshId state=${refreshPresentation.state} " +
           "contentChanged=$contentChanged refreshData=$refreshData",
       )
-      if (refreshData) {
-        val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
-        TodayListWidgetProvider.updateAll(context, theme)
-        TodayAndNextWidgetProvider.updateAll(context, theme)
-      }
       // A collection rebind briefly clears RemoteViews on some launchers. Keep
       // the existing list intact when a successful refresh did not change the
       // visible schedule, and only patch the status/icon in that common case.
-      updateRefreshPresentation(
-        context,
-        refreshData = refreshData,
-      )
+      ScheduleWidgetRefreshWork.updateAllRefreshPresentations(context, refreshData)
       WidgetAutoRefreshScheduler.schedule(context)
     }
 
@@ -214,24 +223,10 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
-      val palette = theme.palette
       // Keep the background on the containers instead of a full-size
       // ImageView. Some launchers briefly clear ImageView content while
       // reapplying RemoteViews, which presents as a black flash.
-      views.setInt(R.id.widget_root, "setBackgroundResource", palette.imageBackgroundRes)
-      views.setInt(R.id.widget_card, "setBackgroundResource", palette.imageBackgroundRes)
-      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
-      views.setTextColor(R.id.tv_date, palette.primaryText)
-      views.setTextColor(R.id.tv_week_count, palette.secondaryText)
-      views.setTextColor(R.id.tv_week, palette.accent)
-      views.setTextColor(R.id.empty_text, palette.secondaryText)
-      views.setTextColor(R.id.tv_sync_status, palette.secondaryText)
-      views.setInt(R.id.iv_next, "setColorFilter", palette.icon)
-      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
-      views.setViewVisibility(
-        R.id.theme_transition_overlay,
-        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
-      )
+      bindTheme(views, theme)
 
       val dayOffset = getDayOffset(context, appWidgetId)
       val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
@@ -317,6 +312,27 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
 
       appWidgetManager.updateAppWidget(appWidgetId, views)
       appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+    }
+
+    private fun bindTheme(
+      views: RemoteViews,
+      theme: WidgetThemeResolution,
+    ) {
+      val palette = theme.palette
+      views.setInt(R.id.widget_root, "setBackgroundResource", palette.imageBackgroundRes)
+      views.setInt(R.id.widget_card, "setBackgroundResource", palette.imageBackgroundRes)
+      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
+      views.setTextColor(R.id.tv_date, palette.primaryText)
+      views.setTextColor(R.id.tv_week_count, palette.secondaryText)
+      views.setTextColor(R.id.tv_week, palette.accent)
+      views.setTextColor(R.id.empty_text, palette.secondaryText)
+      views.setTextColor(R.id.tv_sync_status, palette.secondaryText)
+      views.setInt(R.id.iv_next, "setColorFilter", palette.icon)
+      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
+      views.setViewVisibility(
+        R.id.theme_transition_overlay,
+        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
+      )
     }
 
     private fun bindRefreshPresentation(

@@ -57,6 +57,7 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.dawndrizzle.wing.cqut.widget.TODAY_LIST_REFRESH" />
+                <action android:name="com.dawndrizzle.wing.cqut.widget.TODAY_LIST_MANUAL_REFRESH" />
                 <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
                 <action android:name="android.intent.action.UI_MODE_CHANGED" />
             </intent-filter>
@@ -71,6 +72,7 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.dawndrizzle.wing.cqut.widget.TODAY_AND_NEXT_REFRESH" />
+                <action android:name="com.dawndrizzle.wing.cqut.widget.TODAY_AND_NEXT_MANUAL_REFRESH" />
                 <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
                 <action android:name="android.intent.action.UI_MODE_CHANGED" />
             </intent-filter>

@@ -1,11 +1,32 @@
 package com.dawndrizzle.wing.cqut.widget
 
+import dev.fluttercommunity.workmanager.BackgroundWorker
+import dev.fluttercommunity.workmanager.decodePayload
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScheduleWidgetRefreshWorkTest {
+  @Test
+  fun `manual refresh input uses current workmanager payload encoding`() {
+    val input = ScheduleWidgetRefreshWork.buildWorkerInput("refresh-1")
+
+    assertEquals(
+      "schedule_notice_poll_task",
+      input.getString(BackgroundWorker.DART_TASK_KEY),
+    )
+    assertEquals(
+      mapOf(
+        "trigger" to "widget_manual",
+        "logicalDateBjt" to "",
+        "refreshId" to "refresh-1",
+      ),
+      decodePayload(input.keyValueMap),
+    )
+  }
+
   @Test
   fun `first click is accepted`() {
     assertTrue(ScheduleWidgetRefreshWork.shouldAcceptClick(null, 0L, 1_000L))
@@ -25,6 +46,21 @@ class ScheduleWidgetRefreshWorkTest {
         16L * 60 * 1_000L,
       ),
     )
+  }
+
+  @Test
+  fun `provider update immediately after manual refresh is suppressed`() {
+    assertTrue(ScheduleWidgetRefreshWork.shouldSuppressProviderUpdate(1_000L, 5_000L))
+  }
+
+  @Test
+  fun `provider update after suppression window is allowed`() {
+    assertFalse(ScheduleWidgetRefreshWork.shouldSuppressProviderUpdate(1_000L, 11_000L))
+  }
+
+  @Test
+  fun `provider update without manual refresh is allowed`() {
+    assertFalse(ScheduleWidgetRefreshWork.shouldSuppressProviderUpdate(0L, 5_000L))
   }
 
   @Test

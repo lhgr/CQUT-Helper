@@ -19,13 +19,29 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
     appWidgetManager: AppWidgetManager,
     appWidgetIds: IntArray,
   ) {
-    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.INITIALIZATION)
+    val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.INITIALIZATION)
+    if (ScheduleWidgetRefreshWork.shouldSuppressProviderUpdate(context)) {
+      refreshAppWidgets(context, appWidgetManager, appWidgetIds, theme)
+    } else {
+      updateAppWidgets(context, appWidgetManager, appWidgetIds, theme)
+    }
+    WidgetAutoRefreshScheduler.schedule(context)
   }
 
   override fun onReceive(context: Context, intent: Intent) {
     super.onReceive(context, intent)
     when (intent.action) {
-      ACTION_REFRESH -> WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
+      ACTION_REFRESH -> refreshAll(context)
+      ACTION_MANUAL_REFRESH -> {
+        val appWidgetId =
+          intent.getIntExtra(
+            AppWidgetManager.EXTRA_APPWIDGET_ID,
+            AppWidgetManager.INVALID_APPWIDGET_ID,
+          )
+        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+          ScheduleWidgetRefreshWork.enqueue(context, appWidgetId)
+        }
+      }
       Intent.ACTION_CONFIGURATION_CHANGED ->
         WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
       ACTION_UI_MODE_CHANGED ->
@@ -42,7 +58,7 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
     newOptions: android.os.Bundle,
   ) {
     super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
-    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
+    updateOne(context, appWidgetId)
   }
 
   override fun onDeleted(
@@ -55,12 +71,33 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
 
   companion object {
     const val ACTION_REFRESH = "com.dawndrizzle.wing.cqut.widget.TODAY_AND_NEXT_REFRESH"
+    const val ACTION_MANUAL_REFRESH =
+      "com.dawndrizzle.wing.cqut.widget.TODAY_AND_NEXT_MANUAL_REFRESH"
 
     fun updateAll(context: Context, theme: WidgetThemeResolution? = null) {
       val appWidgetManager = AppWidgetManager.getInstance(context)
       val ids =
         appWidgetManager.getAppWidgetIds(ComponentName(context, TodayAndNextWidgetProvider::class.java))
       updateAppWidgets(context, appWidgetManager, ids, theme)
+    }
+
+    fun refreshAll(context: Context, theme: WidgetThemeResolution? = null) {
+      updateRefreshPresentation(context, theme = theme, refreshData = true)
+    }
+
+    fun updateRefreshPresentation(
+      context: Context,
+      appWidgetIds: IntArray? = null,
+      theme: WidgetThemeResolution? = null,
+      refreshData: Boolean = false,
+    ) {
+      val appWidgetManager = AppWidgetManager.getInstance(context)
+      val ids =
+        appWidgetIds
+          ?: appWidgetManager.getAppWidgetIds(
+            ComponentName(context, TodayAndNextWidgetProvider::class.java),
+          )
+      refreshAppWidgets(context, appWidgetManager, ids, theme, refreshData)
     }
 
     private fun updateAppWidgets(
@@ -74,6 +111,27 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
         val resolvedTheme =
           WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
         updateAppWidget(context, appWidgetManager, appWidgetId, resolvedTheme)
+      }
+    }
+
+    private fun refreshAppWidgets(
+      context: Context,
+      appWidgetManager: AppWidgetManager,
+      appWidgetIds: IntArray,
+      theme: WidgetThemeResolution? = null,
+      refreshData: Boolean = false,
+    ) {
+      val fallbackTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      for (appWidgetId in appWidgetIds) {
+        val resolvedTheme =
+          WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
+        val views = RemoteViews(context.packageName, R.layout.widget_today_and_next)
+        bindPresentation(context, views, appWidgetId, resolvedTheme)
+        appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
+        if (refreshData) {
+          appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+          appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course_next_day)
+        }
       }
     }
 
@@ -94,40 +152,7 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       theme: WidgetThemeResolution,
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_today_and_next)
-
-      val palette = theme.palette
-      views.setInt(
-        R.id.widget_card,
-        "setBackgroundResource",
-        palette.backgroundRes,
-      )
-      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
-      views.setTextColor(R.id.tv_date, palette.secondaryText)
-      views.setTextColor(R.id.tv_week, palette.accent)
-      views.setTextColor(R.id.tv_week_count, palette.secondaryText)
-      views.setTextColor(R.id.empty, palette.secondaryText)
-      views.setTextColor(R.id.empty_next_day, palette.secondaryText)
-      views.setInt(R.id.vertical_divider, "setBackgroundColor", palette.divider)
-      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
-      views.setViewVisibility(
-        R.id.theme_transition_overlay,
-        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
-      )
-
-      val header = TodayWidgetData.loadHeader(context)
-      val weekCount = TodayWidgetData.loadWeekCountText(context)
-      views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
-      views.setTextViewText(R.id.tv_date, header.dateText)
-      views.setTextViewText(R.id.tv_week, header.weekText)
-      views.setTextViewText(R.id.tv_week_count, weekCount)
-      views.setTextViewText(
-        R.id.empty,
-        TodayWidgetData.loadEmptyStateText(context, 0),
-      )
-      views.setTextViewText(
-        R.id.empty_next_day,
-        TodayWidgetData.loadEmptyStateText(context, 1),
-      )
+      bindPresentation(context, views, appWidgetId, theme)
 
       val todayIntent = Intent(context, CourseListWidgetService::class.java).apply {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -169,6 +194,78 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       appWidgetManager.updateAppWidget(appWidgetId, views)
       appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
       appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course_next_day)
+    }
+
+    private fun bindPresentation(
+      context: Context,
+      views: RemoteViews,
+      appWidgetId: Int,
+      theme: WidgetThemeResolution,
+    ) {
+      val palette = theme.palette
+      views.setInt(R.id.widget_card, "setBackgroundResource", palette.backgroundRes)
+      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
+      views.setTextColor(R.id.tv_date, palette.secondaryText)
+      views.setTextColor(R.id.tv_week, palette.accent)
+      views.setTextColor(R.id.tv_week_count, palette.secondaryText)
+      views.setTextColor(R.id.empty, palette.secondaryText)
+      views.setTextColor(R.id.empty_next_day, palette.secondaryText)
+      views.setTextColor(R.id.tv_sync_status, palette.secondaryText)
+      views.setInt(R.id.iv_refresh, "setColorFilter", palette.icon)
+      views.setInt(R.id.vertical_divider, "setBackgroundColor", palette.divider)
+      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
+      views.setViewVisibility(
+        R.id.theme_transition_overlay,
+        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
+      )
+
+      val header = TodayWidgetData.loadHeader(context)
+      views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
+      views.setTextViewText(R.id.tv_date, header.dateText)
+      views.setTextViewText(R.id.tv_week, header.weekText)
+      views.setTextViewText(R.id.tv_week_count, TodayWidgetData.loadWeekCountText(context))
+      views.setTextViewText(R.id.empty, TodayWidgetData.loadEmptyStateText(context, 0))
+      views.setTextViewText(R.id.empty_next_day, TodayWidgetData.loadEmptyStateText(context, 1))
+
+      val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
+      views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
+      views.setViewVisibility(
+        R.id.tv_sync_status,
+        if (refreshPresentation.text.isBlank()) android.view.View.GONE else android.view.View.VISIBLE,
+      )
+      val isLoading =
+        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.LOADING
+      val showRefreshAction = refreshPresentation.usesRefreshAction || isLoading
+      views.setViewVisibility(
+        R.id.iv_refresh,
+        if (showRefreshAction) android.view.View.VISIBLE else android.view.View.GONE,
+      )
+      views.setBoolean(R.id.iv_refresh, "setEnabled", !isLoading)
+      val manualRefreshIntent =
+        Intent(context, TodayAndNextWidgetProvider::class.java).apply {
+          action = ACTION_MANUAL_REFRESH
+          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#manual-refresh-$appWidgetId")
+        }
+      val manualRefreshPendingIntent =
+        PendingIntent.getBroadcast(
+          context,
+          appWidgetId + 30000,
+          manualRefreshIntent,
+          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+      val refreshPendingIntent =
+        if (
+          refreshPresentation.state ==
+            TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID
+        ) {
+          WidgetNavigationPendingIntent.create(context, appWidgetId, 0, false)
+        } else {
+          manualRefreshPendingIntent
+        }
+      if (refreshPendingIntent != null) {
+        views.setOnClickPendingIntent(R.id.iv_refresh, refreshPendingIntent)
+      }
     }
   }
 }

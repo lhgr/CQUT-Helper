@@ -58,7 +58,7 @@ class WidgetConfigurationActivity : Activity() {
     supportsDaySelection =
       providerName == TodayListWidgetProvider::class.java.name ||
       providerName == TodayCourseWidgetProvider::class.java.name
-    supportsRefreshSuggestion = providerName == TodayCourseWidgetProvider::class.java.name
+    supportsRefreshSuggestion = isKnownProvider(providerName)
     existingConfig = WidgetInstanceConfigStore.load(this, appWidgetId)
     setContentView(buildContent(existingConfig, providerName))
   }
@@ -141,7 +141,7 @@ class WidgetConfigurationActivity : Activity() {
       )
       content.addView(
         TextView(this).apply {
-          text = "超过该天数未同步时，日视图会提示刷新。"
+          text = "超过该天数未同步时，小组件会提示刷新。"
           textSize = 13f
           alpha = 0.66f
           setPadding(0, 0, 0, dp(4))

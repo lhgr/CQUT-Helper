@@ -19,20 +19,21 @@ object WidgetThemeSyncDispatcher {
       Log.d("WidgetTheme", "skip system changed because mode=${resolution.mode}")
       return
     }
-    TodayListWidgetProvider.updateAll(context, resolution)
-    TodayAndNextWidgetProvider.updateAll(context, resolution)
+    // Existing collection widgets already have their adapters and click
+    // templates installed. Replacing the whole RemoteViews during an ordinary
+    // refresh makes MIUI briefly recreate the list (visible as a dark/empty
+    // frame), so patch presentation fields and notify the collections only.
+    TodayListWidgetProvider.refreshAll(context, resolution)
+    TodayAndNextWidgetProvider.refreshAll(context, resolution)
     TodayCourseWidgetProvider.updateAll(context, resolution)
-    if (trigger == WidgetThemeTrigger.SYSTEM_THEME_CHANGED && resolution.mode == WidgetThemeMode.SYSTEM) {
-      WidgetForceUpdatePusher.push(context)
-    }
     WidgetAutoRefreshScheduler.schedule(context)
     if (resolution.shouldAnimate) {
       mainHandler.postDelayed(
         {
           WidgetTheme.commitTransition(context)
           val commitResolution = WidgetTheme.resolve(context, WidgetThemeTrigger.TRANSITION_COMMIT)
-          TodayListWidgetProvider.updateAll(context, commitResolution)
-          TodayAndNextWidgetProvider.updateAll(context, commitResolution)
+          TodayListWidgetProvider.refreshAll(context, commitResolution)
+          TodayAndNextWidgetProvider.refreshAll(context, commitResolution)
           TodayCourseWidgetProvider.updateAll(context, commitResolution)
           WidgetAutoRefreshScheduler.schedule(context)
         },
