@@ -35,6 +35,9 @@ object TodayWidgetData {
         state == RefreshPresentationState.NEEDS_SYNC ||
           state == RefreshPresentationState.STALE ||
           state == RefreshPresentationState.FAILED
+
+    val replacesDateMetadata: Boolean
+      get() = state != RefreshPresentationState.NORMAL
   }
 
   data class Header(

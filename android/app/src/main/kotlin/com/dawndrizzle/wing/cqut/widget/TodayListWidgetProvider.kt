@@ -207,6 +207,14 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       views.setTextViewText(R.id.empty, TodayWidgetData.loadEmptyStateText(context, dayOffset))
 
       val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
+      val dateVisibility =
+        if (refreshPresentation.replacesDateMetadata) {
+          android.view.View.GONE
+        } else {
+          android.view.View.VISIBLE
+        }
+      views.setViewVisibility(R.id.tv_date, dateVisibility)
+      views.setViewVisibility(R.id.tv_week, dateVisibility)
       views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
       views.setViewVisibility(
         R.id.tv_sync_status,

@@ -67,4 +67,21 @@ class TodayWidgetDataTest {
     assertTrue(TodayWidgetData.isRefreshStale(lastUpdated, now, 3))
     assertFalse(TodayWidgetData.isRefreshStale(lastUpdated, now, 7))
   }
+
+  @Test
+  fun `non-normal refresh presentation replaces date metadata`() {
+    val stale =
+      TodayWidgetData.RefreshPresentation(
+        TodayWidgetData.RefreshPresentationState.STALE,
+        "课表可能已过期",
+      )
+    val normal =
+      TodayWidgetData.RefreshPresentation(
+        TodayWidgetData.RefreshPresentationState.NORMAL,
+        "10:32",
+      )
+
+    assertTrue(stale.replacesDateMetadata)
+    assertFalse(normal.replacesDateMetadata)
+  }
 }
