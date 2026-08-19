@@ -2,8 +2,11 @@ package com.dawndrizzle.wing.cqut.widget
 
 import android.app.Activity
 import android.appwidget.AppWidgetManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -13,8 +16,29 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 
 class WidgetConfigurationActivity : Activity() {
+  companion object {
+    private const val HOST_REAPPLY_DELAY_MS = 350L
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+
+    private fun updateConfiguredWidget(
+      context: Context,
+      providerName: String,
+      appWidgetId: Int,
+    ) {
+      when (providerName) {
+        TodayListWidgetProvider::class.java.name ->
+          TodayListWidgetProvider.updateOne(context, appWidgetId)
+        TodayAndNextWidgetProvider::class.java.name ->
+          TodayAndNextWidgetProvider.updateOne(context, appWidgetId)
+        TodayCourseWidgetProvider::class.java.name ->
+          TodayCourseWidgetProvider.updateOne(context, appWidgetId)
+      }
+    }
+  }
+
   private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
   private lateinit var themeGroup: RadioGroup
   private lateinit var dayGroup: RadioGroup
@@ -265,24 +289,22 @@ class WidgetConfigurationActivity : Activity() {
         0
       }
     val refreshSuggestionDays = selectedRefreshSuggestionDays() ?: return
-    WidgetInstanceConfigStore.save(
-      this,
-      appWidgetId,
-      WidgetInstanceConfig(
-        theme = theme,
-        dayOffset = dayOffset,
-        refreshSuggestionDays = refreshSuggestionDays,
-      ),
-    )
-
-    when (providerName) {
-      TodayListWidgetProvider::class.java.name ->
-        TodayListWidgetProvider.updateOne(this, appWidgetId)
-      TodayAndNextWidgetProvider::class.java.name ->
-        TodayAndNextWidgetProvider.updateOne(this, appWidgetId)
-      TodayCourseWidgetProvider::class.java.name ->
-        TodayCourseWidgetProvider.updateOne(this, appWidgetId)
+    val saved =
+      WidgetInstanceConfigStore.saveImmediately(
+        this,
+        appWidgetId,
+        WidgetInstanceConfig(
+          theme = theme,
+          dayOffset = dayOffset,
+          refreshSuggestionDays = refreshSuggestionDays,
+        ),
+      )
+    if (!saved) {
+      Toast.makeText(this, "保存小组件设置失败，请重试", Toast.LENGTH_SHORT).show()
+      return
     }
+    val appContext = applicationContext
+    updateConfiguredWidget(appContext, providerName, appWidgetId)
     WidgetAutoRefreshScheduler.schedule(this)
 
     setResult(
@@ -290,6 +312,12 @@ class WidgetConfigurationActivity : Activity() {
       Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId),
     )
     finish()
+    // Some launchers restore their cached RemoteViews after a reconfiguration
+    // activity returns. Reapply once after the host has handled RESULT_OK.
+    mainHandler.postDelayed(
+      { updateConfiguredWidget(appContext, providerName, appWidgetId) },
+      HOST_REAPPLY_DELAY_MS,
+    )
   }
 
   private fun selectedRefreshSuggestionDays(): Int? {

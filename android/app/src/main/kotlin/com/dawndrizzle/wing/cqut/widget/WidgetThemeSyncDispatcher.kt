@@ -19,26 +19,42 @@ object WidgetThemeSyncDispatcher {
       Log.d("WidgetTheme", "skip system changed because mode=${resolution.mode}")
       return
     }
-    // Existing collection widgets already have their adapters and click
-    // templates installed. Replacing the whole RemoteViews during an ordinary
-    // refresh makes MIUI briefly recreate the list (visible as a dark/empty
-    // frame), so patch presentation fields and notify the collections only.
-    TodayListWidgetProvider.refreshAll(context, resolution)
-    TodayAndNextWidgetProvider.refreshAll(context, resolution)
-    TodayCourseWidgetProvider.updateAll(context, resolution)
+    updateWidgets(context, resolution, requiresFullUpdate(trigger))
     WidgetAutoRefreshScheduler.schedule(context)
     if (resolution.shouldAnimate) {
       mainHandler.postDelayed(
         {
           WidgetTheme.commitTransition(context)
           val commitResolution = WidgetTheme.resolve(context, WidgetThemeTrigger.TRANSITION_COMMIT)
-          TodayListWidgetProvider.refreshAll(context, commitResolution)
-          TodayAndNextWidgetProvider.refreshAll(context, commitResolution)
-          TodayCourseWidgetProvider.updateAll(context, commitResolution)
+          updateWidgets(context, commitResolution, fullUpdate = true)
           WidgetAutoRefreshScheduler.schedule(context)
         },
         TRANSITION_DURATION_MS,
       )
     }
+  }
+
+  internal fun requiresFullUpdate(trigger: WidgetThemeTrigger): Boolean {
+    return trigger != WidgetThemeTrigger.DATA_REFRESH
+  }
+
+  private fun updateWidgets(
+    context: Context,
+    resolution: WidgetThemeResolution,
+    fullUpdate: Boolean,
+  ) {
+    if (fullUpdate) {
+      // Theme changes need a complete RemoteViews rebind. Several launchers
+      // retain background resources during partial updates, making FOLLOW_APP
+      // appear pinned to the theme used when the widget was placed.
+      TodayListWidgetProvider.updateAll(context, resolution)
+      TodayAndNextWidgetProvider.updateAll(context, resolution)
+    } else {
+      // Ordinary data refreshes keep their collection adapters and click
+      // templates to avoid a dark/empty frame on MIUI.
+      TodayListWidgetProvider.refreshAll(context, resolution)
+      TodayAndNextWidgetProvider.refreshAll(context, resolution)
+    }
+    TodayCourseWidgetProvider.updateAll(context, resolution)
   }
 }

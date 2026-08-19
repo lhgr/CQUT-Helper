@@ -87,4 +87,37 @@ class ScheduleWidgetRefreshWorkTest {
   fun `failed refresh never clears existing remote list`() {
     assertFalse(TodayCourseWidgetProvider.shouldRefreshData(false, "before", "after"))
   }
+
+  @Test
+  fun `normal header action toggles the displayed day`() {
+    assertEquals(
+      TodayCourseHeaderAction.TOGGLE_DAY,
+      TodayCourseWidgetProvider
+        .headerActionFor(TodayWidgetData.RefreshPresentationState.NORMAL),
+    )
+  }
+
+  @Test
+  fun `credential failure header action opens the app`() {
+    assertEquals(
+      TodayCourseHeaderAction.OPEN_APP,
+      TodayCourseWidgetProvider
+        .headerActionFor(TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID),
+    )
+  }
+
+  @Test
+  fun `non-normal refresh states replace the arrow with refresh action`() {
+    listOf(
+      TodayWidgetData.RefreshPresentationState.NEEDS_SYNC,
+      TodayWidgetData.RefreshPresentationState.STALE,
+      TodayWidgetData.RefreshPresentationState.LOADING,
+      TodayWidgetData.RefreshPresentationState.FAILED,
+    ).forEach { state ->
+      assertEquals(
+        TodayCourseHeaderAction.MANUAL_REFRESH,
+        TodayCourseWidgetProvider.headerActionFor(state),
+      )
+    }
+  }
 }

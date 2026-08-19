@@ -39,4 +39,28 @@ class WidgetInstanceConfigStoreTest {
     assertEquals(3, WidgetInstanceConfigStore.normalizeRefreshSuggestionDays(0))
     assertEquals(3, WidgetInstanceConfigStore.normalizeRefreshSuggestionDays(-5))
   }
+
+  @Test
+  fun `theme changes use full widget updates`() {
+    assertEquals(
+      true,
+      WidgetThemeSyncDispatcher.requiresFullUpdate(WidgetThemeTrigger.APP_THEME_CHANGED),
+    )
+    assertEquals(
+      true,
+      WidgetThemeSyncDispatcher.requiresFullUpdate(WidgetThemeTrigger.SYSTEM_THEME_CHANGED),
+    )
+    assertEquals(
+      true,
+      WidgetThemeSyncDispatcher.requiresFullUpdate(WidgetThemeTrigger.TRANSITION_COMMIT),
+    )
+  }
+
+  @Test
+  fun `ordinary data refresh keeps partial widget update`() {
+    assertEquals(
+      false,
+      WidgetThemeSyncDispatcher.requiresFullUpdate(WidgetThemeTrigger.DATA_REFRESH),
+    )
+  }
 }

@@ -2,6 +2,7 @@ package com.dawndrizzle.wing.cqut.widget
 
 import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.content.SharedPreferences
 
 enum class WidgetInstanceTheme {
   FOLLOW_APP,
@@ -77,7 +78,24 @@ object WidgetInstanceConfigStore {
     config: WidgetInstanceConfig,
   ) {
     if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return
-    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    configEditor(context, appWidgetId, config).apply()
+  }
+
+  fun saveImmediately(
+    context: Context,
+    appWidgetId: Int,
+    config: WidgetInstanceConfig,
+  ): Boolean {
+    if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return false
+    return configEditor(context, appWidgetId, config).commit()
+  }
+
+  private fun configEditor(
+    context: Context,
+    appWidgetId: Int,
+    config: WidgetInstanceConfig,
+  ): SharedPreferences.Editor {
+    return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
       .edit()
       .putString("$KEY_THEME_PREFIX$appWidgetId", config.theme.name)
       .putInt("$KEY_DAY_OFFSET_PREFIX$appWidgetId", normalizeDayOffset(config.dayOffset))
@@ -86,7 +104,6 @@ object WidgetInstanceConfigStore {
         normalizeRefreshSuggestionDays(config.refreshSuggestionDays),
       )
       .putBoolean("$KEY_CONFIGURED_PREFIX$appWidgetId", true)
-      .apply()
   }
 
   fun isConfigured(

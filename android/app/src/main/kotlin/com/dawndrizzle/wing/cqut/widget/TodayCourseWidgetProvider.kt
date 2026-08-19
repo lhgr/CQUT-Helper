@@ -14,6 +14,12 @@ import com.dawndrizzle.wing.cqut.R
 private const val ACTION_UI_MODE_CHANGED = "android.intent.action.UI_MODE_CHANGED"
 private const val ACTION_APPWIDGET_UPDATE_OPTIONS = "android.appwidget.action.APPWIDGET_UPDATE_OPTIONS"
 
+internal enum class TodayCourseHeaderAction {
+  TOGGLE_DAY,
+  MANUAL_REFRESH,
+  OPEN_APP,
+}
+
 class TodayCourseWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(
     context: Context,
@@ -215,6 +221,21 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         previousContentFingerprint != currentContentFingerprint
     }
 
+    internal fun headerActionFor(
+      state: TodayWidgetData.RefreshPresentationState,
+    ): TodayCourseHeaderAction {
+      return when (state) {
+        TodayWidgetData.RefreshPresentationState.NORMAL -> TodayCourseHeaderAction.TOGGLE_DAY
+        TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID ->
+          TodayCourseHeaderAction.OPEN_APP
+        TodayWidgetData.RefreshPresentationState.NEEDS_SYNC,
+        TodayWidgetData.RefreshPresentationState.STALE,
+        TodayWidgetData.RefreshPresentationState.LOADING,
+        TodayWidgetData.RefreshPresentationState.FAILED,
+        -> TodayCourseHeaderAction.MANUAL_REFRESH
+      }
+    }
+
     private fun updateAppWidget(
       context: Context,
       appWidgetManager: AppWidgetManager,
@@ -270,19 +291,6 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           toggleIntent,
           PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-      bindRefreshPresentation(
-        context,
-        views,
-        appWidgetId,
-        dayOffset,
-        refreshPresentation,
-        togglePendingIntent,
-      )
-
-      val isCredentialInvalid =
-        refreshPresentation.state ==
-          TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID
-
       val rootPendingIntent =
         WidgetNavigationPendingIntent.create(
           context,
@@ -302,13 +310,21 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         views.setOnClickPendingIntent(R.id.rl_appwidget, rootPendingIntent)
         views.setOnClickPendingIntent(R.id.rl_title, rootPendingIntent)
         views.setOnClickPendingIntent(android.R.id.empty, rootPendingIntent)
-        if (isCredentialInvalid) {
-          views.setOnClickPendingIntent(R.id.iv_next, rootPendingIntent)
-        }
       }
       if (coursePendingIntent != null) {
         views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
       }
+      // Some launchers flatten nested RemoteViews click targets. Bind the
+      // specific header action after its clickable parent containers so the
+      // arrow/refresh action wins consistently.
+      bindRefreshPresentation(
+        context,
+        views,
+        appWidgetId,
+        dayOffset,
+        refreshPresentation,
+        togglePendingIntent,
+      )
 
       appWidgetManager.updateAppWidget(appWidgetId, views)
       appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
@@ -348,18 +364,22 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         R.id.tv_sync_status,
         if (refreshPresentation.text.isBlank()) android.view.View.GONE else android.view.View.VISIBLE,
       )
-      val isNormal =
-        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL
       val isLoading =
         refreshPresentation.state == TodayWidgetData.RefreshPresentationState.LOADING
-      val isCredentialInvalid =
-        refreshPresentation.state ==
-          TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID
+      val headerAction = headerActionFor(refreshPresentation.state)
       views.setImageViewResource(
         R.id.iv_next,
-        if (isNormal) R.drawable.ic_back else android.R.drawable.ic_popup_sync,
+        if (headerAction == TodayCourseHeaderAction.TOGGLE_DAY) {
+          R.drawable.ic_back
+        } else {
+          android.R.drawable.ic_popup_sync
+        },
       )
-      views.setFloat(R.id.iv_next, "setRotation", if (isNormal && dayOffset == 0) 180f else 0f)
+      views.setFloat(
+        R.id.iv_next,
+        "setRotation",
+        if (headerAction == TodayCourseHeaderAction.TOGGLE_DAY && dayOffset == 0) 180f else 0f,
+      )
       views.setBoolean(R.id.iv_next, "setEnabled", !isLoading)
 
       val manualRefreshIntent =
@@ -387,16 +407,15 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
           )
-      when {
-        refreshPresentation.usesRefreshAction || isLoading ->
-          views.setOnClickPendingIntent(R.id.iv_next, manualRefreshPendingIntent)
-        !isCredentialInvalid ->
+      when (headerAction) {
+        TodayCourseHeaderAction.TOGGLE_DAY ->
           views.setOnClickPendingIntent(R.id.iv_next, togglePendingIntent)
-      }
-      if (isCredentialInvalid) {
-        WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)?.let {
-          views.setOnClickPendingIntent(R.id.iv_next, it)
-        }
+        TodayCourseHeaderAction.MANUAL_REFRESH ->
+          views.setOnClickPendingIntent(R.id.iv_next, manualRefreshPendingIntent)
+        TodayCourseHeaderAction.OPEN_APP ->
+          WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)?.let {
+            views.setOnClickPendingIntent(R.id.iv_next, it)
+          }
       }
     }
 
