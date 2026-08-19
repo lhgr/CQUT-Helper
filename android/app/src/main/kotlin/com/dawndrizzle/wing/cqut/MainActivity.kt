@@ -178,7 +178,14 @@ class MainActivity : FlutterActivity() {
               } else {
                 com.dawndrizzle.wing.cqut.widget.WidgetThemeTrigger.DATA_REFRESH
               }
-            com.dawndrizzle.wing.cqut.widget.WidgetThemeSyncDispatcher.dispatch(applicationContext, syncTrigger)
+            if (syncTrigger == com.dawndrizzle.wing.cqut.widget.WidgetThemeTrigger.APP_THEME_CHANGED) {
+              com.dawndrizzle.wing.cqut.widget.WidgetForceUpdatePusher.pushTheme(applicationContext)
+            } else {
+              com.dawndrizzle.wing.cqut.widget.WidgetThemeSyncDispatcher.dispatch(
+                applicationContext,
+                syncTrigger,
+              )
+            }
             result.success(null)
           }
 

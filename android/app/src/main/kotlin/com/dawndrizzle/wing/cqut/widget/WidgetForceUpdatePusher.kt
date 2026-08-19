@@ -6,6 +6,24 @@ import android.content.Context
 import android.content.Intent
 
 object WidgetForceUpdatePusher {
+  fun pushTheme(context: Context) {
+    pushAction(
+      context,
+      TodayListWidgetProvider::class.java,
+      TodayListWidgetProvider.ACTION_THEME_REFRESH,
+    )
+    pushAction(
+      context,
+      TodayAndNextWidgetProvider::class.java,
+      TodayAndNextWidgetProvider.ACTION_THEME_REFRESH,
+    )
+    pushAction(
+      context,
+      TodayCourseWidgetProvider::class.java,
+      TodayCourseWidgetProvider.ACTION_THEME_REFRESH,
+    )
+  }
+
   fun push(context: Context) {
     val manager = AppWidgetManager.getInstance(context)
     pushOne(
@@ -44,6 +62,20 @@ object WidgetForceUpdatePusher {
     context.sendBroadcast(intent)
     context.sendBroadcast(
       Intent(refreshAction).apply {
+        component = ComponentName(context, provider)
+      },
+    )
+  }
+
+  private fun pushAction(
+    context: Context,
+    provider: Class<*>,
+    action: String,
+  ) {
+    val manager = AppWidgetManager.getInstance(context)
+    if (manager.getAppWidgetIds(ComponentName(context, provider)).isEmpty()) return
+    context.sendBroadcast(
+      Intent(action).apply {
         component = ComponentName(context, provider)
       },
     )

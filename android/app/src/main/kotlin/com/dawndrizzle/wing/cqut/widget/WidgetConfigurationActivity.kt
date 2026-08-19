@@ -29,12 +29,18 @@ class WidgetConfigurationActivity : Activity() {
       appWidgetId: Int,
     ) {
       when (providerName) {
-        TodayListWidgetProvider::class.java.name ->
+        TodayListWidgetProvider::class.java.name -> {
           TodayListWidgetProvider.updateOne(context, appWidgetId)
-        TodayAndNextWidgetProvider::class.java.name ->
+          TodayListWidgetProvider.updateTheme(context, intArrayOf(appWidgetId))
+        }
+        TodayAndNextWidgetProvider::class.java.name -> {
           TodayAndNextWidgetProvider.updateOne(context, appWidgetId)
-        TodayCourseWidgetProvider::class.java.name ->
+          TodayAndNextWidgetProvider.updateTheme(context, intArrayOf(appWidgetId))
+        }
+        TodayCourseWidgetProvider::class.java.name -> {
           TodayCourseWidgetProvider.updateOne(context, appWidgetId)
+          TodayCourseWidgetProvider.updateTheme(context, intArrayOf(appWidgetId))
+        }
       }
     }
   }
