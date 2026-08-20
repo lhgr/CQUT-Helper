@@ -5,6 +5,8 @@ import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_update_manager.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/manager/schedule_message_center_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
@@ -22,6 +24,7 @@ import 'package:flutter/material.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cqut_helper/utils/schedule_ics_service.dart';
+import 'package:cqut_helper/pages/Login/Login.dart';
 
 part 'class_schedule_actions.dart';
 part 'class_schedule_loading.dart';
@@ -116,6 +119,20 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     final hour = at.hour.toString().padLeft(2, '0');
     final minute = at.minute.toString().padLeft(2, '0');
     return '$prefix $hour:$minute更新';
+  }
+
+  bool get _requiresReauthentication {
+    final text = (_error ?? '').toLowerCase();
+    return text.contains('登录') ||
+        text.contains('凭证') ||
+        text.contains('鉴权') ||
+        text.contains('credential');
+  }
+
+  Future<void> _reauthenticate() async {
+    if (!await requestReauthentication(context) || !mounted) return;
+    await _controller.loadCredentials();
+    await _loadFromNetwork();
   }
 
   void _onTimetableCacheCleared() {
@@ -235,10 +252,22 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: () => _loadFromNetwork(),
-                icon: const Icon(Icons.refresh),
-                label: const Text("重试"),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                children: [
+                  if (_requiresReauthentication)
+                    FilledButton.icon(
+                      onPressed: _reauthenticate,
+                      icon: const Icon(Icons.login),
+                      label: const Text('重新登录'),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: () => _loadFromNetwork(),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text("重试"),
+                  ),
+                ],
               ),
             ],
           ),

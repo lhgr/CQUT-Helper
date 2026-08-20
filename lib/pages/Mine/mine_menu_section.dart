@@ -1,4 +1,5 @@
 import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
+import 'package:cqut_helper/pages/MessageCenter/message_center_page.dart';
 import 'package:flutter/material.dart';
 
 import 'mine_logout_dialog.dart';
@@ -11,6 +12,15 @@ class MineMenuSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        MineMenuItem(
+          icon: Icons.notifications_none_rounded,
+          title: '消息中心',
+          subtitle: '调课记录、课表变更与应用公告',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const MessageCenterPage()),
+          ),
+        ),
+        const SizedBox(height: 12),
         MineMenuItem(
           icon: Icons.settings,
           title: "设置",

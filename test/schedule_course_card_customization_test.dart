@@ -56,10 +56,82 @@ void main() {
     expect(centered, isTrue);
 
     final decoration = tester
-        .widgetList<Container>(find.byType(Container))
+        .widgetList<Ink>(find.byType(Ink))
         .map((widget) => widget.decoration)
         .whereType<BoxDecoration>()
         .firstWhere((value) => value.border != null);
     expect(decoration.color!.a, closeTo(0.5, 0.01));
+  });
+
+  testWidgets('冲突卡片使用图标文字提示并提供按压反馈', (tester) async {
+    var taps = 0;
+    final event = EventItem(
+      eventID: 'event-42',
+      eventName: '操作系统',
+      weekNum: '3',
+      weekDay: '2',
+      sessionStart: '3',
+      sessionLast: '2',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 90,
+            height: 80,
+            child: ScheduleCourseCard(
+              event: event,
+              backgroundColor: Colors.orange.shade50,
+              borderColor: Colors.deepOrange,
+              titleColor: Colors.deepOrange.shade900,
+              descriptionColor: Colors.deepOrange.shade700,
+              conflictCount: 2,
+              onTap: () => taps++,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+    expect(find.text('冲突 +2'), findsOneWidget);
+    expect(
+      find.byKey(ScheduleCourseCard.conflictIndicatorKeyForEvent(event)),
+      findsOneWidget,
+    );
+
+    final interaction = find.byKey(
+      ScheduleCourseCard.interactionKeyForEvent(event),
+    );
+    expect(interaction, findsOneWidget);
+    expect(tester.widget<InkWell>(interaction).onTap, isNotNull);
+    await tester.tap(interaction);
+    await tester.pump();
+    expect(taps, 1);
+  });
+
+  test('无服务端 ID 时交互键由课程位置稳定生成', () {
+    final first = EventItem(
+      eventName: '高等数学',
+      weekNum: '1',
+      weekDay: '1',
+      sessionStart: '1',
+      sessionLast: '2',
+      memberName: '李老师',
+    );
+    final same = EventItem(
+      eventName: '高等数学',
+      weekNum: '1',
+      weekDay: '1',
+      sessionStart: '1',
+      sessionLast: '2',
+      memberName: '李老师',
+    );
+
+    expect(
+      ScheduleCourseCard.interactionKeyForEvent(first),
+      ScheduleCourseCard.interactionKeyForEvent(same),
+    );
   });
 }

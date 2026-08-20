@@ -29,8 +29,13 @@ class MainActivity : FlutterActivity() {
   private val widgetChannelName = "cqut/widget"
   private val powerChannelName = "cqut/power"
   private val navigationChannelName = "cqut/navigation"
+  private val documentChannelName = "cqut/documents"
+  private val createDocumentRequestCode = 4201
+  private val openDocumentRequestCode = 4202
   private var navigationChannel: MethodChannel? = null
   private var pendingWidgetNavigation: Map<String, Any?>? = null
+  private var pendingDocumentResult: MethodChannel.Result? = null
+  private var pendingDocumentContent: String? = null
 
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
@@ -51,6 +56,45 @@ class MainActivity : FlutterActivity() {
           }
         }
       }
+
+    MethodChannel(
+      flutterEngine.dartExecutor.binaryMessenger,
+      documentChannelName,
+    ).setMethodCallHandler { call, result ->
+      if (pendingDocumentResult != null) {
+        result.error("DOCUMENT_BUSY", "another document request is active", null)
+        return@setMethodCallHandler
+      }
+      when (call.method) {
+        "createTextDocument" -> {
+          val fileName = call.argument<String>("fileName")
+          val mimeType = call.argument<String>("mimeType") ?: "application/json"
+          val content = call.argument<String>("content")
+          if (fileName.isNullOrBlank() || content == null) {
+            result.error("INVALID_ARGS", "fileName/content is required", null)
+            return@setMethodCallHandler
+          }
+          pendingDocumentResult = result
+          pendingDocumentContent = content
+          val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mimeType
+            putExtra(Intent.EXTRA_TITLE, fileName)
+          }
+          startActivityForResult(intent, createDocumentRequestCode)
+        }
+        "openTextDocument" -> {
+          val mimeType = call.argument<String>("mimeType") ?: "application/json"
+          pendingDocumentResult = result
+          val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mimeType
+          }
+          startActivityForResult(intent, openDocumentRequestCode)
+        }
+        else -> result.notImplemented()
+      }
+    }
 
     MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
       .setMethodCallHandler { call, result ->
@@ -406,6 +450,45 @@ class MainActivity : FlutterActivity() {
       pendingWidgetNavigation = navigation
     } else {
       channel.invokeMethod("widgetNavigation", navigation)
+    }
+  }
+
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode != createDocumentRequestCode && requestCode != openDocumentRequestCode) {
+      return
+    }
+    val result = pendingDocumentResult ?: return
+    pendingDocumentResult = null
+    if (resultCode != RESULT_OK || data?.data == null) {
+      pendingDocumentContent = null
+      result.success(null)
+      return
+    }
+    val uri = data.data!!
+    try {
+      if (requestCode == createDocumentRequestCode) {
+        val content = pendingDocumentContent ?: ""
+        contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8).use { writer ->
+          if (writer == null) throw IllegalStateException("cannot open document for writing")
+          writer.write(content)
+        }
+        pendingDocumentContent = null
+        result.success(uri.toString())
+      } else {
+        val content = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8).use { reader ->
+          if (reader == null) throw IllegalStateException("cannot open document for reading")
+          val text = reader.readText()
+          if (text.length > 5 * 1024 * 1024) {
+            throw IllegalArgumentException("backup file is too large")
+          }
+          text
+        }
+        result.success(content)
+      }
+    } catch (error: Exception) {
+      pendingDocumentContent = null
+      result.error("DOCUMENT_FAILED", error.toString(), null)
     }
   }
 

@@ -196,13 +196,13 @@ class ScheduleController {
     );
   }
 
-  void prefetchAllWeeksInBackground(
+  Future<void> prefetchAllWeeksInBackground(
     ScheduleData currentData,
     Function() onUpdate, {
     Duration interval = const Duration(milliseconds: 150),
     bool forceRefresh = false,
   }) {
-    _refreshOrchestrator.prefetchAllWeeksInBackground(
+    return _refreshOrchestrator.prefetchAllWeeksInBackground(
       currentData,
       onUpdate,
       interval: interval,

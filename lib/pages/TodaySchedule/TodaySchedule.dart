@@ -7,6 +7,7 @@ import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
+import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:flutter/material.dart';
 
 class TodayScheduleView extends StatefulWidget {
@@ -210,10 +211,25 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     if (text.contains('login')) {
       return '需要登录后才能查看今日课表。';
     }
-    if (text.contains('credential')) {
+    if (text.contains('credential') ||
+        text.contains('凭证') ||
+        text.contains('鉴权')) {
       return '登录凭证已失效，请重新登录。';
     }
     return '加载今日课表失败：$error';
+  }
+
+  bool get _requiresReauthentication {
+    final text = (_error ?? '').toLowerCase();
+    return text.contains('登录') ||
+        text.contains('凭证') ||
+        text.contains('鉴权') ||
+        text.contains('credential');
+  }
+
+  Future<void> _reauthenticate() async {
+    if (!await requestReauthentication(context) || !mounted) return;
+    await _loadSchedule(forceRefresh: true);
   }
 
   WeekDayItem? _todayWeekDayItem(ScheduleData data) {
@@ -398,10 +414,22 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                 const SizedBox(height: 16),
                 Text(_error ?? '暂无可用的课表数据。'),
                 const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: () => _loadSchedule(forceRefresh: true),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('重试'),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  children: [
+                    if (_requiresReauthentication)
+                      FilledButton.icon(
+                        onPressed: _reauthenticate,
+                        icon: const Icon(Icons.login),
+                        label: const Text('重新登录'),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: () => _loadSchedule(forceRefresh: true),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重试'),
+                    ),
+                  ],
                 ),
               ],
             ),

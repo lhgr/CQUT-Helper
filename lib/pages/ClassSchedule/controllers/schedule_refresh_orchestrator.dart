@@ -75,13 +75,13 @@ class ScheduleRefreshOrchestrator {
     onUpdate();
   }
 
-  void prefetchAllWeeksInBackground(
+  Future<void> prefetchAllWeeksInBackground(
     ScheduleData currentData,
     Function() onUpdate, {
     Duration interval = const Duration(milliseconds: 150),
     bool forceRefresh = false,
   }) {
-    Future(() async {
+    return Future(() async {
       final wList = currentData.weekList;
       final currentWeekStr = currentData.weekNum;
       final cTerm = currentData.yearTerm;

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/course_preference_model.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
@@ -18,8 +19,6 @@ class ScheduleCustomizationManager extends ChangeNotifier {
 
   static const int databaseVersion = 2;
   static const String _databaseName = 'schedule_customizations.db';
-  static const String _rawSchedulePrefix = 'schedule_remote_';
-
   Database? _database;
   Future<Database> get _db async {
     final existing = _database;
@@ -104,16 +103,13 @@ CREATE TABLE course_preferences (
     if (hiddenPreferences.isEmpty) return const [];
 
     final cachedEvents = <String, EventItem>{};
-    final prefs = await SharedPreferences.getInstance();
-    final rawPrefix =
-        '$_rawSchedulePrefix${normalizedUserId}_${normalizedTerm}_';
-    for (final key in prefs.getKeys().where(
-      (key) => key.startsWith(rawPrefix),
-    )) {
-      final raw = prefs.getString(key);
-      if (raw == null || raw.isEmpty) continue;
+    final entries = await ScheduleCacheDatabase.instance.loadAllForUser(
+      normalizedUserId,
+      yearTerm: normalizedTerm,
+    );
+    for (final entry in entries) {
       try {
-        final decoded = jsonDecode(raw);
+        final decoded = jsonDecode(entry.rawJson);
         if (decoded is! Map) continue;
         final schedule = ScheduleData.fromJson(decoded.cast<String, dynamic>());
         for (final event in schedule.eventList ?? const <EventItem>[]) {
@@ -197,21 +193,47 @@ CREATE TABLE course_preferences (
 
   Future<void> rebuildDisplayCaches(String userId) async {
     final prefs = await SharedPreferences.getInstance();
-    final keys = prefs
-        .getKeys()
-        .where((key) => key.startsWith('$_rawSchedulePrefix${userId}_'))
-        .toList(growable: false);
-    for (final key in keys) {
-      final raw = prefs.getString(key);
-      if (raw == null || raw.isEmpty) continue;
-      try {
-        final decoded = jsonDecode(raw);
-        if (decoded is! Map) continue;
-        final source = ScheduleData.fromJson(decoded.cast<String, dynamic>());
-        final merged = await applyToSchedule(userId: userId, schedule: source);
-        final displayKey = key.replaceFirst(_rawSchedulePrefix, 'schedule_');
-        await prefs.setString(displayKey, jsonEncode(merged.toJson()));
-      } catch (_) {}
+    final normalizedUserId = userId.trim();
+    final term =
+        prefs.getString('schedule_widget_term_$normalizedUserId')?.trim() ??
+        prefs.getString('schedule_last_term_$normalizedUserId')?.trim();
+    final week =
+        prefs.getString('schedule_widget_week_$normalizedUserId')?.trim() ??
+        prefs.getString('schedule_last_week_$normalizedUserId')?.trim();
+    final centerWeek = int.tryParse(week ?? '');
+    if (term != null && term.isNotEmpty && centerWeek != null) {
+      final projectedWeeks = <int>{
+        if (centerWeek > 1) centerWeek - 1,
+        centerWeek,
+        centerWeek + 1,
+      };
+      for (final projectedWeek in projectedWeeks) {
+        final projectedWeekText = projectedWeek.toString();
+        final displayKey =
+            'schedule_${normalizedUserId}_${term}_$projectedWeekText';
+        final entry = await ScheduleCacheDatabase.instance.load(
+          userId: normalizedUserId,
+          yearTerm: term,
+          weekNum: projectedWeekText,
+        );
+        if (entry == null) {
+          await prefs.remove(displayKey);
+          continue;
+        }
+        try {
+          final decoded = jsonDecode(entry.rawJson);
+          if (decoded is Map) {
+            final source = ScheduleData.fromJson(
+              decoded.cast<String, dynamic>(),
+            );
+            final merged = await applyToSchedule(
+              userId: normalizedUserId,
+              schedule: source,
+            );
+            await prefs.setString(displayKey, jsonEncode(merged.toJson()));
+          }
+        } catch (_) {}
+      }
     }
     await WidgetUpdater.updateTodayWidget(trigger: 'custom_schedule_changed');
   }
@@ -237,6 +259,57 @@ CREATE TABLE course_preferences (
       }
     });
     notifyListeners();
+  }
+
+  Future<List<Map<String, Object?>>> exportCoursePreferences(
+    String userId,
+  ) async {
+    final rows = await (await _db).query(
+      'course_preferences',
+      where: 'user_id = ?',
+      whereArgs: [userId.trim()],
+      orderBy: 'year_term, course_key',
+    );
+    return rows
+        .map((row) => Map<String, Object?>.from(row)..remove('user_id'))
+        .toList(growable: false);
+  }
+
+  Future<int> importCoursePreferences({
+    required String userId,
+    required List<Map<String, dynamic>> rows,
+  }) async {
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) return 0;
+    final db = await _db;
+    var imported = 0;
+    await db.transaction((txn) async {
+      for (final row in rows) {
+        final term = (row['year_term'] ?? '').toString().trim();
+        final courseKey = (row['course_key'] ?? '').toString().trim();
+        if (term.isEmpty || courseKey.isEmpty) continue;
+        await txn.insert('course_preferences', {
+          'user_id': normalizedUserId,
+          'year_term': term,
+          'course_key': courseKey,
+          'display_name': row['display_name']?.toString(),
+          'teacher': row['teacher']?.toString(),
+          'location': row['location']?.toString(),
+          'note': (row['note'] ?? '').toString(),
+          'hidden': (row['hidden'] as num?)?.toInt() == 1 ? 1 : 0,
+          'reminder_minutes': (row['reminder_minutes'] as num?)?.toInt(),
+          'color_index': (row['color_index'] as num?)?.toInt(),
+          'updated_at':
+              (row['updated_at'] as num?)?.toInt() ??
+              DateTime.now().millisecondsSinceEpoch,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        imported++;
+      }
+    });
+    await rebuildDisplayCaches(normalizedUserId);
+    await CourseReminderScheduler.rescheduleForUser(normalizedUserId);
+    notifyListeners();
+    return imported;
   }
 
   Future<void> _afterMutation(String userId) async {

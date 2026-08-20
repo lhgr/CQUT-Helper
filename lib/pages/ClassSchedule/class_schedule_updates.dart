@@ -45,6 +45,17 @@ extension _ClassScheduleUpdates on _ClassscheduleViewState {
 
   void _showUpdateNotification(List<ScheduleWeekChange> changes) {
     if (!mounted || changes.isEmpty) return;
+    final userId = _controller.userId;
+    if (userId != null && userId.trim().isNotEmpty) {
+      unawaited(
+        ScheduleMessageCenterManager.appendChanges(
+          userId: userId,
+          yearTerm: (_currentScheduleData?.yearTerm ?? _currentTerm ?? '')
+              .trim(),
+          changes: changes,
+        ),
+      );
+    }
     final hasScheduleNotice = changes.any(
       (c) => c.lines.any((line) => line.contains('调课到')),
     );

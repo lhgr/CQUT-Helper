@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -45,7 +46,13 @@ class CacheCleanupManager {
     final keys = prefs.getKeys();
 
     final timetableKeys = keys.where(_isTimetableCacheKey);
-    final timetableBytes = _estimatePrefsBytes(prefs, timetableKeys);
+    var timetableBytes = _estimatePrefsBytes(prefs, timetableKeys);
+    try {
+      timetableBytes += await ScheduleCacheDatabase.instance.estimatedBytes();
+    } catch (_) {
+      // sqflite is unavailable in pure widget tests; preference usage remains
+      // useful there.
+    }
 
     final userInfoKeys = keys.where((k) => k.startsWith('user_info_'));
     final userInfoBytes = _estimatePrefsBytes(prefs, userInfoKeys);
@@ -97,7 +104,11 @@ class CacheCleanupManager {
       for (final k in toRemove) {
         await prefs.remove(k);
       }
-      clearedCounts[AppCacheType.timetable] = toRemove.length;
+      var removedRows = 0;
+      try {
+        removedRows = await ScheduleCacheDatabase.instance.clearAll();
+      } catch (_) {}
+      clearedCounts[AppCacheType.timetable] = toRemove.length + removedRows;
       timetableCacheEpoch.value = timetableCacheEpoch.value + 1;
     }
 
@@ -156,12 +167,18 @@ class CacheCleanupManager {
     for (final key in toRemove) {
       await prefs.remove(key);
     }
+    var removedScheduleRows = 0;
+    try {
+      removedScheduleRows = await ScheduleCacheDatabase.instance.clearUser(
+        normalizedUserId,
+      );
+    } catch (_) {}
     timetableCacheEpoch.value = timetableCacheEpoch.value + 1;
     userInfoCacheEpoch.value = userInfoCacheEpoch.value + 1;
     try {
       await prefs.reload();
     } catch (_) {}
-    return toRemove.length;
+    return toRemove.length + removedScheduleRows;
   }
 
   @visibleForTesting

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cqut_helper/model/schedule_week_change.dart';
+import 'package:cqut_helper/manager/schedule_message_center_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String _backgroundPollingEnabledKey =
@@ -201,6 +202,11 @@ Future<void> writeScheduleUpdateWorkerPendingChanges({
         .toList(),
   });
   await prefs.setString(scheduleUpdateWorkerPendingKeyForUser(userId), payload);
+  await ScheduleMessageCenterManager.appendChanges(
+    userId: userId,
+    yearTerm: yearTerm,
+    changes: changes,
+  );
 }
 
 DateTime? _parseTime(SharedPreferences prefs, String key) {

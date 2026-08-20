@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  final bool reauthenticate;
+
+  const LoginPage({super.key, this.reauthenticate = false});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -50,7 +52,7 @@ class _LoginPageState extends State<LoginPage> {
         setState(() {
           _accountController.text = account;
           _savedAccount = account;
-          _savedEncryptedPassword = encryptedPwd;
+          _savedEncryptedPassword = widget.reauthenticate ? null : encryptedPwd;
         });
       }
     }
@@ -111,7 +113,11 @@ class _LoginPageState extends State<LoginPage> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('登录成功')));
-        Navigator.of(context).pushReplacementNamed('/');
+        if (widget.reauthenticate) {
+          Navigator.of(context).pop(true);
+        } else {
+          Navigator.of(context).pushReplacementNamed('/');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -215,12 +221,14 @@ class _LoginPageState extends State<LoginPage> {
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   Text(
-                                    '统一身份认证',
+                                    widget.reauthenticate ? '重新验证身份' : '统一身份认证',
                                     style: theme.textTheme.titleLarge,
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    '使用学校统一身份认证账号登录',
+                                    widget.reauthenticate
+                                        ? '登录状态已失效，请重新输入密码；本地课表与个性化设置会保留'
+                                        : '使用学校统一身份认证账号登录',
                                     style: theme.textTheme.bodyMedium?.copyWith(
                                       color: colorScheme.onSurfaceVariant,
                                     ),
@@ -302,7 +310,13 @@ class _LoginPageState extends State<LoginPage> {
                                             ),
                                           )
                                         : const Icon(Icons.login_rounded),
-                                    label: Text(_isLoading ? '正在登录' : '登录'),
+                                    label: Text(
+                                      _isLoading
+                                          ? '正在验证'
+                                          : widget.reauthenticate
+                                          ? '重新验证'
+                                          : '登录',
+                                    ),
                                   ),
                                 ],
                               ),
@@ -320,4 +334,14 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
+}
+
+Future<bool> requestReauthentication(BuildContext context) async {
+  final result = await Navigator.of(context).push<bool>(
+    MaterialPageRoute<bool>(
+      fullscreenDialog: true,
+      builder: (_) => const LoginPage(reauthenticate: true),
+    ),
+  );
+  return result == true;
 }

@@ -222,20 +222,24 @@ class ScheduleWeekLoader {
         final fetchAtKey = lastFetchAtKey(uid, term, week);
         final now = DateTime.now().millisecondsSinceEpoch;
         var fp = scheduleFingerprintFromScheduleData(data);
-        final raw = await service.getCachedScheduleJson(
-          userId: uid,
-          yearTerm: term,
-          weekNum: week,
-        );
-        if (raw != null && raw.trim().isNotEmpty) {
-          try {
+        try {
+          final raw = await service.getCachedScheduleJson(
+            userId: uid,
+            yearTerm: term,
+            weekNum: week,
+          );
+          if (raw != null && raw.trim().isNotEmpty) {
             final decoded = jsonDecode(raw);
             if (decoded is Map) {
               fp = scheduleFingerprintFromWeekJsonMap(
                 decoded.cast<String, dynamic>(),
               );
             }
-          } catch (_) {}
+          }
+        } catch (_) {
+          // The fingerprint computed from the returned model remains valid;
+          // an optional cache re-read must not turn a successful fetch into a
+          // failed week load.
         }
         await prefs.setString(fpKey, fp);
         await prefs.setInt(fpUpdatedAtKey, now);

@@ -7,6 +7,7 @@ import 'package:cqut_helper/model/schedule_notice.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 
@@ -25,9 +26,6 @@ class ScheduleApi {
   String _widgetTermKey(String userId) => 'schedule_widget_term_$userId';
   String _scheduleKey(String userId, String yearTerm, String weekNum) =>
       'schedule_${userId}_${_norm(yearTerm)}_${_norm(weekNum)}';
-  String _rawScheduleKey(String userId, String yearTerm, String weekNum) =>
-      'schedule_remote_${userId}_${_norm(yearTerm)}_${_norm(weekNum)}';
-
   static String lastFetchAtKey(
     String userId,
     String yearTerm,
@@ -52,21 +50,26 @@ class ScheduleApi {
 
     weekNum = _norm(weekNum);
     yearTerm = _norm(yearTerm);
-    final rawKey = _rawScheduleKey(userId, yearTerm, weekNum);
-    final displayKey = _scheduleKey(userId, yearTerm, weekNum);
-    final jsonStr = prefs.getString(rawKey) ?? prefs.getString(displayKey);
-    if (jsonStr == null) return null;
+    final entry = await ScheduleCacheDatabase.instance.load(
+      userId: userId,
+      yearTerm: yearTerm,
+      weekNum: weekNum,
+    );
+    if (entry == null) return null;
 
     try {
-      final decoded = json.decode(jsonStr);
+      final decoded = json.decode(entry.rawJson);
       if (decoded is Map<String, dynamic>) {
         final source = ScheduleData.fromJson(decoded);
         final merged = await ScheduleCustomizationManager.instance
             .applyToSchedule(userId: userId, schedule: source);
-        await prefs.setString(displayKey, json.encode(merged.toJson()));
-        if (!prefs.containsKey(rawKey)) {
-          await prefs.setString(rawKey, jsonStr);
-        }
+        await _writeWidgetProjectionIfPinned(
+          prefs: prefs,
+          userId: userId,
+          yearTerm: yearTerm,
+          weekNum: weekNum,
+          schedule: merged,
+        );
         return merged;
       }
     } catch (_) {}
@@ -104,19 +107,24 @@ class ScheduleApi {
 
     final data = ScheduleData.fromJson(jsonMap);
 
-    // Save to SharedPreferences
     final dataWeek = _norm(data.weekNum);
     final dataTerm = _norm(data.yearTerm);
     final saveWeek = dataWeek.isNotEmpty ? dataWeek : reqWeek;
     final saveTerm = dataTerm.isNotEmpty ? dataTerm : reqTerm;
     if (saveWeek.isNotEmpty && saveTerm.isNotEmpty) {
       final prefs = await SharedPreferences.getInstance();
-      final rawKey = _rawScheduleKey(userId, saveTerm, saveWeek);
-      final displayKey = _scheduleKey(userId, saveTerm, saveWeek);
-      await prefs.setString(rawKey, json.encode(jsonMap));
+      final oldWidgetWeek = _effectiveWidgetWeek(prefs, userId);
+      final oldWidgetTerm = _effectiveWidgetTerm(prefs, userId);
+      final fetchedAt = DateTime.now();
+      await ScheduleCacheDatabase.instance.upsert(
+        userId: userId,
+        yearTerm: saveTerm,
+        weekNum: saveWeek,
+        rawJson: json.encode(jsonMap),
+        fetchedAt: fetchedAt,
+      );
       final merged = await ScheduleCustomizationManager.instance
           .applyToSchedule(userId: userId, schedule: data);
-      await prefs.setString(displayKey, json.encode(merged.toJson()));
 
       if (persistLastViewed) {
         await prefs.setString(_lastViewedWeekKey(userId), saveWeek);
@@ -126,16 +134,30 @@ class ScheduleApi {
         await prefs.setString(_widgetWeekKey(userId), saveWeek);
         await prefs.setString(_widgetTermKey(userId), saveTerm);
       }
+      final newWidgetWeek = _effectiveWidgetWeek(prefs, userId);
+      final newWidgetTerm = _effectiveWidgetTerm(prefs, userId);
+      if (oldWidgetWeek != newWidgetWeek || oldWidgetTerm != newWidgetTerm) {
+        await _removeStaleWidgetProjections(
+          prefs: prefs,
+          userId: userId,
+          oldYearTerm: oldWidgetTerm,
+          oldWeekNum: oldWidgetWeek,
+          newYearTerm: newWidgetTerm,
+          newWeekNum: newWidgetWeek,
+        );
+      }
+      final updatesCurrentDisplay = await _writeWidgetProjectionIfPinned(
+        prefs: prefs,
+        userId: userId,
+        yearTerm: saveTerm,
+        weekNum: saveWeek,
+        schedule: merged,
+      );
       await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
       await prefs.setInt(
         lastFetchAtKey(userId, saveTerm, saveWeek),
-        DateTime.now().millisecondsSinceEpoch,
+        fetchedAt.millisecondsSinceEpoch,
       );
-      final widgetWeek = prefs.getString(_widgetWeekKey(userId))?.trim();
-      final widgetTerm = prefs.getString(_widgetTermKey(userId))?.trim();
-      final updatesCurrentDisplay =
-          updateWidgetPins ||
-          (widgetWeek == saveWeek && widgetTerm == saveTerm);
       if (updatesCurrentDisplay) {
         if (notifyWidget) {
           await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
@@ -278,9 +300,14 @@ class ScheduleApi {
     required Iterable<int> weeks,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    for (final week in weeks.toSet()) {
+    final uniqueWeeks = weeks.toSet();
+    await ScheduleCacheDatabase.instance.deleteWeeks(
+      userId: userId,
+      yearTerm: yearTerm,
+      weekNums: uniqueWeeks.map((week) => week.toString()),
+    );
+    for (final week in uniqueWeeks) {
       final weekNum = week.toString();
-      await prefs.remove(_rawScheduleKey(userId, yearTerm, weekNum));
       await prefs.remove(_scheduleKey(userId, yearTerm, weekNum));
       await prefs.remove(lastFetchAtKey(userId, yearTerm, weekNum));
       await prefs.remove('schedule_fp_${userId}_${yearTerm}_$weekNum');
@@ -327,10 +354,12 @@ class ScheduleApi {
     required String yearTerm,
     required String weekNum,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = _rawScheduleKey(userId, _norm(yearTerm), _norm(weekNum));
-    return prefs.getString(key) ??
-        prefs.getString(_scheduleKey(userId, _norm(yearTerm), _norm(weekNum)));
+    final entry = await ScheduleCacheDatabase.instance.load(
+      userId: userId,
+      yearTerm: _norm(yearTerm),
+      weekNum: _norm(weekNum),
+    );
+    return entry?.rawJson;
   }
 
   Future<void> saveScheduleJson({
@@ -340,26 +369,43 @@ class ScheduleApi {
     required String jsonStr,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final rawKey = _rawScheduleKey(userId, _norm(yearTerm), _norm(weekNum));
-    final displayKey = _scheduleKey(userId, _norm(yearTerm), _norm(weekNum));
-    await prefs.setString(rawKey, jsonStr);
-    final decoded = json.decode(jsonStr);
+    final normalizedTerm = _norm(yearTerm);
+    final normalizedWeek = _norm(weekNum);
+    final fetchedAt = DateTime.now();
+    await ScheduleCacheDatabase.instance.upsert(
+      userId: userId,
+      yearTerm: normalizedTerm,
+      weekNum: normalizedWeek,
+      rawJson: jsonStr,
+      fetchedAt: fetchedAt,
+    );
+    final stored = await ScheduleCacheDatabase.instance.load(
+      userId: userId,
+      yearTerm: normalizedTerm,
+      weekNum: normalizedWeek,
+    );
+    final decoded = json.decode(stored?.rawJson ?? jsonStr);
     if (decoded is Map<String, dynamic>) {
       final merged = await ScheduleCustomizationManager.instance
           .applyToSchedule(
             userId: userId,
             schedule: ScheduleData.fromJson(decoded),
           );
-      await prefs.setString(displayKey, json.encode(merged.toJson()));
+      await _writeWidgetProjectionIfPinned(
+        prefs: prefs,
+        userId: userId,
+        yearTerm: normalizedTerm,
+        weekNum: normalizedWeek,
+        schedule: merged,
+      );
     }
     await ScheduleRefreshState.markSuccess(userId);
     await prefs.setInt(
-      lastFetchAtKey(userId, _norm(yearTerm), _norm(weekNum)),
-      DateTime.now().millisecondsSinceEpoch,
+      lastFetchAtKey(userId, normalizedTerm, normalizedWeek),
+      fetchedAt.millisecondsSinceEpoch,
     );
-    final widgetWeek = prefs.getString(_widgetWeekKey(userId))?.trim();
-    final widgetTerm = prefs.getString(_widgetTermKey(userId))?.trim();
-    if (widgetWeek == _norm(weekNum) && widgetTerm == _norm(yearTerm)) {
+    if (_effectiveWidgetWeek(prefs, userId) == normalizedWeek &&
+        _effectiveWidgetTerm(prefs, userId) == normalizedTerm) {
       await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
       await _rescheduleCourseRemindersSafely(userId);
     }
@@ -379,5 +425,82 @@ class ScheduleApi {
         stackTrace: stackTrace,
       );
     }
+  }
+
+  String? _effectiveWidgetWeek(SharedPreferences prefs, String userId) =>
+      prefs.getString(_widgetWeekKey(userId))?.trim() ??
+      prefs.getString(_lastViewedWeekKey(userId))?.trim();
+
+  String? _effectiveWidgetTerm(SharedPreferences prefs, String userId) =>
+      prefs.getString(_widgetTermKey(userId))?.trim() ??
+      prefs.getString(_lastViewedTermKey(userId))?.trim();
+
+  Future<bool> _writeWidgetProjectionIfPinned({
+    required SharedPreferences prefs,
+    required String userId,
+    required String yearTerm,
+    required String weekNum,
+    required ScheduleData schedule,
+  }) async {
+    final pinnedWeek = _effectiveWidgetWeek(prefs, userId);
+    final pinnedTerm = _effectiveWidgetTerm(prefs, userId);
+    if (!_isInWidgetProjectionWindow(
+      yearTerm: yearTerm,
+      weekNum: weekNum,
+      pinnedYearTerm: pinnedTerm,
+      pinnedWeekNum: pinnedWeek,
+    )) {
+      return false;
+    }
+    await prefs.setString(
+      _scheduleKey(userId, yearTerm, weekNum),
+      json.encode(schedule.toJson()),
+    );
+    return pinnedWeek == weekNum && pinnedTerm == yearTerm;
+  }
+
+  Future<void> _removeStaleWidgetProjections({
+    required SharedPreferences prefs,
+    required String userId,
+    required String? oldYearTerm,
+    required String? oldWeekNum,
+    required String? newYearTerm,
+    required String? newWeekNum,
+  }) async {
+    final oldWeeks = _projectionWeeks(oldWeekNum);
+    if (oldYearTerm == null || oldWeeks.isEmpty) return;
+    final newKeys = <String>{
+      if (newYearTerm != null)
+        for (final week in _projectionWeeks(newWeekNum))
+          _scheduleKey(userId, newYearTerm, week),
+    };
+    for (final week in oldWeeks) {
+      final key = _scheduleKey(userId, oldYearTerm, week);
+      if (!newKeys.contains(key)) await prefs.remove(key);
+    }
+  }
+
+  bool _isInWidgetProjectionWindow({
+    required String yearTerm,
+    required String weekNum,
+    required String? pinnedYearTerm,
+    required String? pinnedWeekNum,
+  }) {
+    if (pinnedYearTerm != yearTerm || pinnedWeekNum == null) return false;
+    return _projectionWeeks(pinnedWeekNum).contains(weekNum);
+  }
+
+  Set<String> _projectionWeeks(String? centerWeek) {
+    final parsed = int.tryParse(centerWeek ?? '');
+    if (parsed == null) {
+      return centerWeek == null || centerWeek.isEmpty
+          ? const <String>{}
+          : <String>{centerWeek};
+    }
+    return <String>{
+      if (parsed > 1) (parsed - 1).toString(),
+      parsed.toString(),
+      (parsed + 1).toString(),
+    };
   }
 }

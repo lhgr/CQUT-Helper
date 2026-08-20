@@ -10,10 +10,20 @@ import 'about_settings_page.dart';
 import 'appearance_startup_settings_page.dart';
 import 'notification_settings_page.dart';
 import 'schedule_courses_settings_page.dart';
+import 'backup_restore_page.dart';
+import 'sync_diagnostics_page.dart';
 import 'settings_schedule_scope.dart';
 import 'settings_section_tile.dart';
 
-enum AppSettingsSection { schedule, notifications, appearance, storage, about }
+enum AppSettingsSection {
+  schedule,
+  notifications,
+  appearance,
+  diagnostics,
+  backup,
+  storage,
+  about,
+}
 
 Future<void> openAppSettings(
   BuildContext context, {
@@ -30,6 +40,8 @@ Future<void> openAppSettings(
     AppSettingsSection.schedule => ScheduleCoursesSettingsPage(scope: scope),
     AppSettingsSection.notifications => NotificationSettingsPage(scope: scope),
     AppSettingsSection.appearance => const AppearanceStartupSettingsPage(),
+    AppSettingsSection.diagnostics => const SyncDiagnosticsPage(),
+    AppSettingsSection.backup => const BackupRestorePage(),
     AppSettingsSection.storage => const ClearCachePage(),
     AppSettingsSection.about => const AboutSettingsPage(),
     null => AppSettingsPage(initialScope: scope),
@@ -128,6 +140,18 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 children: [
                   SettingsSectionTile(
+                    icon: Icons.health_and_safety_outlined,
+                    title: '同步与诊断',
+                    subtitle: '课表、组件、提醒权限与后台运行状态',
+                    onTap: () => _openSection(AppSettingsSection.diagnostics),
+                  ),
+                  SettingsSectionTile(
+                    icon: Icons.settings_backup_restore,
+                    title: '备份与恢复',
+                    subtitle: '导出或恢复课程个性化与应用设置',
+                    onTap: () => _openSection(AppSettingsSection.backup),
+                  ),
+                  SettingsSectionTile(
                     icon: Icons.calendar_month_outlined,
                     title: '课表与课程',
                     subtitle: _scheduleSummary,
@@ -147,8 +171,8 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                   ),
                   SettingsSectionTile(
                     icon: Icons.storage_outlined,
-                    title: '存储与诊断',
-                    subtitle: '缓存占用、清理与日志导出',
+                    title: '存储与日志',
+                    subtitle: '缓存占用、清理与诊断日志导出',
                     onTap: () => _openSection(AppSettingsSection.storage),
                   ),
                   SettingsSectionTile(

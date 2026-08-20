@@ -47,6 +47,19 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       _controller.schedulePrefetch(_currentScheduleData!, () {
         _setState(() {});
       }, delay: Duration.zero);
+      unawaited(
+        _controller
+            .prefetchAllWeeksInBackground(
+              _currentScheduleData!,
+              () => _setState(() {}),
+            )
+            .then((_) async {
+              final userId = _controller.userId;
+              if (userId != null && userId.trim().isNotEmpty) {
+                await CourseReminderScheduler.rescheduleForUser(userId);
+              }
+            }),
+      );
     }
 
     if (_currentScheduleData != null) {

@@ -1,4 +1,5 @@
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
+import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -56,13 +57,25 @@ class ScheduleRepository {
     final prefs = await SharedPreferences.getInstance();
     final userId = (prefs.getString('account') ?? '').trim();
     if (userId.isEmpty) return false;
-    final fetchedAt = prefs.getInt(
+    DateTime? fetchedAt;
+    try {
+      fetchedAt = await ScheduleCacheDatabase.instance.fetchedAt(
+        userId: userId,
+        yearTerm: term,
+        weekNum: week,
+      );
+    } catch (_) {
+      // Keeps pure Dart/widget tests and pre-migration metadata readable when
+      // the sqflite platform channel is unavailable.
+    }
+    final legacyFetchedAt = prefs.getInt(
       ScheduleApi.lastFetchAtKey(userId, term, week),
     );
-    if (fetchedAt == null || fetchedAt <= 0) return false;
-    final age = DateTime.now().difference(
-      DateTime.fromMillisecondsSinceEpoch(fetchedAt),
-    );
+    fetchedAt ??= legacyFetchedAt == null || legacyFetchedAt <= 0
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(legacyFetchedAt);
+    if (fetchedAt == null) return false;
+    final age = DateTime.now().difference(fetchedAt);
     return !age.isNegative && age <= maxAge;
   }
 

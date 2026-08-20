@@ -51,6 +51,7 @@ class ScheduleCourseCard extends StatelessWidget {
       builder: (context, constraints) {
         final tinyWidth = constraints.maxWidth < 42;
         final compactWidth = constraints.maxWidth < 56;
+        final expandedConflictBadge = constraints.maxWidth >= 68;
         final showBadge =
             showConflictBadge &&
             conflictCount > 0 &&
@@ -82,92 +83,148 @@ class ScheduleCourseCard extends StatelessWidget {
           height: 1.15,
         );
 
-        return Container(
-          margin: const EdgeInsets.all(1),
-          padding: edgeInsets,
-          decoration: showDecoration
-              ? BoxDecoration(
-                  color: backgroundColor.withAlpha(
-                    (backgroundColor.a * 255 * cardOpacity).round().clamp(
-                      0,
-                      255,
-                    ),
-                  ),
-                  border: Border.all(color: borderColor, width: 1),
-                  borderRadius: BorderRadius.circular(borderRadius),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withAlpha(13),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                )
-              : const BoxDecoration(color: Colors.transparent),
-          child: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              if (showContent)
-                Padding(
-                  padding: EdgeInsets.only(right: showBadge ? 18 : 0),
-                  child: SizedBox.expand(
-                    child: Align(
-                      alignment: verticalCenter
-                          ? (horizontalCenter
-                                ? Alignment.center
-                                : Alignment.centerLeft)
-                          : (horizontalCenter
-                                ? Alignment.topCenter
-                                : Alignment.topLeft),
-                      child: Text.rich(
-                        _buildContentSpan(
-                          title: titleText,
-                          address: addressText,
-                          teacher: teacherText,
-                          prefixAddressWithAt: !removeCampusPrefix,
-                          titleStyle: titleStyle,
-                          detailStyle: detailStyle,
-                        ),
-                        softWrap: true,
-                        textAlign: horizontalCenter
-                            ? TextAlign.center
-                            : TextAlign.start,
-                        maxLines: lineBudget,
-                        overflow: TextOverflow.ellipsis,
+        final contents = Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            if (showContent)
+              Padding(
+                padding: showBadge
+                    ? expandedConflictBadge
+                          ? const EdgeInsets.only(top: 14)
+                          : const EdgeInsets.only(right: 24)
+                    : EdgeInsets.zero,
+                child: SizedBox.expand(
+                  child: Align(
+                    alignment: verticalCenter
+                        ? (horizontalCenter
+                              ? Alignment.center
+                              : Alignment.centerLeft)
+                        : (horizontalCenter
+                              ? Alignment.topCenter
+                              : Alignment.topLeft),
+                    child: Text.rich(
+                      _buildContentSpan(
+                        title: titleText,
+                        address: addressText,
+                        teacher: teacherText,
+                        prefixAddressWithAt: !removeCampusPrefix,
+                        titleStyle: titleStyle,
+                        detailStyle: detailStyle,
                       ),
+                      softWrap: true,
+                      textAlign: horizontalCenter
+                          ? TextAlign.center
+                          : TextAlign.start,
+                      maxLines: lineBudget,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
-              if (showBadge)
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: borderColor.withAlpha(230),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '+$conflictCount',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontSize: compactWidth ? 8 : 9,
-                        fontWeight: FontWeight.w700,
+              ),
+            if (showBadge)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  key: conflictIndicatorKeyForEvent(event),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 3,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: borderColor.withAlpha(230),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: compactWidth ? 9 : 10,
                         color: Colors.white,
                       ),
-                    ),
+                      const SizedBox(width: 1),
+                      Text(
+                        expandedConflictBadge
+                            ? '冲突 +$conflictCount'
+                            : '+$conflictCount',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontSize: compactWidth ? 8 : 9,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-            ],
+              ),
+          ],
+        );
+        final paddedContents = Padding(padding: edgeInsets, child: contents);
+        final interactiveContents = enableTap
+            ? InkWell(
+                key: interactionKeyForEvent(event),
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(borderRadius),
+                splashColor: titleColor.withAlpha(42),
+                highlightColor: titleColor.withAlpha(24),
+                child: paddedContents,
+              )
+            : paddedContents;
+        return Padding(
+          padding: const EdgeInsets.all(1),
+          child: Material(
+            type: MaterialType.transparency,
+            borderRadius: BorderRadius.circular(borderRadius),
+            clipBehavior: Clip.antiAlias,
+            child: Ink(
+              decoration: showDecoration
+                  ? BoxDecoration(
+                      color: backgroundColor.withAlpha(
+                        (backgroundColor.a * 255 * cardOpacity).round().clamp(
+                          0,
+                          255,
+                        ),
+                      ),
+                      border: Border.all(color: borderColor, width: 1),
+                      borderRadius: BorderRadius.circular(borderRadius),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha(13),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    )
+                  : const BoxDecoration(color: Colors.transparent),
+              child: interactiveContents,
+            ),
           ),
         );
       },
     );
-    if (!enableTap) return card;
-    return GestureDetector(onTap: onTap, child: card);
+    return card;
+  }
+
+  @visibleForTesting
+  static ValueKey<String> interactionKeyForEvent(EventItem event) =>
+      ValueKey('schedule-course-card:${_stableEventIdentity(event)}');
+
+  @visibleForTesting
+  static ValueKey<String> conflictIndicatorKeyForEvent(EventItem event) =>
+      ValueKey('schedule-course-conflict:${_stableEventIdentity(event)}');
+
+  static String _stableEventIdentity(EventItem event) {
+    final eventId = (event.eventID ?? '').trim();
+    if (eventId.isNotEmpty) return 'id:$eventId';
+    return [
+      (event.eventName ?? '').trim(),
+      (event.weekNum ?? '').trim(),
+      (event.weekDay ?? '').trim(),
+      (event.sessionStart ?? '').trim(),
+      (event.sessionLast ?? '').trim(),
+      (event.memberName ?? '').trim(),
+    ].join('|');
   }
 
   @visibleForTesting
