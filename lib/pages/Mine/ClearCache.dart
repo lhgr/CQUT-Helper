@@ -44,12 +44,12 @@ class _ClearCachePageState extends State<ClearCachePage> {
     }
   }
 
-  int get _selectedBytes {
+  int? get _selectedBytes {
     int total = 0;
     for (final u in _usages) {
       if (!_selected.contains(u.type)) continue;
       final b = u.bytes;
-      if (b == null) continue;
+      if (b == null) return null;
       total += b;
     }
     return total;
@@ -156,7 +156,10 @@ class _ClearCachePageState extends State<ClearCachePage> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedSizeText = _formatBytes(_selectedBytes);
+    final selectedBytes = _selectedBytes;
+    final selectedSizeText = selectedBytes == null
+        ? '无法统计'
+        : _formatBytes(selectedBytes);
 
     return Scaffold(
       appBar: AppBar(

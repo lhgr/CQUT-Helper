@@ -7,6 +7,8 @@ void main() {
     test('旧版仅开启轮询但没有新版隐私同意时会自动关闭', () async {
       SharedPreferences.setMockInitialValues({
         ScheduleSettingsManager.backgroundPollingEnabledKey: true,
+        ScheduleSettingsManager.noticePrivacyConsentVersionKey:
+            ScheduleSettingsManager.currentNoticePrivacyConsentVersion - 1,
       });
 
       final manager = ScheduleSettingsManager();
@@ -51,6 +53,28 @@ void main() {
           'http://notice.example.com',
         ),
         ScheduleSettingsManager.officialNoticeApiBaseUrl,
+      );
+      expect(ScheduleSettingsManager.isOfficialNoticeApiBaseUrl(''), isTrue);
+      expect(
+        ScheduleSettingsManager.isOfficialNoticeApiBaseUrl(
+          'https://notice.example.com',
+        ),
+        isFalse,
+      );
+    });
+
+    test('自定义服务风险提示可按版本设为不再提示', () async {
+      SharedPreferences.setMockInitialValues({});
+      expect(
+        await ScheduleSettingsManager.shouldShowCustomServiceRiskWarning(),
+        isTrue,
+      );
+
+      await ScheduleSettingsManager.suppressCustomServiceRiskWarning();
+
+      expect(
+        await ScheduleSettingsManager.shouldShowCustomServiceRiskWarning(),
+        isFalse,
       );
     });
   });

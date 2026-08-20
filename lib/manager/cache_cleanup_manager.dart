@@ -71,7 +71,7 @@ class CacheCleanupManager {
       AppCacheUsage(
         type: AppCacheType.imageCache,
         title: titleOf(AppCacheType.imageCache),
-        description: '包含网络图片的磁盘缓存与内存缓存',
+        description: '包含网络图片的磁盘缓存文件',
         bytes: imageCacheBytes,
         supported: true,
       ),
@@ -217,7 +217,7 @@ class CacheCleanupManager {
     for (final k in keys) {
       final v = prefs.get(k);
       if (v == null) continue;
-      total += _estimateValueBytes(v);
+      total += utf8.encode(k).length + _estimateValueBytes(v);
     }
     return total;
   }

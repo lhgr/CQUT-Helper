@@ -4,6 +4,7 @@ import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/utils/background_color_extractor.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -216,6 +217,11 @@ class _ScheduleCoursesSettingsPageState
       final layout = backgroundPath == null
           ? _layout.copyWith(clearBackgroundImage: true)
           : _layout.copyWith(backgroundImagePath: backgroundPath);
+      if (_backgroundChanged && backgroundPath != null) {
+        if (!mounted) return false;
+        await ScheduleBackground.precacheFile(context, backgroundPath);
+        if (!mounted) return false;
+      }
       await _manager.save(
         showWeekend: _showWeekend,
         timeInfoEnabled: _timeInfoEnabled,

@@ -6,6 +6,8 @@ import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
+import 'package:cqut_helper/widgets/marquee_text.dart';
+import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'settings_schedule_scope.dart';
@@ -126,6 +128,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
             title: const Text('开启“调课通知增强”'),
             content: const Text(
               '开启后，应用会将你的学号、教务系统加密密码和当前学期发送到所配置的调课服务，用于代你查询调课通知，并在后台刷新受影响周。\n\n'
+              'CQUT Helper 官方调课服务仅使用上述信息完成查询，不会储存你的学号、密码、学期等隐私数据；若使用自定义服务，其数据处理方式由服务提供者决定。\n\n'
               '普通课表和桌面小组件不依赖此服务。继续后还会申请通知权限，并引导你设置电池优化和自启动。',
             ),
             actions: [
@@ -207,6 +210,10 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       return;
     }
     final normalized = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(value);
+    if (!ScheduleSettingsManager.isOfficialNoticeApiBaseUrl(normalized) &&
+        !await confirmCustomNoticeServiceRisk(context)) {
+      return;
+    }
     await _manager.save(
       showWeekend: _manager.showWeekend,
       timeInfoEnabled: _manager.timeInfoEnabled,
@@ -274,6 +281,14 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                         value: _remindersEnabled,
                         onChanged: _working ? null : _toggleReminders,
                       ),
+                      const Divider(height: 1),
+                      const ListTile(
+                        leading: Icon(Icons.info_outline),
+                        title: Text('提醒时间可能存在偏差'),
+                        subtitle: Text(
+                          '提醒时间依据已同步的课程节次和学校作息生成；临时调课、作息调整或系统限制极有可能造成偏差。',
+                        ),
+                      ),
                       if (_remindersEnabled) ...[
                         const Divider(height: 1),
                         Padding(
@@ -337,7 +352,9 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                               labelText: '调课服务地址',
                               hintText: ScheduleSettingsManager
                                   .officialNoticeApiBaseUrl,
-                              helperText: '留空使用官方服务；检查时会使用当前登录凭据实际查询调课信息',
+                              helper: const MarqueeText(
+                                '留空使用官方服务；检查时会使用当前登录凭据实际查询调课信息',
+                              ),
                               errorText: _serviceError,
                             ),
                             onChanged: (_) {

@@ -19,7 +19,10 @@ class ScheduleSettingsManager {
       'schedule_background_polling_enabled';
   static const String noticePrivacyConsentVersionKey =
       'schedule_notice_privacy_consent_version';
-  static const int currentNoticePrivacyConsentVersion = 1;
+  static const int currentNoticePrivacyConsentVersion = 2;
+  static const String customServiceRiskWarningVersionKey =
+      'schedule_notice_custom_service_warning_version';
+  static const int currentCustomServiceRiskWarningVersion = 1;
   static const String _prefsKeyNoticeApiBaseUrl =
       'schedule_notice_api_base_url';
   static const String remindersEnabledKey = 'schedule_course_reminders_enabled';
@@ -108,6 +111,25 @@ class ScheduleSettingsManager {
     await prefs.setInt(
       noticePrivacyConsentVersionKey,
       currentNoticePrivacyConsentVersion,
+    );
+  }
+
+  static bool isOfficialNoticeApiBaseUrl(String raw) {
+    return normalizeNoticeApiBaseUrl(raw) == officialNoticeApiBaseUrl;
+  }
+
+  static Future<bool> shouldShowCustomServiceRiskWarning() async {
+    final prefs = await SharedPreferences.getInstance();
+    final acceptedVersion =
+        prefs.getInt(customServiceRiskWarningVersionKey) ?? 0;
+    return acceptedVersion < currentCustomServiceRiskWarningVersion;
+  }
+
+  static Future<void> suppressCustomServiceRiskWarning() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      customServiceRiskWarningVersionKey,
+      currentCustomServiceRiskWarningVersion,
     );
   }
 

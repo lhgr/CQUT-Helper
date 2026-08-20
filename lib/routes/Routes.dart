@@ -19,6 +19,7 @@ class MyApp extends StatelessWidget {
         return DynamicColorBuilder(
           builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
             final themeManager = ThemeManager();
+            final predictiveBackEnabled = !themeManager.predictiveBackDisabled;
             final usesSystemColor =
                 themeManager.colorSource == ThemeColorSource.system;
             final usesLightDynamicColor =
@@ -64,10 +65,12 @@ class MyApp extends StatelessWidget {
               theme: AppTheme.light(
                 lightScheme,
                 strengthenSurfaceContrast: usesLightDynamicColor,
+                predictiveBackEnabled: predictiveBackEnabled,
               ),
               darkTheme: AppTheme.dark(
                 darkScheme,
                 strengthenSurfaceContrast: usesDarkDynamicColor,
+                predictiveBackEnabled: predictiveBackEnabled,
               ),
               themeMode: ThemeManager().themeMode,
             );

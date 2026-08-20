@@ -788,12 +788,7 @@ class AppLogger {
       final files = await _listLogFiles(includeExports: true);
       final exports = await _listExportFiles();
       int total = 0;
-      for (final f in files) {
-        try {
-          total += await f.length();
-        } catch (_) {}
-      }
-      for (final f in exports) {
+      for (final f in _uniqueFiles(<File>[...files, ...exports])) {
         try {
           total += await f.length();
         } catch (_) {}
@@ -810,7 +805,7 @@ class AppLogger {
       final files = await _listLogFiles(includeExports: true);
       final exports = await _listExportFiles();
       int count = 0;
-      for (final f in files) {
+      for (final f in _uniqueFiles(<File>[...files, ...exports])) {
         try {
           await f.delete();
           count++;
@@ -821,12 +816,6 @@ class AppLogger {
             await sha.delete();
           } catch (_) {}
         }
-      }
-      for (final f in exports) {
-        try {
-          await f.delete();
-          count++;
-        } catch (_) {}
       }
       return count;
     } finally {
@@ -1587,6 +1576,19 @@ class AppLogger {
     }
 
     return out;
+  }
+
+  List<File> _uniqueFiles(Iterable<File> files) {
+    final seen = <String>{};
+    final result = <File>[];
+    for (final file in files) {
+      final absolutePath = file.absolute.path;
+      final key = Platform.isWindows
+          ? absolutePath.toLowerCase()
+          : absolutePath;
+      if (seen.add(key)) result.add(file);
+    }
+    return result;
   }
 
   Future<Directory> _resolveExportDirectory() async {

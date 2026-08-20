@@ -8,6 +8,8 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dar
 import 'package:flutter/material.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
+import 'package:cqut_helper/widgets/marquee_text.dart';
+import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
 
 class ScheduleSettingsSheet extends StatefulWidget {
   final String userId;
@@ -204,6 +206,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
               title: const Text('开启“调课通知增强”'),
               content: const Text(
                 '开启后，应用会将你的学号、教务系统加密密码和当前学期发送到所配置的调课服务，用于代你查询调课通知，并在后台刷新受影响周。\n\n'
+                'CQUT Helper 官方调课服务仅使用上述信息完成查询，不会储存你的学号、密码、学期等隐私数据；若使用自定义服务，其数据处理方式由服务提供者决定。\n\n'
                 '普通课表和桌面小组件不依赖此服务；保持关闭或服务不可用时，仍可正常查看和手动刷新课表。\n\n'
                 '继续后还会申请通知权限，并引导你设置电池优化和自启动。',
               ),
@@ -303,6 +306,16 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
       noticeApiBaseUrl,
     );
+    final baselineBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
+      _baselineNoticeApiBaseUrl,
+    );
+    if (normalizedBaseUrl != baselineBaseUrl &&
+        !ScheduleSettingsManager.isOfficialNoticeApiBaseUrl(
+          normalizedBaseUrl,
+        ) &&
+        !await confirmCustomNoticeServiceRisk(context)) {
+      return false;
+    }
 
     if (backgroundPollingEnabled && _noticePrivacyConsentAcceptedThisSession) {
       await ScheduleSettingsManager.markNoticePrivacyConsentAccepted();
@@ -513,8 +526,9 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                               labelText: '调课服务地址',
                               hintText: ScheduleSettingsManager
                                   .officialNoticeApiBaseUrl,
-                              helperText:
-                                  '仅支持 HTTPS；检查时会使用当前登录凭据实际查询，失败时不会回退其他服务',
+                              helper: const MarqueeText(
+                                '仅支持 HTTPS；检查时会使用当前登录凭据实际查询，失败时不会回退其他服务',
+                              ),
                               errorText: _noticeApiError,
                             ),
                           ),

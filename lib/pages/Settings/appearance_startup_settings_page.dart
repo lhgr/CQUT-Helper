@@ -242,6 +242,18 @@ class _AppearanceStartupSettingsPageState
                   ),
                 ),
               ),
+              const SizedBox(height: 20),
+              Text('页面导航', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Card(
+                elevation: 0,
+                child: SwitchListTile(
+                  title: const Text('关闭预测性返回手势'),
+                  subtitle: const Text('遇到返回动画异常时可关闭，关闭后使用普通页面返回动画'),
+                  value: themeManager.predictiveBackDisabled,
+                  onChanged: themeManager.setPredictiveBackDisabled,
+                ),
+              ),
             ],
           );
         },

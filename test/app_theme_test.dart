@@ -61,6 +61,22 @@ void main() {
     expect(theme.navigationBarTheme.height, 72);
     expect(theme.dialogTheme.shape, isA<RoundedRectangleBorder>());
     expect(theme.extension<ScheduleCourseCardTheme>(), isNotNull);
+    expect(
+      theme.pageTransitionsTheme.builders[TargetPlatform.android],
+      isA<PredictiveBackPageTransitionsBuilder>(),
+    );
+  });
+
+  test('可关闭 Android 预测性返回转场', () {
+    final theme = AppTheme.light(
+      ColorScheme.fromSeed(seedColor: Colors.blue),
+      predictiveBackEnabled: false,
+    );
+
+    expect(
+      theme.pageTransitionsTheme.builders[TargetPlatform.android],
+      isA<ZoomPageTransitionsBuilder>(),
+    );
   });
 
   test('动态取色仅增强中性表面层级并保留系统强调色', () {

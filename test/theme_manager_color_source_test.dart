@@ -54,4 +54,16 @@ void main() {
     expect(manager.wingColorUnlocked, isTrue);
     expect(manager.customColor, ThemeManager.wingColor);
   });
+
+  test('predictive back preference is persisted', () async {
+    SharedPreferences.setMockInitialValues({});
+    final manager = ThemeManager();
+    await manager.init();
+    expect(manager.predictiveBackDisabled, isFalse);
+
+    await manager.setPredictiveBackDisabled(true);
+    await manager.init();
+
+    expect(manager.predictiveBackDisabled, isTrue);
+  });
 }

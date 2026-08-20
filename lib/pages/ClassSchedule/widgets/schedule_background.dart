@@ -19,11 +19,24 @@ class ScheduleBackground extends StatelessWidget {
   static bool hasImage(ScheduleLayoutSettings settings) =>
       imageFile(settings) != null;
 
+  static Future<void> precacheFile(BuildContext context, String path) async {
+    final file = File(path);
+    if (!await file.exists()) return;
+    final provider = FileImage(file);
+    await provider.evict();
+    if (!context.mounted) return;
+    await precacheImage(provider, context, onError: (_, _) {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final file = imageFile(settings);
     final surface = Theme.of(context).colorScheme.surface;
     if (file == null) return ColoredBox(color: surface);
+    final stat = file.statSync();
+    final imageKey = ValueKey<String>(
+      '${file.path}:${stat.modified.microsecondsSinceEpoch}:${stat.size}',
+    );
 
     return Stack(
       fit: StackFit.expand,
@@ -39,7 +52,10 @@ class ScheduleBackground extends StatelessWidget {
               opacity: settings.backgroundOpacity,
               child: Image.file(
                 file,
+                key: imageKey,
                 fit: BoxFit.cover,
+                gaplessPlayback: true,
+                filterQuality: FilterQuality.medium,
                 errorBuilder: (_, _, _) => ColoredBox(color: surface),
               ),
             ),

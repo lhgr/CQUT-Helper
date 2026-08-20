@@ -19,6 +19,8 @@ class ThemeManager extends ChangeNotifier {
   static const String _scheduleBackgroundColorKey =
       'schedule_background_theme_color';
   static const String _wingColorUnlockedKey = 'wing_color_unlocked';
+  static const String _predictiveBackDisabledKey =
+      'predictive_back_gesture_disabled';
 
   static const Color wingColor = Color(0xFFFF98A1);
 
@@ -29,6 +31,7 @@ class ThemeManager extends ChangeNotifier {
   Color? _scheduleBackgroundColor;
   bool _hasScheduleBackground = false;
   bool _wingColorUnlocked = false;
+  bool _predictiveBackDisabled = false;
 
   ThemeMode get themeMode => _themeMode;
   bool get isSystemColor => _colorSource == ThemeColorSource.system;
@@ -36,6 +39,7 @@ class ThemeManager extends ChangeNotifier {
   ThemeColorSource get colorSource => _colorSource;
   Color? get scheduleBackgroundColor => _scheduleBackgroundColor;
   bool get wingColorUnlocked => _wingColorUnlocked;
+  bool get predictiveBackDisabled => _predictiveBackDisabled;
   bool get canUseScheduleBackgroundColor =>
       _hasScheduleBackground && _scheduleBackgroundColor != null;
   Color get activeSeedColor =>
@@ -91,6 +95,8 @@ class ThemeManager extends ChangeNotifier {
     final savedColor = prefs.getInt(_customColorKey);
     _customColor = savedColor == null ? Colors.blue : Color(savedColor);
     _wingColorUnlocked = prefs.getBool(_wingColorUnlockedKey) ?? false;
+    _predictiveBackDisabled =
+        prefs.getBool(_predictiveBackDisabledKey) ?? false;
     final savedBackgroundColor = prefs.getInt(_scheduleBackgroundColorKey);
     _scheduleBackgroundColor = savedBackgroundColor == null
         ? null
@@ -212,6 +218,14 @@ class ThemeManager extends ChangeNotifier {
     await prefs.setBool(_wingColorUnlockedKey, true);
     notifyListeners();
     return true;
+  }
+
+  Future<void> setPredictiveBackDisabled(bool disabled) async {
+    if (_predictiveBackDisabled == disabled) return;
+    _predictiveBackDisabled = disabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_predictiveBackDisabledKey, disabled);
+    notifyListeners();
   }
 
   Future<void> applyScheduleBackgroundColor(Color color) async {

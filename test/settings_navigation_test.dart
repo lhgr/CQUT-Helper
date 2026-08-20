@@ -210,4 +210,19 @@ void main() {
     expect(ThemeManager().customColor, ThemeManager.wingColor);
     expect(ThemeManager().colorSource, ThemeColorSource.custom);
   });
+
+  testWidgets('预测性返回手势可在外观设置中关闭', (tester) async {
+    await ThemeManager().init();
+    await tester.pumpWidget(
+      const MaterialApp(home: AppearanceStartupSettingsPage()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('关闭预测性返回手势'));
+    await tester.pumpAndSettle();
+
+    expect(ThemeManager().predictiveBackDisabled, isTrue);
+  });
 }

@@ -12,6 +12,7 @@ abstract final class AppTheme {
   static ThemeData light(
     ColorScheme colorScheme, {
     bool strengthenSurfaceContrast = false,
+    bool predictiveBackEnabled = true,
   }) {
     return _build(
       strengthenSurfaceContrast
@@ -19,12 +20,14 @@ abstract final class AppTheme {
           : colorScheme,
       courseCardTheme: ScheduleCourseCardTheme.light(),
       strengthenedSurfaceContrast: strengthenSurfaceContrast,
+      predictiveBackEnabled: predictiveBackEnabled,
     );
   }
 
   static ThemeData dark(
     ColorScheme colorScheme, {
     bool strengthenSurfaceContrast = false,
+    bool predictiveBackEnabled = true,
   }) {
     return _build(
       strengthenSurfaceContrast
@@ -32,6 +35,7 @@ abstract final class AppTheme {
           : colorScheme,
       courseCardTheme: ScheduleCourseCardTheme.dark(),
       strengthenedSurfaceContrast: strengthenSurfaceContrast,
+      predictiveBackEnabled: predictiveBackEnabled,
     );
   }
 
@@ -39,6 +43,7 @@ abstract final class AppTheme {
     ColorScheme colorScheme, {
     required ScheduleCourseCardTheme courseCardTheme,
     required bool strengthenedSurfaceContrast,
+    required bool predictiveBackEnabled,
   }) {
     final isDark = colorScheme.brightness == Brightness.dark;
     final base = ThemeData(
@@ -58,6 +63,13 @@ abstract final class AppTheme {
     );
 
     return base.copyWith(
+      pageTransitionsTheme: PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: predictiveBackEnabled
+              ? const PredictiveBackPageTransitionsBuilder()
+              : const ZoomPageTransitionsBuilder(),
+        },
+      ),
       scaffoldBackgroundColor: colorScheme.surface,
       canvasColor: colorScheme.surface,
       textTheme: _textTheme(base.textTheme, colorScheme),
