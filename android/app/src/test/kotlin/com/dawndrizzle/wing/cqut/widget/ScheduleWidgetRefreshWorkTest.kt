@@ -74,8 +74,8 @@ class ScheduleWidgetRefreshWorkTest {
   }
 
   @Test
-  fun `successful refresh with unchanged content keeps existing remote list`() {
-    assertFalse(TodayCourseWidgetProvider.shouldRefreshData(true, "same", "same"))
+  fun `successful refresh with unchanged content still reloads time-sensitive rows`() {
+    assertTrue(TodayCourseWidgetProvider.shouldRefreshData(true, "same", "same"))
   }
 
   @Test

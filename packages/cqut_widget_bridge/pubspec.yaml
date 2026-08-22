@@ -1,0 +1,19 @@
+name: cqut_widget_bridge
+description: Headless-safe Android bridge for CQUT Helper widget refreshes.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.9.2
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.dawndrizzle.wing.cqut.widgetbridge
+        pluginClass: CqutWidgetBridgePlugin

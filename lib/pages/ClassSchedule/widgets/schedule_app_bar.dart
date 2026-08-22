@@ -71,17 +71,8 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       );
     }
 
-    String compactRefreshStatus(String status) {
-      return status
-          .replaceFirst(RegExp(r'^今天\s+'), '')
-          .replaceFirst(RegExp(r'更新$'), '');
-    }
-
     Widget buildRefreshAction() {
       final status = refreshStatusText;
-      final compactStatus = status == null
-          ? null
-          : compactRefreshStatus(status);
       final color = Theme.of(context).colorScheme.onSurfaceVariant;
       return Tooltip(
         message: status == null ? '刷新课表' : '最后更新：$status',
@@ -94,37 +85,17 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
             child: SizedBox(
               width: 36,
               height: 54,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    height: 30,
-                    child: Center(
-                      child: loading
-                          ? SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: color,
-                              ),
-                            )
-                          : Icon(Icons.refresh, color: color),
-                    ),
-                  ),
-                  if (compactStatus != null)
-                    Text(
-                      compactStatus,
-                      maxLines: 1,
-                      overflow: TextOverflow.fade,
-                      softWrap: false,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: color,
-                        fontSize: 9.5,
-                        height: 1,
-                      ),
-                    ),
-                ],
+              child: Center(
+                child: loading
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: color,
+                        ),
+                      )
+                    : Icon(Icons.refresh, color: color),
               ),
             ),
           ),

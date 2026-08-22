@@ -11,6 +11,7 @@ void main() {
 
     RequestOptions? capturedRequest;
     final api = NoticeApi(
+      accessEnabled: () async => true,
       dioFactory: (baseUrl) {
         final dio = Dio(BaseOptions(baseUrl: baseUrl));
         dio.interceptors.add(
@@ -69,6 +70,7 @@ void main() {
     () async {
       var requestCount = 0;
       final api = NoticeApi(
+        accessEnabled: () async => true,
         dioFactory: (baseUrl) {
           requestCount++;
           return Dio(BaseOptions(baseUrl: baseUrl));
@@ -90,6 +92,7 @@ void main() {
 
   test('availability check shows backend error message and status', () async {
     final api = NoticeApi(
+      accessEnabled: () async => true,
       dioFactory: (baseUrl) {
         final dio = Dio(BaseOptions(baseUrl: baseUrl));
         dio.interceptors.add(
@@ -132,6 +135,7 @@ void main() {
 
   test('explicit complete empty notice list is a successful check', () async {
     final api = NoticeApi(
+      accessEnabled: () async => true,
       dioFactory: (baseUrl) {
         final dio = Dio(BaseOptions(baseUrl: baseUrl));
         dio.interceptors.add(
@@ -174,6 +178,7 @@ void main() {
 
   test('incomplete empty notice response is rejected', () async {
     final api = NoticeApi(
+      accessEnabled: () async => true,
       dioFactory: (baseUrl) {
         final dio = Dio(BaseOptions(baseUrl: baseUrl));
         dio.interceptors.add(

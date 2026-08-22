@@ -44,6 +44,7 @@ class ScheduleWeekLoader {
   Future<void> loadCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     _userId = prefs.getString('account');
+    _hydrateCurrentAnchorFromPreferences(prefs, _userId);
     _encryptedPassword = await credentialStore.readEncryptedPassword();
   }
 
@@ -71,12 +72,30 @@ class ScheduleWeekLoader {
 
     final userId = _userId;
     if (userId == null || userId.isEmpty) return null;
+    _hydrateCurrentAnchorFromPreferences(prefs, userId);
 
     return service.loadFromCache(
       userId: userId,
       weekNum: weekNum,
       yearTerm: yearTerm,
     );
+  }
+
+  void _hydrateCurrentAnchorFromPreferences(
+    SharedPreferences prefs,
+    String? userId,
+  ) {
+    final normalizedUserId = (userId ?? '').trim();
+    if (normalizedUserId.isEmpty) return;
+    final week = prefs
+        .getString('schedule_widget_week_$normalizedUserId')
+        ?.trim();
+    final term = prefs
+        .getString('schedule_widget_term_$normalizedUserId')
+        ?.trim();
+    if (week == null || week.isEmpty || term == null || term.isEmpty) return;
+    setActualCurrentWeekStr(week);
+    setActualCurrentTermStr(term);
   }
 
   Future<int> reloadMemoryCacheFromDisk({required String yearTerm}) async {

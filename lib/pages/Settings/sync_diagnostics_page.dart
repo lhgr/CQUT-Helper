@@ -1,6 +1,8 @@
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
@@ -11,7 +13,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SyncDiagnosticsPage extends StatefulWidget {
-  const SyncDiagnosticsPage({super.key});
+  final Future<String?> Function()? readEncryptedPassword;
+
+  const SyncDiagnosticsPage({super.key, this.readEncryptedPassword});
 
   @override
   State<SyncDiagnosticsPage> createState() => _SyncDiagnosticsPageState();
@@ -21,9 +25,12 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
   bool _loading = true;
   bool _working = false;
   String _account = '';
+  bool _hasCredential = false;
+  bool _credentialReadFailed = false;
   int _cachedWeeks = 0;
   ScheduleRefreshSnapshot? _refresh;
   CourseReminderStatus _reminders = const CourseReminderStatus.empty();
+  bool _noticeEnhancementEnabled = false;
   ScheduleBackgroundPollHealthSnapshot? _background;
   bool _notifications = false;
   bool _exactAlarm = false;
@@ -40,6 +47,18 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
     if (mounted) setState(() => _loading = true);
     final prefs = await SharedPreferences.getInstance();
     final account = (prefs.getString('account') ?? '').trim();
+    var hasCredential = false;
+    var credentialReadFailed = false;
+    if (account.isNotEmpty) {
+      try {
+        final encryptedPassword =
+            await (widget.readEncryptedPassword?.call() ??
+                CredentialStore().readEncryptedPassword());
+        hasCredential = (encryptedPassword ?? '').trim().isNotEmpty;
+      } catch (_) {
+        credentialReadFailed = true;
+      }
+    }
     var cachedWeeks = 0;
     if (account.isNotEmpty) {
       try {
@@ -52,19 +71,28 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
         ? null
         : await ScheduleRefreshState.load(account);
     final reminders = await CourseReminderScheduler.loadStatus();
-    final background = await loadScheduleUpdateWorkerHealthSnapshot();
+    final noticeEnhancementEnabled =
+        ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs);
+    final background = noticeEnhancementEnabled
+        ? await loadScheduleUpdateWorkerHealthSnapshot()
+        : null;
     final notifications = await LocalNotifications.areNotificationsEnabled();
     final exactAlarm = await LocalNotifications.canScheduleExactNotifications();
-    final batteryIgnored =
-        await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
-    final backgroundRestricted =
-        await AndroidBackgroundRestrictions.isBackgroundRestricted();
+    final batteryIgnored = noticeEnhancementEnabled
+        ? await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations()
+        : null;
+    final backgroundRestricted = noticeEnhancementEnabled
+        ? await AndroidBackgroundRestrictions.isBackgroundRestricted()
+        : null;
     if (!mounted) return;
     setState(() {
       _account = account;
+      _hasCredential = hasCredential;
+      _credentialReadFailed = credentialReadFailed;
       _cachedWeeks = cachedWeeks;
       _refresh = refresh;
       _reminders = reminders;
+      _noticeEnhancementEnabled = noticeEnhancementEnabled;
       _background = background;
       _notifications = notifications;
       _exactAlarm = exactAlarm;
@@ -100,7 +128,14 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
     await _run(() async {
       final controller = ScheduleController();
       try {
-        await controller.loadFromNetwork(updateWidgetPins: true);
+        final currentData = await controller.loadFromNetwork(
+          updateWidgetPins: true,
+        );
+        await controller.prefetchAllWeeksInBackground(
+          currentData,
+          () {},
+          interval: Duration.zero,
+        );
       } finally {
         controller.dispose();
       }
@@ -113,17 +148,62 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
 
   Future<void> _repairReminders() async {
     await _run(() async {
+      if (_account.isEmpty) throw StateError('未找到当前账号');
       final granted =
           await LocalNotifications.ensureCourseReminderPermissions();
       if (!granted) throw StateError('通知或精确闹钟权限未授予');
+      final controller = ScheduleController();
+      try {
+        final currentData = await controller.loadFromNetwork(
+          updateWidgetPins: true,
+        );
+        await controller.prefetchAllWeeksInBackground(
+          currentData,
+          () {},
+          interval: Duration.zero,
+        );
+      } finally {
+        controller.dispose();
+      }
       await CourseReminderScheduler.rescheduleForUser(_account);
+      final status = await CourseReminderScheduler.loadStatus();
+      if (status.enabled && !status.ready) {
+        throw StateError(status.reason);
+      }
     }, '课程提醒计划已重建');
+  }
+
+  bool get _credentialInvalid =>
+      _refresh?.failure == ScheduleWidgetRefreshFailure.credentialInvalid;
+
+  bool get _needsReauthentication =>
+      _account.isNotEmpty &&
+      (_credentialReadFailed || !_hasCredential || _credentialInvalid);
+
+  String get _accountSubtitle {
+    if (_account.isEmpty) return '未检测到本地账号';
+    if (_credentialReadFailed) return '无法读取安全存储中的登录凭据';
+    if (!_hasCredential) return '账号存在，但登录凭据缺失';
+    if (_credentialInvalid) return '最近一次同步判断登录凭据已失效';
+    return '账号与登录凭据已保存；有效性会在同步时验证';
   }
 
   String _time(DateTime? value) {
     if (value == null) return '暂无记录';
     String two(int number) => number.toString().padLeft(2, '0');
     return '${value.month}/${value.day} ${two(value.hour)}:${two(value.minute)}';
+  }
+
+  String get _reminderSubtitle {
+    if (!_reminders.enabled) {
+      return '开启课前提醒后，会根据已同步课表生成未来 60 天提醒';
+    }
+    final coverage = _reminders.expectedWeekCount > 0
+        ? '覆盖 ${_reminders.cachedWeekCount}/${_reminders.expectedWeekCount} 周'
+        : '覆盖范围待同步';
+    return '已安排 ${_reminders.scheduledCount} 条 · '
+        '$coverage · '
+        '下一条 ${_time(_reminders.nextReminderAt)}';
   }
 
   Widget _statusTile({
@@ -169,9 +249,13 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
                       _statusTile(
                         icon: Icons.person_outline,
                         title: _account.isEmpty ? '未登录' : '账号 $_account',
-                        subtitle: _account.isEmpty ? '需要重新登录' : '本地账号信息正常',
-                        good: _account.isNotEmpty,
-                        onTap: _account.isEmpty
+                        subtitle: _accountSubtitle,
+                        good:
+                            _account.isNotEmpty &&
+                            !_credentialReadFailed &&
+                            _hasCredential &&
+                            !_credentialInvalid,
+                        onTap: _account.isEmpty || _needsReauthentication
                             ? () async {
                                 await requestReauthentication(context);
                                 await _load();
@@ -205,7 +289,10 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('通知与后台', style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  _noticeEnhancementEnabled ? '通知与后台' : '通知',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
                 const SizedBox(height: 8),
                 Card(
                   child: Column(
@@ -213,10 +300,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
                       _statusTile(
                         icon: Icons.alarm_on_outlined,
                         title: _reminders.reason,
-                        subtitle:
-                            '已安排 ${_reminders.scheduledCount} 条 · '
-                            '覆盖 ${_reminders.cachedWeekCount}/${_reminders.expectedWeekCount == 0 ? '?' : _reminders.expectedWeekCount} 周 · '
-                            '下一条 ${_time(_reminders.nextReminderAt)}',
+                        subtitle: _reminderSubtitle,
                         good: !_reminders.enabled || _reminders.ready,
                         onTap: _reminders.enabled ? _repairReminders : null,
                       ),
@@ -230,34 +314,36 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
                             ? null
                             : _repairReminders,
                       ),
-                      const Divider(height: 1),
-                      _statusTile(
-                        icon: Icons.sync_outlined,
-                        title: _background?.title ?? '后台状态未知',
-                        subtitle: _background?.detail ?? '暂时无法读取后台任务状态',
-                        good:
-                            _background?.status ==
-                            ScheduleBackgroundPollHealthStatus.healthy,
-                        onTap: () => _run(
-                          ScheduleUpdateWorker.syncFromPreferences,
-                          '后台任务已重新注册',
+                      if (_noticeEnhancementEnabled) ...[
+                        const Divider(height: 1),
+                        _statusTile(
+                          icon: Icons.sync_outlined,
+                          title: _background?.title ?? '后台状态未知',
+                          subtitle: _background?.detail ?? '暂时无法读取后台任务状态',
+                          good:
+                              _background?.status ==
+                              ScheduleBackgroundPollHealthStatus.healthy,
+                          onTap: () => _run(
+                            ScheduleUpdateWorker.syncFromPreferences,
+                            '后台任务已重新注册',
+                          ),
                         ),
-                      ),
-                      const Divider(height: 1),
-                      _statusTile(
-                        icon: Icons.battery_saver_outlined,
-                        title: _backgroundRestricted == true
-                            ? '系统限制后台运行'
-                            : '后台运行限制',
-                        subtitle: _batteryIgnored == true
-                            ? '已忽略电池优化'
-                            : '建议允许忽略电池优化和自启动',
-                        good:
-                            _backgroundRestricted != true &&
-                            _batteryIgnored == true,
-                        onTap: AndroidBackgroundRestrictions
-                            .openBatteryOptimizationSettings,
-                      ),
+                        const Divider(height: 1),
+                        _statusTile(
+                          icon: Icons.battery_saver_outlined,
+                          title: _backgroundRestricted == true
+                              ? '系统限制后台运行'
+                              : '后台运行限制',
+                          subtitle: _batteryIgnored == true
+                              ? '已忽略电池优化'
+                              : '建议允许忽略电池优化和自启动',
+                          good:
+                              _backgroundRestricted != true &&
+                              _batteryIgnored == true,
+                          onTap: AndroidBackgroundRestrictions
+                              .openBatteryOptimizationSettings,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -275,28 +361,32 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
                       : const Icon(Icons.sync),
                   label: Text(_working ? '正在处理…' : '立即刷新课表、组件和提醒'),
                 ),
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: _working
-                      ? null
-                      : () =>
-                            AndroidBackgroundRestrictions.openAutoStartSettings(),
-                  icon: const Icon(Icons.settings_outlined),
-                  label: const Text('打开自启动设置'),
-                ),
-                const SizedBox(height: 10),
-                TextButton.icon(
-                  onPressed: _working
-                      ? null
-                      : () async {
-                          if (await requestReauthentication(context) &&
-                              mounted) {
-                            await _refreshSchedule();
-                          }
-                        },
-                  icon: const Icon(Icons.login),
-                  label: const Text('重新验证登录'),
-                ),
+                if (_noticeEnhancementEnabled) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _working
+                        ? null
+                        : () =>
+                              AndroidBackgroundRestrictions.openAutoStartSettings(),
+                    icon: const Icon(Icons.settings_outlined),
+                    label: const Text('打开自启动设置'),
+                  ),
+                ],
+                if (_needsReauthentication) ...[
+                  const SizedBox(height: 10),
+                  TextButton.icon(
+                    onPressed: _working
+                        ? null
+                        : () async {
+                            if (await requestReauthentication(context) &&
+                                mounted) {
+                              await _refreshSchedule();
+                            }
+                          },
+                    icon: const Icon(Icons.login),
+                    label: const Text('重新验证登录'),
+                  ),
+                ],
               ],
             ),
     );

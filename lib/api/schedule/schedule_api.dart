@@ -63,13 +63,17 @@ class ScheduleApi {
         final source = ScheduleData.fromJson(decoded);
         final merged = await ScheduleCustomizationManager.instance
             .applyToSchedule(userId: userId, schedule: source);
-        await _writeWidgetProjectionIfPinned(
-          prefs: prefs,
-          userId: userId,
-          yearTerm: yearTerm,
-          weekNum: weekNum,
-          schedule: merged,
-        );
+        final updatesVisibleWidgetProjection =
+            await _writeWidgetProjectionIfPinned(
+              prefs: prefs,
+              userId: userId,
+              yearTerm: yearTerm,
+              weekNum: weekNum,
+              schedule: merged,
+            );
+        if (updatesVisibleWidgetProjection) {
+          await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+        }
         return merged;
       }
     } catch (_) {}
@@ -146,19 +150,20 @@ class ScheduleApi {
           newWeekNum: newWidgetWeek,
         );
       }
-      final updatesCurrentDisplay = await _writeWidgetProjectionIfPinned(
-        prefs: prefs,
-        userId: userId,
-        yearTerm: saveTerm,
-        weekNum: saveWeek,
-        schedule: merged,
-      );
+      final updatesVisibleWidgetProjection =
+          await _writeWidgetProjectionIfPinned(
+            prefs: prefs,
+            userId: userId,
+            yearTerm: saveTerm,
+            weekNum: saveWeek,
+            schedule: merged,
+          );
       await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
       await prefs.setInt(
         lastFetchAtKey(userId, saveTerm, saveWeek),
         fetchedAt.millisecondsSinceEpoch,
       );
-      if (updatesCurrentDisplay) {
+      if (updatesVisibleWidgetProjection) {
         if (notifyWidget) {
           await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
         }
@@ -385,13 +390,14 @@ class ScheduleApi {
       weekNum: normalizedWeek,
     );
     final decoded = json.decode(stored?.rawJson ?? jsonStr);
+    var updatesVisibleWidgetProjection = false;
     if (decoded is Map<String, dynamic>) {
       final merged = await ScheduleCustomizationManager.instance
           .applyToSchedule(
             userId: userId,
             schedule: ScheduleData.fromJson(decoded),
           );
-      await _writeWidgetProjectionIfPinned(
+      updatesVisibleWidgetProjection = await _writeWidgetProjectionIfPinned(
         prefs: prefs,
         userId: userId,
         yearTerm: normalizedTerm,
@@ -404,8 +410,7 @@ class ScheduleApi {
       lastFetchAtKey(userId, normalizedTerm, normalizedWeek),
       fetchedAt.millisecondsSinceEpoch,
     );
-    if (_effectiveWidgetWeek(prefs, userId) == normalizedWeek &&
-        _effectiveWidgetTerm(prefs, userId) == normalizedTerm) {
+    if (updatesVisibleWidgetProjection) {
       await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
       await _rescheduleCourseRemindersSafely(userId);
     }
@@ -444,7 +449,7 @@ class ScheduleApi {
   }) async {
     final pinnedWeek = _effectiveWidgetWeek(prefs, userId);
     final pinnedTerm = _effectiveWidgetTerm(prefs, userId);
-    if (!_isInWidgetProjectionWindow(
+    if (!isWidgetProjectionVisible(
       yearTerm: yearTerm,
       weekNum: weekNum,
       pinnedYearTerm: pinnedTerm,
@@ -456,7 +461,7 @@ class ScheduleApi {
       _scheduleKey(userId, yearTerm, weekNum),
       json.encode(schedule.toJson()),
     );
-    return pinnedWeek == weekNum && pinnedTerm == yearTerm;
+    return true;
   }
 
   Future<void> _removeStaleWidgetProjections({
@@ -480,7 +485,7 @@ class ScheduleApi {
     }
   }
 
-  bool _isInWidgetProjectionWindow({
+  static bool isWidgetProjectionVisible({
     required String yearTerm,
     required String weekNum,
     required String? pinnedYearTerm,
@@ -490,7 +495,7 @@ class ScheduleApi {
     return _projectionWeeks(pinnedWeekNum).contains(weekNum);
   }
 
-  Set<String> _projectionWeeks(String? centerWeek) {
+  static Set<String> _projectionWeeks(String? centerWeek) {
     final parsed = int.tryParse(centerWeek ?? '');
     if (parsed == null) {
       return centerWeek == null || centerWeek.isEmpty

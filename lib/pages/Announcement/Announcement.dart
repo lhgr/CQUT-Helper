@@ -100,9 +100,7 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
             if (detail == null) {
               final text = failure == null
                   ? '获取公告详情失败，请稍后重试'
-                  : (failure.type == AnnouncementFailureType.backend
-                        ? '后端服务异常：${failure.message}'
-                        : '用户侧问题：${failure.message}');
+                  : announcementFailureDisplayText(failure);
               return AlertDialog(
                 title: Text(item.title),
                 content: Text(text),
@@ -173,9 +171,7 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
 
             if (items.isEmpty) {
               if (failure != null) {
-                final text = failure.type == AnnouncementFailureType.backend
-                    ? '后端服务异常：${failure.message}'
-                    : '用户侧问题：${failure.message}';
+                final text = announcementFailureDisplayText(failure);
                 return ListView(
                   children: [
                     SizedBox(height: 240),
@@ -197,9 +193,7 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 if (showFailureBanner && index == 0) {
-                  final text = failure.type == AnnouncementFailureType.backend
-                      ? '后端服务异常：${failure.message}'
-                      : '用户侧问题：${failure.message}';
+                  final text = announcementFailureDisplayText(failure);
                   return Card(
                     elevation: 0,
                     color: Theme.of(

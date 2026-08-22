@@ -55,6 +55,8 @@ dependencies:
   timezone: ^0.11.1
   workmanager: ^0.10.7
   flutter_local_notifications: ^22.3.0
+  cqut_widget_bridge:
+    path: packages/cqut_widget_bridge
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,5 +1,7 @@
 import 'package:cqut_helper/manager/schedule_message_center_manager.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/pages/Announcement/Announcement.dart';
+import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,6 +15,7 @@ class MessageCenterPage extends StatefulWidget {
 class _MessageCenterPageState extends State<MessageCenterPage> {
   String _userId = '';
   List<ScheduleMessageRecord> _records = const [];
+  bool _noticeEnhancementEnabled = false;
   bool _loading = true;
 
   @override
@@ -33,6 +36,8 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
   Future<void> _load({bool markRead = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final userId = (prefs.getString('account') ?? '').trim();
+    final noticeEnhancementEnabled =
+        ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs);
     var records = await ScheduleMessageCenterManager.load(userId);
     if (markRead && records.any((record) => !record.read)) {
       await ScheduleMessageCenterManager.markAllRead(userId);
@@ -42,8 +47,18 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
     setState(() {
       _userId = userId;
       _records = records;
+      _noticeEnhancementEnabled = noticeEnhancementEnabled;
       _loading = false;
     });
+  }
+
+  Future<void> _openNotificationSettings() async {
+    await openAppSettings(
+      context,
+      section: AppSettingsSection.notifications,
+      userId: _userId,
+    );
+    if (mounted) await _load();
   }
 
   Future<void> _clear() async {
@@ -108,16 +123,41 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
+                  if (!_noticeEnhancementEnabled) ...[
+                    Card(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      child: ListTile(
+                        leading: const Icon(Icons.privacy_tip_outlined),
+                        title: const Text('调课通知增强未开启'),
+                        subtitle: const Text(
+                          '不会访问官方或第三方调课通知接口；下方仅展示普通课表同步在本机检测到的差异和既有记录，不代表已查询调课通知。',
+                        ),
+                        trailing: TextButton(
+                          onPressed: _openNotificationSettings,
+                          child: const Text('去开启'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Text(
-                    '课表变更记录',
+                    _noticeEnhancementEnabled ? '课表变更记录' : '课表变更记录（仅本地）',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
                   if (_records.isEmpty)
-                    const Card(
+                    Card(
                       child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Center(child: Text('暂无调课或课表变更记录')),
+                        padding: const EdgeInsets.all(24),
+                        child: Center(
+                          child: Text(
+                            _noticeEnhancementEnabled
+                                ? '暂无调课或课表变更记录'
+                                : '暂无本地课表变更记录',
+                          ),
+                        ),
                       ),
                     )
                   else

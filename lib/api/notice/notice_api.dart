@@ -42,9 +42,14 @@ class NoticeApi {
   static const int _maxRetryPerDomain = 2;
 
   final Dio Function(String baseUrl) _dioFactory;
+  final Future<bool> Function() _accessEnabled;
 
-  NoticeApi({@visibleForTesting Dio Function(String baseUrl)? dioFactory})
-    : _dioFactory = dioFactory ?? _buildDio;
+  NoticeApi({
+    @visibleForTesting Dio Function(String baseUrl)? dioFactory,
+    @visibleForTesting Future<bool> Function()? accessEnabled,
+  }) : _dioFactory = dioFactory ?? _buildDio,
+       _accessEnabled =
+           accessEnabled ?? ScheduleSettingsManager.isNoticeEnhancementEnabled;
 
   @visibleForTesting
   static List<String> serviceCandidates(String selectedBaseUrl) {
@@ -97,10 +102,18 @@ class NoticeApi {
     String env = 'prod',
     bool headless = true,
   }) async {
+    final stopwatch = Stopwatch()..start();
+    if (!await _accessEnabled()) {
+      stopwatch.stop();
+      return NoticeApiAvailabilityResult(
+        success: false,
+        elapsedMs: stopwatch.elapsedMilliseconds,
+        message: '调课通知增强未开启，未访问调课服务',
+      );
+    }
     final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
       baseUrl,
     );
-    final stopwatch = Stopwatch()..start();
     if (username.trim().isEmpty || encryptedPassword.trim().isEmpty) {
       stopwatch.stop();
       return NoticeApiAvailabilityResult(
@@ -176,6 +189,9 @@ class NoticeApi {
     required String env,
     required bool headless,
   }) async {
+    if (!await _accessEnabled()) {
+      throw NoticeApiForbiddenException('调课通知增强未开启，禁止访问调课服务');
+    }
     final normalizedYearTerm = yearTerm.trim();
     if (!RegExp(r'^\d{4}-\d{4}-[12]$').hasMatch(normalizedYearTerm)) {
       throw ArgumentError.value(yearTerm, 'yearTerm', '学期格式应为YYYY-YYYY-1/2');
@@ -245,6 +261,9 @@ class NoticeApi {
     String env = 'prod',
     bool headless = true,
   }) async {
+    if (!await _accessEnabled()) {
+      throw NoticeApiForbiddenException('调课通知增强未开启，禁止访问调课服务');
+    }
     final normalizedYearTerm = yearTerm.trim();
     if (!RegExp(r'^\d{4}-\d{4}-[12]$').hasMatch(normalizedYearTerm)) {
       throw ArgumentError.value(yearTerm, 'yearTerm', '学期格式应为YYYY-YYYY-1/2');

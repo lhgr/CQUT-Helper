@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('学期信息与最后更新时间分开展示', (tester) async {
+  testWidgets('刷新按钮下不展示最后更新时间', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -25,7 +25,8 @@ void main() {
 
     expect(find.text('第2周'), findsOneWidget);
     expect(find.text('2026-2027-1学期'), findsOneWidget);
-    expect(find.text('23:12'), findsOneWidget);
+    expect(find.text('23:12'), findsNothing);
+    expect(find.byTooltip('最后更新：今天 23:12更新'), findsOneWidget);
     expect(find.textContaining('2026-2027-1学期 ·'), findsNothing);
   });
 

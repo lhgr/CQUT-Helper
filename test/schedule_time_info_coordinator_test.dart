@@ -101,6 +101,34 @@ void main() {
       expect(api.fetchCount, 1);
     });
 
+    test('time info 内容更新后主动通知小组件重载', () async {
+      SharedPreferences.setMockInitialValues({});
+      List<CampusTimeInfo>? state;
+      var widgetUpdateCount = 0;
+      final coordinator = ScheduleTimeInfoCoordinator(
+        service: _FakeTimeInfoScheduleApi(
+          response: [
+            CampusTimeInfo(
+              campusName: '两江校区',
+              sessionNum: 1,
+              startTime: '08:00',
+              endTime: '08:45',
+            ),
+          ],
+        ),
+        getTimeInfoList: () => state,
+        setTimeInfoList: (value) => state = value,
+        onTimeInfoUpdated: () async {
+          widgetUpdateCount++;
+        },
+      );
+
+      final changed = await coordinator.refreshTimeInfoIfEnabled();
+
+      expect(changed, isTrue);
+      expect(widgetUpdateCount, 1);
+    });
+
     test('不同页面的 coordinator 共享同一个进行中的刷新', () async {
       SharedPreferences.setMockInitialValues({});
       final api = _BlockingTimeInfoScheduleApi(

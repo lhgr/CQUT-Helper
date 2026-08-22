@@ -1,5 +1,19 @@
 import 'package:flutter/material.dart';
 
+bool shouldShowScheduleReturnWeekButton({
+  required String displayedWeek,
+  required String? displayedTerm,
+  required String? actualCurrentWeek,
+  required String? actualCurrentTerm,
+  required bool displayedScheduleCoversToday,
+}) {
+  final actualWeek = (actualCurrentWeek ?? '').trim();
+  final actualTerm = (actualCurrentTerm ?? '').trim();
+  if (actualWeek.isEmpty) return !displayedScheduleCoversToday;
+  if (displayedWeek.trim() != actualWeek) return true;
+  return actualTerm.isNotEmpty && (displayedTerm ?? '').trim() != actualTerm;
+}
+
 class ScheduleReturnWeekButton extends StatelessWidget {
   final VoidCallback onPressed;
   final bool transparentBackground;

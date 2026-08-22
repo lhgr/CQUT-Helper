@@ -89,7 +89,7 @@ class CourseReminderScheduler {
       return;
     }
 
-    final schedules = <ScheduleData>[];
+    final cachedSchedules = <_CachedReminderSchedule>[];
     final entries = await ScheduleCacheDatabase.instance.loadAllForUser(userId);
     for (final entry in entries) {
       try {
@@ -98,10 +98,10 @@ class CourseReminderScheduler {
           final rawSchedule = ScheduleData.fromJson(
             decoded.cast<String, dynamic>(),
           );
-          schedules.add(
-            await ScheduleCustomizationManager.instance.applyToSchedule(
-              userId: userId,
+          cachedSchedules.add(
+            _CachedReminderSchedule(
               schedule: rawSchedule,
+              fetchedAt: entry.fetchedAt,
             ),
           );
         }
@@ -110,36 +110,31 @@ class CourseReminderScheduler {
 
     final now = DateTime.now();
     final horizon = now.add(const Duration(days: 60));
+    final activeTerm = _selectReminderTerm(
+      prefs: prefs,
+      userId: userId,
+      cachedSchedules: cachedSchedules,
+      now: now,
+    );
+    final schedules = <ScheduleData>[];
+    for (final cached in cachedSchedules) {
+      if ((cached.schedule.yearTerm ?? '').trim() != activeTerm) continue;
+      schedules.add(
+        await ScheduleCustomizationManager.instance.applyToSchedule(
+          userId: userId,
+          schedule: cached.schedule,
+        ),
+      );
+    }
+    final coverage = evaluateCourseReminderCoverage(
+      schedules: schedules,
+      now: now,
+      horizon: horizon,
+    );
     final occurrences = <_ReminderOccurrence>[];
     final seen = <String>{};
-    final activeScheduleKeys = <String>{};
-    var expectedWeekCount = 0;
-    DateTime? latestCoveredDate;
     for (final schedule in schedules) {
       final dates = ScheduleCustomizationManager.scheduleDates(schedule);
-      final relevantDates = dates.values.where(
-        (date) =>
-            !date.isBefore(now.subtract(const Duration(days: 7))) &&
-            !date.isAfter(horizon),
-      );
-      if (relevantDates.isNotEmpty) {
-        activeScheduleKeys.add(
-          '${(schedule.yearTerm ?? '').trim()}|${(schedule.weekNum ?? '').trim()}',
-        );
-        final termWeeks = schedule.weekList?.length ?? 0;
-        final week = int.tryParse((schedule.weekNum ?? '').trim()) ?? 0;
-        final weeksNeeded = termWeeks > 0 && week > 0
-            ? (termWeeks - week + 1).clamp(0, 10)
-            : 0;
-        if (weeksNeeded > expectedWeekCount) {
-          expectedWeekCount = weeksNeeded;
-        }
-        for (final date in relevantDates) {
-          if (latestCoveredDate == null || date.isAfter(latestCoveredDate)) {
-            latestCoveredDate = date;
-          }
-        }
-      }
       for (final event in schedule.eventList ?? const <EventItem>[]) {
         final weekday = int.tryParse((event.weekDay ?? '').trim());
         final date = weekday == null ? null : dates[weekday];
@@ -195,27 +190,66 @@ class CourseReminderScheduler {
       scheduledIds.add(occurrence.id);
     }
     await prefs.setString(_scheduledIdsKey, jsonEncode(scheduledIds));
-    final coverageComplete =
-        expectedWeekCount == 0 ||
-        activeScheduleKeys.length >= expectedWeekCount;
     await _saveStatus(
       prefs,
       CourseReminderStatus(
         enabled: true,
-        ready: coverageComplete,
-        reason: !coverageComplete
-            ? '课表覆盖不完整，打开课表并联网后会继续补齐'
+        ready: coverage.complete,
+        reason: !coverage.measurable
+            ? '尚未缓存可用于提醒的当前学期课表'
+            : !coverage.complete
+            ? '课表覆盖不完整，请联网后点击重建以补齐'
             : occurrences.isEmpty
             ? '未来 60 天没有需要提醒的课程'
             : '提醒计划正常',
         scheduledCount: scheduledIds.length,
-        cachedWeekCount: activeScheduleKeys.length,
-        expectedWeekCount: expectedWeekCount,
+        cachedWeekCount: coverage.cachedWeekCount,
+        expectedWeekCount: coverage.expectedWeekCount,
         nextReminderAt: occurrences.isEmpty ? null : occurrences.first.notifyAt,
-        coveredUntil: latestCoveredDate,
+        coveredUntil: coverage.coveredUntil,
         updatedAt: DateTime.now(),
       ),
     );
+  }
+
+  static String _selectReminderTerm({
+    required SharedPreferences prefs,
+    required String userId,
+    required List<_CachedReminderSchedule> cachedSchedules,
+    required DateTime now,
+  }) {
+    if (cachedSchedules.isEmpty) return '';
+    final preferredTerms = <String>[
+      (prefs.getString('schedule_widget_term_$userId') ?? '').trim(),
+      (prefs.getString('schedule_last_term_$userId') ?? '').trim(),
+    ];
+    for (final term in preferredTerms) {
+      if (term.isEmpty) continue;
+      if (cachedSchedules.any(
+        (cached) => (cached.schedule.yearTerm ?? '').trim() == term,
+      )) {
+        return term;
+      }
+    }
+
+    final today = DateTime(now.year, now.month, now.day);
+    final coveringToday = cachedSchedules.where((cached) {
+      final dates = ScheduleCustomizationManager.scheduleDates(
+        cached.schedule,
+      ).values;
+      if (dates.isEmpty) return false;
+      final first = dates.reduce((a, b) => a.isBefore(b) ? a : b);
+      final last = dates.reduce((a, b) => a.isAfter(b) ? a : b);
+      return !today.isBefore(first) && !today.isAfter(last);
+    }).toList();
+    if (coveringToday.isNotEmpty) {
+      coveringToday.sort((a, b) => b.fetchedAt.compareTo(a.fetchedAt));
+      return (coveringToday.first.schedule.yearTerm ?? '').trim();
+    }
+
+    final newest = cachedSchedules.toList()
+      ..sort((a, b) => b.fetchedAt.compareTo(a.fetchedAt));
+    return (newest.first.schedule.yearTerm ?? '').trim();
   }
 
   static Future<void> cancelAll() async {
@@ -289,6 +323,131 @@ class CourseReminderScheduler {
   }
 
   static int _positiveId(String value) => value.hashCode & 0x7fffffff;
+}
+
+class CourseReminderCoverage {
+  final Set<String> expectedWeeks;
+  final Set<String> cachedWeeks;
+  final DateTime? coveredUntil;
+  final bool measurable;
+
+  const CourseReminderCoverage({
+    required this.expectedWeeks,
+    required this.cachedWeeks,
+    required this.coveredUntil,
+    required this.measurable,
+  });
+
+  int get expectedWeekCount => expectedWeeks.length;
+  int get cachedWeekCount => cachedWeeks.length;
+  bool get complete => measurable && cachedWeeks.containsAll(expectedWeeks);
+}
+
+CourseReminderCoverage evaluateCourseReminderCoverage({
+  required Iterable<ScheduleData> schedules,
+  required DateTime now,
+  required DateTime horizon,
+}) {
+  final items = schedules.toList(growable: false);
+  final today = DateTime(now.year, now.month, now.day);
+  final lastDay = DateTime(horizon.year, horizon.month, horizon.day);
+  final candidates = <_CoverageAnchor>[];
+  for (final schedule in items) {
+    final week = int.tryParse((schedule.weekNum ?? '').trim());
+    final weekList = schedule.weekList ?? const <String>[];
+    final dates = ScheduleCustomizationManager.scheduleDates(schedule).values;
+    if (week == null || week <= 0 || weekList.isEmpty || dates.isEmpty) {
+      continue;
+    }
+    final first = dates.reduce((a, b) => a.isBefore(b) ? a : b);
+    final last = dates.reduce((a, b) => a.isAfter(b) ? a : b);
+    final distance = today.isBefore(first)
+        ? first.difference(today).inDays
+        : today.isAfter(last)
+        ? today.difference(last).inDays
+        : 0;
+    candidates.add(
+      _CoverageAnchor(
+        schedule: schedule,
+        week: week,
+        firstDate: first,
+        lastDate: last,
+        distanceFromToday: distance,
+      ),
+    );
+  }
+  if (candidates.isEmpty || lastDay.isBefore(today)) {
+    return const CourseReminderCoverage(
+      expectedWeeks: <String>{},
+      cachedWeeks: <String>{},
+      coveredUntil: null,
+      measurable: false,
+    );
+  }
+  candidates.sort((a, b) => a.distanceFromToday.compareTo(b.distanceFromToday));
+  final anchor = candidates.first;
+  final expectedWeeks = <String>{};
+  for (final rawWeek in anchor.schedule.weekList ?? const <String>[]) {
+    final normalizedWeek = rawWeek.trim();
+    final week = int.tryParse(normalizedWeek);
+    if (week == null || week <= 0) continue;
+    final offset = Duration(days: (week - anchor.week) * 7);
+    final start = anchor.firstDate.add(offset);
+    final end = anchor.lastDate.add(offset);
+    if (!end.isBefore(today) && !start.isAfter(lastDay)) {
+      expectedWeeks.add(normalizedWeek);
+    }
+  }
+
+  final cachedWeeks = items
+      .map((schedule) => (schedule.weekNum ?? '').trim())
+      .where(expectedWeeks.contains)
+      .toSet();
+  DateTime? coveredUntil;
+  for (final schedule in items) {
+    final week = (schedule.weekNum ?? '').trim();
+    if (!cachedWeeks.contains(week)) continue;
+    for (final date in ScheduleCustomizationManager.scheduleDates(
+      schedule,
+    ).values) {
+      if (date.isAfter(lastDay)) continue;
+      if (coveredUntil == null || date.isAfter(coveredUntil)) {
+        coveredUntil = date;
+      }
+    }
+  }
+  return CourseReminderCoverage(
+    expectedWeeks: expectedWeeks,
+    cachedWeeks: cachedWeeks,
+    coveredUntil: coveredUntil,
+    measurable: true,
+  );
+}
+
+class _CoverageAnchor {
+  final ScheduleData schedule;
+  final int week;
+  final DateTime firstDate;
+  final DateTime lastDate;
+  final int distanceFromToday;
+
+  const _CoverageAnchor({
+    required this.schedule,
+    required this.week,
+    required this.firstDate,
+    required this.lastDate,
+    required this.distanceFromToday,
+  });
+}
+
+class _CachedReminderSchedule {
+  final ScheduleData schedule;
+  final DateTime fetchedAt;
+
+  const _CachedReminderSchedule({
+    required this.schedule,
+    required this.fetchedAt,
+  });
 }
 
 class CourseReminderStatus {

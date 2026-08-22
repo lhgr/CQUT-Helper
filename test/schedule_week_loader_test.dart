@@ -70,6 +70,8 @@ void main() {
     late Map<int, ScheduleData> weekCache;
     String? currentTerm;
     List<String>? weekList;
+    String? actualCurrentWeek;
+    String? actualCurrentTerm;
 
     ScheduleWeekLoader buildLoader(
       _FakeWeekLoaderScheduleApi api, {
@@ -83,8 +85,8 @@ void main() {
         getCurrentTerm: () => currentTerm,
         setCurrentTerm: (value) => currentTerm = value,
         setWeekList: (value) => weekList = value,
-        setActualCurrentWeekStr: (_) {},
-        setActualCurrentTermStr: (_) {},
+        setActualCurrentWeekStr: (value) => actualCurrentWeek = value,
+        setActualCurrentTermStr: (value) => actualCurrentTerm = value,
         setNowInTeachingWeek: (_) {},
         setNowStatusLabel: (_) {},
       );
@@ -94,6 +96,8 @@ void main() {
       weekCache = {};
       currentTerm = null;
       weekList = null;
+      actualCurrentWeek = null;
+      actualCurrentTerm = null;
     });
 
     test('processLoadedData 在学期变化时清空旧缓存', () {
@@ -147,6 +151,26 @@ void main() {
       expect(api.cacheCalls, 1);
       expect(api.networkCalls, 0);
       expect(weekCache[2], isNotNull);
+    });
+
+    test('从桌面组件锚点恢复实际本周，供返回本周按钮使用', () async {
+      SharedPreferences.setMockInitialValues({
+        'account': 'u1',
+        'schedule_widget_week_u1': '6',
+        'schedule_widget_term_u1': '2026-2027-1',
+      });
+      final api = _FakeWeekLoaderScheduleApi()
+        ..cacheResult = ScheduleData(
+          weekNum: '3',
+          yearTerm: '2026-2027-1',
+          weekList: const ['1', '2', '3', '4', '5', '6'],
+        );
+      final loader = buildLoader(api);
+
+      await loader.loadFromCache(weekNum: '3', yearTerm: '2026-2027-1');
+
+      expect(actualCurrentWeek, '6');
+      expect(actualCurrentTerm, '2026-2027-1');
     });
 
     test('个性化变化会从本地重新应用到所有内存周缓存', () async {

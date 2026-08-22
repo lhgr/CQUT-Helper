@@ -154,7 +154,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         // Include every non-collection field so a status-only patch cannot
         // surface stale header text from another widget instance.
         val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
-        val weekCount = TodayWidgetData.loadWeekCountText(context)
+        val weekCount = TodayWidgetData.loadWeekCountText(context, dayOffset)
         views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
         views.setTextViewText(R.id.tv_date, header.dateText)
         views.setTextViewText(
@@ -175,10 +175,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           refreshPresentation,
         )
         appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
-        if (
-          refreshData &&
-            refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL
-        ) {
+        if (refreshData) {
           appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
         }
       }
@@ -211,9 +208,9 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         "event=completion refreshId=$refreshId state=${refreshPresentation.state} " +
           "contentChanged=$contentChanged refreshData=$refreshData",
       )
-      // A collection rebind briefly clears RemoteViews on some launchers. Keep
-      // the existing list intact when a successful refresh did not change the
-      // visible schedule, and only patch the status/icon in that common case.
+      // The visible rows are time-dependent even when the schedule JSON is
+      // unchanged. A completed refresh must therefore reload the collection so
+      // courses that ended while the worker was running disappear immediately.
       ScheduleWidgetRefreshWork.updateAllRefreshPresentations(context, refreshData)
       WidgetAutoRefreshScheduler.schedule(context)
     }
@@ -223,9 +220,10 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       previousContentFingerprint: String?,
       currentContentFingerprint: String,
     ): Boolean {
-      if (!refreshSucceeded) return false
-      return previousContentFingerprint == null ||
-        previousContentFingerprint != currentContentFingerprint
+      // Keep the fingerprint parameters for diagnostics and binary-compatible
+      // tests, but freshness is not purely content based: elapsed time changes
+      // which courses should be visible.
+      return refreshSucceeded
     }
 
     internal fun headerActionFor(
@@ -258,7 +256,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
 
       val dayOffset = getDayOffset(context, appWidgetId)
       val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
-      val weekCount = TodayWidgetData.loadWeekCountText(context)
+      val weekCount = TodayWidgetData.loadWeekCountText(context, dayOffset)
       views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
       views.setTextViewText(R.id.tv_date, header.dateText)
       val weekCountPart = if (weekCount.isNotBlank()) " | $weekCount    " else " | "

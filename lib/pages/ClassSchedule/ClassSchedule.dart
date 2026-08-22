@@ -289,21 +289,16 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       );
     }
 
-    // 检查是否应该显示 FAB
-    bool showFab = false;
-    if (_actualCurrentWeekStr != null && _weekList != null) {
-      final displayedWeek = _weekList![_currentWeekIndex];
-      if (displayedWeek != _actualCurrentWeekStr) {
-        showFab = true;
-      }
-      if (!_weekList!.contains(_actualCurrentWeekStr)) {
-        showFab = true;
-      }
-      if (_actualCurrentTermStr != null &&
-          _currentScheduleData?.yearTerm != _actualCurrentTermStr) {
-        showFab = true;
-      }
-    }
+    final displayedWeek = _weekList![_currentWeekIndex];
+    final showFab = shouldShowScheduleReturnWeekButton(
+      displayedWeek: displayedWeek,
+      displayedTerm: _currentScheduleData?.yearTerm,
+      actualCurrentWeek: _actualCurrentWeekStr,
+      actualCurrentTerm: _actualCurrentTermStr,
+      displayedScheduleCoversToday:
+          _currentScheduleData != null &&
+          ScheduleDate.dataCoversDate(_currentScheduleData!, DateTime.now()),
+    );
 
     return Scaffold(
       backgroundColor: Colors.transparent,

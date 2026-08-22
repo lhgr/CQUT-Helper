@@ -129,6 +129,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.9"
+  cqut_widget_bridge:
+    dependency: "direct main"
+    description:
+      path: "packages/cqut_widget_bridge"
+      relative: true
+    source: path
+    version: "0.1.0"
   cross_file:
     dependency: transitive
     description:

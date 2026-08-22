@@ -11,6 +11,8 @@ import 'package:cqut_helper/manager/schedule_update_worker_target.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
+import 'package:cqut_helper/utils/schedule_date.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
@@ -63,6 +65,84 @@ class ScheduleUpdateWorker {
       'logicalDateBjt': logicalDateBjt,
       'scheduledAtBjt': ?scheduledAtBjt,
     };
+  }
+
+  @visibleForTesting
+  static bool shouldReanchorPollingTarget(ScheduleData? data, {DateTime? now}) {
+    return data == null ||
+        !ScheduleDate.dataCoversDate(data, now ?? DateTime.now());
+  }
+
+  @visibleForTesting
+  static DateTime pollingCoverageDateBjt({DateTime? nowUtc}) {
+    // Coverage is a freshness decision and must use the actual execution day.
+    // A delayed WorkManager input can legitimately carry yesterday's logical
+    // date; that value is retained only for task accounting/follow-up state.
+    final logicalDate = _logicalDateBjtForInstant(nowUtc ?? _nowUtc());
+    final parts = logicalDate.split('-');
+    return DateTime(
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+      int.parse(parts[2]),
+    );
+  }
+
+  @visibleForTesting
+  static Future<ScheduleData> loadCurrentWeekAndUpdateWidgetPin({
+    required ScheduleApi scheduleApi,
+    required String userId,
+    required String encryptedPassword,
+    required bool notifyWidget,
+    String? refreshId,
+  }) async {
+    final current = await scheduleApi.loadFromNetwork(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+      weekNum: null,
+      yearTerm: null,
+      persistLastViewed: false,
+      updateWidgetPins: true,
+      notifyWidget: false,
+      refreshId: refreshId,
+    );
+    final currentWeek = (current.weekNum ?? '').trim();
+    final currentTerm = (current.yearTerm ?? '').trim();
+    final weeks = current.weekList ?? const <String>[];
+    final currentIndex = weeks.indexWhere((week) => week.trim() == currentWeek);
+    if (currentTerm.isNotEmpty && currentIndex >= 0) {
+      final adjacentWeeks = <String>{
+        if (currentIndex > 0) weeks[currentIndex - 1].trim(),
+        if (currentIndex + 1 < weeks.length) weeks[currentIndex + 1].trim(),
+      }..removeWhere((week) => week.isEmpty || week == currentWeek);
+      for (final week in adjacentWeeks) {
+        try {
+          await scheduleApi.loadFromNetwork(
+            userId: userId,
+            encryptedPassword: encryptedPassword,
+            weekNum: week,
+            yearTerm: currentTerm,
+            persistLastViewed: false,
+            updateWidgetPins: false,
+            notifyWidget: false,
+            refreshId: refreshId,
+          );
+        } catch (error, stackTrace) {
+          // Current-week freshness is still valid. Keep the refresh usable and
+          // retry the optional projection during the next manual/background run.
+          AppLogger.I.warn(
+            'ScheduleUpdateWorker',
+            'adjacent widget week prefetch failed',
+            error: error,
+            stackTrace: stackTrace,
+            fields: {'week': week, 'term': currentTerm},
+          );
+        }
+      }
+    }
+    if (notifyWidget) {
+      await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+    }
+    return current;
   }
 
   static Future<void> initialize() async {
@@ -241,147 +321,15 @@ class ScheduleUpdateWorker {
       }
 
       final scheduleApi = ScheduleApi();
-      ScheduleData? currentData;
-      var loadedCurrentDataFromNetwork = false;
-      final pollingTarget = resolvePollingTarget(prefs: prefs, userId: userId);
-      final preferredTerm = (pollingTarget.yearTerm ?? '').trim();
-      final preferredWeek = pollingTarget.weekNum.trim();
-      try {
-        if (preferredTerm.isNotEmpty) {
-          currentData = await scheduleApi.loadFromCache(
-            userId: userId,
-            weekNum: preferredWeek,
-            yearTerm: preferredTerm,
-          );
-        }
-        currentData ??= await scheduleApi.loadFromCache(userId: userId);
-      } catch (e, st) {
-        AppLogger.I.event(
-          LogLevel.warn,
-          'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_cache_load_fail',
-          messageZh: '后台轮询读取缓存失败',
-          message: 'load cache failed',
-          module: 'schedule_notice_poll',
-          action: 'load_cache',
-          status: 'fail',
-          reason: 'cache_read_failed',
-          error: e,
-          stackTrace: st,
-          fields: {'trigger': trigger},
-        );
-      }
-      if (currentData == null) {
-        AppLogger.I.info(
-          'ScheduleUpdateWorker',
-          'cache miss fallback to network',
-          fields: {
-            'trigger': trigger,
-            'preferredTerm': preferredTerm,
-            'preferredWeek': preferredWeek,
-          },
-        );
-        try {
-          currentData = await scheduleApi.loadFromNetwork(
-            userId: userId,
-            encryptedPassword: encryptedPassword,
-            weekNum: preferredWeek,
-            yearTerm: preferredTerm.isEmpty ? null : preferredTerm,
-            persistLastViewed: false,
-            updateWidgetPins: isWidgetManual && preferredTerm.isEmpty,
-            notifyWidget: !isWidgetManual,
-            refreshId: isWidgetManual ? refreshId : null,
-          );
-          loadedCurrentDataFromNetwork = true;
-        } catch (e, st) {
-          AppLogger.I.event(
-            LogLevel.error,
-            'ScheduleUpdateWorker',
-            event: 'schedule_notice_poll_network_load_fail',
-            messageZh: '后台轮询拉取课表失败',
-            message: 'load network failed',
-            module: 'schedule_notice_poll',
-            action: 'load_network',
-            status: 'fail',
-            reason: 'network_load_failed',
-            error: e,
-            stackTrace: st,
-            fields: {
-              'trigger': trigger,
-              'preferredTerm': preferredTerm,
-              'preferredWeek': preferredWeek,
-            },
-          );
-          return done(
-            status: 'load_network_failed',
-            fields: {'error': e.toString()},
-            scheduleFollowUp: true,
-          );
-        }
-      }
-      if (currentData.yearTerm == null ||
-          currentData.yearTerm!.trim().isEmpty ||
-          currentData.weekList == null ||
-          currentData.weekList!.isEmpty) {
-        AppLogger.I.event(
-          LogLevel.warn,
-          'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_invalid_schedule_data',
-          messageZh: '后台轮询跳过无效课表数据',
-          message: 'skip invalid schedule data',
-          module: 'schedule_notice_poll',
-          action: 'validate_schedule',
-          status: 'skip',
-          reason: 'invalid_schedule_data',
-          fields: {'trigger': trigger},
-        );
-        return done(
-          status: 'skip_invalid_schedule_data',
-          scheduleFollowUp: true,
-        );
-      }
-      if (preferredTerm.isNotEmpty &&
-          currentData.yearTerm!.trim() != preferredTerm) {
-        AppLogger.I.event(
-          LogLevel.warn,
-          'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_term_mismatch',
-          messageZh: '后台轮询跳过学期不匹配数据',
-          message: 'polling term mismatch',
-          module: 'schedule_notice_poll',
-          action: 'validate_term',
-          status: 'skip',
-          reason: 'term_mismatch',
-          fields: {
-            'trigger': trigger,
-            'preferredTerm': preferredTerm,
-            'currentTerm': currentData.yearTerm!.trim(),
-          },
-        );
-        return done(
-          status: 'skip_term_mismatch',
-          fields: {
-            'preferredTerm': preferredTerm,
-            'currentTerm': currentData.yearTerm!.trim(),
-          },
-          scheduleFollowUp: true,
-        );
-      }
-
       if (isWidgetManual) {
         try {
-          if (!loadedCurrentDataFromNetwork) {
-            await scheduleApi.loadFromNetwork(
-              userId: userId,
-              encryptedPassword: encryptedPassword,
-              weekNum: preferredTerm.isEmpty ? null : preferredWeek,
-              yearTerm: preferredTerm.isEmpty ? null : preferredTerm,
-              persistLastViewed: false,
-              updateWidgetPins: preferredTerm.isEmpty,
-              notifyWidget: false,
-              refreshId: refreshId,
-            );
-          }
+          await loadCurrentWeekAndUpdateWidgetPin(
+            scheduleApi: scheduleApi,
+            userId: userId,
+            encryptedPassword: encryptedPassword,
+            notifyWidget: false,
+            refreshId: refreshId,
+          );
           await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
           return await done(status: 'widget_manual_success');
         } catch (e, st) {
@@ -411,6 +359,144 @@ class ScheduleUpdateWorker {
             fields: {'error': e.toString(), 'failure': failure.name},
           );
         }
+      }
+
+      ScheduleData? currentData;
+      ScheduleData? pollingTargetData;
+      final pollingTarget = resolvePollingTarget(prefs: prefs, userId: userId);
+      final preferredTerm = (pollingTarget.yearTerm ?? '').trim();
+      final preferredWeek = pollingTarget.weekNum.trim();
+      try {
+        if (preferredTerm.isNotEmpty) {
+          pollingTargetData = await scheduleApi.loadFromCache(
+            userId: userId,
+            weekNum: preferredWeek,
+            yearTerm: preferredTerm,
+          );
+        }
+        currentData = pollingTargetData;
+        currentData ??= await scheduleApi.loadFromCache(userId: userId);
+      } catch (e, st) {
+        AppLogger.I.event(
+          LogLevel.warn,
+          'ScheduleUpdateWorker',
+          event: 'schedule_notice_poll_cache_load_fail',
+          messageZh: '后台轮询读取缓存失败',
+          message: 'load cache failed',
+          module: 'schedule_notice_poll',
+          action: 'load_cache',
+          status: 'fail',
+          reason: 'cache_read_failed',
+          error: e,
+          stackTrace: st,
+          fields: {'trigger': trigger},
+        );
+      }
+      final targetToValidate = preferredTerm.isNotEmpty
+          ? pollingTargetData
+          : currentData;
+      final coverageDateBjt = pollingCoverageDateBjt();
+      var reanchoredPollingTarget = false;
+      if (shouldReanchorPollingTarget(targetToValidate, now: coverageDateBjt)) {
+        AppLogger.I.info(
+          'ScheduleUpdateWorker',
+          'polling target does not cover today; reanchor to current week',
+          fields: {
+            'trigger': trigger,
+            'preferredTerm': preferredTerm,
+            'preferredWeek': preferredWeek,
+            'cacheMissing': targetToValidate == null,
+          },
+        );
+        try {
+          currentData = await loadCurrentWeekAndUpdateWidgetPin(
+            scheduleApi: scheduleApi,
+            userId: userId,
+            encryptedPassword: encryptedPassword,
+            notifyWidget: true,
+          );
+          reanchoredPollingTarget = true;
+        } catch (e, st) {
+          AppLogger.I.event(
+            LogLevel.error,
+            'ScheduleUpdateWorker',
+            event: 'schedule_notice_poll_network_load_fail',
+            messageZh: '后台轮询拉取课表失败',
+            message: 'load network failed',
+            module: 'schedule_notice_poll',
+            action: 'load_network',
+            status: 'fail',
+            reason: 'network_load_failed',
+            error: e,
+            stackTrace: st,
+            fields: {
+              'trigger': trigger,
+              'preferredTerm': preferredTerm,
+              'preferredWeek': preferredWeek,
+            },
+          );
+          return done(
+            status: 'load_network_failed',
+            fields: {'error': e.toString()},
+            scheduleFollowUp: true,
+          );
+        }
+      }
+      if (currentData == null) {
+        return done(
+          status: 'load_network_failed',
+          fields: const {'error': 'current schedule unavailable'},
+          scheduleFollowUp: true,
+        );
+      }
+      if (currentData.yearTerm == null ||
+          currentData.yearTerm!.trim().isEmpty ||
+          currentData.weekList == null ||
+          currentData.weekList!.isEmpty) {
+        AppLogger.I.event(
+          LogLevel.warn,
+          'ScheduleUpdateWorker',
+          event: 'schedule_notice_poll_invalid_schedule_data',
+          messageZh: '后台轮询跳过无效课表数据',
+          message: 'skip invalid schedule data',
+          module: 'schedule_notice_poll',
+          action: 'validate_schedule',
+          status: 'skip',
+          reason: 'invalid_schedule_data',
+          fields: {'trigger': trigger},
+        );
+        return done(
+          status: 'skip_invalid_schedule_data',
+          scheduleFollowUp: true,
+        );
+      }
+      if (!reanchoredPollingTarget &&
+          preferredTerm.isNotEmpty &&
+          currentData.yearTerm!.trim() != preferredTerm) {
+        AppLogger.I.event(
+          LogLevel.warn,
+          'ScheduleUpdateWorker',
+          event: 'schedule_notice_poll_term_mismatch',
+          messageZh: '后台轮询跳过学期不匹配数据',
+          message: 'polling term mismatch',
+          module: 'schedule_notice_poll',
+          action: 'validate_term',
+          status: 'skip',
+          reason: 'term_mismatch',
+          fields: {
+            'trigger': trigger,
+            'preferredTerm': preferredTerm,
+            'currentTerm': currentData.yearTerm!.trim(),
+          },
+        );
+        return done(
+          status: 'skip_term_mismatch',
+          fields: {
+            'preferredTerm': preferredTerm,
+            'currentTerm': currentData.yearTerm!.trim(),
+          },
+          scheduleFollowUp: true,
+        );
       }
 
       final pipeline = ScheduleNoticeRefreshPipeline(
@@ -681,14 +767,19 @@ class ScheduleUpdateWorker {
   }
 
   static DateTime _nextDaily9amUtc() {
-    final nowUtc = _nowUtc();
-    final todayBjt = _logicalDateBjtForInstant(nowUtc);
+    return nextDaily9amUtcAt(_nowUtc());
+  }
+
+  @visibleForTesting
+  static DateTime nextDaily9amUtcAt(DateTime nowUtc) {
+    final normalizedNowUtc = nowUtc.toUtc();
+    final todayBjt = _logicalDateBjtForInstant(normalizedNowUtc);
     final today9Utc = _bjtClockToUtc(todayBjt, 9);
-    return nowUtc.isBefore(today9Utc)
+    return normalizedNowUtc.isBefore(today9Utc)
         ? today9Utc
         : _bjtClockToUtc(
             _logicalDateBjtForInstant(
-              nowUtc.add(const Duration(days: 1, hours: 8)),
+              normalizedNowUtc.add(const Duration(days: 1)),
             ),
             9,
           );
@@ -743,7 +834,12 @@ class ScheduleUpdateWorker {
   }
 
   static bool _isDeepNight() {
-    final hour = DateTime.now().hour;
+    return isDeepNightAt(_nowUtc());
+  }
+
+  @visibleForTesting
+  static bool isDeepNightAt(DateTime instantUtc) {
+    final hour = instantUtc.toUtc().add(const Duration(hours: 8)).hour;
     return hour >= 0 && hour < 7;
   }
 }

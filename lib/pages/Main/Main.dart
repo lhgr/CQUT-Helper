@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cqut_helper/manager/announcement_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
@@ -9,6 +11,7 @@ import 'package:cqut_helper/pages/Mine/Mine.dart';
 import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -24,10 +27,12 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   int _lastOpenFromNotificationToken = 0;
   int _currentIndex = 1;
   int _lastWidgetNavigationToken = 0;
+  final WidgetResumeRefreshGate _widgetResumeRefreshGate =
+      WidgetResumeRefreshGate();
   final ScheduleSettingsManager _scheduleSettingsManager =
       ScheduleSettingsManager();
   ScheduleLayoutSettings _scheduleLayoutSettings =
-      const ScheduleLayoutSettings();
+      ScheduleSettingsManager.cachedLayoutSettings;
 
   final List<Map<String, dynamic>> _tabList = const [
     {'icon': Icons.today_outlined, 'active_icon': Icons.today, 'text': '今日'},
@@ -70,6 +75,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_widgetResumeRefreshGate.shouldRefresh(state)) {
+      unawaited(WidgetUpdater.updateTodayWidget(trigger: 'app_resumed'));
+    }
     if (state == AppLifecycleState.resumed) {
       _markActive();
       ScheduleUpdateWorker.syncFromPreferences();
@@ -92,8 +100,18 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   Future<void> _loadScheduleLayoutSettings() async {
     await _scheduleSettingsManager.load();
     if (!mounted) return;
+    final layoutSettings = _scheduleSettingsManager.layoutSettings;
+    final backgroundPath = layoutSettings.backgroundImagePath?.trim();
+    if (backgroundPath != null && backgroundPath.isNotEmpty) {
+      await ScheduleBackground.precacheFile(
+        context,
+        backgroundPath,
+        evict: false,
+      );
+      if (!mounted) return;
+    }
     setState(() {
-      _scheduleLayoutSettings = _scheduleSettingsManager.layoutSettings;
+      _scheduleLayoutSettings = layoutSettings;
     });
   }
 
@@ -201,10 +219,10 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          if (showScheduleBackground)
-            ScheduleBackground(settings: _scheduleLayoutSettings)
-          else
-            ColoredBox(color: colorScheme.surface),
+          ScheduleBackgroundLayer(
+            settings: _scheduleLayoutSettings,
+            visible: showScheduleBackground,
+          ),
           SafeArea(
             child: IndexedStack(
               index: _currentIndex,

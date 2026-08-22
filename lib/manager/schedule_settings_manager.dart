@@ -11,6 +11,12 @@ enum ScheduleDisplayDensity {
 }
 
 class ScheduleSettingsManager {
+  static ScheduleLayoutSettings _cachedLayoutSettings =
+      const ScheduleLayoutSettings();
+
+  static ScheduleLayoutSettings get cachedLayoutSettings =>
+      _cachedLayoutSettings;
+
   static final ValueNotifier<int> experienceEpoch = ValueNotifier<int>(0);
   static final ValueNotifier<int> settingsEpoch = ValueNotifier<int>(0);
   static const String _prefsKeyShowWeekend = 'schedule_show_weekend';
@@ -55,7 +61,7 @@ class ScheduleSettingsManager {
   bool remindersEnabled = false;
   int defaultReminderMinutes = 10;
   ScheduleDisplayDensity displayDensity = ScheduleDisplayDensity.comfortable;
-  ScheduleLayoutSettings layoutSettings = const ScheduleLayoutSettings();
+  ScheduleLayoutSettings layoutSettings = _cachedLayoutSettings;
   int defaultHomeTab = 1;
 
   static String normalizeNoticeApiBaseUrl(String raw) {
@@ -198,6 +204,7 @@ class ScheduleSettingsManager {
           .clamp(0.1, 1.0)
           .toDouble(),
     );
+    _cachedLayoutSettings = layoutSettings;
     defaultHomeTab = (prefs.getInt(defaultHomeTabKey) ?? 1).clamp(0, 2);
   }
 
@@ -224,6 +231,7 @@ class ScheduleSettingsManager {
     final prefs = await SharedPreferences.getInstance();
     final normalized = value.normalized();
     layoutSettings = normalized;
+    _cachedLayoutSettings = normalized;
     await prefs.setDouble(_gridCellWidthKey, normalized.gridCellWidth);
     await prefs.setDouble(_gridCellHeightKey, normalized.gridCellHeight);
     await prefs.setBool(_showGridLinesKey, normalized.showGridLines);

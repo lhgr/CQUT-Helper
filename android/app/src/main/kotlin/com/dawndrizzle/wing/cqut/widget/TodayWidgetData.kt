@@ -58,8 +58,21 @@ object TodayWidgetData {
     val sortOrder: Int,
   )
 
+  internal data class ScheduleDayMarker(
+    val weekDate: String,
+    val markedToday: Boolean,
+  )
+
+  private data class ParsedScheduleDate(
+    val year: Int?,
+    val month: Int,
+    val day: Int,
+  )
+
   private const val PREFS_NAME = "FlutterSharedPreferences"
   private const val FLUTTER_PREFIX = "flutter."
+  internal const val WIDGET_TIME_ZONE_ID = "Asia/Shanghai"
+  private val WIDGET_TIME_ZONE = java.util.TimeZone.getTimeZone(WIDGET_TIME_ZONE_ID)
   private const val KEY_WIDGET_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_widget_week_"
   private const val KEY_WIDGET_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_widget_term_"
   private const val KEY_LAST_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_last_week_"
@@ -91,9 +104,21 @@ object TodayWidgetData {
       0xFF3215AC.toInt(),
     )
 
+  private fun widgetCalendar(
+    timeInMillis: Long = System.currentTimeMillis(),
+  ): Calendar =
+    Calendar.getInstance(WIDGET_TIME_ZONE).apply {
+      this.timeInMillis = timeInMillis
+    }
+
+  private fun widgetDateFormat(pattern: String): SimpleDateFormat =
+    SimpleDateFormat(pattern, Locale.CHINA).apply {
+      timeZone = WIDGET_TIME_ZONE
+    }
+
   fun loadHeader(context: Context): Header {
-    val calendar = Calendar.getInstance()
-    val dateFormat = SimpleDateFormat("M.d", Locale.CHINA)
+    val calendar = widgetCalendar()
+    val dateFormat = widgetDateFormat("M.d")
     val defaultDateText = dateFormat.format(calendar.time)
     val defaultWeekText = "周${toChineseWeekday(toMondayBasedWeekday(calendar))}"
 
@@ -106,9 +131,8 @@ object TodayWidgetData {
   }
 
   fun loadHeaderByDayOffset(context: Context, dayOffset: Int): Header {
-    val calendar = Calendar.getInstance()
-    val dateFormat = SimpleDateFormat("M.d", Locale.CHINA)
-    val targetCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
+    val dateFormat = widgetDateFormat("M.d")
+    val targetCal = widgetCalendar().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
     val targetWeekDay = toMondayBasedWeekday(targetCal)
 
     val defaultDateText = dateFormat.format(targetCal.time)
@@ -121,9 +145,9 @@ object TodayWidgetData {
     )
   }
 
-  fun loadWeekCountText(context: Context): String {
-    val data = loadScheduleJsonObject(context) ?: return ""
-    if (!scheduleContainsSystemDate(data)) return ""
+  fun loadWeekCountText(context: Context, dayOffset: Int = 0): String {
+    val targetDate = widgetCalendar().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
+    val data = loadScheduleJsonObjectForDate(context, targetDate) ?: return ""
     val week = data.optString("weekNum", "")
     if (week.isBlank()) return ""
     return "第${week}周"
@@ -132,6 +156,7 @@ object TodayWidgetData {
   fun loadRefreshPresentation(
     context: Context,
     appWidgetId: Int = android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID,
+    requiredDayOffsets: IntArray? = null,
   ): RefreshPresentation {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val account =
@@ -165,6 +190,27 @@ object TodayWidgetData {
           "更新失败，点右上角重试",
         )
       }
+    }
+
+    val offsets =
+      requiredDayOffsets
+        ?: intArrayOf(
+          if (appWidgetId == android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) {
+            0
+          } else {
+            WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+          },
+        )
+    val hasMissingRequiredDate =
+      offsets.any { dayOffset ->
+        val targetDate = widgetCalendar().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
+        loadScheduleJsonObjectForDate(context, targetDate) == null
+      }
+    if (hasMissingRequiredDate) {
+      return RefreshPresentation(
+        RefreshPresentationState.NEEDS_SYNC,
+        "课表尚未同步，点右上角刷新",
+      )
     }
 
     // Keep manual refresh directly reachable while exercising widget behavior
@@ -219,7 +265,7 @@ object TodayWidgetData {
         } else {
           java.time.LocalDateTime
             .parse(raw)
-            .atZone(java.time.ZoneId.systemDefault())
+            .atZone(java.time.ZoneId.of(WIDGET_TIME_ZONE_ID))
             .toInstant()
             .toEpochMilli()
         }
@@ -236,7 +282,9 @@ object TodayWidgetData {
         SimpleDateFormat(
           if (hasOffset) "yyyy-MM-dd'T'HH:mm:ss.SSSZ" else "yyyy-MM-dd'T'HH:mm:ss.SSS",
           Locale.US,
-        ).parse(normalized)?.time
+        ).apply {
+          if (!hasOffset) timeZone = WIDGET_TIME_ZONE
+        }.parse(normalized)?.time
       }
     } catch (_: Exception) {
       null
@@ -293,10 +341,10 @@ object TodayWidgetData {
     timestamp: Long,
     nowMillis: Long = System.currentTimeMillis(),
   ): String {
-    val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
-    val at = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val now = widgetCalendar(nowMillis)
+    val at = widgetCalendar(timestamp)
     if (isSameCalendarDate(now, at)) {
-      return SimpleDateFormat("HH:mm", Locale.CHINA).format(at.time)
+      return widgetDateFormat("HH:mm").format(at.time)
     }
     return "${calendarDayDistance(now, at)}天前"
   }
@@ -329,27 +377,12 @@ object TodayWidgetData {
   }
 
   fun loadCoursesByDayOffset(context: Context, dayOffset: Int): List<CourseItem> {
-    val data = loadScheduleJsonObject(context)
-    if (data == null) return emptyList()
-    if (!scheduleContainsSystemDate(data)) return emptyList()
-    val baseWeekDay = toMondayBasedWeekday(Calendar.getInstance())
-
-    val rawTarget = baseWeekDay + dayOffset
-    var targetWeekDay = rawTarget
-    var targetData = data
-
-    if (rawTarget > 7 && dayOffset > 0) {
-      targetWeekDay = rawTarget - 7
-      targetData = loadNextWeekScheduleJsonObject(context) ?: return emptyList()
-    } else if (rawTarget < 1 && dayOffset < 0) {
-      targetWeekDay = rawTarget + 7
-      targetData = loadPrevWeekScheduleJsonObject(context) ?: return emptyList()
-    }
     val targetDate =
-      Calendar.getInstance().apply {
+      widgetCalendar().apply {
         add(Calendar.DAY_OF_YEAR, dayOffset)
       }
-    if (!scheduleContainsDate(targetData, targetDate)) return emptyList()
+    val targetData = loadScheduleJsonObjectForDate(context, targetDate) ?: return emptyList()
+    val targetWeekDay = toMondayBasedWeekday(targetDate)
 
     val courses =
       loadCoursesByWeekdayFromSchedule(
@@ -377,66 +410,92 @@ object TodayWidgetData {
     context: Context,
     dayOffset: Int,
   ): DayScheduleAvailability {
-    val data =
-      loadScheduleJsonObject(context) ?: return DayScheduleAvailability.MISSING_CACHE
-    if (!scheduleContainsSystemDate(data)) {
-      return DayScheduleAvailability.OUTSIDE_TEACHING_WEEK
-    }
-    val rawTarget = toMondayBasedWeekday(Calendar.getInstance()) + dayOffset
-    val targetData =
-      when {
-        rawTarget > 7 && dayOffset > 0 ->
-          loadNextWeekScheduleJsonObject(context)
-            ?: return DayScheduleAvailability.MISSING_CACHE
-        rawTarget < 1 && dayOffset < 0 ->
-          loadPrevWeekScheduleJsonObject(context)
-            ?: return DayScheduleAvailability.MISSING_CACHE
-        else -> data
-      }
     val targetDate =
-      Calendar.getInstance().apply {
+      widgetCalendar().apply {
         add(Calendar.DAY_OF_YEAR, dayOffset)
       }
-    return if (scheduleContainsDate(targetData, targetDate)) {
-      DayScheduleAvailability.COVERED
-    } else {
-      DayScheduleAvailability.OUTSIDE_TEACHING_WEEK
+    if (loadScheduleJsonObjectForDate(context, targetDate) != null) {
+      return DayScheduleAvailability.COVERED
     }
+    // An old cache cannot prove that the target is outside a teaching week.
+    // Report a recoverable sync gap so the header exposes manual refresh.
+    return DayScheduleAvailability.MISSING_CACHE
   }
 
   fun nextRefreshAtMillis(context: Context): Long? {
     val now = System.currentTimeMillis()
     val candidates = mutableListOf<Long>()
-    candidates.add(nextDayRefreshAtMillis())
-    val nextCourseStart = nextCourseStartAtMillisToday(context)
-    if (nextCourseStart != null && nextCourseStart > now) {
-      candidates.add(nextCourseStart)
+    candidates.add(nextDayRefreshAtMillis(now))
+    val nextCourseBoundary = nextCourseBoundaryAtMillisToday(context, now)
+    if (nextCourseBoundary != null && nextCourseBoundary > now) {
+      candidates.add(nextCourseBoundary)
     }
     return candidates.filter { it > now }.minOrNull()
   }
 
   private fun scheduleContainsSystemDate(data: JSONObject): Boolean {
-    return scheduleContainsDate(data, Calendar.getInstance())
+    return scheduleContainsDate(data, widgetCalendar())
   }
 
   private fun scheduleContainsDate(data: JSONObject, targetDate: Calendar): Boolean {
     val weekDayList = data.optJSONArray("weekDayList")
     if (weekDayList == null || weekDayList.length() == 0) {
-      val events = data.optJSONArray("eventList")
-      return events != null && events.length() > 0
+      return false
     }
+    val markers = ArrayList<ScheduleDayMarker>(weekDayList.length())
     for (i in 0 until weekDayList.length()) {
       val d = weekDayList.optJSONObject(i) ?: continue
-      val weekDate = d.optString("weekDate", "")
-      if (d.optBoolean("today", false) &&
-        isSameCalendarDate(targetDate, Calendar.getInstance())
-      ) {
-        return true
-      }
-      if (weekDate.isBlank()) return true
-      if (isSameAsDate(weekDate, targetDate)) return true
+      markers.add(
+        ScheduleDayMarker(
+          weekDate = d.optString("weekDate", ""),
+          markedToday = d.optBoolean("today", false),
+        ),
+      )
     }
-    return false
+    return scheduleDayMarkersContainDate(
+      markers,
+      targetDate = targetDate,
+    )
+  }
+
+  internal fun scheduleDayMarkersContainDate(
+    markers: List<ScheduleDayMarker>,
+    targetDate: Calendar,
+  ): Boolean {
+    val targetDay =
+      createScheduleCalendar(
+        targetDate.get(Calendar.YEAR),
+        targetDate.get(Calendar.MONTH) + 1,
+        targetDate.get(Calendar.DAY_OF_MONTH),
+      ) ?: return false
+    var firstDayMillis: Long? = null
+    var lastDayMillis: Long? = null
+    for (marker in markers) {
+      val parsed = extractScheduleDate(marker.weekDate) ?: continue
+      val parsedDay = resolveScheduleDate(parsed, targetDate) ?: continue
+      val millis = parsedDay.timeInMillis
+      if (firstDayMillis == null || millis < firstDayMillis!!) firstDayMillis = millis
+      if (lastDayMillis == null || millis > lastDayMillis!!) lastDayMillis = millis
+    }
+    // The backend's `today` bit belongs to the fetch instant and can remain
+    // stale in a cached week. Only a parseable range containing the target is
+    // authoritative, matching ScheduleDate.dataCoversDate on the Dart side.
+    val first = firstDayMillis ?: return false
+    val last = lastDayMillis ?: return false
+    return targetDay.timeInMillis in first..last
+  }
+
+  private fun loadScheduleJsonObjectForDate(
+    context: Context,
+    targetDate: Calendar,
+  ): JSONObject? {
+    val candidates =
+      listOfNotNull(
+        loadScheduleJsonObject(context),
+        loadPrevWeekScheduleJsonObject(context),
+        loadNextWeekScheduleJsonObject(context),
+      )
+    return candidates.firstOrNull { scheduleContainsDate(it, targetDate) }
   }
 
   private fun loadNextWeekScheduleJsonObject(context: Context): JSONObject? {
@@ -529,10 +588,7 @@ object TodayWidgetData {
   }
 
   fun loadTodayCourses(context: Context): List<CourseItem> {
-    val data = loadScheduleJsonObject(context) ?: return emptyList()
-    val todayWeekDay = toMondayBasedWeekday(Calendar.getInstance()).toString()
-
-    return loadCoursesByWeekdayFromSchedule(context, data, todayWeekDay)
+    return loadCoursesByDayOffset(context, 0)
   }
 
   private data class TodayInfo(
@@ -542,44 +598,46 @@ object TodayWidgetData {
   )
 
   private fun loadTodayWeekDayAndDate(context: Context): TodayInfo? {
-    val data = loadScheduleJsonObject(context) ?: return null
-    return loadTodayWeekDayAndDateFromSchedule(data)
+    val targetDate = widgetCalendar()
+    val data = loadScheduleJsonObjectForDate(context, targetDate) ?: return null
+    return loadTodayWeekDayAndDateFromSchedule(data, targetDate)
   }
 
-  private fun loadTodayWeekDayAndDateFromSchedule(data: JSONObject): TodayInfo? {
+  private fun loadTodayWeekDayAndDateFromSchedule(
+    data: JSONObject,
+    targetDate: Calendar,
+  ): TodayInfo? {
     val weekDayList = data.optJSONArray("weekDayList") ?: return null
     for (i in 0 until weekDayList.length()) {
       val d = weekDayList.optJSONObject(i) ?: continue
-      if (!d.optBoolean("today", false)) continue
-
       val weekDay = d.optString("weekDay", "")
       val weekDate = d.optString("weekDate", "")
-      if (weekDate.isNotBlank() && !isSameAsSystemDate(weekDate)) continue
-      val computedWeekDay = mondayBasedWeekdayFromWeekDateText(weekDate)
-      val weekText =
-        when {
-          computedWeekDay != null -> "周${toChineseWeekday(computedWeekDay)}"
-          weekDay.isNotBlank() -> "周${toChineseWeekday(weekDay.toIntOrNull() ?: 1)}"
-          else -> ""
-        }
-
-      val dateText =
-        if (weekDate.isNotBlank()) {
-          weekDate
-        } else {
-          ""
-        }
-
-      if (weekDay.isBlank() && dateText.isBlank()) return null
-      val normalizedWeekDay =
-        when {
-          computedWeekDay != null -> computedWeekDay.toString()
-          weekDay.isNotBlank() -> weekDay
-          else -> ""
-        }
-      return TodayInfo(weekDay = normalizedWeekDay, dateText = dateText, weekText = weekText)
+      if (weekDate.isNotBlank() && isSameAsDate(weekDate, targetDate)) {
+        return todayInfoFromScheduleDay(weekDay, weekDate)
+      }
     }
+    // A weekday without a date cannot prove that this cached week covers the
+    // target. The caller will use a clock-derived Beijing date as a safe header.
     return null
+  }
+
+  private fun todayInfoFromScheduleDay(
+    weekDay: String,
+    weekDate: String,
+  ): TodayInfo? {
+    val computedWeekDay = mondayBasedWeekdayFromWeekDateText(weekDate)
+    val normalizedWeekDay = computedWeekDay?.toString() ?: weekDay
+    if (normalizedWeekDay.isBlank() && weekDate.isBlank()) return null
+    val weekText =
+      normalizedWeekDay
+        .toIntOrNull()
+        ?.let { "周${toChineseWeekday(it)}" }
+        .orEmpty()
+    return TodayInfo(
+      weekDay = normalizedWeekDay,
+      dateText = weekDate,
+      weekText = weekText,
+    )
   }
 
   fun loadScheduleJsonObject(context: Context): JSONObject? {
@@ -603,10 +661,6 @@ object TodayWidgetData {
     } catch (_: Exception) {
       null
     }
-  }
-
-  private fun isSameAsSystemDate(weekDateText: String): Boolean {
-    return isSameAsDate(weekDateText, Calendar.getInstance())
   }
 
   fun loadDisplayedScheduleFingerprint(context: Context): String {
@@ -641,10 +695,17 @@ object TodayWidgetData {
   }
 
   private fun isSameAsDate(weekDateText: String, targetDate: Calendar): Boolean {
-    val md = extractMonthDay(weekDateText) ?: return false
-    val targetMonth = targetDate.get(Calendar.MONTH) + 1
-    val targetDay = targetDate.get(Calendar.DAY_OF_MONTH)
-    return md.first == targetMonth && md.second == targetDay
+    val parsed = extractScheduleDate(weekDateText) ?: return false
+    return isSameAsDate(parsed, targetDate)
+  }
+
+  private fun isSameAsDate(
+    parsed: ParsedScheduleDate,
+    targetDate: Calendar,
+  ): Boolean {
+    if (parsed.year != null && parsed.year != targetDate.get(Calendar.YEAR)) return false
+    return parsed.month == targetDate.get(Calendar.MONTH) + 1 &&
+      parsed.day == targetDate.get(Calendar.DAY_OF_MONTH)
   }
 
   private fun isSameCalendarDate(first: Calendar, second: Calendar): Boolean {
@@ -653,23 +714,23 @@ object TodayWidgetData {
   }
 
   private fun mondayBasedWeekdayFromWeekDateText(weekDateText: String): Int? {
-    val md = extractMonthDay(weekDateText) ?: return null
-    val calNow = Calendar.getInstance()
+    val parsed = extractScheduleDate(weekDateText) ?: return null
+    val calNow = widgetCalendar()
     val nowYear = calNow.get(Calendar.YEAR)
     val nowMonth = calNow.get(Calendar.MONTH) + 1
     val nowDay = calNow.get(Calendar.DAY_OF_MONTH)
 
-    val base = Calendar.getInstance().apply {
-      set(Calendar.YEAR, nowYear)
-      set(Calendar.MONTH, md.first - 1)
-      set(Calendar.DAY_OF_MONTH, md.second)
+    val base = widgetCalendar().apply {
+      set(Calendar.YEAR, parsed.year ?: nowYear)
+      set(Calendar.MONTH, parsed.month - 1)
+      set(Calendar.DAY_OF_MONTH, parsed.day)
       set(Calendar.HOUR_OF_DAY, 0)
       set(Calendar.MINUTE, 0)
       set(Calendar.SECOND, 0)
       set(Calendar.MILLISECOND, 0)
     }
 
-    val nowDate = Calendar.getInstance().apply {
+    val nowDate = widgetCalendar().apply {
       set(Calendar.YEAR, nowYear)
       set(Calendar.MONTH, nowMonth - 1)
       set(Calendar.DAY_OF_MONTH, nowDay)
@@ -679,8 +740,8 @@ object TodayWidgetData {
       set(Calendar.MILLISECOND, 0)
     }
 
-    val diffDays = ((base.timeInMillis - nowDate.timeInMillis) / (24L * 60 * 60 * 1000)).toInt()
-    if (kotlin.math.abs(diffDays) > 183) {
+    val diffDays = ((base.timeInMillis - nowDate.timeInMillis) / MILLIS_PER_DAY).toInt()
+    if (parsed.year == null && kotlin.math.abs(diffDays) > 183) {
       val adjustedYear = if (diffDays > 0) nowYear - 1 else nowYear + 1
       base.set(Calendar.YEAR, adjustedYear)
     }
@@ -688,26 +749,69 @@ object TodayWidgetData {
     return toMondayBasedWeekday(base)
   }
 
-  private fun extractMonthDay(raw: String): Pair<Int, Int>? {
+  private fun extractScheduleDate(raw: String): ParsedScheduleDate? {
     val s = raw.trim()
     if (s.isEmpty()) return null
 
-    val nums = Regex("""\d{1,4}""").findAll(s).map { it.value }.toList()
-    if (nums.size < 2) return null
+    val normalized = s.replace('/', '-').replace('.', '-')
+    val fullDate = Regex("""^(\d{4})-(\d{1,2})-(\d{1,2})$""").matchEntire(normalized)
+    val monthDay = Regex("""^(\d{1,2})-(\d{1,2})$""").matchEntire(normalized)
+    val year = fullDate?.groupValues?.get(1)?.toIntOrNull()
+    val month =
+      (fullDate?.groupValues?.get(2) ?: monthDay?.groupValues?.get(1))
+        ?.toIntOrNull() ?: return null
+    val day =
+      (fullDate?.groupValues?.get(3) ?: monthDay?.groupValues?.get(2))
+        ?.toIntOrNull() ?: return null
 
-    val month: Int
-    val day: Int
-    if (nums[0].length == 4 && nums.size >= 3) {
-      month = nums[1].toIntOrNull() ?: return null
-      day = nums[2].toIntOrNull() ?: return null
-    } else {
-      month = nums[0].toIntOrNull() ?: return null
-      day = nums[1].toIntOrNull() ?: return null
+    val parsed = ParsedScheduleDate(year = year, month = month, day = day)
+    val validationYear = year ?: 2000
+    if (validationYear !in 1..9999) return null
+    if (createScheduleCalendar(validationYear, month, day) == null) return null
+    return parsed
+  }
+
+  private fun resolveScheduleDate(
+    parsed: ParsedScheduleDate,
+    reference: Calendar,
+  ): Calendar? {
+    parsed.year?.let { return createScheduleCalendar(it, parsed.month, parsed.day) }
+
+    val referenceYear = reference.get(Calendar.YEAR)
+    var candidate = createScheduleCalendar(referenceYear, parsed.month, parsed.day) ?: return null
+    val referenceDay =
+      createScheduleCalendar(
+        referenceYear,
+        reference.get(Calendar.MONTH) + 1,
+        reference.get(Calendar.DAY_OF_MONTH),
+      ) ?: return null
+    val diffDays = (candidate.timeInMillis - referenceDay.timeInMillis) / MILLIS_PER_DAY
+    if (kotlin.math.abs(diffDays) > 183L) {
+      val adjustedYear = if (diffDays > 0L) referenceYear - 1 else referenceYear + 1
+      candidate = createScheduleCalendar(adjustedYear, parsed.month, parsed.day) ?: return null
     }
+    return candidate
+  }
 
-    if (month !in 1..12) return null
-    if (day !in 1..31) return null
-    return month to day
+  private fun createScheduleCalendar(
+    year: Int,
+    month: Int,
+    day: Int,
+  ): Calendar? {
+    if (year !in 1..9999 || month !in 1..12 || day !in 1..31) return null
+    val calendar =
+      Calendar.getInstance(WIDGET_TIME_ZONE).apply {
+        isLenient = false
+        clear()
+        set(year, month - 1, day, 0, 0, 0)
+        set(Calendar.MILLISECOND, 0)
+      }
+    return try {
+      calendar.timeInMillis
+      calendar
+    } catch (_: IllegalArgumentException) {
+      null
+    }
   }
 
   private fun toMondayBasedWeekday(calendar: Calendar): Int {
@@ -836,7 +940,7 @@ object TodayWidgetData {
     val sessionClockMap = loadSessionClockMap(context)
     if (sessionClockMap.isEmpty()) return courses
 
-    val todayWeekDay = toMondayBasedWeekday(Calendar.getInstance()).toString()
+    val todayWeekDay = toMondayBasedWeekday(widgetCalendar()).toString()
     val nowMinutes = currentMinuteOfDay()
     return filterEndedCoursesByClockMap(schedule, courses, sessionClockMap, todayWeekDay, nowMinutes)
   }
@@ -861,21 +965,8 @@ object TodayWidgetData {
       if (event.optString("weekDay", "") != targetWeekDay) continue
       val eventId = event.optString("eventID", "").trim()
       val sessionNums = sessionNumbersOfEvent(event)
-      if (sessionNums.isEmpty()) continue
-      var maxEndMinute: Int? = null
-      var hasInvalidSession = false
-      for (sessionNum in sessionNums) {
-        val clock = sessionClockMap[sessionNum]
-        if (clock == null) {
-          hasInvalidSession = true
-          break
-        }
-        if (maxEndMinute == null || clock.second > maxEndMinute!!) {
-          maxEndMinute = clock.second
-        }
-      }
-      if (hasInvalidSession || maxEndMinute == null) continue
-      if (maxEndMinute <= nowMinutes) {
+      val clockRange = sessionClockRange(sessionNums, sessionClockMap) ?: continue
+      if (clockRange.second <= nowMinutes) {
         if (eventId.isNotEmpty()) {
           endedEventIds.add(eventId)
         } else {
@@ -923,32 +1014,67 @@ object TodayWidgetData {
     }
   }
 
-  private fun nextCourseStartAtMillisToday(context: Context): Long? {
-    val data = loadScheduleJsonObject(context) ?: return null
-    if (!scheduleContainsSystemDate(data)) return null
+  private fun nextCourseBoundaryAtMillisToday(
+    context: Context,
+    nowMillis: Long,
+  ): Long? {
+    val nowCalendar = widgetCalendar(nowMillis)
+    val data = loadScheduleJsonObjectForDate(context, nowCalendar) ?: return null
     val sessionClockMap = loadSessionClockMap(context)
     if (sessionClockMap.isEmpty()) return null
 
     val events = data.optJSONArray("eventList") ?: return null
-    val todayWeekDay = toMondayBasedWeekday(Calendar.getInstance()).toString()
-    val now = System.currentTimeMillis()
-    var best: Long? = null
+    val todayWeekDay = toMondayBasedWeekday(nowCalendar).toString()
+    val sessionGroups = ArrayList<List<Int>>()
 
     for (i in 0 until events.length()) {
       val event = events.optJSONObject(i) ?: continue
       if (event.optString("weekDay", "") != todayWeekDay) continue
       val sessionNums = sessionNumbersOfEvent(event)
-      if (sessionNums.isEmpty()) continue
-      val minStartMinute =
-        sessionNums
-          .mapNotNull { sessionClockMap[it]?.first }
-          .minOrNull() ?: continue
-      val startAt = minuteOfDayToMillis(minStartMinute)
-      if (startAt > now && (best == null || startAt < best!!)) {
-        best = startAt
+      if (sessionNums.isNotEmpty()) sessionGroups.add(sessionNums)
+    }
+    val nextBoundaryMinute =
+      nextCourseBoundaryMinuteOfDay(
+        sessionGroups,
+        sessionClockMap,
+        currentMinuteOfDay(nowCalendar),
+      ) ?: return null
+    return minuteOfDayToMillis(nextBoundaryMinute, nowCalendar)
+  }
+
+  internal fun nextCourseBoundaryMinuteOfDay(
+    sessionGroups: List<List<Int>>,
+    sessionClockMap: Map<Int, Pair<Int, Int>>,
+    nowMinutes: Int,
+  ): Int? {
+    if (sessionGroups.isEmpty() || sessionClockMap.isEmpty() || nowMinutes < 0) return null
+    var best: Int? = null
+    for (sessionNums in sessionGroups) {
+      val range = sessionClockRange(sessionNums, sessionClockMap) ?: continue
+      for (boundary in intArrayOf(range.first, range.second)) {
+        if (boundary > nowMinutes && (best == null || boundary < best!!)) {
+          best = boundary
+        }
       }
     }
     return best
+  }
+
+  internal fun sessionClockRange(
+    sessionNums: List<Int>,
+    sessionClockMap: Map<Int, Pair<Int, Int>>,
+  ): Pair<Int, Int>? {
+    val normalized = sessionNums.filter { it > 0 }.distinct()
+    if (normalized.isEmpty() || sessionClockMap.isEmpty()) return null
+    var minStart: Int? = null
+    var maxEnd: Int? = null
+    for (sessionNum in normalized) {
+      val clock = sessionClockMap[sessionNum] ?: return null
+      if (clock.first !in 0 until 24 * 60 || clock.second < clock.first) return null
+      if (minStart == null || clock.first < minStart!!) minStart = clock.first
+      if (maxEnd == null || clock.second > maxEnd!!) maxEnd = clock.second
+    }
+    return minStart?.let { start -> maxEnd?.let { end -> start to end } }
   }
 
   private fun loadSessionClockMap(context: Context): Map<Int, Pair<Int, Int>> {
@@ -998,26 +1124,29 @@ object TodayWidgetData {
     return result
   }
 
-  private fun currentMinuteOfDay(): Int {
-    val c = Calendar.getInstance()
-    return c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
+  private fun currentMinuteOfDay(calendar: Calendar = widgetCalendar()): Int {
+    return calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
   }
 
-  private fun minuteOfDayToMillis(minuteOfDay: Int): Long {
-    val cal = Calendar.getInstance().apply {
-      set(Calendar.HOUR_OF_DAY, minuteOfDay / 60)
-      set(Calendar.MINUTE, minuteOfDay % 60)
+  private fun minuteOfDayToMillis(
+    minuteOfDay: Int,
+    baseDate: Calendar,
+  ): Long {
+    val cal = (baseDate.clone() as Calendar).apply {
+      set(Calendar.HOUR_OF_DAY, 0)
+      set(Calendar.MINUTE, 0)
       set(Calendar.SECOND, 0)
       set(Calendar.MILLISECOND, 0)
+      add(Calendar.MINUTE, minuteOfDay)
     }
     return cal.timeInMillis
   }
 
-  private fun nextDayRefreshAtMillis(): Long {
-    val cal = Calendar.getInstance().apply {
+  internal fun nextDayRefreshAtMillis(nowMillis: Long): Long {
+    val cal = widgetCalendar(nowMillis).apply {
       add(Calendar.DAY_OF_YEAR, 1)
       set(Calendar.HOUR_OF_DAY, 0)
-      set(Calendar.MINUTE, 1)
+      set(Calendar.MINUTE, 0)
       set(Calendar.SECOND, 0)
       set(Calendar.MILLISECOND, 0)
     }

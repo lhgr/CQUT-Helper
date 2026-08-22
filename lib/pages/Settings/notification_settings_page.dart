@@ -353,7 +353,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                               hintText: ScheduleSettingsManager
                                   .officialNoticeApiBaseUrl,
                               helper: const MarqueeText(
-                                '留空使用官方服务；检查时会使用当前登录凭据实际查询调课信息',
+                                '留空使用官方服务；仅在调课通知增强开启时允许实际查询',
                               ),
                               errorText: _serviceError,
                             ),
@@ -368,11 +368,16 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                             children: [
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: _testingAvailability
+                                  onPressed:
+                                      !_pollingEnabled || _testingAvailability
                                       ? null
                                       : _testAvailability,
                                   child: Text(
-                                    _testingAvailability ? '检查中…' : '检查服务可用性',
+                                    !_pollingEnabled
+                                        ? '开启后可检查'
+                                        : _testingAvailability
+                                        ? '检查中…'
+                                        : '检查服务可用性',
                                   ),
                                 ),
                               ),

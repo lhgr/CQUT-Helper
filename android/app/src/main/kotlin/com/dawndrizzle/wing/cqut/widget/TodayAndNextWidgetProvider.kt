@@ -250,7 +250,12 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       views.setTextViewText(R.id.empty, TodayWidgetData.loadEmptyStateText(context, 0))
       views.setTextViewText(R.id.empty_next_day, TodayWidgetData.loadEmptyStateText(context, 1))
 
-      val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
+      val refreshPresentation =
+        TodayWidgetData.loadRefreshPresentation(
+          context,
+          appWidgetId,
+          requiredDayOffsets = intArrayOf(0, 1),
+        )
       val dateVisibility =
         if (refreshPresentation.replacesDateMetadata) {
           android.view.View.GONE

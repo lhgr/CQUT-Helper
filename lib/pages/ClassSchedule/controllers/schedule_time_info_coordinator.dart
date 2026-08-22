@@ -4,18 +4,21 @@ import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ScheduleTimeInfoCoordinator {
   final ScheduleApi service;
   final List<CampusTimeInfo>? Function() getTimeInfoList;
   final void Function(List<CampusTimeInfo> value) setTimeInfoList;
+  final Future<void> Function()? onTimeInfoUpdated;
   static Future<bool>? _sharedRefreshInFlight;
 
   ScheduleTimeInfoCoordinator({
     required this.service,
     required this.getTimeInfoList,
     required this.setTimeInfoList,
+    this.onTimeInfoUpdated,
   });
 
   static const String _prefsKeyTimeInfoCache = 'schedule_time_info_cache_v1';
@@ -239,6 +242,12 @@ class ScheduleTimeInfoCoordinator {
         'items': fetched.map((e) => e.toJson()).toList(),
       }),
     );
+    final notifyWidget = onTimeInfoUpdated;
+    if (notifyWidget != null) {
+      await notifyWidget();
+    } else {
+      await WidgetUpdater.updateTodayWidget(trigger: 'time_info_refresh');
+    }
     final userId = prefs.getString('account')?.trim();
     if (userId != null && userId.isNotEmpty) {
       await CourseReminderScheduler.rescheduleForUser(userId);

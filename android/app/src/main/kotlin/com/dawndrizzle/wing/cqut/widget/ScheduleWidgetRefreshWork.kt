@@ -11,9 +11,11 @@ import androidx.work.WorkerParameters
 import dev.fluttercommunity.workmanager.BackgroundWorker
 import dev.fluttercommunity.workmanager.buildTaskInputData
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 object ScheduleWidgetRefreshWork {
   private const val UNIQUE_WORK_NAME = "schedule_widget_manual_refresh"
+  private const val WATCHDOG_WORK_NAME = "schedule_widget_manual_refresh_watchdog"
   private const val DART_TASK_NAME = "schedule_notice_poll_task"
   private const val PREFS_NAME = "FlutterSharedPreferences"
   private const val LEASE_PREFS_NAME = "ScheduleWidgetManualRefresh"
@@ -37,7 +39,7 @@ object ScheduleWidgetRefreshWork {
     val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
     if (account.isEmpty()) {
       Log.i(TAG, "event=click_rejected reason=missing_account widgetId=$appWidgetId")
-      updateAllRefreshPresentations(context)
+      updateAllRefreshPresentations(context, refreshData = true)
       return
     }
 
@@ -66,7 +68,7 @@ object ScheduleWidgetRefreshWork {
       .remove("$FAILURE_KEY_PREFIX$account")
       .putString("$TOKEN_KEY_PREFIX$account", refreshId)
       .commit()
-    updateAllRefreshPresentations(context)
+    updateAllRefreshPresentations(context, refreshData = true)
 
     val contentFingerprint = TodayWidgetData.loadDisplayedScheduleFingerprint(context)
     // workmanager 0.10 stores each Dart input under a payload_ key. Building
@@ -88,10 +90,20 @@ object ScheduleWidgetRefreshWork {
             .build(),
         )
         .build()
+    val watchdogRequest =
+      OneTimeWorkRequestBuilder<ScheduleWidgetRefreshWatchdogWorker>()
+        .setInitialDelay(LEASE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .setInputData(
+          Data.Builder()
+            .putString(INPUT_REFRESH_ID, refreshId)
+            .putString(INPUT_ACCOUNT, account)
+            .build(),
+        )
+        .build()
 
     try {
-      WorkManager
-        .getInstance(context)
+      val workManager = WorkManager.getInstance(context)
+      workManager
         .beginUniqueWork(
           UNIQUE_WORK_NAME,
           ExistingWorkPolicy.REPLACE,
@@ -99,12 +111,26 @@ object ScheduleWidgetRefreshWork {
         )
         .then(completionRequest)
         .enqueue()
+      // A dependent worker is skipped when its prerequisite fails or is
+      // cancelled. Keep an independent watchdog so the widget cannot remain
+      // indefinitely stuck in the disabled "loading" presentation.
+      workManager.enqueueUniqueWork(
+        WATCHDOG_WORK_NAME,
+        ExistingWorkPolicy.REPLACE,
+        watchdogRequest,
+      )
       Log.i(
         TAG,
         "event=enqueued widgetId=$appWidgetId refreshId=$refreshId " +
           "workId=${refreshRequest.id} completionId=${completionRequest.id}",
       )
     } catch (error: RuntimeException) {
+      runCatching {
+        WorkManager.getInstance(context).apply {
+          cancelUniqueWork(UNIQUE_WORK_NAME)
+          cancelUniqueWork(WATCHDOG_WORK_NAME)
+        }
+      }
       clearLease(context, refreshId)
       prefs
         .edit()
@@ -112,7 +138,7 @@ object ScheduleWidgetRefreshWork {
         .putString("$FAILURE_KEY_PREFIX$account", "generic")
         .remove("$TOKEN_KEY_PREFIX$account")
         .commit()
-      updateAllRefreshPresentations(context)
+      updateAllRefreshPresentations(context, refreshData = true)
       Log.e(TAG, "event=enqueue_failed widgetId=$appWidgetId refreshId=$refreshId", error)
     }
   }
@@ -161,6 +187,86 @@ object ScheduleWidgetRefreshWork {
     leasePrefs.edit().remove(LEASE_TOKEN_KEY).remove(LEASE_STARTED_AT_KEY).commit()
   }
 
+  internal fun cancelWatchdog(context: Context) {
+    WorkManager.getInstance(context).cancelUniqueWork(WATCHDOG_WORK_NAME)
+  }
+
+  /**
+   * Finalizes a refresh under the same monitor used by [enqueue]. This keeps a
+   * late completion from clearing the lease, token, or watchdog belonging to a
+   * newer click that replaced it after the timeout.
+   */
+  @Synchronized
+  internal fun completeIfCurrent(
+    context: Context,
+    refreshId: String,
+    account: String,
+    previousFingerprint: String?,
+  ): Boolean {
+    if (!isCurrentLease(context, refreshId)) return false
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val stateKey = "$STATE_KEY_PREFIX$account"
+    if (
+      account.isNotBlank() &&
+        prefs.getString("$TOKEN_KEY_PREFIX$account", null) == refreshId &&
+        prefs.getString(stateKey, "idle") == "loading"
+    ) {
+      prefs
+        .edit()
+        .putString(stateKey, "failed")
+        .putString("$FAILURE_KEY_PREFIX$account", "generic")
+        .commit()
+      Log.w(TAG, "event=state_repaired refreshId=$refreshId from=loading to=failed")
+    }
+
+    try {
+      TodayCourseWidgetProvider.completeManualRefresh(
+        context,
+        previousFingerprint,
+        refreshId,
+      )
+    } finally {
+      cancelWatchdog(context)
+      clearLease(context, refreshId)
+      if (
+        account.isNotBlank() &&
+          prefs.getString("$TOKEN_KEY_PREFIX$account", null) == refreshId
+      ) {
+        prefs.edit().remove("$TOKEN_KEY_PREFIX$account").commit()
+      }
+    }
+    return true
+  }
+
+  /** Performs the watchdog state transition atomically with click enqueue. */
+  @Synchronized
+  internal fun recoverIfCurrent(
+    context: Context,
+    refreshId: String,
+    account: String,
+  ): Boolean {
+    if (!isCurrentLease(context, refreshId)) return false
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val stateKey = "$STATE_KEY_PREFIX$account"
+    if (
+      account.isNotBlank() &&
+        prefs.getString("$TOKEN_KEY_PREFIX$account", null) == refreshId &&
+        prefs.getString(stateKey, "idle") == "loading"
+    ) {
+      prefs
+        .edit()
+        .putString(stateKey, "failed")
+        .putString("$FAILURE_KEY_PREFIX$account", "generic")
+        .commit()
+      Log.w(TAG, "event=watchdog_recovered refreshId=$refreshId from=loading to=failed")
+    }
+    // Keep the expired token and lease until the worker finishes or a new
+    // click replaces them. [shouldAcceptClick] already permits retry after the
+    // timeout, while retaining ownership lets an unusually slow successful
+    // worker clear the watchdog failure and immediately redraw the widget.
+    return true
+  }
+
   fun shouldSuppressProviderUpdate(context: Context): Boolean {
     val lastRequestedAt =
       context
@@ -185,39 +291,35 @@ class ScheduleWidgetRefreshCompletionWorker(
   override fun doWork(): Result {
     val refreshId = inputData.getString("refresh_id").orEmpty()
     val account = inputData.getString("account").orEmpty()
-    if (!ScheduleWidgetRefreshWork.isCurrentLease(applicationContext, refreshId)) {
+    val completed =
+      ScheduleWidgetRefreshWork.completeIfCurrent(
+        applicationContext,
+        refreshId,
+        account,
+        inputData.getString("content_fingerprint"),
+      )
+    if (!completed) {
       Log.i("WidgetManualRefresh", "event=completion_ignored refreshId=$refreshId reason=stale")
+    }
+    return Result.success()
+  }
+}
+
+class ScheduleWidgetRefreshWatchdogWorker(
+  appContext: Context,
+  workerParams: WorkerParameters,
+) : Worker(appContext, workerParams) {
+  override fun doWork(): Result {
+    val refreshId = inputData.getString("refresh_id").orEmpty()
+    val account = inputData.getString("account").orEmpty()
+    if (!ScheduleWidgetRefreshWork.recoverIfCurrent(applicationContext, refreshId, account)) {
       return Result.success()
     }
-
-    val prefs =
-      applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-    val stateKey = "flutter.schedule_widget_refresh_state_$account"
-    if (account.isNotBlank() && prefs.getString(stateKey, "idle") == "loading") {
-      prefs
-        .edit()
-        .putString(stateKey, "failed")
-        .putString("flutter.schedule_widget_refresh_failure_$account", "generic")
-        .commit()
-      Log.w(
-        "WidgetManualRefresh",
-        "event=state_repaired refreshId=$refreshId from=loading to=failed",
-      )
-    }
-
-    val previousFingerprint = inputData.getString("content_fingerprint")
-    try {
-      TodayCourseWidgetProvider.completeManualRefresh(
-        applicationContext,
-        previousFingerprint,
-        refreshId,
-      )
-    } finally {
-      ScheduleWidgetRefreshWork.clearLease(applicationContext, refreshId)
-      if (account.isNotBlank()) {
-        prefs.edit().remove("flutter.schedule_widget_refresh_token_$account").commit()
-      }
-    }
+    ScheduleWidgetRefreshWork.updateAllRefreshPresentations(
+      applicationContext,
+      refreshData = true,
+    )
+    WidgetAutoRefreshScheduler.schedule(applicationContext)
     return Result.success()
   }
 }

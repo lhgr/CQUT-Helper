@@ -2,11 +2,26 @@ package com.dawndrizzle.wing.cqut.widget
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
+import java.util.TimeZone
 
 class TodayWidgetDataTest {
+  private fun beijingCalendar(
+    year: Int,
+    month: Int,
+    day: Int,
+    hour: Int = 0,
+    minute: Int = 0,
+    second: Int = 0,
+  ): Calendar =
+    Calendar.getInstance(TimeZone.getTimeZone(TodayWidgetData.WIDGET_TIME_ZONE_ID)).apply {
+      clear()
+      set(year, month, day, hour, minute, second)
+    }
+
   @Test
   fun `covered day without courses shows empty course state`() {
     assertEquals(
@@ -39,8 +54,8 @@ class TodayWidgetDataTest {
 
   @Test
   fun `same day update only displays time`() {
-    val now = Calendar.getInstance().apply { set(2026, Calendar.AUGUST, 11, 18, 30, 0) }
-    val updatedAt = Calendar.getInstance().apply { set(2026, Calendar.AUGUST, 11, 9, 5, 0) }
+    val now = beijingCalendar(2026, Calendar.AUGUST, 11, 18, 30)
+    val updatedAt = beijingCalendar(2026, Calendar.AUGUST, 11, 9, 5)
 
     assertEquals(
       "09:05",
@@ -50,8 +65,8 @@ class TodayWidgetDataTest {
 
   @Test
   fun `earlier date update only displays calendar day distance`() {
-    val now = Calendar.getInstance().apply { set(2026, Calendar.AUGUST, 11, 1, 0, 0) }
-    val updatedAt = Calendar.getInstance().apply { set(2026, Calendar.AUGUST, 9, 23, 30, 0) }
+    val now = beijingCalendar(2026, Calendar.AUGUST, 11, 1)
+    val updatedAt = beijingCalendar(2026, Calendar.AUGUST, 9, 23, 30)
 
     assertEquals(
       "2天前",
@@ -83,5 +98,145 @@ class TodayWidgetDataTest {
 
     assertTrue(stale.replacesDateMetadata)
     assertFalse(normal.replacesDateMetadata)
+  }
+
+  @Test
+  fun `next course boundary includes both start and end`() {
+    val clocks =
+      mapOf(
+        1 to (8 * 60 to 8 * 60 + 45),
+        2 to (8 * 60 + 55 to 9 * 60 + 40),
+        3 to (14 * 60 to 14 * 60 + 45),
+      )
+    val courses = listOf(listOf(1, 2), listOf(3))
+
+    assertEquals(
+      8 * 60,
+      TodayWidgetData.nextCourseBoundaryMinuteOfDay(courses, clocks, 7 * 60 + 59),
+    )
+    assertEquals(
+      9 * 60 + 40,
+      TodayWidgetData.nextCourseBoundaryMinuteOfDay(courses, clocks, 8 * 60),
+    )
+    assertEquals(
+      14 * 60,
+      TodayWidgetData.nextCourseBoundaryMinuteOfDay(courses, clocks, 9 * 60 + 40),
+    )
+    assertEquals(
+      14 * 60 + 45,
+      TodayWidgetData.nextCourseBoundaryMinuteOfDay(courses, clocks, 14 * 60),
+    )
+  }
+
+  @Test
+  fun `missing or partial time map does not invent a boundary`() {
+    assertNull(TodayWidgetData.sessionClockRange(listOf(1), emptyMap()))
+    assertNull(
+      TodayWidgetData.sessionClockRange(
+        listOf(1, 2),
+        mapOf(1 to (8 * 60 to 8 * 60 + 45)),
+      ),
+    )
+    assertNull(
+      TodayWidgetData.nextCourseBoundaryMinuteOfDay(
+        listOf(listOf(1)),
+        emptyMap(),
+        7 * 60,
+      ),
+    )
+  }
+
+  @Test
+  fun `day rollover is exactly midnight in Beijing`() {
+    val originalTimeZone = TimeZone.getDefault()
+    try {
+      TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
+      val now = beijingCalendar(2026, Calendar.AUGUST, 22, 23, 59, 30)
+      val refreshAt = TodayWidgetData.nextDayRefreshAtMillis(now.timeInMillis)
+      val refresh =
+        Calendar.getInstance(TimeZone.getTimeZone(TodayWidgetData.WIDGET_TIME_ZONE_ID)).apply {
+          timeInMillis = refreshAt
+        }
+
+      assertEquals(2026, refresh.get(Calendar.YEAR))
+      assertEquals(Calendar.AUGUST, refresh.get(Calendar.MONTH))
+      assertEquals(23, refresh.get(Calendar.DAY_OF_MONTH))
+      assertEquals(0, refresh.get(Calendar.HOUR_OF_DAY))
+      assertEquals(0, refresh.get(Calendar.MINUTE))
+      assertEquals(0, refresh.get(Calendar.SECOND))
+    } finally {
+      TimeZone.setDefault(originalTimeZone)
+    }
+  }
+
+  @Test
+  fun `stale today marker never overrides explicit date`() {
+    val target = beijingCalendar(2026, Calendar.AUGUST, 23)
+
+    assertFalse(
+      TodayWidgetData.scheduleDayMarkersContainDate(
+        listOf(TodayWidgetData.ScheduleDayMarker("2026-08-22", markedToday = true)),
+        target,
+      ),
+    )
+    assertFalse(
+      TodayWidgetData.scheduleDayMarkersContainDate(
+        listOf(TodayWidgetData.ScheduleDayMarker("", markedToday = true)),
+        target,
+      ),
+    )
+    assertTrue(
+      TodayWidgetData.scheduleDayMarkersContainDate(
+        listOf(TodayWidgetData.ScheduleDayMarker("2026-08-23", markedToday = false)),
+        target,
+      ),
+    )
+  }
+
+  @Test
+  fun `parsed week range covers dates between its endpoints`() {
+    val target = beijingCalendar(2026, Calendar.AUGUST, 12)
+
+    assertTrue(
+      TodayWidgetData.scheduleDayMarkersContainDate(
+        listOf(
+          TodayWidgetData.ScheduleDayMarker("2026-08-10", markedToday = false),
+          TodayWidgetData.ScheduleDayMarker("2026-08-16", markedToday = false),
+        ),
+        target,
+      ),
+    )
+  }
+
+  @Test
+  fun `month day week range remains strict across year boundary`() {
+    val inside = beijingCalendar(2026, Calendar.JANUARY, 2)
+    val outside = beijingCalendar(2026, Calendar.JANUARY, 5)
+    val markers =
+      listOf(
+        TodayWidgetData.ScheduleDayMarker("12-29", markedToday = true),
+        TodayWidgetData.ScheduleDayMarker("01-04", markedToday = false),
+      )
+
+    assertTrue(TodayWidgetData.scheduleDayMarkersContainDate(markers, inside))
+    assertFalse(TodayWidgetData.scheduleDayMarkersContainDate(markers, outside))
+  }
+
+  @Test
+  fun `invalid calendar date is not treated as coverage`() {
+    val target = beijingCalendar(2026, Calendar.FEBRUARY, 28)
+
+    assertFalse(
+      TodayWidgetData.scheduleDayMarkersContainDate(
+        listOf(TodayWidgetData.ScheduleDayMarker("2026-02-31", markedToday = true)),
+        target,
+      ),
+    )
+    assertFalse(
+      TodayWidgetData.scheduleDayMarkersContainDate(
+        listOf(TodayWidgetData.ScheduleDayMarker("today=2026-02-28", markedToday = true)),
+        target,
+      ),
+    )
   }
 }

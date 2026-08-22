@@ -1,12 +1,16 @@
 package com.dawndrizzle.wing.cqut.widget
 
 import android.app.Activity
+import android.app.AlarmManager
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -53,6 +57,8 @@ class WidgetConfigurationActivity : Activity() {
   private var existingConfig = WidgetInstanceConfig()
   private var supportsDaySelection = false
   private var supportsRefreshSuggestion = false
+  private var exactAlarmStatusText: TextView? = null
+  private var exactAlarmPermissionButton: Button? = null
 
   private val followAppId = View.generateViewId()
   private val lightId = View.generateViewId()
@@ -93,6 +99,14 @@ class WidgetConfigurationActivity : Activity() {
     setContentView(buildContent(existingConfig, providerName))
   }
 
+  override fun onResume() {
+    super.onResume()
+    updateExactAlarmPermissionPresentation()
+    if (canScheduleExactWidgetAlarms()) {
+      WidgetAutoRefreshScheduler.schedule(this)
+    }
+  }
+
   private fun isKnownProvider(providerName: String): Boolean {
     return providerName == TodayListWidgetProvider::class.java.name ||
       providerName == TodayAndNextWidgetProvider::class.java.name ||
@@ -127,6 +141,24 @@ class WidgetConfigurationActivity : Activity() {
         setPadding(0, dp(6), 0, dp(22))
       },
     )
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !canScheduleExactWidgetAlarms()) {
+      content.addView(sectionTitle("准时刷新"))
+      exactAlarmStatusText =
+        TextView(this).apply {
+          text = "尚未允许精确闹钟，课程结束和跨日刷新仍有系统兜底，但可能延迟。"
+          textSize = 13f
+          alpha = 0.72f
+          setPadding(0, dp(6), 0, dp(8))
+        }
+      content.addView(exactAlarmStatusText)
+      exactAlarmPermissionButton =
+        Button(this).apply {
+          text = "允许准时刷新"
+          setOnClickListener { openExactAlarmPermissionSettings() }
+        }
+      content.addView(exactAlarmPermissionButton)
+    }
 
     content.addView(sectionTitle("外观"))
     themeGroup =
@@ -278,6 +310,51 @@ class WidgetConfigurationActivity : Activity() {
       TodayAndNextWidgetProvider::class.java.name -> "近日课程：同时展示今天和明天"
       TodayCourseWidgetProvider::class.java.name -> "日视图：可在今天和明天之间快速切换"
       else -> "为这个小组件选择独立外观和显示内容"
+    }
+  }
+
+  private fun canScheduleExactWidgetAlarms(): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+    val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+    return try {
+      alarmManager?.canScheduleExactAlarms() == true
+    } catch (_: RuntimeException) {
+      // Some vendor AlarmManager implementations can throw while their
+      // permission service is restarting. Treat that transient state as not
+      // granted so configuration stays usable and the scheduler falls back.
+      false
+    }
+  }
+
+  private fun updateExactAlarmPermissionPresentation() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val granted = canScheduleExactWidgetAlarms()
+    exactAlarmStatusText?.apply {
+      text =
+        if (granted) {
+          "已允许准时刷新，小组件会按课程结束和跨日边界更新。"
+        } else {
+          "尚未允许精确闹钟，课程结束和跨日刷新仍有系统兜底，但可能延迟。"
+        }
+    }
+    exactAlarmPermissionButton?.visibility = if (granted) View.GONE else View.VISIBLE
+  }
+
+  private fun openExactAlarmPermissionSettings() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val packageUri = Uri.parse("package:$packageName")
+    try {
+      startActivity(
+        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+          data = packageUri
+        },
+      )
+    } catch (_: RuntimeException) {
+      startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+          data = packageUri
+        },
+      )
     }
   }
 

@@ -19,14 +19,10 @@ import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import com.dawndrizzle.wing.cqut.widget.TodayListWidgetProvider
-import com.dawndrizzle.wing.cqut.widget.TodayAndNextWidgetProvider
-import com.dawndrizzle.wing.cqut.widget.TodayCourseWidgetProvider
 import com.dawndrizzle.wing.cqut.widget.WidgetNavigationPendingIntent
 
 class MainActivity : FlutterActivity() {
   private val channelName = "cqut/downloads"
-  private val widgetChannelName = "cqut/widget"
   private val powerChannelName = "cqut/power"
   private val navigationChannelName = "cqut/navigation"
   private val documentChannelName = "cqut/documents"
@@ -200,37 +196,6 @@ class MainActivity : FlutterActivity() {
             } catch (e: Exception) {
               result.error("EXPORT_FAILED", e.toString(), null)
             }
-          }
-
-          else -> result.notImplemented()
-        }
-      }
-
-    MethodChannel(flutterEngine.dartExecutor.binaryMessenger, widgetChannelName)
-      .setMethodCallHandler { call, result ->
-        when (call.method) {
-          "updateTodayWidget" -> {
-            val mode = call.argument<String>("themeMode")
-            val trigger = call.argument<String>("trigger")
-            if (!mode.isNullOrBlank()) {
-              val prefs = applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-              prefs.edit().putString("flutter.theme_mode", mode).commit()
-            }
-            val syncTrigger =
-              if (!mode.isNullOrBlank() || trigger == "app_theme_changed" || trigger == "init") {
-                com.dawndrizzle.wing.cqut.widget.WidgetThemeTrigger.APP_THEME_CHANGED
-              } else {
-                com.dawndrizzle.wing.cqut.widget.WidgetThemeTrigger.DATA_REFRESH
-              }
-            if (syncTrigger == com.dawndrizzle.wing.cqut.widget.WidgetThemeTrigger.APP_THEME_CHANGED) {
-              com.dawndrizzle.wing.cqut.widget.WidgetForceUpdatePusher.pushTheme(applicationContext)
-            } else {
-              com.dawndrizzle.wing.cqut.widget.WidgetThemeSyncDispatcher.dispatch(
-                applicationContext,
-                syncTrigger,
-              )
-            }
-            result.success(null)
           }
 
           else -> result.notImplemented()

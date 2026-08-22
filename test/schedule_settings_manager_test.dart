@@ -137,4 +137,23 @@ void main() {
     expect(layout.textScale, 1.5);
     expect(layout.cardOpacity, 0.1);
   });
+
+  test('启动预读后新管理器可同步获取课表背景设置', () async {
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.backgroundImagePathKey: '/tmp/background.jpg',
+    });
+    final bootstrapManager = ScheduleSettingsManager();
+    await bootstrapManager.load();
+
+    final pageManager = ScheduleSettingsManager();
+
+    expect(
+      pageManager.layoutSettings.backgroundImagePath,
+      '/tmp/background.jpg',
+    );
+    expect(
+      ScheduleSettingsManager.cachedLayoutSettings.backgroundImagePath,
+      '/tmp/background.jpg',
+    );
+  });
 }
