@@ -26,6 +26,7 @@ jobs:
   release:
     name: Verify, sign and package
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       TZ: Asia/Shanghai
     steps:
@@ -50,7 +51,9 @@ jobs:
         run: flutter pub get
 
       - name: Verify formatting
-        run: dart format --output=none --set-exit-if-changed lib test
+        run: >-
+          dart format --output=none --set-exit-if-changed
+          lib test packages/cqut_widget_bridge/lib
 
       - name: Analyze
         run: flutter analyze
@@ -60,7 +63,17 @@ jobs:
 
       - name: Run Android unit tests
         working-directory: android
-        run: bash ./gradlew :app:testDebugUnitTest
+        run: >-
+          bash ./gradlew
+          :app:testDebugUnitTest
+          :cqut_widget_bridge:testDebugUnitTest
+
+      - name: Run Android lint
+        working-directory: android
+        run: >-
+          bash ./gradlew
+          :app:lintDebug
+          :cqut_widget_bridge:lintDebug
 
       - name: Resolve and validate version
         id: version
