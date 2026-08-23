@@ -29,4 +29,13 @@ class WidgetAutoRefreshReceiverTest {
       ),
     )
   }
+
+  @Test
+  fun `manual refresh watchdog remains separate from ordinary data actions`() {
+    assertFalse(
+      WidgetAutoRefreshReceiver.isDataRefreshAction(
+        WidgetAutoRefreshReceiver.ACTION_MANUAL_REFRESH_WATCHDOG,
+      ),
+    )
+  }
 }

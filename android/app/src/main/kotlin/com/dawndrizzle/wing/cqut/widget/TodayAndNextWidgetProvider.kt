@@ -17,11 +17,7 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
     appWidgetIds: IntArray,
   ) {
     val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
-    if (ScheduleWidgetRefreshWork.shouldSuppressProviderUpdate(context)) {
-      refreshAppWidgets(context, appWidgetManager, appWidgetIds, theme)
-    } else {
-      updateAppWidgets(context, appWidgetManager, appWidgetIds, theme)
-    }
+    updateAppWidgets(context, appWidgetManager, appWidgetIds, theme)
     WidgetAutoRefreshScheduler.schedule(context)
   }
 

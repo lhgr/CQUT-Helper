@@ -116,6 +116,10 @@
             android:name="com.dawndrizzle.wing.cqut.widget.CourseListWidgetService"
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name="com.dawndrizzle.wing.cqut.widget.ScheduleWidgetManualRefreshJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

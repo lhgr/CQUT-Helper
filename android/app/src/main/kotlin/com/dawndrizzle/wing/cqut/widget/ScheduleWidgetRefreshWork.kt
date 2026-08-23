@@ -1,22 +1,15 @@
 package com.dawndrizzle.wing.cqut.widget
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.SystemClock
 import android.util.Log
-import androidx.work.Data
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.Worker
-import androidx.work.WorkerParameters
-import dev.fluttercommunity.workmanager.BackgroundWorker
-import dev.fluttercommunity.workmanager.buildTaskInputData
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 object ScheduleWidgetRefreshWork {
-  private const val UNIQUE_WORK_NAME = "schedule_widget_manual_refresh"
-  private const val WATCHDOG_WORK_NAME = "schedule_widget_manual_refresh_watchdog"
-  private const val DART_TASK_NAME = "schedule_notice_poll_task"
   private const val PREFS_NAME = "FlutterSharedPreferences"
   private const val LEASE_PREFS_NAME = "ScheduleWidgetManualRefresh"
   private const val FLUTTER_PREFIX = "flutter."
@@ -25,12 +18,8 @@ object ScheduleWidgetRefreshWork {
   private const val TOKEN_KEY_PREFIX = "${FLUTTER_PREFIX}schedule_widget_refresh_token_"
   private const val LEASE_TOKEN_KEY = "active_token"
   private const val LEASE_STARTED_AT_KEY = "active_started_at"
-  private const val LAST_REQUESTED_AT_KEY = "last_requested_at"
   private const val LEASE_TIMEOUT_MS = 15L * 60 * 1000
-  private const val PROVIDER_UPDATE_SUPPRESSION_MS = 10L * 1000
-  private const val INPUT_REFRESH_ID = "refresh_id"
-  private const val INPUT_ACCOUNT = "account"
-  private const val INPUT_CONTENT_FINGERPRINT = "content_fingerprint"
+  private const val WATCHDOG_REQUEST_CODE = 0x43515744
   private const val TAG = "WidgetManualRefresh"
 
   @Synchronized
@@ -60,7 +49,6 @@ object ScheduleWidgetRefreshWork {
       .edit()
       .putString(LEASE_TOKEN_KEY, refreshId)
       .putLong(LEASE_STARTED_AT_KEY, now)
-      .putLong(LAST_REQUESTED_AT_KEY, now)
       .commit()
     prefs
       .edit()
@@ -71,66 +59,26 @@ object ScheduleWidgetRefreshWork {
     updateAllRefreshPresentations(context, refreshData = true)
 
     val contentFingerprint = TodayWidgetData.loadDisplayedScheduleFingerprint(context)
-    // workmanager 0.10 stores each Dart input under a payload_ key. Building
-    // the Data through the plugin keeps the native click path aligned with
-    // Workmanager.registerOneOffTask instead of using the removed 0.6 JSON
-    // envelope, which 0.10 silently decodes as an empty input map.
-    val workerInput = buildWorkerInput(refreshId)
-    val refreshRequest =
-      OneTimeWorkRequestBuilder<BackgroundWorker>()
-        .setInputData(workerInput)
-        .build()
-    val completionRequest =
-      OneTimeWorkRequestBuilder<ScheduleWidgetRefreshCompletionWorker>()
-        .setInputData(
-          Data.Builder()
-            .putString(INPUT_REFRESH_ID, refreshId)
-            .putString(INPUT_ACCOUNT, account)
-            .putString(INPUT_CONTENT_FINGERPRINT, contentFingerprint)
-            .build(),
-        )
-        .build()
-    val watchdogRequest =
-      OneTimeWorkRequestBuilder<ScheduleWidgetRefreshWatchdogWorker>()
-        .setInitialDelay(LEASE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .setInputData(
-          Data.Builder()
-            .putString(INPUT_REFRESH_ID, refreshId)
-            .putString(INPUT_ACCOUNT, account)
-            .build(),
-        )
-        .build()
-
     try {
-      val workManager = WorkManager.getInstance(context)
-      workManager
-        .beginUniqueWork(
-          UNIQUE_WORK_NAME,
-          ExistingWorkPolicy.REPLACE,
-          refreshRequest,
-        )
-        .then(completionRequest)
-        .enqueue()
-      // A dependent worker is skipped when its prerequisite fails or is
-      // cancelled. Keep an independent watchdog so the widget cannot remain
-      // indefinitely stuck in the disabled "loading" presentation.
-      workManager.enqueueUniqueWork(
-        WATCHDOG_WORK_NAME,
-        ExistingWorkPolicy.REPLACE,
-        watchdogRequest,
-      )
+      // A stable JobService avoids WorkManager toggling its RescheduleReceiver
+      // for every widget click. Some MIUI/HyperOS launchers respond to that
+      // package-component change by redrawing the app icon and making it flash.
+      scheduleWatchdog(context, refreshId, account)
+      check(
+        ScheduleWidgetManualRefreshJobService.schedule(
+          context = context,
+          refreshId = refreshId,
+          account = account,
+          contentFingerprint = contentFingerprint,
+        ),
+      ) { "manual widget refresh job was rejected" }
       Log.i(
         TAG,
-        "event=enqueued widgetId=$appWidgetId refreshId=$refreshId " +
-          "workId=${refreshRequest.id} completionId=${completionRequest.id}",
+        "event=job_scheduled widgetId=$appWidgetId refreshId=$refreshId",
       )
     } catch (error: RuntimeException) {
-      runCatching {
-        WorkManager.getInstance(context).apply {
-          cancelUniqueWork(UNIQUE_WORK_NAME)
-          cancelUniqueWork(WATCHDOG_WORK_NAME)
-        }
-      }
+      ScheduleWidgetManualRefreshJobService.cancel(context)
+      cancelWatchdog(context)
       clearLease(context, refreshId)
       prefs
         .edit()
@@ -150,19 +98,6 @@ object ScheduleWidgetRefreshWork {
     TodayListWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
     TodayAndNextWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
     TodayCourseWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
-  }
-
-  internal fun buildWorkerInput(refreshId: String): Data {
-    return buildTaskInputData(
-      dartTask = DART_TASK_NAME,
-      payload =
-        mapOf(
-          "trigger" to "widget_manual",
-          "logicalDateBjt" to "",
-          "refreshId" to refreshId,
-        ),
-      uniqueName = UNIQUE_WORK_NAME,
-    )
   }
 
   internal fun shouldAcceptClick(
@@ -188,7 +123,47 @@ object ScheduleWidgetRefreshWork {
   }
 
   internal fun cancelWatchdog(context: Context) {
-    WorkManager.getInstance(context).cancelUniqueWork(WATCHDOG_WORK_NAME)
+    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+    alarmManager.cancel(watchdogPendingIntent(context, "", ""))
+  }
+
+  private fun scheduleWatchdog(
+    context: Context,
+    refreshId: String,
+    account: String,
+  ) {
+    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+      ?: throw IllegalStateException("AlarmManager unavailable")
+    val triggerAt = SystemClock.elapsedRealtime() + LEASE_TIMEOUT_MS
+    val pendingIntent = watchdogPendingIntent(context, refreshId, account)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      alarmManager.setAndAllowWhileIdle(
+        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+        triggerAt,
+        pendingIntent,
+      )
+    } else {
+      alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+    }
+  }
+
+  private fun watchdogPendingIntent(
+    context: Context,
+    refreshId: String,
+    account: String,
+  ): PendingIntent {
+    val intent =
+      Intent(context, WidgetAutoRefreshReceiver::class.java).apply {
+        action = WidgetAutoRefreshReceiver.ACTION_MANUAL_REFRESH_WATCHDOG
+        putExtra(WidgetAutoRefreshReceiver.EXTRA_REFRESH_ID, refreshId)
+        putExtra(WidgetAutoRefreshReceiver.EXTRA_ACCOUNT, account)
+      }
+    return PendingIntent.getBroadcast(
+      context,
+      WATCHDOG_REQUEST_CODE,
+      intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
   }
 
   /**
@@ -267,59 +242,14 @@ object ScheduleWidgetRefreshWork {
     return true
   }
 
-  fun shouldSuppressProviderUpdate(context: Context): Boolean {
-    val lastRequestedAt =
-      context
-        .getSharedPreferences(LEASE_PREFS_NAME, Context.MODE_PRIVATE)
-        .getLong(LAST_REQUESTED_AT_KEY, 0L)
-    return shouldSuppressProviderUpdate(lastRequestedAt, System.currentTimeMillis())
+  fun handleWatchdog(
+    context: Context,
+    refreshId: String,
+    account: String,
+  ) {
+    if (!recoverIfCurrent(context, refreshId, account)) return
+    updateAllRefreshPresentations(context, refreshData = true)
+    WidgetAutoRefreshScheduler.schedule(context)
   }
 
-  internal fun shouldSuppressProviderUpdate(
-    lastRequestedAt: Long,
-    now: Long,
-  ): Boolean {
-    if (lastRequestedAt <= 0L || now < lastRequestedAt) return false
-    return now - lastRequestedAt < PROVIDER_UPDATE_SUPPRESSION_MS
-  }
-}
-
-class ScheduleWidgetRefreshCompletionWorker(
-  appContext: Context,
-  workerParams: WorkerParameters,
-) : Worker(appContext, workerParams) {
-  override fun doWork(): Result {
-    val refreshId = inputData.getString("refresh_id").orEmpty()
-    val account = inputData.getString("account").orEmpty()
-    val completed =
-      ScheduleWidgetRefreshWork.completeIfCurrent(
-        applicationContext,
-        refreshId,
-        account,
-        inputData.getString("content_fingerprint"),
-      )
-    if (!completed) {
-      Log.i("WidgetManualRefresh", "event=completion_ignored refreshId=$refreshId reason=stale")
-    }
-    return Result.success()
-  }
-}
-
-class ScheduleWidgetRefreshWatchdogWorker(
-  appContext: Context,
-  workerParams: WorkerParameters,
-) : Worker(appContext, workerParams) {
-  override fun doWork(): Result {
-    val refreshId = inputData.getString("refresh_id").orEmpty()
-    val account = inputData.getString("account").orEmpty()
-    if (!ScheduleWidgetRefreshWork.recoverIfCurrent(applicationContext, refreshId, account)) {
-      return Result.success()
-    }
-    ScheduleWidgetRefreshWork.updateAllRefreshPresentations(
-      applicationContext,
-      refreshData = true,
-    )
-    WidgetAutoRefreshScheduler.schedule(applicationContext)
-    return Result.success()
-  }
 }

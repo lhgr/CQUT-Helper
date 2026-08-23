@@ -3,6 +3,7 @@ package com.dawndrizzle.wing.cqut.widget
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.text.format.DateUtils
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -201,22 +202,72 @@ object TodayWidgetData {
             WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
           },
         )
-    val hasMissingRequiredDate =
+    val scheduleCandidates = loadScheduleJsonObjects(context)
+    val hasCoveredRequiredDate =
       offsets.any { dayOffset ->
         val targetDate = widgetCalendar().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
-        loadScheduleJsonObjectForDate(context, targetDate) == null
+        scheduleCandidates.any { scheduleContainsDate(it, targetDate) }
       }
-    if (hasMissingRequiredDate) {
-      return RefreshPresentation(
-        RefreshPresentationState.NEEDS_SYNC,
-        "课表尚未同步，点右上角刷新",
-      )
+    val isDebuggable =
+      context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    val lastSuccessfulAt =
+      prefs
+        .getString("$KEY_LAST_SUCCESSFUL_REFRESH_AT_PREFIX$account", null)
+        ?.let(::parseIso8601Millis)
+        ?: migrateLegacyRefreshAt(context, prefs, account)
+    val pollingEnabled = prefs.getBoolean(KEY_BACKGROUND_POLLING_ENABLED, false)
+    val presentation = idleRefreshPresentation(
+      hasCoveredRequiredDate = hasCoveredRequiredDate,
+      hasAnyScheduleCache = scheduleCandidates.isNotEmpty(),
+      isDebuggable = isDebuggable,
+      pollingEnabled = pollingEnabled,
+      lastSuccessfulAt = lastSuccessfulAt,
+      nowMillis = System.currentTimeMillis(),
+      suggestionDays = WidgetInstanceConfigStore.load(context, appWidgetId).refreshSuggestionDays,
+    )
+    val refreshAgeMillis =
+      lastSuccessfulAt?.let { (System.currentTimeMillis() - it).coerceAtLeast(0L) }
+    Log.i(
+      "WidgetScheduleState",
+      "offsets=${offsets.joinToString()} covered=$hasCoveredRequiredDate " +
+        "cacheCount=${scheduleCandidates.size} polling=$pollingEnabled " +
+        "refreshAgeMs=${refreshAgeMillis ?: -1L} state=${presentation.state}",
+    )
+    return presentation
+  }
+
+  internal fun idleRefreshPresentation(
+    hasCoveredRequiredDate: Boolean,
+    hasAnyScheduleCache: Boolean,
+    isDebuggable: Boolean,
+    pollingEnabled: Boolean,
+    lastSuccessfulAt: Long?,
+    nowMillis: Long,
+    suggestionDays: Int,
+  ): RefreshPresentation {
+    if (!hasCoveredRequiredDate) {
+      if (!hasAnyScheduleCache) {
+        return RefreshPresentation(
+          RefreshPresentationState.NEEDS_SYNC,
+          "课表尚未同步，点右上角刷新",
+        )
+      }
+      val cacheWasVerifiedRecently =
+        lastSuccessfulAt != null &&
+          !isRefreshStale(lastSuccessfulAt, nowMillis, suggestionDays)
+      if (!cacheWasVerifiedRecently) {
+        return RefreshPresentation(
+          RefreshPresentationState.STALE,
+          "课表可能已过期，点右上角刷新",
+        )
+      }
+      // A recent successful server response that does not cover the requested
+      // date is authoritative evidence of a holiday/non-teaching week, not a
+      // stale cache. Let the day-level empty state explain that condition.
     }
 
     // Keep manual refresh directly reachable while exercising widget behavior
     // from a debug build. Release builds continue to use the real sync age.
-    val isDebuggable =
-      context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
     if (isDebuggable) {
       return RefreshPresentation(
         RefreshPresentationState.NEEDS_SYNC,
@@ -224,31 +275,19 @@ object TodayWidgetData {
       )
     }
 
-    val lastSuccessfulAt =
-      prefs
-        .getString("$KEY_LAST_SUCCESSFUL_REFRESH_AT_PREFIX$account", null)
-        ?.let(::parseIso8601Millis)
-        ?: migrateLegacyRefreshAt(context, prefs, account)
-    val pollingEnabled = prefs.getBoolean(KEY_BACKGROUND_POLLING_ENABLED, false)
-    if (!pollingEnabled && lastSuccessfulAt == null) {
-      return RefreshPresentation(
-        RefreshPresentationState.NEEDS_SYNC,
-        "课表尚未同步",
-      )
-    }
     if (!pollingEnabled &&
       lastSuccessfulAt != null &&
-      isRefreshStale(
-        lastSuccessfulAt,
-        System.currentTimeMillis(),
-        WidgetInstanceConfigStore.load(context, appWidgetId).refreshSuggestionDays,
-      )
+      isRefreshStale(lastSuccessfulAt, nowMillis, suggestionDays)
     ) {
       return RefreshPresentation(
         RefreshPresentationState.STALE,
         "课表可能已过期",
       )
     }
+
+    // A matching, parseable cache is already synchronized data. Background
+    // polling is optional, so the absence of its success timestamp must not
+    // turn a populated widget into a permanent "not synchronized" state.
     return RefreshPresentation(
       RefreshPresentationState.NORMAL,
       lastSuccessfulAt?.let(::formatLastUpdated).orEmpty(),
@@ -417,9 +456,11 @@ object TodayWidgetData {
     if (loadScheduleJsonObjectForDate(context, targetDate) != null) {
       return DayScheduleAvailability.COVERED
     }
-    // An old cache cannot prove that the target is outside a teaching week.
-    // Report a recoverable sync gap so the header exposes manual refresh.
-    return DayScheduleAvailability.MISSING_CACHE
+    return if (loadScheduleJsonObjects(context).isEmpty()) {
+      DayScheduleAvailability.MISSING_CACHE
+    } else {
+      DayScheduleAvailability.OUTSIDE_TEACHING_WEEK
+    }
   }
 
   fun nextRefreshAtMillis(context: Context): Long? {
@@ -489,14 +530,15 @@ object TodayWidgetData {
     context: Context,
     targetDate: Calendar,
   ): JSONObject? {
-    val candidates =
-      listOfNotNull(
-        loadScheduleJsonObject(context),
-        loadPrevWeekScheduleJsonObject(context),
-        loadNextWeekScheduleJsonObject(context),
-      )
-    return candidates.firstOrNull { scheduleContainsDate(it, targetDate) }
+    return loadScheduleJsonObjects(context).firstOrNull { scheduleContainsDate(it, targetDate) }
   }
+
+  private fun loadScheduleJsonObjects(context: Context): List<JSONObject> =
+    listOfNotNull(
+      loadScheduleJsonObject(context),
+      loadPrevWeekScheduleJsonObject(context),
+      loadNextWeekScheduleJsonObject(context),
+    )
 
   private fun loadNextWeekScheduleJsonObject(context: Context): JSONObject? {
     return loadOffsetWeekScheduleJsonObject(context, offsetWeeks = 1)

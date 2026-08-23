@@ -24,19 +24,6 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     appWidgetIds: IntArray,
   ) {
     val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
-    if (ScheduleWidgetRefreshWork.shouldSuppressProviderUpdate(context)) {
-      // WorkManager toggles its reschedule receiver when native work is
-      // enqueued. MIUI reacts to that package-component change by sending an
-      // APPWIDGET_UPDATE about a second later. Rebinding the collection here
-      // briefly clears it on the launcher, so retain the existing list and
-      // patch only the refresh status/icon during this narrow window.
-      Log.i(
-        "WidgetManualRefresh",
-        "event=provider_update_suppressed widgetIds=${appWidgetIds.joinToString()}",
-      )
-      updateRefreshPresentation(context, appWidgetIds)
-      return
-    }
     updateAppWidgets(context, appWidgetManager, appWidgetIds, theme)
     WidgetAutoRefreshScheduler.schedule(context)
   }

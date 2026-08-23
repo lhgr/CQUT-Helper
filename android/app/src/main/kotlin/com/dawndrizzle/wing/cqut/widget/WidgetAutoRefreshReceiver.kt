@@ -12,6 +12,14 @@ class WidgetAutoRefreshReceiver : BroadcastReceiver() {
       WidgetAutoRefreshScheduler.schedule(context)
       return
     }
+    if (action == ACTION_MANUAL_REFRESH_WATCHDOG) {
+      ScheduleWidgetRefreshWork.handleWatchdog(
+        context,
+        intent.getStringExtra(EXTRA_REFRESH_ID).orEmpty(),
+        intent.getStringExtra(EXTRA_ACCOUNT).orEmpty(),
+      )
+      return
+    }
     if (!isDataRefreshAction(action)) return
     WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
   }
@@ -21,6 +29,10 @@ class WidgetAutoRefreshReceiver : BroadcastReceiver() {
       "com.dawndrizzle.wing.cqut.widget.APP_THEME_REFRESH"
     const val ACTION_EXACT_ALARM_PERMISSION_STATE_CHANGED =
       "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED"
+    const val ACTION_MANUAL_REFRESH_WATCHDOG =
+      "com.dawndrizzle.wing.cqut.widget.MANUAL_REFRESH_WATCHDOG"
+    const val EXTRA_REFRESH_ID = "refresh_id"
+    const val EXTRA_ACCOUNT = "account"
 
     internal fun isDataRefreshAction(action: String): Boolean {
       return action == WidgetAutoRefreshScheduler.ACTION_AUTO_REFRESH ||

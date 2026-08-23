@@ -101,6 +101,87 @@ class TodayWidgetDataTest {
   }
 
   @Test
+  fun `covered cache without background polling timestamp is synchronized`() {
+    val presentation =
+      TodayWidgetData.idleRefreshPresentation(
+        hasCoveredRequiredDate = true,
+        hasAnyScheduleCache = true,
+        isDebuggable = false,
+        pollingEnabled = false,
+        lastSuccessfulAt = null,
+        nowMillis = 10_000L,
+        suggestionDays = 3,
+      )
+
+    assertEquals(TodayWidgetData.RefreshPresentationState.NORMAL, presentation.state)
+    assertEquals("", presentation.text)
+  }
+
+  @Test
+  fun `one covered date keeps multi-day widget synchronized`() {
+    val presentation =
+      TodayWidgetData.idleRefreshPresentation(
+        hasCoveredRequiredDate = true,
+        hasAnyScheduleCache = true,
+        isDebuggable = false,
+        pollingEnabled = false,
+        lastSuccessfulAt = null,
+        nowMillis = 10_000L,
+        suggestionDays = 3,
+      )
+
+    assertEquals(TodayWidgetData.RefreshPresentationState.NORMAL, presentation.state)
+  }
+
+  @Test
+  fun `uncovered date with an older cache is stale instead of unsynchronized`() {
+    val presentation =
+      TodayWidgetData.idleRefreshPresentation(
+        hasCoveredRequiredDate = false,
+        hasAnyScheduleCache = true,
+        isDebuggable = false,
+        pollingEnabled = false,
+        lastSuccessfulAt = null,
+        nowMillis = 10_000L,
+        suggestionDays = 3,
+      )
+
+    assertEquals(TodayWidgetData.RefreshPresentationState.STALE, presentation.state)
+  }
+
+  @Test
+  fun `recently verified cache outside teaching week is normal`() {
+    val presentation =
+      TodayWidgetData.idleRefreshPresentation(
+        hasCoveredRequiredDate = false,
+        hasAnyScheduleCache = true,
+        isDebuggable = false,
+        pollingEnabled = false,
+        lastSuccessfulAt = 9_000L,
+        nowMillis = 10_000L,
+        suggestionDays = 3,
+      )
+
+    assertEquals(TodayWidgetData.RefreshPresentationState.NORMAL, presentation.state)
+  }
+
+  @Test
+  fun `no schedule cache remains unsynchronized`() {
+    val presentation =
+      TodayWidgetData.idleRefreshPresentation(
+        hasCoveredRequiredDate = false,
+        hasAnyScheduleCache = false,
+        isDebuggable = false,
+        pollingEnabled = false,
+        lastSuccessfulAt = null,
+        nowMillis = 10_000L,
+        suggestionDays = 3,
+      )
+
+    assertEquals(TodayWidgetData.RefreshPresentationState.NEEDS_SYNC, presentation.state)
+  }
+
+  @Test
   fun `next course boundary includes both start and end`() {
     val clocks =
       mapOf(
