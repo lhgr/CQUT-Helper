@@ -394,7 +394,7 @@ object TodayWidgetData {
     suggestionDays: Int,
   ): Boolean {
     val normalizedDays = WidgetInstanceConfigStore.normalizeRefreshSuggestionDays(suggestionDays)
-    return nowMillis - lastSuccessfulAt > normalizedDays.toLong() * MILLIS_PER_DAY
+    return nowMillis - lastSuccessfulAt >= normalizedDays.toLong() * MILLIS_PER_DAY
   }
 
   private fun calendarDayDistance(
@@ -463,16 +463,58 @@ object TodayWidgetData {
     }
   }
 
-  fun nextRefreshAtMillis(context: Context): Long? {
-    val now = System.currentTimeMillis()
+  fun nextRefreshAtMillis(
+    context: Context,
+    nowMillis: Long = System.currentTimeMillis(),
+  ): Long? {
     val candidates = mutableListOf<Long>()
-    candidates.add(nextDayRefreshAtMillis(now))
-    val nextCourseBoundary = nextCourseBoundaryAtMillisToday(context, now)
-    if (nextCourseBoundary != null && nextCourseBoundary > now) {
+    candidates.add(nextDayRefreshAtMillis(nowMillis))
+    val nextCourseBoundary = nextCourseBoundaryAtMillisToday(context, nowMillis)
+    if (nextCourseBoundary != null) {
       candidates.add(nextCourseBoundary)
     }
-    return candidates.filter { it > now }.minOrNull()
+    val nextStaleBoundary = nextStalePresentationAtMillis(context, nowMillis)
+    if (nextStaleBoundary != null) {
+      candidates.add(nextStaleBoundary)
+    }
+    return earliestFutureRefreshAtMillis(nowMillis, candidates)
   }
+
+  private fun nextStalePresentationAtMillis(
+    context: Context,
+    nowMillis: Long,
+  ): Long? {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
+    if (account.isEmpty()) return null
+    val lastSuccessfulAt =
+      prefs
+        .getString("$KEY_LAST_SUCCESSFUL_REFRESH_AT_PREFIX$account", null)
+        ?.let(::parseIso8601Millis)
+        ?: migrateLegacyRefreshAt(context, prefs, account)
+        ?: return null
+    val candidates =
+      WidgetRefreshCoordinator.activeWidgetIds(context).map { appWidgetId ->
+        staleRefreshAtMillis(
+          lastSuccessfulAt,
+          WidgetInstanceConfigStore.load(context, appWidgetId).refreshSuggestionDays,
+        )
+      }
+    return earliestFutureRefreshAtMillis(nowMillis, candidates)
+  }
+
+  internal fun staleRefreshAtMillis(
+    lastSuccessfulAt: Long,
+    suggestionDays: Int,
+  ): Long {
+    val normalizedDays = WidgetInstanceConfigStore.normalizeRefreshSuggestionDays(suggestionDays)
+    return lastSuccessfulAt + normalizedDays.toLong() * MILLIS_PER_DAY
+  }
+
+  internal fun earliestFutureRefreshAtMillis(
+    nowMillis: Long,
+    candidates: Iterable<Long>,
+  ): Long? = candidates.filter { it > nowMillis }.minOrNull()
 
   private fun scheduleContainsSystemDate(data: JSONObject): Boolean {
     return scheduleContainsDate(data, widgetCalendar())

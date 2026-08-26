@@ -304,9 +304,11 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
         schedulesByWeek.putIfAbsent(currentWeek, () => current);
       }
       await _controller.ensureTimeInfoLoaded();
+      await _settingsManager.load();
       final result = ScheduleIcsService.generateResult(
         schedules: schedulesByWeek.values,
         timeInfo: _controller.timeInfoList ?? const <CampusTimeInfo>[],
+        defaultReminderMinutes: _settingsManager.defaultReminderMinutes,
       );
       if (result.eventCount == 0) {
         final message = result.sourceEventCount == 0

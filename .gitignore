@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local Flutter package build artifacts
+/packages/**/.gradle/
+/packages/**/build/
+
 # Symbolication related
 app.*.symbols
 

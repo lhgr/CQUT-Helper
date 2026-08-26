@@ -84,6 +84,34 @@ class TodayWidgetDataTest {
   }
 
   @Test
+  fun `refresh becomes stale exactly at its configured boundary`() {
+    val day = 24L * 60 * 60 * 1000
+    val lastUpdated = 1_000L
+    val boundary = TodayWidgetData.staleRefreshAtMillis(lastUpdated, 3)
+
+    assertEquals(lastUpdated + 3 * day, boundary)
+    assertFalse(TodayWidgetData.isRefreshStale(lastUpdated, boundary - 1, 3))
+    assertTrue(TodayWidgetData.isRefreshStale(lastUpdated, boundary, 3))
+  }
+
+  @Test
+  fun `next refresh chooses the earliest future boundary`() {
+    assertEquals(
+      1_500L,
+      TodayWidgetData.earliestFutureRefreshAtMillis(
+        1_000L,
+        listOf(900L, 2_000L, 1_500L, 3_000L),
+      ),
+    )
+    assertNull(
+      TodayWidgetData.earliestFutureRefreshAtMillis(
+        1_000L,
+        listOf(500L, 1_000L),
+      ),
+    )
+  }
+
+  @Test
   fun `non-normal refresh presentation replaces date metadata`() {
     val stale =
       TodayWidgetData.RefreshPresentation(

@@ -25,11 +25,17 @@ class ScheduleIcsService {
   static String generate({
     required Iterable<ScheduleData> schedules,
     required List<CampusTimeInfo> timeInfo,
-  }) => generateResult(schedules: schedules, timeInfo: timeInfo).content;
+    int defaultReminderMinutes = 10,
+  }) => generateResult(
+    schedules: schedules,
+    timeInfo: timeInfo,
+    defaultReminderMinutes: defaultReminderMinutes,
+  ).content;
 
   static ScheduleIcsGenerationResult generateResult({
     required Iterable<ScheduleData> schedules,
     required List<CampusTimeInfo> timeInfo,
+    int defaultReminderMinutes = 10,
   }) {
     final clock = <int, ({String start, String end})>{};
     for (final info in timeInfo) {
@@ -70,6 +76,9 @@ class ScheduleIcsService {
         if (!seen.add(identity)) continue;
         eventCount++;
         final uidBase = '${identity.hashCode.abs()}-${_date(date)}@cqut-helper';
+        final eventName = (event.eventName ?? '').trim().isEmpty
+            ? '课程'
+            : event.eventName!.trim();
         final description = <String>[
           if ((event.memberName ?? '').trim().isNotEmpty)
             '教师：${event.memberName!.trim()}',
@@ -81,10 +90,19 @@ class ScheduleIcsService {
           ..writeln('DTSTAMP:${_utcStamp(DateTime.now().toUtc())}')
           ..writeln('DTSTART:${_date(date)}T$startClock')
           ..writeln('DTEND:${_date(date)}T$endClock')
-          ..writeln('SUMMARY:${_escape(event.eventName ?? '课程')}')
+          ..writeln('SUMMARY:${_escape(eventName)}')
           ..writeln('LOCATION:${_escape(event.address ?? '')}')
-          ..writeln('DESCRIPTION:${_escape(description)}')
-          ..writeln('END:VEVENT');
+          ..writeln('DESCRIPTION:${_escape(description)}');
+        final reminderMinutes = event.reminderMinutes ?? defaultReminderMinutes;
+        if (reminderMinutes > 0) {
+          buffer
+            ..writeln('BEGIN:VALARM')
+            ..writeln('TRIGGER:-PT${reminderMinutes}M')
+            ..writeln('ACTION:DISPLAY')
+            ..writeln('DESCRIPTION:${_escape('$eventName 即将开始')}')
+            ..writeln('END:VALARM');
+        }
+        buffer.writeln('END:VEVENT');
       }
     }
     buffer.writeln('END:VCALENDAR');

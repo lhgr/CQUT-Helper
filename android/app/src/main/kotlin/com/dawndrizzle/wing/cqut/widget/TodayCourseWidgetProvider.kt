@@ -25,14 +25,22 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
   ) {
     val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
     updateAppWidgets(context, appWidgetManager, appWidgetIds, theme)
-    WidgetAutoRefreshScheduler.schedule(context)
+    WidgetRefreshCoordinator.ensureScheduled(context, "today_course_update")
+  }
+
+  override fun onEnabled(context: Context) {
+    super.onEnabled(context)
+    WidgetRefreshCoordinator.ensureScheduled(context, "today_course_enabled")
   }
 
   override fun onReceive(context: Context, intent: Intent) {
     super.onReceive(context, intent)
     when (intent.action) {
-      ACTION_REFRESH -> WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
-      ACTION_THEME_REFRESH -> updateTheme(context)
+      ACTION_REFRESH -> WidgetRefreshCoordinator.refreshAndRepair(context, "today_course_action")
+      ACTION_THEME_REFRESH -> {
+        updateTheme(context)
+        WidgetRefreshCoordinator.ensureScheduled(context, "today_course_theme")
+      }
       ACTION_MANUAL_REFRESH -> {
         val appWidgetId =
           intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
@@ -46,7 +54,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
           toggleDayOffset(context, appWidgetId)
         } else {
-          WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
+          WidgetRefreshCoordinator.refreshAndRepair(context, "today_course_toggle_fallback")
         }
       }
     }
@@ -60,6 +68,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
   ) {
     super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
     updateOne(context, appWidgetId)
+    WidgetRefreshCoordinator.ensureScheduled(context, "today_course_options")
   }
 
   override fun onDeleted(
@@ -68,6 +77,12 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
   ) {
     WidgetInstanceConfigStore.delete(context, appWidgetIds)
     super.onDeleted(context, appWidgetIds)
+    WidgetRefreshCoordinator.cancelIfUnused(context, "today_course_deleted")
+  }
+
+  override fun onDisabled(context: Context) {
+    super.onDisabled(context)
+    WidgetRefreshCoordinator.cancelIfUnused(context, "today_course_disabled")
   }
 
   companion object {
@@ -199,7 +214,6 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       // unchanged. A completed refresh must therefore reload the collection so
       // courses that ended while the worker was running disappear immediately.
       ScheduleWidgetRefreshWork.updateAllRefreshPresentations(context, refreshData)
-      WidgetAutoRefreshScheduler.schedule(context)
     }
 
     internal fun shouldRefreshData(
@@ -446,7 +460,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       // rapid toggles out of order. Patch the header/action immediately and
       // make the existing factory reload the latest persisted day instead.
       updateRefreshPresentation(context, intArrayOf(appWidgetId), refreshData = true)
-      WidgetAutoRefreshScheduler.schedule(context)
+      WidgetRefreshCoordinator.ensureScheduled(context, "today_course_toggle")
     }
   }
 }

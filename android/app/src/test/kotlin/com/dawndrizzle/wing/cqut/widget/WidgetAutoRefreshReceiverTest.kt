@@ -7,10 +7,12 @@ import org.junit.Test
 
 class WidgetAutoRefreshReceiverTest {
   @Test
-  fun `alarm boot package replacement and exact permission changes refresh data`() {
+  fun `alarm clock boot package replacement and exact permission changes refresh data`() {
     val actions =
       listOf(
         WidgetAutoRefreshScheduler.ACTION_AUTO_REFRESH,
+        Intent.ACTION_TIME_CHANGED,
+        Intent.ACTION_TIMEZONE_CHANGED,
         Intent.ACTION_BOOT_COMPLETED,
         Intent.ACTION_MY_PACKAGE_REPLACED,
         WidgetAutoRefreshReceiver.ACTION_EXACT_ALARM_PERMISSION_STATE_CHANGED,
@@ -18,6 +20,17 @@ class WidgetAutoRefreshReceiverTest {
 
     actions.forEach { action ->
       assertTrue(WidgetAutoRefreshReceiver.isDataRefreshAction(action))
+    }
+  }
+
+  @Test
+  fun `restricted implicit screen user and date broadcasts are not relied upon`() {
+    listOf(
+      Intent.ACTION_SCREEN_ON,
+      Intent.ACTION_USER_PRESENT,
+      Intent.ACTION_DATE_CHANGED,
+    ).forEach { action ->
+      assertFalse(WidgetAutoRefreshReceiver.isDataRefreshAction(action))
     }
   }
 

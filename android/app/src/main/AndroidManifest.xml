@@ -102,11 +102,8 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.dawndrizzle.wing.cqut.widget.AUTO_REFRESH" />
-                <action android:name="android.intent.action.DATE_CHANGED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-                <action android:name="android.intent.action.SCREEN_ON" />
-                <action android:name="android.intent.action.USER_PRESENT" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
@@ -118,6 +115,10 @@
             android:permission="android.permission.BIND_REMOTEVIEWS" />
         <service
             android:name="com.dawndrizzle.wing.cqut.widget.ScheduleWidgetManualRefreshJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <service
+            android:name="com.dawndrizzle.wing.cqut.widget.WidgetRefreshHeartbeatJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

@@ -143,4 +143,104 @@ void main() {
     expect(result.skippedEventCount, 0);
     expect(result.content, contains('DTSTART:20260915T101000'));
   });
+
+  test('uses course reminder override before the exported default', () {
+    final content = ScheduleIcsService.generate(
+      schedules: [
+        ScheduleData(
+          weekDayList: [WeekDayItem(weekDay: '1', weekDate: '2026-09-14')],
+          eventList: [
+            EventItem(
+              eventName: 'Signals, and Systems',
+              weekDay: '1',
+              sessionStart: '1',
+              sessionLast: '1',
+              reminderMinutes: 30,
+            ),
+          ],
+        ),
+      ],
+      timeInfo: timeInfo,
+      defaultReminderMinutes: 10,
+    );
+
+    expect(content, contains('BEGIN:VALARM'));
+    expect(content, contains('TRIGGER:-PT30M'));
+    expect(content, contains('ACTION:DISPLAY'));
+    expect(content, contains(r'DESCRIPTION:Signals\, and Systems 即将开始'));
+    expect(RegExp('BEGIN:VALARM').allMatches(content), hasLength(1));
+  });
+
+  test('uses the exported default when a course has no override', () {
+    final content = ScheduleIcsService.generate(
+      schedules: [
+        ScheduleData(
+          weekDayList: [WeekDayItem(weekDay: '1', weekDate: '2026-09-14')],
+          eventList: [
+            EventItem(
+              eventName: 'Linear Algebra',
+              weekDay: '1',
+              sessionStart: '1',
+              sessionLast: '1',
+            ),
+          ],
+        ),
+      ],
+      timeInfo: timeInfo,
+      defaultReminderMinutes: 15,
+    );
+
+    expect(content, contains('TRIGGER:-PT15M'));
+  });
+
+  test('zero reminder suppresses VALARM for that event', () {
+    final content = ScheduleIcsService.generate(
+      schedules: [
+        ScheduleData(
+          weekDayList: [WeekDayItem(weekDay: '1', weekDate: '2026-09-14')],
+          eventList: [
+            EventItem(
+              eventName: 'No Alarm',
+              weekDay: '1',
+              sessionStart: '1',
+              sessionLast: '1',
+              reminderMinutes: 0,
+            ),
+          ],
+        ),
+      ],
+      timeInfo: timeInfo,
+      defaultReminderMinutes: 10,
+    );
+
+    expect(content, isNot(contains('BEGIN:VALARM')));
+  });
+
+  test('duplicate course occurrences emit only one event alarm', () {
+    final duplicate = EventItem(
+      eventID: 'duplicate-1',
+      eventName: 'Duplicated Course',
+      weekDay: '1',
+      sessionStart: '1',
+      sessionLast: '1',
+    );
+    final result = ScheduleIcsService.generateResult(
+      schedules: [
+        ScheduleData(
+          weekDayList: [WeekDayItem(weekDay: '1', weekDate: '2026-09-14')],
+          eventList: [duplicate],
+        ),
+        ScheduleData(
+          weekDayList: [WeekDayItem(weekDay: '1', weekDate: '2026-09-14')],
+          eventList: [duplicate],
+        ),
+      ],
+      timeInfo: timeInfo,
+      defaultReminderMinutes: 10,
+    );
+
+    expect(result.sourceEventCount, 2);
+    expect(result.eventCount, 1);
+    expect(RegExp('BEGIN:VALARM').allMatches(result.content), hasLength(1));
+  });
 }

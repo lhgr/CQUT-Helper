@@ -35,4 +35,16 @@ class WidgetAutoRefreshSchedulerTest {
       WidgetAutoRefreshScheduler.resolveScheduleMode(18, canScheduleExact = false),
     )
   }
+
+  @Test
+  fun `security failures use a permission-free fallback`() {
+    assertEquals(
+      WidgetAlarmScheduleMode.INEXACT_ALLOW_WHILE_IDLE,
+      WidgetAutoRefreshScheduler.resolveInexactFallbackMode(31),
+    )
+    assertEquals(
+      WidgetAlarmScheduleMode.INEXACT,
+      WidgetAutoRefreshScheduler.resolveInexactFallbackMode(22),
+    )
+  }
 }

@@ -20,14 +20,14 @@ object WidgetThemeSyncDispatcher {
       return
     }
     updateWidgets(context, resolution, requiresFullUpdate(trigger))
-    WidgetAutoRefreshScheduler.schedule(context)
+    WidgetRefreshCoordinator.ensureScheduled(context, "theme_dispatch:$trigger")
     if (resolution.shouldAnimate) {
       mainHandler.postDelayed(
         {
           WidgetTheme.commitTransition(context)
           val commitResolution = WidgetTheme.resolve(context, WidgetThemeTrigger.TRANSITION_COMMIT)
           updateWidgets(context, commitResolution, fullUpdate = true)
-          WidgetAutoRefreshScheduler.schedule(context)
+          WidgetRefreshCoordinator.ensureScheduled(context, "theme_commit")
         },
         TRANSITION_DURATION_MS,
       )

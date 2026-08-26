@@ -18,14 +18,22 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
   ) {
     val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
     updateAppWidgets(context, appWidgetManager, appWidgetIds, theme)
-    WidgetAutoRefreshScheduler.schedule(context)
+    WidgetRefreshCoordinator.ensureScheduled(context, "today_and_next_update")
+  }
+
+  override fun onEnabled(context: Context) {
+    super.onEnabled(context)
+    WidgetRefreshCoordinator.ensureScheduled(context, "today_and_next_enabled")
   }
 
   override fun onReceive(context: Context, intent: Intent) {
     super.onReceive(context, intent)
     when (intent.action) {
-      ACTION_REFRESH -> refreshAll(context)
-      ACTION_THEME_REFRESH -> updateTheme(context)
+      ACTION_REFRESH -> WidgetRefreshCoordinator.refreshAndRepair(context, "today_and_next_action")
+      ACTION_THEME_REFRESH -> {
+        updateTheme(context)
+        WidgetRefreshCoordinator.ensureScheduled(context, "today_and_next_theme")
+      }
       ACTION_MANUAL_REFRESH -> {
         val appWidgetId =
           intent.getIntExtra(
@@ -47,6 +55,7 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
   ) {
     super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
     updateOne(context, appWidgetId)
+    WidgetRefreshCoordinator.ensureScheduled(context, "today_and_next_options")
   }
 
   override fun onDeleted(
@@ -55,6 +64,12 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
   ) {
     WidgetInstanceConfigStore.delete(context, appWidgetIds)
     super.onDeleted(context, appWidgetIds)
+    WidgetRefreshCoordinator.cancelIfUnused(context, "today_and_next_deleted")
+  }
+
+  override fun onDisabled(context: Context) {
+    super.onDisabled(context)
+    WidgetRefreshCoordinator.cancelIfUnused(context, "today_and_next_disabled")
   }
 
   companion object {

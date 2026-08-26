@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 
 internal enum class WidgetAlarmScheduleMode {
   EXACT_ALLOW_WHILE_IDLE,
@@ -16,10 +17,18 @@ internal enum class WidgetAlarmScheduleMode {
 object WidgetAutoRefreshScheduler {
   const val ACTION_AUTO_REFRESH = "com.dawndrizzle.wing.cqut.widget.AUTO_REFRESH"
   private const val REQUEST_CODE = 9017
+  private const val TAG = "WidgetRefresh"
 
-  fun schedule(context: Context) {
-    val triggerAt = TodayWidgetData.nextRefreshAtMillis(context) ?: return
-    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+  fun schedule(
+    context: Context,
+    reason: String = "unspecified",
+  ): Boolean {
+    val triggerAt = TodayWidgetData.nextRefreshAtMillis(context) ?: return false
+    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+      ?: run {
+        Log.e(TAG, "event=alarm_unavailable reason=$reason")
+        return false
+      }
     val pendingIntent = pendingIntent(context)
     val canScheduleExact =
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -32,17 +41,45 @@ object WidgetAutoRefreshScheduler {
         true
       }
     val mode = resolveScheduleMode(Build.VERSION.SDK_INT, canScheduleExact)
-    try {
+    return try {
       scheduleWithMode(alarmManager, triggerAt, pendingIntent, mode)
-    } catch (_: SecurityException) {
+      Log.i(
+        TAG,
+        "event=alarm_scheduled reason=$reason triggerAt=$triggerAt mode=$mode",
+      )
+      true
+    } catch (error: SecurityException) {
       // Exact-alarm access can be revoked between the capability check and
       // the call. Preserve eventual refresh through the permission-free path.
-      scheduleWithMode(
-        alarmManager,
-        triggerAt,
-        pendingIntent,
-        resolveInexactFallbackMode(Build.VERSION.SDK_INT),
-      )
+      val fallbackMode = resolveInexactFallbackMode(Build.VERSION.SDK_INT)
+      try {
+        scheduleWithMode(alarmManager, triggerAt, pendingIntent, fallbackMode)
+        Log.w(
+          TAG,
+          "event=alarm_fallback reason=$reason triggerAt=$triggerAt mode=$fallbackMode",
+          error,
+        )
+        true
+      } catch (fallbackError: RuntimeException) {
+        Log.e(TAG, "event=alarm_schedule_failed reason=$reason", fallbackError)
+        false
+      }
+    } catch (error: RuntimeException) {
+      Log.e(TAG, "event=alarm_schedule_failed reason=$reason", error)
+      false
+    }
+  }
+
+  fun cancel(
+    context: Context,
+    reason: String = "unspecified",
+  ) {
+    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+    try {
+      alarmManager.cancel(pendingIntent(context))
+      Log.i(TAG, "event=alarm_cancelled reason=$reason")
+    } catch (error: RuntimeException) {
+      Log.e(TAG, "event=alarm_cancel_failed reason=$reason", error)
     }
   }
 
@@ -60,7 +97,7 @@ object WidgetAutoRefreshScheduler {
     }
   }
 
-  private fun resolveInexactFallbackMode(sdkInt: Int): WidgetAlarmScheduleMode {
+  internal fun resolveInexactFallbackMode(sdkInt: Int): WidgetAlarmScheduleMode {
     return if (sdkInt >= Build.VERSION_CODES.M) {
       WidgetAlarmScheduleMode.INEXACT_ALLOW_WHILE_IDLE
     } else {

@@ -98,6 +98,7 @@ object ScheduleWidgetRefreshWork {
     TodayListWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
     TodayAndNextWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
     TodayCourseWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
+    WidgetRefreshCoordinator.ensureScheduled(context, "manual_refresh_presentation")
   }
 
   internal fun shouldAcceptClick(
@@ -249,7 +250,6 @@ object ScheduleWidgetRefreshWork {
   ) {
     if (!recoverIfCurrent(context, refreshId, account)) return
     updateAllRefreshPresentations(context, refreshData = true)
-    WidgetAutoRefreshScheduler.schedule(context)
   }
 
 }

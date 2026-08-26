@@ -103,7 +103,7 @@ class WidgetConfigurationActivity : Activity() {
     super.onResume()
     updateExactAlarmPermissionPresentation()
     if (canScheduleExactWidgetAlarms()) {
-      WidgetAutoRefreshScheduler.schedule(this)
+      WidgetRefreshCoordinator.ensureScheduled(this, "configuration_resumed")
     }
   }
 
@@ -388,7 +388,7 @@ class WidgetConfigurationActivity : Activity() {
     }
     val appContext = applicationContext
     updateConfiguredWidget(appContext, providerName, appWidgetId)
-    WidgetAutoRefreshScheduler.schedule(this)
+    WidgetRefreshCoordinator.ensureScheduled(this, "configuration_saved")
 
     setResult(
       RESULT_OK,
