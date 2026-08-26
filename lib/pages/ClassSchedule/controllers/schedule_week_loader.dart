@@ -24,6 +24,7 @@ class ScheduleWeekLoader {
   final void Function(String? value) setNowStatusLabel;
   String? _userId;
   String? _encryptedPassword;
+  final Map<String, Future<bool>> _weekLoadRequests = <String, Future<bool>>{};
 
   ScheduleWeekLoader({
     required this.service,
@@ -209,6 +210,37 @@ class ScheduleWeekLoader {
     String yearTerm, {
     bool forceRefresh = false,
     bool updateLastViewed = false,
+  }) async {
+    final requestKey = [
+      yearTerm.trim(),
+      weekNum.trim(),
+      forceRefresh,
+      updateLastViewed,
+    ].join('|');
+    final existing = _weekLoadRequests[requestKey];
+    if (existing != null) return existing;
+
+    final request = _ensureWeekLoadedInternal(
+      weekNum,
+      yearTerm,
+      forceRefresh: forceRefresh,
+      updateLastViewed: updateLastViewed,
+    );
+    _weekLoadRequests[requestKey] = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_weekLoadRequests[requestKey], request)) {
+        _weekLoadRequests.remove(requestKey);
+      }
+    }
+  }
+
+  Future<bool> _ensureWeekLoadedInternal(
+    String weekNum,
+    String yearTerm, {
+    required bool forceRefresh,
+    required bool updateLastViewed,
   }) async {
     final wInt = int.tryParse(weekNum) ?? 0;
     final cache = getWeekCache();

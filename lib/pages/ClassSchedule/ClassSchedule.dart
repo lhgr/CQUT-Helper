@@ -66,6 +66,15 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   int _currentWeekIndex = 0; // 对应 weekList 的 0 基索引
   bool _initialBootRequestPending = true;
   bool _userChangedWeekDuringInitialBoot = false;
+  bool _weekPageScrolling = false;
+  bool _initialBackgroundSyncStarted = false;
+  bool _allWeeksPrefetchInFlight = false;
+  bool _allWeeksPrefetchComplete = false;
+  bool _reminderRebuildStarted = false;
+  ScheduleData? _deferredBackgroundData;
+  Timer? _initialBackgroundSyncTimer;
+  Timer? _allWeeksPrefetchTimer;
+  Timer? _reminderRebuildTimer;
 
   DateTime? _lastMessageTime;
   List<String> _inlineNoticeMessages = const <String>[];
@@ -99,6 +108,9 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     );
     ScheduleSettingsManager.settingsEpoch.removeListener(_onSettingsChanged);
     _updateManager.dispose();
+    _initialBackgroundSyncTimer?.cancel();
+    _allWeeksPrefetchTimer?.cancel();
+    _reminderRebuildTimer?.cancel();
     _controller.dispose();
     _pageController?.dispose();
     super.dispose();
@@ -344,6 +356,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
             child: SchedulePageView(
               pageController: _pageController,
               onPageChanged: _onPageChanged,
+              onScrollActivityChanged: _onWeekPageScrollActivityChanged,
               weekList: _weekList!,
               weekCache: _weekCache,
               showWeekend: _settingsManager.showWeekend,

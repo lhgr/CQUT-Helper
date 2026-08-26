@@ -19,6 +19,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
 
     final cachedData = await _controller.loadFromCache();
     var shouldRefreshCurrentWeek = true;
+    var currentWeekScheduledPrefetch = false;
     if (cachedData != null) {
       _processLoadedData(cachedData, isInitial: true);
       await _loadRefreshSnapshot();
@@ -37,44 +38,140 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     }
 
     if (shouldRefreshCurrentWeek) {
-      await _loadFromNetwork(fromInitialBoot: true);
+      final refreshed = await _loadFromNetwork(fromInitialBoot: true);
+      currentWeekScheduledPrefetch = refreshed != null;
     }
     _initialBootRequestPending = false;
 
     await _consumePendingChangesIfAny();
 
     if (_currentScheduleData != null) {
-      _controller.schedulePrefetch(_currentScheduleData!, () {
-        _setState(() {});
-      }, delay: Duration.zero);
-      unawaited(
-        _controller
-            .prefetchAllWeeksInBackground(
-              _currentScheduleData!,
-              () => _setState(() {}),
-            )
-            .then((_) async {
-              final userId = _controller.userId;
-              if (userId != null && userId.trim().isNotEmpty) {
-                await CourseReminderScheduler.rescheduleForUser(userId);
-              }
-            }),
-      );
+      final currentData = _currentScheduleData!;
+      if (!currentWeekScheduledPrefetch) {
+        _schedulePrefetch(currentData);
+      }
+      _scheduleDeferredInitialWork(currentData);
     }
+    await _maybeShowBackgroundPollingGuide();
+  }
 
-    if (_currentScheduleData != null) {
+  void _scheduleDeferredInitialWork(
+    ScheduleData currentData, {
+    Duration delay = const Duration(milliseconds: 1200),
+  }) {
+    _deferredBackgroundData = currentData;
+    if (_initialBackgroundSyncStarted) {
+      _scheduleAllWeeksPrefetch(currentData);
+      return;
+    }
+    _initialBackgroundSyncTimer?.cancel();
+    if (_weekPageScrolling) return;
+    _initialBackgroundSyncTimer = Timer(delay, () {
+      if (!mounted || _weekPageScrolling || _initialBackgroundSyncStarted) {
+        return;
+      }
+      _initialBackgroundSyncStarted = true;
+      unawaited(_runDeferredInitialSync(currentData));
+    });
+  }
+
+  Future<void> _runDeferredInitialSync(ScheduleData currentData) async {
+    try {
       final changes = _settingsManager.backgroundPollingEnabled
-          ? await _updateManager.checkForUpdates(_currentScheduleData!)
+          ? await _updateManager.checkForUpdates(currentData)
           : const <ScheduleWeekChange>[];
       if (!mounted) return;
       if (changes.isNotEmpty) {
         _showUpdateNotification(changes);
       } else {
-        await _runSilentFallbackSync(_currentScheduleData!);
-        if (!mounted) return;
+        await _runSilentFallbackSync(currentData);
+      }
+    } finally {
+      if (mounted) {
+        _scheduleAllWeeksPrefetch(_currentScheduleData ?? currentData);
       }
     }
-    await _maybeShowBackgroundPollingGuide();
+  }
+
+  void _scheduleAllWeeksPrefetch(
+    ScheduleData currentData, {
+    Duration delay = const Duration(milliseconds: 500),
+  }) {
+    _deferredBackgroundData = currentData;
+    if (_weekPageScrolling ||
+        _allWeeksPrefetchInFlight ||
+        _allWeeksPrefetchComplete) {
+      return;
+    }
+    _allWeeksPrefetchTimer?.cancel();
+    _allWeeksPrefetchTimer = Timer(delay, () {
+      if (!mounted ||
+          _weekPageScrolling ||
+          _allWeeksPrefetchInFlight ||
+          _allWeeksPrefetchComplete) {
+        return;
+      }
+      unawaited(_runAllWeeksPrefetch(currentData));
+    });
+  }
+
+  Future<void> _runAllWeeksPrefetch(ScheduleData currentData) async {
+    _allWeeksPrefetchInFlight = true;
+    final completed = await _controller.prefetchAllWeeksInBackground(
+      currentData,
+      null,
+    );
+    _allWeeksPrefetchInFlight = false;
+    if (!mounted) return;
+    if (!completed) {
+      if (!_weekPageScrolling) {
+        _scheduleAllWeeksPrefetch(_currentScheduleData ?? currentData);
+      }
+      return;
+    }
+    _allWeeksPrefetchComplete = true;
+    _scheduleReminderRebuild();
+  }
+
+  void _scheduleReminderRebuild({
+    Duration delay = const Duration(milliseconds: 750),
+  }) {
+    if (_weekPageScrolling ||
+        !_allWeeksPrefetchComplete ||
+        _reminderRebuildStarted) {
+      return;
+    }
+    _reminderRebuildTimer?.cancel();
+    _reminderRebuildTimer = Timer(delay, () {
+      if (!mounted || _weekPageScrolling || _reminderRebuildStarted) return;
+      final userId = _controller.userId;
+      if (userId == null || userId.trim().isEmpty) return;
+      _reminderRebuildStarted = true;
+      unawaited(CourseReminderScheduler.rescheduleForUser(userId));
+    });
+  }
+
+  void _onWeekPageScrollActivityChanged(bool scrolling) {
+    if (_weekPageScrolling == scrolling) return;
+    _weekPageScrolling = scrolling;
+    if (scrolling) {
+      _initialBackgroundSyncTimer?.cancel();
+      _allWeeksPrefetchTimer?.cancel();
+      _reminderRebuildTimer?.cancel();
+      _controller.cancelPrefetch();
+      return;
+    }
+
+    final currentData = _currentScheduleData ?? _deferredBackgroundData;
+    if (currentData == null) return;
+    _schedulePrefetch(currentData);
+    if (!_initialBackgroundSyncStarted) {
+      _scheduleDeferredInitialWork(currentData);
+    } else if (!_allWeeksPrefetchComplete) {
+      _scheduleAllWeeksPrefetch(currentData);
+    } else {
+      _scheduleReminderRebuild();
+    }
   }
 
   Future<void> _runSilentFallbackSync(ScheduleData currentData) async {
@@ -230,8 +327,9 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
   }
 
   void _schedulePrefetch(ScheduleData currentData) {
+    if (_weekPageScrolling) return;
     _controller.schedulePrefetch(currentData, () {
-      _setState(() {});
+      if (!_weekPageScrolling) _setState(() {});
     });
   }
 

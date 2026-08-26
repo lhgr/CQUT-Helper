@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
@@ -9,6 +11,7 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
   ScheduleData? cacheResult;
   final Map<String, ScheduleData> cacheResults = <String, ScheduleData>{};
   ScheduleData? networkResult;
+  Completer<ScheduleData>? networkCompleter;
   int cacheCalls = 0;
   int networkCalls = 0;
   String? lastEncryptedPassword;
@@ -36,6 +39,8 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
   }) async {
     networkCalls++;
     lastEncryptedPassword = encryptedPassword;
+    final pending = networkCompleter;
+    if (pending != null) return pending.future;
     return networkResult!;
   }
 }
@@ -248,6 +253,32 @@ void main() {
 
       expect(success, isFalse);
       expect(weekCache, isEmpty);
+    });
+
+    test('并发加载同一周时复用同一个请求', () async {
+      SharedPreferences.setMockInitialValues({'account': 'u1'});
+      final pending = Completer<ScheduleData>();
+      final api = _FakeWeekLoaderScheduleApi()..networkCompleter = pending;
+      final loader = buildLoader(
+        api,
+        credentialStore: _FakeWeekLoaderCredentialStore(value: 'secure-p1'),
+      );
+
+      final first = loader.ensureWeekLoaded('2', '2024-2025-2');
+      final second = loader.ensureWeekLoaded('2', '2024-2025-2');
+      await Future<void>.delayed(Duration.zero);
+      pending.complete(
+        ScheduleData(
+          weekNum: '2',
+          yearTerm: '2024-2025-2',
+          weekList: const ['1', '2', '3'],
+          eventList: const [],
+        ),
+      );
+
+      expect(await Future.wait([first, second]), [isTrue, isTrue]);
+      expect(api.cacheCalls, 1);
+      expect(api.networkCalls, 1);
     });
   });
 }

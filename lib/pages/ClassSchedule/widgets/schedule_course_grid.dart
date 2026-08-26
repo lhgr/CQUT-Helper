@@ -58,12 +58,19 @@ class ScheduleCourseGrid extends StatefulWidget {
 
 class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
   Map<String, int> _courseColorIndexMap = <String, int>{};
+  List<EventItem> _visibleEvents = const <EventItem>[];
+  _ConflictRenderPlan _renderPlan = const _ConflictRenderPlan(
+    cards: <_DisplayCard>[],
+    borders: <_BorderOverlay>[],
+  );
+  List<_BorderOverlay> _sortedBorders = const <_BorderOverlay>[];
 
   @override
   void initState() {
     super.initState();
     _courseColorIndexMap = CourseColorAssignmentManager.instance
         .getCachedAssignments(widget.yearTerm);
+    _rebuildRenderPlan();
     _warmupCourseColorMap();
   }
 
@@ -80,6 +87,32 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
         oldWidget.showWeekend != widget.showWeekend) {
       _warmupCourseColorMap();
     }
+    if (oldWidget.events != widget.events ||
+        oldWidget.showWeekend != widget.showWeekend) {
+      _rebuildRenderPlan();
+    }
+  }
+
+  void _rebuildRenderPlan() {
+    _visibleEvents = widget.showWeekend
+        ? widget.events
+        : widget.events
+              .where((event) {
+                final weekDay = int.tryParse(event.weekDay ?? '1') ?? 1;
+                return weekDay >= 1 && weekDay <= 5;
+              })
+              .toList(growable: false);
+    _renderPlan = _buildRenderPlan(_buildConflictGroups(_visibleEvents));
+    _sortedBorders = List<_BorderOverlay>.from(_renderPlan.borders)
+      ..sort((a, b) {
+        final byDay = a.weekDay.compareTo(b.weekDay);
+        if (byDay != 0) return byDay;
+        final byDuration = b.duration.compareTo(a.duration);
+        if (byDuration != 0) return byDuration;
+        final byStart = a.start.compareTo(b.start);
+        if (byStart != 0) return byStart;
+        return a.insetLevel.compareTo(b.insetLevel);
+      });
   }
 
   String _buildCourseKey(EventItem event) {
@@ -486,27 +519,6 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
         final int dayCount = widget.showWeekend ? 7 : 5;
         final double dayWidth = constraints.maxWidth / dayCount;
         final double totalHeight = widget.sessionHeight * widget.sessionCount;
-        final visibleEvents = widget.showWeekend
-            ? widget.events
-            : widget.events
-                  .where((event) {
-                    final weekDay = int.tryParse(event.weekDay ?? '1') ?? 1;
-                    return weekDay >= 1 && weekDay <= 5;
-                  })
-                  .toList(growable: false);
-        final conflictGroups = _buildConflictGroups(visibleEvents);
-        final renderPlan = _buildRenderPlan(conflictGroups);
-        final sortedBorders = List<_BorderOverlay>.from(renderPlan.borders)
-          ..sort((a, b) {
-            final byDay = a.weekDay.compareTo(b.weekDay);
-            if (byDay != 0) return byDay;
-            final byDuration = b.duration.compareTo(a.duration);
-            if (byDuration != 0) return byDuration;
-            final byStart = a.start.compareTo(b.start);
-            if (byStart != 0) return byStart;
-            return a.insetLevel.compareTo(b.insetLevel);
-          });
-
         return SizedBox(
           height: totalHeight,
           child: Stack(
@@ -554,7 +566,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                 }),
 
               // Events
-              if (visibleEvents.isEmpty)
+              if (_visibleEvents.isEmpty)
                 Center(
                   child: Text(
                     "本周无课",
@@ -562,7 +574,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                   ),
                 )
               else ...[
-                ...renderPlan.cards.map((card) {
+                ..._renderPlan.cards.map((card) {
                   final event = card.event;
                   final int weekDay = card.weekDay;
                   final int start = card.start;
@@ -633,7 +645,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                     ),
                   );
                 }),
-                ...sortedBorders.map((border) {
+                ..._sortedBorders.map((border) {
                   final int weekDay = border.weekDay;
                   final int start = border.start;
                   final int duration = border.duration;
@@ -695,7 +707,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                     ),
                   );
                 }),
-                ...renderPlan.cards.map((card) {
+                ..._renderPlan.cards.map((card) {
                   final event = card.event;
                   final int weekDay = card.weekDay;
                   final int start = card.start;

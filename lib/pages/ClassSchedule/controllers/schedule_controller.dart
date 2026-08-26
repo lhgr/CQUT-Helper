@@ -85,6 +85,8 @@ class ScheduleController {
     _refreshOrchestrator.cancelPrefetch();
   }
 
+  void cancelPrefetch() => _refreshOrchestrator.cancelPrefetch();
+
   Future<bool> loadTimeInfoFromCacheIfAny() {
     return _timeInfoCoordinator.loadTimeInfoFromCacheIfAny();
   }
@@ -196,9 +198,9 @@ class ScheduleController {
     );
   }
 
-  Future<void> prefetchAllWeeksInBackground(
+  Future<bool> prefetchAllWeeksInBackground(
     ScheduleData currentData,
-    Function() onUpdate, {
+    void Function()? onUpdate, {
     Duration interval = const Duration(milliseconds: 150),
     bool forceRefresh = false,
   }) {

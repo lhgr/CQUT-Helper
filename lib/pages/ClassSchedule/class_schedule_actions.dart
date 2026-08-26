@@ -6,21 +6,19 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       _userChangedWeekDuringInitialBoot = true;
     }
 
-    _setState(() {
-      _currentWeekIndex = index;
-    });
-
     if (_weekList == null || index < 0 || index >= _weekList!.length) return;
 
     final targetWeek = _weekList![index];
     final currentTerm = _currentScheduleData?.yearTerm ?? _currentTerm;
 
     final wInt = int.tryParse(targetWeek) ?? 0;
-    if (_weekCache.containsKey(wInt)) {
-      _setState(() {
-        _currentScheduleData = _weekCache[wInt];
-      });
-      _schedulePrefetch(_weekCache[wInt]!);
+    final cachedWeek = _weekCache[wInt];
+    _setState(() {
+      _currentWeekIndex = index;
+      if (cachedWeek != null) _currentScheduleData = cachedWeek;
+    });
+    if (cachedWeek != null) {
+      _schedulePrefetch(cachedWeek);
     } else if (currentTerm != null) {
       _ensureWeekLoaded(targetWeek, currentTerm);
     }
