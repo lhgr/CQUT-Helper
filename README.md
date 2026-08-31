@@ -131,7 +131,7 @@
 ## ⚠️ 项目说明
 
 > \[!NOTE]
-> 本项目的代码由 **GPT** 完成，主要用于学习与实验。代码质量和设计模式可能仍有不足，仅供参考。
+> 本项目的代码由 **GPT** 完成，主要用于学习与实验。代码质量和设计模式可能仍有不足，仅供参考。如果您不想吃这坨AI拉的💩可以了解一下[拾光课程表](https://github.com/XingHeYuZhuan/shiguangschedule)
 
 如果你在使用中遇到问题或有建议，欢迎提交
 [Issue](https://github.com/lhgr/CQUT-Helper/issues) 或发送邮件至

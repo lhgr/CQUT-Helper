@@ -70,7 +70,7 @@ class CourseApi {
     String? contentType,
   }) {
     final diagnostics = <String, Object?>{
-      if (statusCode != null) 'response_status': statusCode,
+      'response_status': ?statusCode,
       if (contentType != null && contentType.trim().isNotEmpty)
         'response_content_type': contentType.trim(),
       'response_shape': _responseShape(raw),

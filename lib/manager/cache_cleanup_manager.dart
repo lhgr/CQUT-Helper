@@ -258,7 +258,7 @@ class CacheCleanupManager {
   static Future<int?> _getImageCacheBytes() async {
     try {
       final tempDir = await getTemporaryDirectory();
-      return getImageCacheBytesIn(tempDir);
+      return await getImageCacheBytesIn(tempDir);
     } catch (_) {
       return null;
     }
