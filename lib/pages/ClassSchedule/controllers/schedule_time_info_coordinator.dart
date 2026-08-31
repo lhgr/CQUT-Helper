@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cqut_helper/api/course/course_api.dart';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
@@ -13,6 +14,8 @@ class ScheduleTimeInfoCoordinator {
   final void Function(List<CampusTimeInfo> value) setTimeInfoList;
   final Future<void> Function()? onTimeInfoUpdated;
   static Future<bool>? _sharedRefreshInFlight;
+  static String? _sharedCacheRaw;
+  static _TimeInfoCacheSnapshot? _sharedCacheSnapshot;
 
   ScheduleTimeInfoCoordinator({
     required this.service,
@@ -28,8 +31,11 @@ class ScheduleTimeInfoCoordinator {
       'schedule_time_info_last_attempt_at';
   static const String _prefsKeyTimeInfoLastSuccessfulCheckAt =
       'schedule_time_info_last_successful_check_at';
+  static const String _prefsKeyTimeInfoConsecutiveFailures =
+      'schedule_time_info_consecutive_failures';
   static const int _freshnessIntervalMs = 12 * 60 * 60 * 1000;
   static const int _failureRetryCooldownMs = 5 * 60 * 1000;
+  static const int _maxFailureRetryCooldownMs = 6 * 60 * 60 * 1000;
   static const int _forcedRefreshBurstCooldownMs = 2 * 1000;
 
   String _timeInfoFingerprint(List<CampusTimeInfo> list) {
@@ -50,6 +56,11 @@ class ScheduleTimeInfoCoordinator {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKeyTimeInfoCache);
     if (raw == null || raw.trim().isEmpty) return false;
+    final sharedSnapshot = _sharedCacheSnapshot;
+    if (_sharedCacheRaw == raw && sharedSnapshot != null) {
+      setTimeInfoList(List<CampusTimeInfo>.from(sharedSnapshot.items));
+      return true;
+    }
     try {
       final decoded = json.decode(raw);
       if (decoded is! Map<String, dynamic>) return false;
@@ -64,14 +75,21 @@ class ScheduleTimeInfoCoordinator {
         }
       }
       if (list.isEmpty) return false;
-      setTimeInfoList(list);
+      final snapshot = _TimeInfoCacheSnapshot(
+        items: List<CampusTimeInfo>.unmodifiable(list),
+        campusName: decoded['campusName']?.toString(),
+        updatedAt: decoded['updatedAt'],
+      );
+      _sharedCacheRaw = raw;
+      _sharedCacheSnapshot = snapshot;
+      setTimeInfoList(List<CampusTimeInfo>.from(snapshot.items));
       AppLogger.I.info(
         'TimeInfo',
         'cache_loaded',
         fields: {
           'count': list.length,
-          'campus': decoded['campusName']?.toString(),
-          'updatedAt': decoded['updatedAt'],
+          'campus': snapshot.campusName,
+          'updatedAt': snapshot.updatedAt,
         },
       );
       return true;
@@ -158,6 +176,9 @@ class ScheduleTimeInfoCoordinator {
     final lastAttemptAt = prefs.getInt(_prefsKeyTimeInfoLastAttemptAt) ?? 0;
     final lastSuccessfulCheckAt =
         prefs.getInt(_prefsKeyTimeInfoLastSuccessfulCheckAt) ?? cachedUpdatedAt;
+    final consecutiveFailures =
+        prefs.getInt(_prefsKeyTimeInfoConsecutiveFailures) ?? 0;
+    final failureRetryCooldown = failureRetryCooldownMs(consecutiveFailures);
     final sinceAttemptMs = nowMs - lastAttemptAt;
     final sinceSuccessfulCheckMs = nowMs - lastSuccessfulCheckAt;
     final hasCache = oldFp != null;
@@ -170,7 +191,7 @@ class ScheduleTimeInfoCoordinator {
                   sinceSuccessfulCheckMs < _freshnessIntervalMs
               ? 'cache_fresh'
               : (lastAttemptAt > lastSuccessfulCheckAt &&
-                        sinceAttemptMs < _failureRetryCooldownMs
+                        sinceAttemptMs < failureRetryCooldown
                     ? 'recent_failure'
                     : null));
     if (skipReason != null) {
@@ -183,6 +204,8 @@ class ScheduleTimeInfoCoordinator {
           'hasCache': hasCache,
           'sinceAttemptMs': sinceAttemptMs,
           'sinceSuccessfulCheckMs': sinceSuccessfulCheckMs,
+          'consecutiveFailures': consecutiveFailures,
+          'failureRetryCooldownMs': failureRetryCooldown,
         },
       );
       return false;
@@ -198,6 +221,9 @@ class ScheduleTimeInfoCoordinator {
     try {
       fetched = await service.fetchCampusTimeInfo(campusName);
     } catch (e, st) {
+      final failureCount = consecutiveFailures + 1;
+      await prefs.setInt(_prefsKeyTimeInfoConsecutiveFailures, failureCount);
+      final apiError = e is CourseApiException ? e : null;
       AppLogger.I.event(
         LogLevel.warn,
         'TimeInfo',
@@ -207,15 +233,44 @@ class ScheduleTimeInfoCoordinator {
         module: 'time_info',
         action: 'refresh',
         status: 'fail',
-        reason: 'fetch_failed',
+        reason: apiError?.kind.name ?? 'fetch_failed',
         error: e,
         stackTrace: st,
-        fields: {'campus': campusName},
+        fields: {
+          'campus': campusName,
+          'cacheAvailable': hasCache,
+          if (cachedUpdatedAt > 0)
+            'cacheAgeMs': (nowMs - cachedUpdatedAt).clamp(0, 1 << 62),
+          'consecutiveFailures': failureCount,
+          if (apiError?.statusCode != null) 'statusCode': apiError!.statusCode,
+          if (apiError != null) ...apiError.diagnostics,
+        },
       );
       return false;
     }
-    if (fetched.isEmpty) return false;
+    if (fetched.isEmpty) {
+      final failureCount = consecutiveFailures + 1;
+      await prefs.setInt(_prefsKeyTimeInfoConsecutiveFailures, failureCount);
+      AppLogger.I.event(
+        LogLevel.warn,
+        'TimeInfo',
+        event: 'schedule_time_info_empty_response',
+        messageZh: '校区节次信息为空，继续使用本地缓存',
+        message: 'empty response; cache retained',
+        module: 'time_info',
+        action: 'refresh',
+        status: 'fail',
+        reason: 'empty_response',
+        fields: {
+          'campus': campusName,
+          'cacheAvailable': hasCache,
+          'consecutiveFailures': failureCount,
+        },
+      );
+      return false;
+    }
 
+    await prefs.setInt(_prefsKeyTimeInfoConsecutiveFailures, 0);
     await prefs.setInt(_prefsKeyTimeInfoLastSuccessfulCheckAt, nowMs);
 
     final newFp = _timeInfoFingerprint(fetched);
@@ -268,4 +323,29 @@ class ScheduleTimeInfoCoordinator {
     await loadTimeInfoFromCacheIfAny();
     await refreshTimeInfoIfEnabled();
   }
+
+  static int failureRetryCooldownMs(int consecutiveFailures) {
+    var cooldown = _failureRetryCooldownMs;
+    for (var attempt = 1; attempt < consecutiveFailures; attempt++) {
+      if (cooldown >= _maxFailureRetryCooldownMs) {
+        return _maxFailureRetryCooldownMs;
+      }
+      cooldown *= 2;
+    }
+    return cooldown > _maxFailureRetryCooldownMs
+        ? _maxFailureRetryCooldownMs
+        : cooldown;
+  }
+}
+
+class _TimeInfoCacheSnapshot {
+  const _TimeInfoCacheSnapshot({
+    required this.items,
+    required this.campusName,
+    required this.updatedAt,
+  });
+
+  final List<CampusTimeInfo> items;
+  final String? campusName;
+  final Object? updatedAt;
 }

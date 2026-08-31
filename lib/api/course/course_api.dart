@@ -15,8 +15,14 @@ class CourseApiException implements Exception {
   final CourseApiErrorKind kind;
   final String message;
   final int? statusCode;
+  final Map<String, Object?> diagnostics;
 
-  const CourseApiException(this.kind, this.message, {this.statusCode});
+  const CourseApiException(
+    this.kind,
+    this.message, {
+    this.statusCode,
+    this.diagnostics = const <String, Object?>{},
+  });
 
   @override
   String toString() => message;
@@ -46,10 +52,72 @@ class CourseApi {
     final resp = await _client.dio.post(_campusTimeInfoApi, data: body);
     final items = parseCampusTimeInfoResponse(resp.data);
     if (items != null) return items;
-    throw const CourseApiException(
+    throw CourseApiException(
       CourseApiErrorKind.invalidResponse,
       '校区节次信息返回格式异常，请稍后重试',
+      statusCode: resp.statusCode,
+      diagnostics: campusTimeInfoResponseDiagnostics(
+        raw: resp.data,
+        statusCode: resp.statusCode,
+        contentType: resp.headers.value(Headers.contentTypeHeader),
+      ),
     );
+  }
+
+  static Map<String, Object?> campusTimeInfoResponseDiagnostics({
+    required dynamic raw,
+    int? statusCode,
+    String? contentType,
+  }) {
+    final diagnostics = <String, Object?>{
+      if (statusCode != null) 'response_status': statusCode,
+      if (contentType != null && contentType.trim().isNotEmpty)
+        'response_content_type': contentType.trim(),
+      'response_shape': _responseShape(raw),
+      'response_size': _responseSize(raw),
+    };
+    if (raw is Map) {
+      diagnostics['response_keys'] = raw.keys
+          .take(12)
+          .map((key) => _safeDiagnosticKey(key.toString()))
+          .where((key) => key.isNotEmpty)
+          .join(',');
+      for (final key in const ['code', 'status', 'success']) {
+        final value = raw[key];
+        if (value is num || value is bool) {
+          diagnostics['response_$key'] = value;
+        } else if (value is String && value.length <= 32) {
+          diagnostics['response_$key'] = _safeDiagnosticKey(value);
+        }
+      }
+    }
+    return diagnostics;
+  }
+
+  static String _responseShape(dynamic raw) {
+    if (raw == null) return 'null';
+    if (raw is List) return 'list';
+    if (raw is Map) return 'map';
+    if (raw is String) {
+      final text = raw.trimLeft();
+      if (text.startsWith('<')) return 'html_string';
+      if (text.startsWith('{') || text.startsWith('[')) return 'json_string';
+      return 'text_string';
+    }
+    return raw.runtimeType.toString();
+  }
+
+  static int _responseSize(dynamic raw) {
+    if (raw == null) return 0;
+    if (raw is String) return raw.length;
+    if (raw is List) return raw.length;
+    if (raw is Map) return raw.length;
+    return raw.toString().length;
+  }
+
+  static String _safeDiagnosticKey(String value) {
+    final safe = value.replaceAll(RegExp(r'[^a-zA-Z0-9_.-]'), '_');
+    return safe.substring(0, safe.length > 64 ? 64 : safe.length);
   }
 
   /// Accepts both the historical top-level list and common API envelope

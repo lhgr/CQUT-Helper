@@ -256,6 +256,28 @@ class TodayWidgetDataTest {
   }
 
   @Test
+  fun `visible course fingerprint changes when an ended course disappears`() {
+    val course =
+      TodayWidgetData.CourseItem(
+        eventId = "event-1",
+        courseKey = "course-1",
+        name = "软件工程",
+        campus = "两江校区",
+        classroom = "A101",
+        teacher = "教师",
+        periods = "第1-2节",
+        indicatorColor = 0,
+        sortOrder = 1,
+      )
+    val before = TodayWidgetData.visibleCoursesFingerprint(listOf(0 to listOf(course)))
+    val same = TodayWidgetData.visibleCoursesFingerprint(listOf(0 to listOf(course.copy())))
+    val after = TodayWidgetData.visibleCoursesFingerprint(listOf(0 to emptyList()))
+
+    assertEquals(before, same)
+    assertFalse(before == after)
+  }
+
+  @Test
   fun `day rollover is exactly midnight in Beijing`() {
     val originalTimeZone = TimeZone.getDefault()
     try {

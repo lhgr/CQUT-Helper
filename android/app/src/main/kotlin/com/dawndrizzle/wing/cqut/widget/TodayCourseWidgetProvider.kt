@@ -7,7 +7,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import android.widget.RemoteViews
 import com.dawndrizzle.wing.cqut.R
 
@@ -205,10 +204,11 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       val contentChanged =
         previousContentFingerprint == null ||
           previousContentFingerprint != currentContentFingerprint
-      Log.i(
-        "WidgetManualRefresh",
+      WidgetNativeLog.info(
+        context,
         "event=completion refreshId=$refreshId state=${refreshPresentation.state} " +
           "contentChanged=$contentChanged refreshData=$refreshData",
+        tag = "WidgetManualRefresh",
       )
       // The visible rows are time-dependent even when the schedule JSON is
       // unchanged. A completed refresh must therefore reload the collection so
@@ -460,6 +460,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       // rapid toggles out of order. Patch the header/action immediately and
       // make the existing factory reload the latest persisted day instead.
       updateRefreshPresentation(context, intArrayOf(appWidgetId), refreshData = true)
+      WidgetRefreshCoordinator.recordRenderedState(context, persistLog = false)
       WidgetRefreshCoordinator.ensureScheduled(context, "today_course_toggle")
     }
   }

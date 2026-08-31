@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
-import android.util.Log
 import java.util.UUID
 
 object ScheduleWidgetRefreshWork {
@@ -27,7 +26,11 @@ object ScheduleWidgetRefreshWork {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
     if (account.isEmpty()) {
-      Log.i(TAG, "event=click_rejected reason=missing_account widgetId=$appWidgetId")
+      WidgetNativeLog.info(
+        context,
+        "event=click_rejected reason=missing_account widgetId=$appWidgetId",
+        tag = TAG,
+      )
       updateAllRefreshPresentations(context, refreshData = true)
       return
     }
@@ -37,9 +40,10 @@ object ScheduleWidgetRefreshWork {
     val activeToken = leasePrefs.getString(LEASE_TOKEN_KEY, null)
     val activeStartedAt = leasePrefs.getLong(LEASE_STARTED_AT_KEY, 0L)
     if (!shouldAcceptClick(activeToken, activeStartedAt, now)) {
-      Log.i(
-        TAG,
+      WidgetNativeLog.info(
+        context,
         "event=click_deduplicated widgetId=$appWidgetId refreshId=$activeToken",
+        tag = TAG,
       )
       return
     }
@@ -72,9 +76,10 @@ object ScheduleWidgetRefreshWork {
           contentFingerprint = contentFingerprint,
         ),
       ) { "manual widget refresh job was rejected" }
-      Log.i(
-        TAG,
+      WidgetNativeLog.info(
+        context,
         "event=job_scheduled widgetId=$appWidgetId refreshId=$refreshId",
+        tag = TAG,
       )
     } catch (error: RuntimeException) {
       ScheduleWidgetManualRefreshJobService.cancel(context)
@@ -87,7 +92,12 @@ object ScheduleWidgetRefreshWork {
         .remove("$TOKEN_KEY_PREFIX$account")
         .commit()
       updateAllRefreshPresentations(context, refreshData = true)
-      Log.e(TAG, "event=enqueue_failed widgetId=$appWidgetId refreshId=$refreshId", error)
+      WidgetNativeLog.error(
+        context,
+        "event=enqueue_failed widgetId=$appWidgetId refreshId=$refreshId",
+        error,
+        tag = TAG,
+      )
     }
   }
 
@@ -192,7 +202,11 @@ object ScheduleWidgetRefreshWork {
         .putString(stateKey, "failed")
         .putString("$FAILURE_KEY_PREFIX$account", "generic")
         .commit()
-      Log.w(TAG, "event=state_repaired refreshId=$refreshId from=loading to=failed")
+      WidgetNativeLog.warn(
+        context,
+        "event=state_repaired refreshId=$refreshId from=loading to=failed",
+        tag = TAG,
+      )
     }
 
     try {
@@ -234,7 +248,11 @@ object ScheduleWidgetRefreshWork {
         .putString(stateKey, "failed")
         .putString("$FAILURE_KEY_PREFIX$account", "generic")
         .commit()
-      Log.w(TAG, "event=watchdog_recovered refreshId=$refreshId from=loading to=failed")
+      WidgetNativeLog.warn(
+        context,
+        "event=watchdog_recovered refreshId=$refreshId from=loading to=failed",
+        tag = TAG,
+      )
     }
     // Keep the expired token and lease until the worker finishes or a new
     // click replaces them. [shouldAcceptClick] already permits retry after the

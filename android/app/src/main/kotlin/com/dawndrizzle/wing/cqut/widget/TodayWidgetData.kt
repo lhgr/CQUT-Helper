@@ -3,7 +3,6 @@ package com.dawndrizzle.wing.cqut.widget
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.text.format.DateUtils
-import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -26,6 +25,17 @@ object TodayWidgetData {
     FAILED,
     CREDENTIAL_INVALID,
   }
+
+  internal enum class RefreshBoundaryKind {
+    MIDNIGHT,
+    COURSE,
+    STALE,
+  }
+
+  internal data class RefreshTarget(
+    val atMillis: Long,
+    val kind: RefreshBoundaryKind,
+  )
 
   data class RefreshPresentation(
     val state: RefreshPresentationState,
@@ -227,11 +237,12 @@ object TodayWidgetData {
     )
     val refreshAgeMillis =
       lastSuccessfulAt?.let { (System.currentTimeMillis() - it).coerceAtLeast(0L) }
-    Log.i(
-      "WidgetScheduleState",
+    WidgetNativeLog.debug(
+      context,
       "offsets=${offsets.joinToString()} covered=$hasCoveredRequiredDate " +
         "cacheCount=${scheduleCandidates.size} polling=$pollingEnabled " +
         "refreshAgeMs=${refreshAgeMillis ?: -1L} state=${presentation.state}",
+      tag = "WidgetScheduleState",
     )
     return presentation
   }
@@ -433,6 +444,44 @@ object TodayWidgetData {
     return filterEndedCourses(context, targetData, courses)
   }
 
+  internal fun loadVisibleCoursesFingerprint(
+    context: Context,
+    dayOffsets: IntArray,
+  ): String {
+    val coursesByOffset =
+      dayOffsets
+        .asSequence()
+        .distinct()
+        .sorted()
+        .map { dayOffset -> dayOffset to loadCoursesByDayOffset(context, dayOffset) }
+        .toList()
+    return visibleCoursesFingerprint(coursesByOffset)
+  }
+
+  internal fun visibleCoursesFingerprint(
+    coursesByOffset: List<Pair<Int, List<CourseItem>>>,
+  ): String {
+    val payload =
+      coursesByOffset.joinToString("\u0002") { (dayOffset, courses) ->
+        val coursePayload =
+          courses.joinToString("\u0001") { course ->
+            listOf(
+              course.eventId.orEmpty(),
+              course.courseKey,
+              course.name,
+              course.campus,
+              course.classroom,
+              course.teacher,
+              course.periods,
+              course.indicatorColor.toString(),
+              course.sortOrder.toString(),
+            ).joinToString("\u0000")
+          }
+        "$dayOffset\u0003$coursePayload"
+      }
+    return sha256Hex(payload)
+  }
+
   fun loadEmptyStateText(context: Context, dayOffset: Int): String {
     return emptyStateTextFor(loadDayScheduleAvailability(context, dayOffset))
   }
@@ -466,18 +515,25 @@ object TodayWidgetData {
   fun nextRefreshAtMillis(
     context: Context,
     nowMillis: Long = System.currentTimeMillis(),
-  ): Long? {
-    val candidates = mutableListOf<Long>()
-    candidates.add(nextDayRefreshAtMillis(nowMillis))
+  ): Long? = nextRefreshTarget(context, nowMillis)?.atMillis
+
+  internal fun nextRefreshTarget(
+    context: Context,
+    nowMillis: Long = System.currentTimeMillis(),
+  ): RefreshTarget? {
+    val candidates = mutableListOf<RefreshTarget>()
+    candidates.add(
+      RefreshTarget(nextDayRefreshAtMillis(nowMillis), RefreshBoundaryKind.MIDNIGHT),
+    )
     val nextCourseBoundary = nextCourseBoundaryAtMillisToday(context, nowMillis)
     if (nextCourseBoundary != null) {
-      candidates.add(nextCourseBoundary)
+      candidates.add(RefreshTarget(nextCourseBoundary, RefreshBoundaryKind.COURSE))
     }
     val nextStaleBoundary = nextStalePresentationAtMillis(context, nowMillis)
     if (nextStaleBoundary != null) {
-      candidates.add(nextStaleBoundary)
+      candidates.add(RefreshTarget(nextStaleBoundary, RefreshBoundaryKind.STALE))
     }
-    return earliestFutureRefreshAtMillis(nowMillis, candidates)
+    return candidates.filter { it.atMillis > nowMillis }.minByOrNull { it.atMillis }
   }
 
   private fun nextStalePresentationAtMillis(
@@ -771,12 +827,14 @@ object TodayWidgetData {
     week: String,
     scheduleJson: String?,
   ): String {
-    val bytes = "$account\u0000$term\u0000$week\u0000${scheduleJson.orEmpty()}".toByteArray()
-    return MessageDigest
-      .getInstance("SHA-256")
-      .digest(bytes)
-      .joinToString("") { "%02x".format(it) }
+    return sha256Hex("$account\u0000$term\u0000$week\u0000${scheduleJson.orEmpty()}")
   }
+
+  private fun sha256Hex(value: String): String =
+    MessageDigest
+      .getInstance("SHA-256")
+      .digest(value.toByteArray())
+      .joinToString("") { "%02x".format(it) }
 
   private fun isSameAsDate(weekDateText: String, targetDate: Calendar): Boolean {
     val parsed = extractScheduleDate(weekDateText) ?: return false

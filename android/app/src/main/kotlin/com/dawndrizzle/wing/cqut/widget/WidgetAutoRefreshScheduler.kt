@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.util.Log
 
 internal enum class WidgetAlarmScheduleMode {
   EXACT_ALLOW_WHILE_IDLE,
@@ -14,19 +13,27 @@ internal enum class WidgetAlarmScheduleMode {
   INEXACT,
 }
 
+internal data class WidgetAlarmScheduleKey(
+  val triggerAtMillis: Long,
+  val mode: WidgetAlarmScheduleMode,
+)
+
 object WidgetAutoRefreshScheduler {
   const val ACTION_AUTO_REFRESH = "com.dawndrizzle.wing.cqut.widget.AUTO_REFRESH"
   private const val REQUEST_CODE = 9017
-  private const val TAG = "WidgetRefresh"
+  private var lastScheduledKey: WidgetAlarmScheduleKey? = null
+  private var cancellationCheckedInProcess = false
 
+  @Synchronized
   fun schedule(
     context: Context,
     reason: String = "unspecified",
   ): Boolean {
-    val triggerAt = TodayWidgetData.nextRefreshAtMillis(context) ?: return false
+    val target = TodayWidgetData.nextRefreshTarget(context) ?: return false
+    val triggerAt = target.atMillis
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
       ?: run {
-        Log.e(TAG, "event=alarm_unavailable reason=$reason")
+        WidgetNativeLog.error(context, "event=alarm_unavailable reason=$reason")
         return false
       }
     val pendingIntent = pendingIntent(context)
@@ -41,11 +48,22 @@ object WidgetAutoRefreshScheduler {
         true
       }
     val mode = resolveScheduleMode(Build.VERSION.SDK_INT, canScheduleExact)
+    val scheduleKey = WidgetAlarmScheduleKey(triggerAt, mode)
+    if (lastScheduledKey == scheduleKey) {
+      WidgetNativeLog.debug(
+        context,
+        "event=alarm_schedule_unchanged reason=$reason triggerAt=$triggerAt mode=$mode",
+      )
+      return true
+    }
     return try {
       scheduleWithMode(alarmManager, triggerAt, pendingIntent, mode)
-      Log.i(
-        TAG,
-        "event=alarm_scheduled reason=$reason triggerAt=$triggerAt mode=$mode",
+      lastScheduledKey = scheduleKey
+      cancellationCheckedInProcess = false
+      WidgetNativeLog.info(
+        context,
+        "event=alarm_scheduled reason=$reason triggerAt=$triggerAt " +
+          "targetKind=${target.kind} mode=$mode",
       )
       true
     } catch (error: SecurityException) {
@@ -54,32 +72,43 @@ object WidgetAutoRefreshScheduler {
       val fallbackMode = resolveInexactFallbackMode(Build.VERSION.SDK_INT)
       try {
         scheduleWithMode(alarmManager, triggerAt, pendingIntent, fallbackMode)
-        Log.w(
-          TAG,
-          "event=alarm_fallback reason=$reason triggerAt=$triggerAt mode=$fallbackMode",
+        lastScheduledKey = WidgetAlarmScheduleKey(triggerAt, fallbackMode)
+        cancellationCheckedInProcess = false
+        WidgetNativeLog.warn(
+          context,
+          "event=alarm_fallback reason=$reason triggerAt=$triggerAt " +
+            "targetKind=${target.kind} mode=$fallbackMode",
           error,
         )
         true
       } catch (fallbackError: RuntimeException) {
-        Log.e(TAG, "event=alarm_schedule_failed reason=$reason", fallbackError)
+        WidgetNativeLog.error(
+          context,
+          "event=alarm_schedule_failed reason=$reason",
+          fallbackError,
+        )
         false
       }
     } catch (error: RuntimeException) {
-      Log.e(TAG, "event=alarm_schedule_failed reason=$reason", error)
+      WidgetNativeLog.error(context, "event=alarm_schedule_failed reason=$reason", error)
       false
     }
   }
 
+  @Synchronized
   fun cancel(
     context: Context,
     reason: String = "unspecified",
   ) {
+    if (lastScheduledKey == null && cancellationCheckedInProcess) return
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
     try {
       alarmManager.cancel(pendingIntent(context))
-      Log.i(TAG, "event=alarm_cancelled reason=$reason")
+      lastScheduledKey = null
+      cancellationCheckedInProcess = true
+      WidgetNativeLog.info(context, "event=alarm_cancelled reason=$reason")
     } catch (error: RuntimeException) {
-      Log.e(TAG, "event=alarm_cancel_failed reason=$reason", error)
+      WidgetNativeLog.error(context, "event=alarm_cancel_failed reason=$reason", error)
     }
   }
 

@@ -3,12 +3,14 @@ package com.dawndrizzle.wing.cqut.widget
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 
 class WidgetAutoRefreshReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     val action = intent.action ?: return
-    Log.i("WidgetRefresh", "event=broadcast_received action=$action at=${System.currentTimeMillis()}")
+    WidgetNativeLog.info(
+      context,
+      "event=broadcast_received action=$action at=${System.currentTimeMillis()}",
+    )
     if (action == ACTION_APP_THEME_REFRESH) {
       WidgetForceUpdatePusher.pushTheme(context)
       WidgetRefreshCoordinator.ensureScheduled(context, "app_theme_refresh")

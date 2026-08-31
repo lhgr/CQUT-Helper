@@ -24,7 +24,7 @@ class WidgetAutoRefreshReceiverTest {
   }
 
   @Test
-  fun `restricted implicit screen user and date broadcasts are not relied upon`() {
+  fun `ambient broadcasts that cannot cold start manifest receivers are ignored`() {
     listOf(
       Intent.ACTION_SCREEN_ON,
       Intent.ACTION_USER_PRESENT,

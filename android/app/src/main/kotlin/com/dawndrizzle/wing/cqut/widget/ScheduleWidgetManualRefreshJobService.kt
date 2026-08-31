@@ -9,7 +9,6 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
-import android.util.Log
 import dev.fluttercommunity.workmanager.SharedPreferenceHelper
 import dev.fluttercommunity.workmanager.pigeon.WorkmanagerFlutterApi
 import io.flutter.FlutterInjector
@@ -66,7 +65,7 @@ class ScheduleWidgetManualRefreshJobService : JobService() {
         launchDartCallback(params, flutterLoader.findAppBundlePath())
       }
     } catch (error: RuntimeException) {
-      Log.e(TAG, "event=engine_initialization_failed", error)
+      WidgetNativeLog.error(applicationContext, "event=engine_initialization_failed", error, TAG)
       finishJob(params, taskReportedSuccess = false)
     }
   }
@@ -79,7 +78,11 @@ class ScheduleWidgetManualRefreshJobService : JobService() {
       val callbackHandle = SharedPreferenceHelper.getCallbackHandle(applicationContext)
       val callbackInfo = FlutterCallbackInformation.lookupCallbackInformation(callbackHandle)
       if (callbackInfo == null) {
-        Log.e(TAG, "event=callback_lookup_failed handle=$callbackHandle")
+        WidgetNativeLog.error(
+          applicationContext,
+          "event=callback_lookup_failed handle=$callbackHandle",
+          tag = TAG,
+        )
         finishJob(params, taskReportedSuccess = false)
         return
       }
@@ -98,7 +101,12 @@ class ScheduleWidgetManualRefreshJobService : JobService() {
         runOnMain {
           if (activeParameters !== params) return@runOnMain
           if (initialized.isFailure) {
-            Log.e(TAG, "event=background_channel_failed", initialized.exceptionOrNull())
+            WidgetNativeLog.error(
+              applicationContext,
+              "event=background_channel_failed",
+              initialized.exceptionOrNull(),
+              TAG,
+            )
             finishJob(params, taskReportedSuccess = false)
             return@runOnMain
           }
@@ -108,7 +116,12 @@ class ScheduleWidgetManualRefreshJobService : JobService() {
           ) { result ->
             runOnMain {
               if (result.isFailure) {
-                Log.e(TAG, "event=dart_task_failed", result.exceptionOrNull())
+                WidgetNativeLog.error(
+                  applicationContext,
+                  "event=dart_task_failed",
+                  result.exceptionOrNull(),
+                  TAG,
+                )
               }
               finishJob(params, taskReportedSuccess = result.getOrNull() == true)
             }
@@ -116,7 +129,7 @@ class ScheduleWidgetManualRefreshJobService : JobService() {
         }
       }
     } catch (error: RuntimeException) {
-      Log.e(TAG, "event=dart_launch_failed", error)
+      WidgetNativeLog.error(applicationContext, "event=dart_launch_failed", error, TAG)
       finishJob(params, taskReportedSuccess = false)
     }
   }
@@ -144,9 +157,10 @@ class ScheduleWidgetManualRefreshJobService : JobService() {
         account = params.extras.getString(EXTRA_ACCOUNT).orEmpty(),
         previousFingerprint = params.extras.getString(EXTRA_CONTENT_FINGERPRINT),
       )
-    Log.i(
-      TAG,
+    WidgetNativeLog.info(
+      applicationContext,
       "event=job_completed refreshId=$refreshId dartSuccess=$taskReportedSuccess current=$completed",
+      tag = TAG,
     )
   }
 

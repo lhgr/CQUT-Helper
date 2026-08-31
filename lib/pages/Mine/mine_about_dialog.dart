@@ -1,9 +1,9 @@
 import 'dart:async';
 
+import 'package:cqut_helper/manager/app_network_image_cache.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,18 +13,10 @@ const _developerAvatarUrl =
     'https://blog-assets.dawndrizzle.top/images/hero-avatar.png';
 const _wingAvatarUrl = 'https://blog-assets.dawndrizzle.top/images/Wing.jpg';
 
-final BaseCacheManager _aboutAvatarCacheManager = CacheManager(
-  Config(
-    'about_member_avatars_v1',
-    stalePeriod: const Duration(days: 14),
-    maxNrOfCacheObjects: 8,
-  ),
-);
-
 CachedNetworkImageProvider _aboutAvatarProvider(String url) {
   return CachedNetworkImageProvider(
     url,
-    cacheManager: _aboutAvatarCacheManager,
+    cacheManager: AppNetworkImageCache.aboutMemberAvatars,
     maxWidth: 256,
     maxHeight: 256,
   );
@@ -273,7 +265,7 @@ class _MemberAvatar extends StatelessWidget {
         child: ClipOval(
           child: CachedNetworkImage(
             imageUrl: imageUrl,
-            cacheManager: _aboutAvatarCacheManager,
+            cacheManager: AppNetworkImageCache.aboutMemberAvatars,
             width: _size,
             height: _size,
             fit: BoxFit.cover,

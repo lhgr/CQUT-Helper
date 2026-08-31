@@ -1,74 +1,72 @@
 package com.dawndrizzle.wing.cqut.widget
 
-import android.app.job.JobInfo
 import android.app.job.JobParameters
 import android.app.job.JobScheduler
 import android.app.job.JobService
-import android.content.ComponentName
 import android.content.Context
-import android.util.Log
 
 /**
- * A lightweight, cache-only repair loop for launchers that drop AppWidget
- * periodic callbacks or a one-shot AlarmManager delivery. This service never
- * starts Flutter and never performs network work.
+ * Compatibility shell for a persisted v0.3.0 JobScheduler heartbeat.
+ * New builds retire the job and use AlarmManager plus WorkManager instead.
  */
 class WidgetRefreshHeartbeatJobService : JobService() {
   override fun onStartJob(params: JobParameters): Boolean {
-    Log.i(TAG, "event=heartbeat_started at=${System.currentTimeMillis()}")
+    WidgetNativeLog.info(
+      applicationContext,
+      "event=legacy_heartbeat_started at=${System.currentTimeMillis()}",
+    )
     var succeeded = true
     try {
-      WidgetRefreshCoordinator.refreshAndRepair(applicationContext, "heartbeat")
+      WidgetRefreshCoordinator.repairIfDue(applicationContext, "legacy_heartbeat")
     } catch (error: RuntimeException) {
       succeeded = false
-      Log.e(TAG, "event=heartbeat_failed", error)
+      WidgetNativeLog.error(applicationContext, "event=legacy_heartbeat_failed", error)
     }
-    Log.i(TAG, "event=heartbeat_completed success=$succeeded at=${System.currentTimeMillis()}")
+    WidgetNativeLog.info(
+      applicationContext,
+      "event=legacy_heartbeat_completed success=$succeeded at=${System.currentTimeMillis()}",
+    )
     return false
   }
 
   override fun onStopJob(params: JobParameters): Boolean {
-    Log.w(TAG, "event=heartbeat_stopped at=${System.currentTimeMillis()}")
-    return true
+    WidgetNativeLog.warn(
+      applicationContext,
+      "event=legacy_heartbeat_stopped at=${System.currentTimeMillis()}",
+    )
+    return false
   }
 
   companion object {
-    private const val TAG = "WidgetRefresh"
+    private const val PREFS_NAME = "WidgetRefreshHeartbeat"
+    private const val KEY_SCHEDULED_INTERVAL_MILLIS = "scheduled_interval_millis"
+    private const val KEY_RETIRED = "retired"
     internal const val JOB_ID = 0x43515748
-    internal const val INTERVAL_MILLIS = 15L * 60 * 1000
 
-    fun ensureScheduled(
+    fun retireIfNeeded(
       context: Context,
       reason: String,
-    ): Boolean {
+    ) {
+      val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+      if (prefs.getBoolean(KEY_RETIRED, false)) return
       val scheduler = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as? JobScheduler
-        ?: run {
-          Log.e(TAG, "event=heartbeat_unavailable reason=$reason")
-          return false
-        }
-      val pendingIds =
-        try {
-          scheduler.allPendingJobs.map { it.id }
-        } catch (error: RuntimeException) {
-          Log.w(TAG, "event=heartbeat_pending_query_failed reason=$reason", error)
-          emptyList()
-        }
-      if (hasPendingJob(pendingIds)) return true
-      val job =
-        JobInfo.Builder(
-          JOB_ID,
-          ComponentName(context, WidgetRefreshHeartbeatJobService::class.java),
+      try {
+        scheduler?.cancel(JOB_ID)
+        prefs
+          .edit()
+          .remove(KEY_SCHEDULED_INTERVAL_MILLIS)
+          .putBoolean(KEY_RETIRED, true)
+          .apply()
+        WidgetNativeLog.info(
+          context,
+          "event=legacy_heartbeat_retired reason=$reason",
         )
-          .setPeriodic(INTERVAL_MILLIS)
-          .setPersisted(true)
-          .build()
-      return try {
-        val scheduled = scheduler.schedule(job) == JobScheduler.RESULT_SUCCESS
-        Log.i(TAG, "event=heartbeat_scheduled reason=$reason success=$scheduled")
-        scheduled
       } catch (error: RuntimeException) {
-        Log.e(TAG, "event=heartbeat_schedule_failed reason=$reason", error)
-        false
+        WidgetNativeLog.error(
+          context,
+          "event=legacy_heartbeat_retire_failed reason=$reason",
+          error,
+        )
       }
     }
 
@@ -79,12 +77,16 @@ class WidgetRefreshHeartbeatJobService : JobService() {
       val scheduler = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as? JobScheduler
       try {
         scheduler?.cancel(JOB_ID)
-        Log.i(TAG, "event=heartbeat_cancelled reason=$reason")
+        context
+          .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+          .edit()
+          .remove(KEY_SCHEDULED_INTERVAL_MILLIS)
+          .putBoolean(KEY_RETIRED, true)
+          .apply()
+        WidgetNativeLog.info(context, "event=heartbeat_cancelled reason=$reason")
       } catch (error: RuntimeException) {
-        Log.e(TAG, "event=heartbeat_cancel_failed reason=$reason", error)
+        WidgetNativeLog.error(context, "event=heartbeat_cancel_failed reason=$reason", error)
       }
     }
-
-    internal fun hasPendingJob(jobIds: List<Int>): Boolean = JOB_ID in jobIds
   }
 }

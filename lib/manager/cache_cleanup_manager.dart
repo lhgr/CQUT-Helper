@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cqut_helper/manager/app_network_image_cache.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -78,14 +78,14 @@ class CacheCleanupManager {
       AppCacheUsage(
         type: AppCacheType.imageCache,
         title: titleOf(AppCacheType.imageCache),
-        description: '包含网络图片的磁盘缓存文件',
+        description: '包含网络图片的磁盘缓存文件，不含自定义背景图',
         bytes: imageCacheBytes,
         supported: true,
       ),
       AppCacheUsage(
         type: AppCacheType.logs,
         title: titleOf(AppCacheType.logs),
-        description: '包含调试、错误与网络请求日志文件',
+        description: '包含调试、错误、网络请求与小组件原生日志文件',
         bytes: logBytes,
         supported: true,
       ),
@@ -124,16 +124,17 @@ class CacheCleanupManager {
     }
 
     if (types.contains(AppCacheType.imageCache)) {
-      await DefaultCacheManager().emptyCache();
+      for (final manager in AppNetworkImageCache.managers) {
+        await manager.emptyCache();
+      }
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
       try {
         final tempDir = await getTemporaryDirectory();
-        final dir = Directory(
-          '${tempDir.path}${Platform.pathSeparator}libCachedImageData',
-        );
-        if (await dir.exists()) {
-          await dir.delete(recursive: true);
+        for (final dir in imageCacheDirectoriesIn(tempDir)) {
+          if (await dir.exists()) {
+            await dir.delete(recursive: true);
+          }
         }
       } catch (_) {}
       clearedCounts[AppCacheType.imageCache] = 1;
@@ -257,14 +258,28 @@ class CacheCleanupManager {
   static Future<int?> _getImageCacheBytes() async {
     try {
       final tempDir = await getTemporaryDirectory();
-      final dir = Directory(
-        '${tempDir.path}${Platform.pathSeparator}libCachedImageData',
-      );
-      if (!await dir.exists()) return 0;
-      return await _getDirectoryBytes(dir);
+      return getImageCacheBytesIn(tempDir);
     } catch (_) {
       return null;
     }
+  }
+
+  @visibleForTesting
+  static Iterable<Directory> imageCacheDirectoriesIn(Directory tempDir) sync* {
+    for (final key in AppNetworkImageCache.diskCacheKeys) {
+      yield Directory('${tempDir.path}${Platform.pathSeparator}$key');
+    }
+  }
+
+  @visibleForTesting
+  static Future<int> getImageCacheBytesIn(Directory tempDir) async {
+    var total = 0;
+    for (final dir in imageCacheDirectoriesIn(tempDir)) {
+      if (await dir.exists()) {
+        total += await _getDirectoryBytes(dir);
+      }
+    }
+    return total;
   }
 
   static Future<int> _getDirectoryBytes(Directory dir) async {

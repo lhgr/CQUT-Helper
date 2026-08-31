@@ -44,6 +44,25 @@ class _BlockingTimeInfoScheduleApi extends _FakeTimeInfoScheduleApi {
 
 void main() {
   group('ScheduleTimeInfoCoordinator', () {
+    test('失败重试按指数退避并封顶六小时', () {
+      expect(
+        ScheduleTimeInfoCoordinator.failureRetryCooldownMs(0),
+        5 * 60 * 1000,
+      );
+      expect(
+        ScheduleTimeInfoCoordinator.failureRetryCooldownMs(1),
+        5 * 60 * 1000,
+      );
+      expect(
+        ScheduleTimeInfoCoordinator.failureRetryCooldownMs(2),
+        10 * 60 * 1000,
+      );
+      expect(
+        ScheduleTimeInfoCoordinator.failureRetryCooldownMs(20),
+        6 * 60 * 60 * 1000,
+      );
+    });
+
     test('能从缓存加载 time info', () async {
       SharedPreferences.setMockInitialValues({
         'schedule_time_info_cache_v1': json.encode({

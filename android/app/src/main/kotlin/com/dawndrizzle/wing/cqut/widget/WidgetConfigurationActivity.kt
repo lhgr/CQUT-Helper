@@ -388,6 +388,7 @@ class WidgetConfigurationActivity : Activity() {
     }
     val appContext = applicationContext
     updateConfiguredWidget(appContext, providerName, appWidgetId)
+    WidgetRefreshCoordinator.recordRenderedState(appContext, persistLog = false)
     WidgetRefreshCoordinator.ensureScheduled(this, "configuration_saved")
 
     setResult(

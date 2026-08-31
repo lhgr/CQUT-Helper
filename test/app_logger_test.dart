@@ -102,4 +102,88 @@ void main() {
     expect(event.fields?['trace_id'], traceId);
     expect(event.fields?['error_type'], 'ArgumentError');
   });
+
+  test('原生小组件日志归入其他和全部日志导出', () {
+    for (final fileName in [
+      'cqut_widget.log',
+      'cqut_widget_1.log',
+      'cqut_widget_2.log',
+    ]) {
+      expect(
+        debugIsLogFileSelectedForExport(
+          fileName: fileName,
+          primaryFileName: 'cqut_2026-08-29.log',
+          networkFileName: 'cqut_net_2026-08-29.log',
+          kind: LogExportKind.other,
+        ),
+        isTrue,
+      );
+      expect(
+        debugIsLogFileSelectedForExport(
+          fileName: fileName,
+          primaryFileName: 'cqut_2026-08-29.log',
+          networkFileName: 'cqut_net_2026-08-29.log',
+          kind: LogExportKind.all,
+        ),
+        isTrue,
+      );
+      expect(
+        debugIsLogFileSelectedForExport(
+          fileName: fileName,
+          primaryFileName: 'cqut_2026-08-29.log',
+          networkFileName: 'cqut_net_2026-08-29.log',
+          kind: LogExportKind.network,
+        ),
+        isFalse,
+      );
+    }
+    expect(debugIsNativeWidgetLogFile('cqut_widget.log'), isTrue);
+    expect(debugIsNativeWidgetLogFile('cqut_widget_2.log'), isTrue);
+    expect(debugIsNativeWidgetLogFile('cqut_widget_extra.log'), isFalse);
+  });
+
+  test('其他日志导出不再混入网络日志', () {
+    expect(
+      debugIsLogFileSelectedForExport(
+        fileName: 'cqut_net.log',
+        primaryFileName: 'cqut.log',
+        networkFileName: 'cqut_net.log',
+        kind: LogExportKind.other,
+      ),
+      isFalse,
+    );
+    expect(
+      debugIsLogFileSelectedForExport(
+        fileName: 'cqut_net_1.log.gz',
+        primaryFileName: 'cqut.log',
+        networkFileName: 'cqut_net.log',
+        kind: LogExportKind.network,
+      ),
+      isTrue,
+    );
+  });
+
+  test('日志清理枚举小组件当前日志和轮转归档', () {
+    for (final fileName in [
+      'cqut_widget.log',
+      'cqut_widget_1.log',
+      'cqut_widget_2.log',
+    ]) {
+      expect(
+        debugIsLogFileDiscovered(fileName: fileName, includeExports: true),
+        isTrue,
+      );
+    }
+    expect(
+      debugIsLogFileDiscovered(
+        fileName: 'cqut_widget_1.log.sha256',
+        includeExports: true,
+      ),
+      isFalse,
+    );
+    expect(
+      debugIsLogFileDiscovered(fileName: 'unrelated.log', includeExports: true),
+      isFalse,
+    );
+  });
 }

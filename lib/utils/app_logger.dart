@@ -14,7 +14,8 @@ import 'package:flutter/foundation.dart'
         debugPrint,
         kDebugMode,
         kProfileMode,
-        kReleaseMode;
+        kReleaseMode,
+        visibleForTesting;
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -923,34 +924,25 @@ class AppLogger {
       final currentOtherLower = currentOther.path.toLowerCase();
       final currentNetLower = currentNet.path.toLowerCase();
       final outputLower = outFile.path.toLowerCase();
-      final otherBase = _logBaseName(_fileName).toLowerCase();
-      final netBase = _logBaseName(_networkFileName).toLowerCase();
-      final otherRegex = RegExp(
-        '^${RegExp.escape(otherBase)}(_.*)?\\.log(\\.gz)?\$',
-        caseSensitive: false,
-      );
-      final netRegex = RegExp(
-        '^${RegExp.escape(netBase)}(_.*)?\\.log(\\.gz)?\$',
-        caseSensitive: false,
-      );
       final files =
           (await _listLogFiles(includeExports: false)).where((f) {
             final p = f.path.toLowerCase();
             if (p == outputLower) return false;
-            final name = pBasename(p);
-            if (name.startsWith('cqut_export')) return false;
-            final isOther = otherRegex.hasMatch(name);
-            final isNet = netRegex.hasMatch(name);
-            if (!isOther && !isNet) return false;
-            if (kind == LogExportKind.network && !isNet) return false;
-            if (kind == LogExportKind.other && !isOther) return false;
-            return true;
+            return debugIsLogFileSelectedForExport(
+              fileName: pBasename(p),
+              primaryFileName: _fileName,
+              networkFileName: _networkFileName,
+              kind: kind,
+            );
           }).toList()..sort((a, b) {
             final byTime = _lastModifiedMillis(
               b,
             ).compareTo(_lastModifiedMillis(a));
             return byTime != 0 ? byTime : b.path.compareTo(a.path);
           });
+      final nativeWidgetLogFiles = files
+          .where((file) => debugIsNativeWidgetLogFile(pBasename(file.path)))
+          .length;
 
       final summary = await _buildExportSummary(files);
       final logMetrics = metrics;
@@ -977,8 +969,10 @@ class AppLogger {
         sink.writeln('export_kind=${kind.name}');
         sink.writeln('log_schema=2');
         sink.writeln('log_session_id=$sessionId');
-        sink.writeln('log_order=newest_first');
+        sink.writeln('file_order=newest_first');
+        sink.writeln('entry_order=oldest_first');
         sink.writeln('files=${files.length}');
+        sink.writeln('widget_native_log_files=$nativeWidgetLogFiles');
         sink.writeln('logger_queue_depth=${logMetrics.queueDepth}');
         sink.writeln('logger_dropped=${logMetrics.dropped}');
         sink.writeln('logger_write_errors=${logMetrics.writeErrors}');
@@ -1513,11 +1507,12 @@ class AppLogger {
       await for (final entity in d.list(followLinks: false)) {
         if (entity is File) {
           final name = pBasename(entity.path);
-          final lower = name.toLowerCase();
-          if (!lower.startsWith('cqut')) continue;
-          final isLog = lower.endsWith('.log') || lower.endsWith('.log.gz');
-          if (!isLog) continue;
-          if (!includeExports && lower.startsWith('cqut_export')) continue;
+          if (!debugIsLogFileDiscovered(
+            fileName: name,
+            includeExports: includeExports,
+          )) {
+            continue;
+          }
           out.add(entity);
         }
       }
@@ -1679,6 +1674,55 @@ class AppLogger {
       } catch (_) {}
     }
   }
+}
+
+@visibleForTesting
+bool debugIsLogFileSelectedForExport({
+  required String fileName,
+  required String primaryFileName,
+  required String networkFileName,
+  required LogExportKind kind,
+}) {
+  final name = fileName.toLowerCase();
+  if (name.startsWith('cqut_export')) return false;
+  final otherBase = _logBaseName(primaryFileName).toLowerCase();
+  final netBase = _logBaseName(networkFileName).toLowerCase();
+  final otherRegex = RegExp(
+    '^${RegExp.escape(otherBase)}(_.*)?\\.log(\\.gz)?\$',
+    caseSensitive: false,
+  );
+  final netRegex = RegExp(
+    '^${RegExp.escape(netBase)}(_.*)?\\.log(\\.gz)?\$',
+    caseSensitive: false,
+  );
+  final isNetwork = netRegex.hasMatch(name);
+  final isOther =
+      (otherRegex.hasMatch(name) && !isNetwork) ||
+      debugIsNativeWidgetLogFile(name);
+  return switch (kind) {
+    LogExportKind.network => isNetwork,
+    LogExportKind.other => isOther,
+    LogExportKind.all => isOther || isNetwork,
+  };
+}
+
+@visibleForTesting
+bool debugIsNativeWidgetLogFile(String fileName) {
+  return RegExp(
+    r'^cqut_widget(?:_\d+)?\.log(?:\.gz)?$',
+    caseSensitive: false,
+  ).hasMatch(fileName);
+}
+
+@visibleForTesting
+bool debugIsLogFileDiscovered({
+  required String fileName,
+  required bool includeExports,
+}) {
+  final lower = fileName.toLowerCase();
+  if (!lower.startsWith('cqut')) return false;
+  if (!lower.endsWith('.log') && !lower.endsWith('.log.gz')) return false;
+  return includeExports || !lower.startsWith('cqut_export');
 }
 
 DateTime? _tryParseLogLineTimestamp(String line) {

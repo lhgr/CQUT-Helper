@@ -9,7 +9,12 @@ object WidgetThemeSyncDispatcher {
   private const val TRANSITION_DURATION_MS = 180L
   private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
-  fun dispatch(context: Context, trigger: WidgetThemeTrigger) {
+  internal fun dispatch(
+    context: Context,
+    trigger: WidgetThemeTrigger,
+    forceFullUpdate: Boolean = false,
+    renderedState: WidgetRefreshRenderState? = null,
+  ) {
     val resolution = WidgetTheme.resolve(context, trigger)
     Log.d(
       "WidgetTheme",
@@ -19,7 +24,13 @@ object WidgetThemeSyncDispatcher {
       Log.d("WidgetTheme", "skip system changed because mode=${resolution.mode}")
       return
     }
-    updateWidgets(context, resolution, requiresFullUpdate(trigger))
+    val fullUpdate = forceFullUpdate || requiresFullUpdate(trigger)
+    WidgetNativeLog.info(
+      context,
+      "event=render_dispatched trigger=$trigger mode=${if (fullUpdate) "full" else "partial"}",
+    )
+    updateWidgets(context, resolution, fullUpdate)
+    WidgetRefreshCoordinator.recordRenderedState(context, renderedState)
     WidgetRefreshCoordinator.ensureScheduled(context, "theme_dispatch:$trigger")
     if (resolution.shouldAnimate) {
       mainHandler.postDelayed(
@@ -27,6 +38,7 @@ object WidgetThemeSyncDispatcher {
           WidgetTheme.commitTransition(context)
           val commitResolution = WidgetTheme.resolve(context, WidgetThemeTrigger.TRANSITION_COMMIT)
           updateWidgets(context, commitResolution, fullUpdate = true)
+          WidgetRefreshCoordinator.recordRenderedState(context)
           WidgetRefreshCoordinator.ensureScheduled(context, "theme_commit")
         },
         TRANSITION_DURATION_MS,

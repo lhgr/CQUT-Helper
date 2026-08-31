@@ -8,7 +8,7 @@
         android:maxSdkVersion="28" />
     <application
         android:label="CQUT Helper"
-        android:name="${applicationName}"
+        android:name=".CqutApplication"
         android:icon="@mipmap/launcher_icon">
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
@@ -99,7 +99,7 @@
         </receiver>
         <receiver
             android:name="com.dawndrizzle.wing.cqut.widget.WidgetAutoRefreshReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="com.dawndrizzle.wing.cqut.widget.AUTO_REFRESH" />
                 <action android:name="android.intent.action.TIME_SET" />
