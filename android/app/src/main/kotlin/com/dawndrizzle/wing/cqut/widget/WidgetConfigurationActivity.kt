@@ -45,6 +45,14 @@ class WidgetConfigurationActivity : Activity() {
           TodayCourseWidgetProvider.updateOne(context, appWidgetId)
           TodayCourseWidgetProvider.updateTheme(context, intArrayOf(appWidgetId))
         }
+        TinyCourseWidgetProvider::class.java.name -> {
+          TinyCourseWidgetProvider.updateOne(context, appWidgetId)
+          TinyCourseWidgetProvider.updateTheme(context, intArrayOf(appWidgetId))
+        }
+        VerticalScheduleWidgetProvider::class.java.name -> {
+          VerticalScheduleWidgetProvider.updateOne(context, appWidgetId)
+          VerticalScheduleWidgetProvider.updateTheme(context, intArrayOf(appWidgetId))
+        }
       }
     }
   }
@@ -93,7 +101,8 @@ class WidgetConfigurationActivity : Activity() {
     }
     supportsDaySelection =
       providerName == TodayListWidgetProvider::class.java.name ||
-      providerName == TodayCourseWidgetProvider::class.java.name
+      providerName == TodayCourseWidgetProvider::class.java.name ||
+      providerName == VerticalScheduleWidgetProvider::class.java.name
     supportsRefreshSuggestion = isKnownProvider(providerName)
     existingConfig = WidgetInstanceConfigStore.load(this, appWidgetId)
     setContentView(buildContent(existingConfig, providerName))
@@ -110,7 +119,9 @@ class WidgetConfigurationActivity : Activity() {
   private fun isKnownProvider(providerName: String): Boolean {
     return providerName == TodayListWidgetProvider::class.java.name ||
       providerName == TodayAndNextWidgetProvider::class.java.name ||
-      providerName == TodayCourseWidgetProvider::class.java.name
+      providerName == TodayCourseWidgetProvider::class.java.name ||
+      providerName == TinyCourseWidgetProvider::class.java.name ||
+      providerName == VerticalScheduleWidgetProvider::class.java.name
   }
 
   private fun buildContent(
@@ -309,6 +320,9 @@ class WidgetConfigurationActivity : Activity() {
       TodayListWidgetProvider::class.java.name -> "单日课程：以列表展示今天或明天的全部课程"
       TodayAndNextWidgetProvider::class.java.name -> "近日课程：同时展示今天和明天"
       TodayCourseWidgetProvider::class.java.name -> "日视图：可在今天和明天之间快速切换"
+      TinyCourseWidgetProvider::class.java.name -> "超小课程：仅展示今天最近一节未结束课程"
+      VerticalScheduleWidgetProvider::class.java.name ->
+        "垂直列表课表：以时间轴列表展示选定日期的课程"
       else -> "为这个小组件选择独立外观和显示内容"
     }
   }

@@ -16,8 +16,17 @@ class WidgetRefreshCoordinatorTest {
         intArrayOf(4, AppWidgetManager.INVALID_APPWIDGET_ID),
         intArrayOf(8, 4),
         intArrayOf(12),
+        intArrayOf(8),
+        intArrayOf(),
       ),
     )
+  }
+
+  @Test
+  fun `vertical list count follows configured day without automatic tomorrow preview`() {
+    assertEquals("剩余2节", VerticalScheduleWidgetProvider.courseCountText(0, 2))
+    assertEquals("共2节", VerticalScheduleWidgetProvider.courseCountText(1, 2))
+    assertEquals("", VerticalScheduleWidgetProvider.courseCountText(0, 0))
   }
 
   @Test

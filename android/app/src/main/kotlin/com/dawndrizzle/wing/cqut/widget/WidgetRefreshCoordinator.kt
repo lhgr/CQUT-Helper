@@ -112,6 +112,8 @@ object WidgetRefreshCoordinator {
       manager.getAppWidgetIds(ComponentName(context, TodayListWidgetProvider::class.java)),
       manager.getAppWidgetIds(ComponentName(context, TodayAndNextWidgetProvider::class.java)),
       manager.getAppWidgetIds(ComponentName(context, TodayCourseWidgetProvider::class.java)),
+      manager.getAppWidgetIds(ComponentName(context, TinyCourseWidgetProvider::class.java)),
+      manager.getAppWidgetIds(ComponentName(context, VerticalScheduleWidgetProvider::class.java)),
     )
   }
 

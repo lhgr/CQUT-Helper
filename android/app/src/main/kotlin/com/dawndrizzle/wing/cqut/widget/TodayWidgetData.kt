@@ -67,6 +67,8 @@ object TodayWidgetData {
     val periods: String,
     val indicatorColor: Int,
     val sortOrder: Int,
+    val startTime: String = "",
+    val endTime: String = "",
   )
 
   internal data class ScheduleDayMarker(
@@ -475,6 +477,8 @@ object TodayWidgetData {
               course.periods,
               course.indicatorColor.toString(),
               course.sortOrder.toString(),
+              course.startTime,
+              course.endTime,
             ).joinToString("\u0000")
           }
         "$dayOffset\u0003$coursePayload"
@@ -672,6 +676,7 @@ object TodayWidgetData {
   fun loadCoursesByWeekdayFromSchedule(context: Context, data: JSONObject, weekDay: String): List<CourseItem> {
     val events = data.optJSONArray("eventList") ?: return emptyList()
     val courseColorMap = loadCourseColorIndexMap(context)
+    val sessionClockMap = loadSessionClockMap(context)
     val result = ArrayList<CourseItem>(events.length())
 
     for (i in 0 until events.length()) {
@@ -708,6 +713,7 @@ object TodayWidgetData {
 
       val eventId = e.optString("eventID", "").ifBlank { null }
       val colorIndex = courseColorMap[courseKey] ?: fallbackColorIndex(courseKey)
+      val clockRange = formatSessionClockRange(sessionNumbersOfEvent(e), sessionClockMap)
       result.add(
         CourseItem(
           eventId = eventId,
@@ -719,6 +725,8 @@ object TodayWidgetData {
           periods = periods,
           indicatorColor = colorByIndex(colorIndex),
           sortOrder = sortOrder,
+          startTime = clockRange?.first.orEmpty(),
+          endTime = clockRange?.second.orEmpty(),
         ),
       )
     }
@@ -729,6 +737,23 @@ object TodayWidgetData {
 
   fun loadTodayCourses(context: Context): List<CourseItem> {
     return loadCoursesByDayOffset(context, 0)
+  }
+
+  fun loadNextCourse(context: Context): CourseItem? {
+    return selectNextCourse(loadTodayCourses(context))
+  }
+
+  fun loadTodayCourseStateText(context: Context): String {
+    val targetDate = widgetCalendar()
+    val data = loadScheduleJsonObjectForDate(context, targetDate)
+      ?: return loadEmptyStateText(context, 0)
+    val weekDay = toMondayBasedWeekday(targetDate).coerceIn(1, 7).toString()
+    val allTodayCourses = loadCoursesByWeekdayFromSchedule(context, data, weekDay)
+    return if (allTodayCourses.isEmpty()) "暂无课程" else "今日课程已结束"
+  }
+
+  internal fun selectNextCourse(courses: List<CourseItem>): CourseItem? {
+    return courses.minWithOrNull(compareBy<CourseItem> { it.sortOrder }.thenBy { it.periods })
   }
 
   private data class TodayInfo(
@@ -1217,6 +1242,22 @@ object TodayWidgetData {
       if (maxEnd == null || clock.second > maxEnd!!) maxEnd = clock.second
     }
     return minStart?.let { start -> maxEnd?.let { end -> start to end } }
+  }
+
+  internal fun formatSessionClockRange(
+    sessionNums: List<Int>,
+    sessionClockMap: Map<Int, Pair<Int, Int>>,
+  ): Pair<String, String>? {
+    val range = sessionClockRange(sessionNums, sessionClockMap) ?: return null
+    return formatMinuteOfDay(range.first) to formatMinuteOfDay(range.second)
+  }
+
+  private fun formatMinuteOfDay(minuteOfDay: Int): String {
+    if (minuteOfDay < 0) return ""
+    val normalized = minuteOfDay % (24 * 60)
+    val hour = normalized / 60
+    val minute = normalized % 60
+    return "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
   }
 
   private fun loadSessionClockMap(context: Context): Map<Int, Pair<Int, Int>> {

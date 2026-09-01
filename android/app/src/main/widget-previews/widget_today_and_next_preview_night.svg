@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="340" viewBox="0 0 720 340">
+  <rect x="8" y="8" width="704" height="324" rx="30" fill="#1E1E1E" />
+  <text x="32" y="49" fill="#F2F2F2" font-family="Microsoft YaHei, sans-serif" font-size="20">课表</text>
+  <text x="512" y="49" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="18">9.1</text>
+  <text x="563" y="49" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="18">第3周</text>
+  <text x="633" y="49" fill="#8AA8FF" font-family="Microsoft YaHei, sans-serif" font-size="18">周二</text>
+  <text x="32" y="82" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17">今天</text>
+  <text x="376" y="82" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17">明天</text>
+  <rect x="359" y="91" width="2" height="209" fill="#4A4D56" />
+
+  <rect x="32" y="100" width="6" height="190" rx="3" fill="#8AA8FF" />
+  <rect x="48" y="100" width="287" height="190" rx="18" fill="#2A2A2A" />
+  <text x="68" y="143" fill="#F2F2F2" font-family="Microsoft YaHei, sans-serif" font-size="21" font-weight="600">软件工程</text>
+  <text x="68" y="178" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="16">两江校区</text>
+  <text x="68" y="208" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="16">A101 · 张老师</text>
+  <text x="68" y="238" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="16">第1-2节</text>
+
+  <rect x="376" y="100" width="6" height="190" rx="3" fill="#83C98E" />
+  <rect x="392" y="100" width="296" height="190" rx="18" fill="#2A2A2A" />
+  <text x="412" y="143" fill="#F2F2F2" font-family="Microsoft YaHei, sans-serif" font-size="21" font-weight="600">计算机网络</text>
+  <text x="412" y="178" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="16">两江校区</text>
+  <text x="412" y="208" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="16">B204 · 李老师</text>
+  <text x="412" y="238" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="16">第3-4节</text>
+</svg>

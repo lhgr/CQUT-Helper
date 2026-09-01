@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="340" viewBox="0 0 540 340">
+  <rect x="8" y="8" width="524" height="324" rx="30" fill="#1E1E1E" />
+  <text x="32" y="54" fill="#F2F2F2" font-family="Microsoft YaHei, sans-serif" font-size="25" font-weight="600">9月1日</text>
+  <text x="32" y="85" fill="#F2F2F2" font-family="Microsoft YaHei, sans-serif" font-size="17" font-weight="600">课表</text>
+  <text x="75" y="85" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17" font-weight="600">| 第3周</text>
+  <text x="154" y="85" fill="#8AA8FF" font-family="Microsoft YaHei, sans-serif" font-size="17" font-weight="600">周二</text>
+  <path d="M463 49h33m-12-12 12 12-12 12" fill="none" stroke="#B0B0B0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+
+  <rect x="32" y="112" width="6" height="190" rx="3" fill="#8AA8FF" />
+  <rect x="48" y="112" width="460" height="190" rx="18" fill="#2A2A2A" />
+  <text x="72" y="158" fill="#F2F2F2" font-family="Microsoft YaHei, sans-serif" font-size="23" font-weight="600">软件工程</text>
+  <text x="72" y="197" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17">两江校区</text>
+  <text x="72" y="229" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17">A101 · 张老师</text>
+  <text x="72" y="261" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17">第1-2节</text>
+</svg>

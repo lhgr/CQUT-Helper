@@ -90,6 +90,32 @@
                 android:resource="@xml/widget_today_course_info" />
         </receiver>
         <receiver
+            android:name="com.dawndrizzle.wing.cqut.widget.TinyCourseWidgetProvider"
+            android:exported="true"
+            android:label="超小课程 2×1">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.dawndrizzle.wing.cqut.widget.TINY_COURSE_REFRESH" />
+                <action android:name="com.dawndrizzle.wing.cqut.widget.TINY_COURSE_MANUAL_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_tiny_course_info" />
+        </receiver>
+        <receiver
+            android:name="com.dawndrizzle.wing.cqut.widget.VerticalScheduleWidgetProvider"
+            android:exported="true"
+            android:label="垂直列表课表 4×n">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.dawndrizzle.wing.cqut.widget.VERTICAL_SCHEDULE_REFRESH" />
+                <action android:name="com.dawndrizzle.wing.cqut.widget.VERTICAL_SCHEDULE_MANUAL_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_vertical_schedule_info" />
+        </receiver>
+        <receiver
             android:name="com.dawndrizzle.wing.cqut.widget.WidgetThemeChangedReceiver"
             android:exported="true">
             <intent-filter>
@@ -111,6 +137,10 @@
         </receiver>
         <service
             android:name="com.dawndrizzle.wing.cqut.widget.CourseListWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name="com.dawndrizzle.wing.cqut.widget.VerticalCourseListWidgetService"
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
         <service

@@ -23,6 +23,10 @@ internal object WidgetBridgeDispatchPlans {
     "com.dawndrizzle.wing.cqut.widget.TodayAndNextWidgetProvider"
   private const val TODAY_COURSE_PROVIDER =
     "com.dawndrizzle.wing.cqut.widget.TodayCourseWidgetProvider"
+  private const val TINY_COURSE_PROVIDER =
+    "com.dawndrizzle.wing.cqut.widget.TinyCourseWidgetProvider"
+  private const val VERTICAL_SCHEDULE_PROVIDER =
+    "com.dawndrizzle.wing.cqut.widget.VerticalScheduleWidgetProvider"
 
   private const val TODAY_LIST_THEME_ACTION =
     "com.dawndrizzle.wing.cqut.widget.TODAY_LIST_THEME_REFRESH"
@@ -30,6 +34,10 @@ internal object WidgetBridgeDispatchPlans {
     "com.dawndrizzle.wing.cqut.widget.TODAY_AND_NEXT_THEME_REFRESH"
   private const val TODAY_COURSE_THEME_ACTION =
     "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_THEME_REFRESH"
+  private const val TINY_COURSE_THEME_ACTION =
+    "com.dawndrizzle.wing.cqut.widget.TINY_COURSE_THEME_REFRESH"
+  private const val VERTICAL_SCHEDULE_THEME_ACTION =
+    "com.dawndrizzle.wing.cqut.widget.VERTICAL_SCHEDULE_THEME_REFRESH"
   private const val TODAY_COURSE_DATA_ACTION =
     "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_REFRESH"
 
@@ -44,6 +52,8 @@ internal object WidgetBridgeDispatchPlans {
             WidgetBroadcastTarget(TODAY_LIST_PROVIDER, TODAY_LIST_THEME_ACTION),
             WidgetBroadcastTarget(TODAY_AND_NEXT_PROVIDER, TODAY_AND_NEXT_THEME_ACTION),
             WidgetBroadcastTarget(TODAY_COURSE_PROVIDER, TODAY_COURSE_THEME_ACTION),
+            WidgetBroadcastTarget(TINY_COURSE_PROVIDER, TINY_COURSE_THEME_ACTION),
+            WidgetBroadcastTarget(VERTICAL_SCHEDULE_PROVIDER, VERTICAL_SCHEDULE_THEME_ACTION),
           ),
       )
     } else {

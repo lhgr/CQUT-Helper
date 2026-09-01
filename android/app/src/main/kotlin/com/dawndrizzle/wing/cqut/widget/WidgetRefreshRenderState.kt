@@ -71,6 +71,35 @@ internal object WidgetRefreshRenderStateStore {
         content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
       )
     }
+    appendWidgetSignatures(
+      presentationSignatures,
+      contentSignatures,
+      "tiny",
+      manager.getAppWidgetIds(ComponentName(context, TinyCourseWidgetProvider::class.java)),
+    ) { appWidgetId ->
+      WidgetSignatures(
+        presentation =
+          TodayWidgetData
+            .loadRefreshPresentation(
+              context,
+              appWidgetId,
+              requiredDayOffsets = intArrayOf(0),
+            ).state.name,
+        content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(0)),
+      )
+    }
+    appendWidgetSignatures(
+      presentationSignatures,
+      contentSignatures,
+      "vertical",
+      manager.getAppWidgetIds(ComponentName(context, VerticalScheduleWidgetProvider::class.java)),
+    ) { appWidgetId ->
+      val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+      WidgetSignatures(
+        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).state.name,
+        content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
+      )
+    }
 
     return WidgetRefreshRenderState(
       logicalDate = logicalDateAtMillis(nowMillis),

@@ -256,25 +256,43 @@ class TodayWidgetDataTest {
   }
 
   @Test
-  fun `visible course fingerprint changes when an ended course disappears`() {
-    val course =
-      TodayWidgetData.CourseItem(
-        eventId = "event-1",
-        courseKey = "course-1",
-        name = "软件工程",
-        campus = "两江校区",
-        classroom = "A101",
-        teacher = "教师",
-        periods = "第1-2节",
-        indicatorColor = 0,
-        sortOrder = 1,
+  fun `course clock range uses first start and last end`() {
+    val clocks =
+      mapOf(
+        1 to (8 * 60 to 8 * 60 + 45),
+        2 to (8 * 60 + 55 to 9 * 60 + 40),
       )
+
+    assertEquals(
+      "08:00" to "09:40",
+      TodayWidgetData.formatSessionClockRange(listOf(1, 2), clocks),
+    )
+    assertNull(TodayWidgetData.formatSessionClockRange(listOf(1, 3), clocks))
+  }
+
+  @Test
+  fun `tiny course selection always chooses earliest remaining course`() {
+    val later = courseItem("later", sortOrder = 5)
+    val earlier = courseItem("earlier", sortOrder = 1)
+
+    assertEquals(earlier, TodayWidgetData.selectNextCourse(listOf(later, earlier)))
+    assertNull(TodayWidgetData.selectNextCourse(emptyList()))
+  }
+
+  @Test
+  fun `visible course fingerprint changes when an ended course disappears`() {
+    val course = courseItem("course-1", sortOrder = 1)
     val before = TodayWidgetData.visibleCoursesFingerprint(listOf(0 to listOf(course)))
     val same = TodayWidgetData.visibleCoursesFingerprint(listOf(0 to listOf(course.copy())))
     val after = TodayWidgetData.visibleCoursesFingerprint(listOf(0 to emptyList()))
+    val timeChanged =
+      TodayWidgetData.visibleCoursesFingerprint(
+        listOf(0 to listOf(course.copy(startTime = "08:00", endTime = "09:40"))),
+      )
 
     assertEquals(before, same)
     assertFalse(before == after)
+    assertFalse(before == timeChanged)
   }
 
   @Test
@@ -368,6 +386,23 @@ class TodayWidgetDataTest {
         listOf(TodayWidgetData.ScheduleDayMarker("today=2026-02-28", markedToday = true)),
         target,
       ),
+    )
+  }
+
+  private fun courseItem(
+    key: String,
+    sortOrder: Int,
+  ): TodayWidgetData.CourseItem {
+    return TodayWidgetData.CourseItem(
+      eventId = "event-$key",
+      courseKey = key,
+      name = "软件工程",
+      campus = "两江校区",
+      classroom = "A101",
+      teacher = "教师",
+      periods = "第1-2节",
+      indicatorColor = 0,
+      sortOrder = sortOrder,
     )
   }
 }

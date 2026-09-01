@@ -48,4 +48,30 @@ object WidgetNavigationPendingIntent {
       PendingIntent.FLAG_UPDATE_CURRENT or mutabilityFlag,
     )
   }
+
+  fun createForCourse(
+    context: Context,
+    appWidgetId: Int,
+    dayOffset: Int,
+    eventName: String,
+    eventId: String?,
+  ): PendingIntent? {
+    val launchIntent =
+      context.packageManager.getLaunchIntentForPackage(context.packageName)
+        ?: return null
+    launchIntent.apply {
+      putExtra(EXTRA_OPEN_TODAY, true)
+      putExtra(EXTRA_DAY_OFFSET, dayOffset)
+      putExtra(EXTRA_EVENT_NAME, eventName)
+      putExtra(EXTRA_EVENT_ID, eventId)
+      putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+      data = Uri.parse("cqut-helper://widget/today/$appWidgetId/$dayOffset/tiny-course")
+    }
+    return PendingIntent.getActivity(
+      context,
+      appWidgetId * 10 + 200000,
+      launchIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+  }
 }

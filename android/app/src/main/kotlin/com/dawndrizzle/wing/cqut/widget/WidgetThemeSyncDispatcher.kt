@@ -61,12 +61,15 @@ object WidgetThemeSyncDispatcher {
       // appear pinned to the theme used when the widget was placed.
       TodayListWidgetProvider.updateAll(context, resolution)
       TodayAndNextWidgetProvider.updateAll(context, resolution)
+      VerticalScheduleWidgetProvider.updateAll(context, resolution)
     } else {
       // Ordinary data refreshes keep their collection adapters and click
       // templates to avoid a dark/empty frame on MIUI.
       TodayListWidgetProvider.refreshAll(context, resolution)
       TodayAndNextWidgetProvider.refreshAll(context, resolution)
+      VerticalScheduleWidgetProvider.refreshAll(context, resolution)
     }
     TodayCourseWidgetProvider.updateAll(context, resolution)
+    TinyCourseWidgetProvider.updateAll(context, resolution)
   }
 }

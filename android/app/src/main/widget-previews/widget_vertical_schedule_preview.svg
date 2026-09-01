@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="340" viewBox="0 0 720 340">
+  <rect x="8" y="8" width="704" height="324" rx="30" fill="#FFFFFF" stroke="#E4E5E9" stroke-width="2" />
+  <text x="32" y="51" fill="#111111" font-family="Microsoft YaHei, sans-serif" font-size="20" font-weight="600">课表 · 第3周</text>
+  <text x="492" y="51" fill="#666666" font-family="Microsoft YaHei, sans-serif" font-size="16">剩余2节</text>
+  <text x="579" y="51" fill="#666666" font-family="Microsoft YaHei, sans-serif" font-size="17">9.1</text>
+  <text x="630" y="51" fill="#3F51B5" font-family="Microsoft YaHei, sans-serif" font-size="17">周二</text>
+
+  <rect x="32" y="76" width="6" height="106" rx="3" fill="#4F75D8" />
+  <rect x="48" y="76" width="640" height="106" rx="18" fill="#F5F6F8" />
+  <text x="102" y="118" fill="#111111" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="600" text-anchor="middle">08:00</text>
+  <text x="102" y="146" fill="#666666" font-family="Microsoft YaHei, sans-serif" font-size="16" text-anchor="middle">09:40</text>
+  <rect x="146" y="96" width="2" height="66" fill="#D7D9DE" />
+  <text x="170" y="113" fill="#111111" font-family="Microsoft YaHei, sans-serif" font-size="21" font-weight="600">软件工程</text>
+  <text x="170" y="143" fill="#666666" font-family="Microsoft YaHei, sans-serif" font-size="16">两江校区 A101</text>
+  <text x="170" y="168" fill="#666666" font-family="Microsoft YaHei, sans-serif" font-size="14">张老师 · 第1-2节</text>
+
+  <rect x="32" y="198" width="6" height="106" rx="3" fill="#63A66F" />
+  <rect x="48" y="198" width="640" height="106" rx="18" fill="#F5F6F8" />
+  <text x="102" y="240" fill="#111111" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="600" text-anchor="middle">10:10</text>
+  <text x="102" y="268" fill="#666666" font-family="Microsoft YaHei, sans-serif" font-size="16" text-anchor="middle">11:50</text>
+  <rect x="146" y="218" width="2" height="66" fill="#D7D9DE" />
+  <text x="170" y="235" fill="#111111" font-family="Microsoft YaHei, sans-serif" font-size="21" font-weight="600">计算机网络</text>
+  <text x="170" y="265" fill="#666666" font-family="Microsoft YaHei, sans-serif" font-size="16">两江校区 B204</text>
+  <text x="170" y="290" fill="#666666" font-family="Microsoft YaHei, sans-serif" font-size="14">李老师 · 第3-4节</text>
+</svg>

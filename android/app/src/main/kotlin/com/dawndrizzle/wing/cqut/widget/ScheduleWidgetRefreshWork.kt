@@ -108,6 +108,8 @@ object ScheduleWidgetRefreshWork {
     TodayListWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
     TodayAndNextWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
     TodayCourseWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
+    VerticalScheduleWidgetProvider.updateRefreshPresentation(context, refreshData = refreshData)
+    TinyCourseWidgetProvider.updateRefreshPresentation(context)
     WidgetRefreshCoordinator.ensureScheduled(context, "manual_refresh_presentation")
   }
 

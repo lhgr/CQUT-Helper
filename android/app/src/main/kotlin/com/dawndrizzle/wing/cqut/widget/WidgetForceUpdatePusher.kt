@@ -22,6 +22,16 @@ object WidgetForceUpdatePusher {
       TodayCourseWidgetProvider::class.java,
       TodayCourseWidgetProvider.ACTION_THEME_REFRESH,
     )
+    pushAction(
+      context,
+      TinyCourseWidgetProvider::class.java,
+      TinyCourseWidgetProvider.ACTION_THEME_REFRESH,
+    )
+    pushAction(
+      context,
+      VerticalScheduleWidgetProvider::class.java,
+      VerticalScheduleWidgetProvider.ACTION_THEME_REFRESH,
+    )
   }
 
   fun push(context: Context) {
@@ -43,6 +53,18 @@ object WidgetForceUpdatePusher {
       manager = manager,
       provider = TodayCourseWidgetProvider::class.java,
       refreshAction = TodayCourseWidgetProvider.ACTION_REFRESH,
+    )
+    pushOne(
+      context = context,
+      manager = manager,
+      provider = TinyCourseWidgetProvider::class.java,
+      refreshAction = TinyCourseWidgetProvider.ACTION_REFRESH,
+    )
+    pushOne(
+      context = context,
+      manager = manager,
+      provider = VerticalScheduleWidgetProvider::class.java,
+      refreshAction = VerticalScheduleWidgetProvider.ACTION_REFRESH,
     )
   }
 

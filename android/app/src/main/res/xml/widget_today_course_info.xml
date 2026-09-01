@@ -4,6 +4,8 @@
     android:minHeight="110dp"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_today_course"
+    android:previewImage="@drawable/widget_today_course_preview"
+    android:previewLayout="@layout/widget_today_course_preview"
     android:configure="com.dawndrizzle.wing.cqut.widget.WidgetConfigurationActivity"
     android:resizeMode="vertical|horizontal"
     android:widgetFeatures="reconfigurable"

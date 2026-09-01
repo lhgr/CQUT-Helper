@@ -24,7 +24,17 @@ class WidgetBridgeDispatchPlanTest {
       WidgetBridgeDispatchPlans.from(null, "init"),
     ).forEach { plan ->
       assertEquals(WidgetBridgeDispatchPlans.APP_THEME_REFRESH_ACTION, plan.primaryAction)
-      assertEquals(3, plan.fallbackTargets.size)
+      assertEquals(5, plan.fallbackTargets.size)
+      assertEquals(
+        setOf(
+          "com.dawndrizzle.wing.cqut.widget.TodayListWidgetProvider",
+          "com.dawndrizzle.wing.cqut.widget.TodayAndNextWidgetProvider",
+          "com.dawndrizzle.wing.cqut.widget.TodayCourseWidgetProvider",
+          "com.dawndrizzle.wing.cqut.widget.TinyCourseWidgetProvider",
+          "com.dawndrizzle.wing.cqut.widget.VerticalScheduleWidgetProvider",
+        ),
+        plan.fallbackTargets.map { it.receiverClassName }.toSet(),
+      )
     }
   }
 }
