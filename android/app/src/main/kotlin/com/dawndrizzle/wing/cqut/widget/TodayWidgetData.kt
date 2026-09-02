@@ -303,7 +303,11 @@ object TodayWidgetData {
     // turn a populated widget into a permanent "not synchronized" state.
     return RefreshPresentation(
       RefreshPresentationState.NORMAL,
-      lastSuccessfulAt?.let(::formatLastUpdated).orEmpty(),
+      if (pollingEnabled) {
+        ""
+      } else {
+        lastSuccessfulAt?.let { formatLastUpdated(it, nowMillis) }.orEmpty()
+      },
     )
   }
 
