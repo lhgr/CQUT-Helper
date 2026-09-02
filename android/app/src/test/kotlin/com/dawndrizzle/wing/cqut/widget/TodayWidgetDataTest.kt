@@ -146,6 +146,44 @@ class TodayWidgetDataTest {
   }
 
   @Test
+  fun `background polling hides the last update time`() {
+    val now = beijingCalendar(2026, Calendar.AUGUST, 11, 18, 30)
+    val lastUpdated = beijingCalendar(2026, Calendar.AUGUST, 11, 9, 5)
+    val presentation =
+      TodayWidgetData.idleRefreshPresentation(
+        hasCoveredRequiredDate = true,
+        hasAnyScheduleCache = true,
+        isDebuggable = false,
+        pollingEnabled = true,
+        lastSuccessfulAt = lastUpdated.timeInMillis,
+        nowMillis = now.timeInMillis,
+        suggestionDays = 3,
+      )
+
+    assertEquals(TodayWidgetData.RefreshPresentationState.NORMAL, presentation.state)
+    assertEquals("", presentation.text)
+  }
+
+  @Test
+  fun `disabled background polling keeps the last update time`() {
+    val now = beijingCalendar(2026, Calendar.AUGUST, 11, 18, 30)
+    val lastUpdated = beijingCalendar(2026, Calendar.AUGUST, 11, 9, 5)
+    val presentation =
+      TodayWidgetData.idleRefreshPresentation(
+        hasCoveredRequiredDate = true,
+        hasAnyScheduleCache = true,
+        isDebuggable = false,
+        pollingEnabled = false,
+        lastSuccessfulAt = lastUpdated.timeInMillis,
+        nowMillis = now.timeInMillis,
+        suggestionDays = 3,
+      )
+
+    assertEquals(TodayWidgetData.RefreshPresentationState.NORMAL, presentation.state)
+    assertEquals("09:05", presentation.text)
+  }
+
+  @Test
   fun `one covered date keeps multi-day widget synchronized`() {
     val presentation =
       TodayWidgetData.idleRefreshPresentation(
