@@ -1,9 +1,13 @@
 import 'dart:async';
 
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/manager/schedule_refresh_state.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
+import 'package:cqut_helper/utils/widget_navigation.dart';
+import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:flutter/material.dart';
 
 class TodayScheduleView extends StatefulWidget {
@@ -20,19 +24,47 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   bool _loading = true;
   bool _refreshing = false;
   String? _error;
+  DateTime? _lastSuccessfulRefreshAt;
+  String _dataSource = '缓存';
+  int _lastHandledWidgetNavigationToken = 0;
+  Timer? _clockTimer;
+  DateTime _now = DateTime.now();
 
   List<CampusTimeInfo>? get _timeInfoList => _controller.timeInfoList;
 
   @override
   void initState() {
     super.initState();
+    WidgetNavigation.request.addListener(_onWidgetNavigation);
+    ScheduleCustomizationManager.instance.addListener(_onCustomizationChanged);
+    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
     _loadInitialData();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onWidgetNavigation());
   }
 
   @override
   void dispose() {
+    WidgetNavigation.request.removeListener(_onWidgetNavigation);
+    ScheduleCustomizationManager.instance.removeListener(
+      _onCustomizationChanged,
+    );
+    _clockTimer?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _onCustomizationChanged() async {
+    final current = _scheduleData;
+    if (current == null) return;
+    final refreshed = await _controller.loadFromCache(
+      weekNum: current.weekNum,
+      yearTerm: current.yearTerm,
+    );
+    if (refreshed != null && mounted) {
+      setState(() => _scheduleData = refreshed);
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -51,6 +83,44 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       }),
     );
     await _loadSchedule();
+    _onWidgetNavigation();
+  }
+
+  void _onWidgetNavigation() {
+    final navigation = WidgetNavigation.request.value;
+    final data = _scheduleData;
+    if (!mounted ||
+        data == null ||
+        navigation == null ||
+        !navigation.hasCourse ||
+        navigation.token == _lastHandledWidgetNavigationToken) {
+      return;
+    }
+    final eventId = navigation.eventId?.trim() ?? '';
+    final eventName = navigation.eventName?.trim() ?? '';
+    final targetWeekDay = DateTime.now()
+        .add(Duration(days: navigation.dayOffset))
+        .weekday
+        .toString();
+    final events = (data.eventList ?? const <EventItem>[])
+        .where((event) {
+          final sameCourse = eventId.isNotEmpty
+              ? (event.eventID ?? '').trim() == eventId
+              : (event.eventName ?? '').trim() == eventName;
+          return sameCourse && (event.weekDay ?? '').trim() == targetWeekDay;
+        })
+        .toList(growable: false);
+    if (events.isEmpty) return;
+
+    _lastHandledWidgetNavigationToken = navigation.token;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showCourseDetailDialog(
+        context,
+        courseName: (events.first.eventName ?? '').trim(),
+        events: events,
+      );
+    });
   }
 
   Future<void> _loadSchedule({bool forceRefresh = false}) async {
@@ -72,14 +142,18 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
           setState(() {
             _scheduleData = cached;
             _loading = false;
+            _dataSource = '缓存';
           });
+          await _loadRefreshSnapshot();
         }
       }
 
+      final cacheCoversToday =
+          cached != null && ScheduleDate.dataCoversDate(cached, DateTime.now());
+      final cacheIsFresh =
+          cacheCoversToday && await _controller.isFresh(cached);
       final shouldFetchNetwork =
-          forceRefresh ||
-          cached == null ||
-          !ScheduleDate.dataCoversDate(cached, DateTime.now());
+          forceRefresh || cached == null || !cacheCoversToday || !cacheIsFresh;
 
       if (shouldFetchNetwork) {
         final networkData = await _controller.loadFromNetwork(
@@ -91,7 +165,9 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         setState(() {
           _scheduleData = networkData;
           _error = null;
+          _dataSource = '在线';
         });
+        await _loadRefreshSnapshot();
       }
     } catch (e) {
       if (!mounted) return;
@@ -99,12 +175,35 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         _error = _mapError(e);
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _refreshing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _refreshing = false;
+        });
+      }
     }
+  }
+
+  Future<void> _loadRefreshSnapshot() async {
+    final userId = _controller.userId;
+    if (userId == null || userId.trim().isEmpty) return;
+    final snapshot = await ScheduleRefreshState.load(userId);
+    if (!mounted) return;
+    setState(() {
+      _lastSuccessfulRefreshAt = snapshot.lastSuccessfulRefreshAt;
+    });
+  }
+
+  String get _freshnessText {
+    final at = _lastSuccessfulRefreshAt;
+    if (at == null) return '$_dataSource · 更新时间未知';
+    final now = DateTime.now();
+    final sameDay =
+        now.year == at.year && now.month == at.month && now.day == at.day;
+    final date = sameDay ? '今天' : '${at.month}/${at.day}';
+    final hour = at.hour.toString().padLeft(2, '0');
+    final minute = at.minute.toString().padLeft(2, '0');
+    return '$_dataSource · $date $hour:$minute更新';
   }
 
   String _mapError(Object error) {
@@ -112,10 +211,25 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     if (text.contains('login')) {
       return '需要登录后才能查看今日课表。';
     }
-    if (text.contains('credential')) {
+    if (text.contains('credential') ||
+        text.contains('凭证') ||
+        text.contains('鉴权')) {
       return '登录凭证已失效，请重新登录。';
     }
     return '加载今日课表失败：$error';
+  }
+
+  bool get _requiresReauthentication {
+    final text = (_error ?? '').toLowerCase();
+    return text.contains('登录') ||
+        text.contains('凭证') ||
+        text.contains('鉴权') ||
+        text.contains('credential');
+  }
+
+  Future<void> _reauthenticate() async {
+    if (!await requestReauthentication(context) || !mounted) return;
+    await _loadSchedule(forceRefresh: true);
   }
 
   WeekDayItem? _todayWeekDayItem(ScheduleData data) {
@@ -188,9 +302,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .join('、');
-    return sessions.isEmpty
-        ? '节次未知'
-        : '第$sessions节';
+    return sessions.isEmpty ? '节次未知' : '第$sessions节';
   }
 
   String? _timeRangeLabel(EventItem event) {
@@ -211,6 +323,57 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     final end = (endInfo?.endTime ?? '').trim();
     if (start.isEmpty || end.isEmpty) return null;
     return '$start - $end';
+  }
+
+  _CourseMoment? _courseMoment(List<EventItem> events) {
+    final timeInfo = _timeInfoList;
+    if (timeInfo == null || timeInfo.isEmpty || events.isEmpty) return null;
+    final clocks = <int, ({int start, int end})>{};
+    for (final info in timeInfo) {
+      final session = info.sessionNum;
+      final start = _minuteOfDay(info.startTime);
+      final end = _minuteOfDay(info.endTime);
+      if (session != null && start != null && end != null) {
+        clocks[session] = (start: start, end: end);
+      }
+    }
+    final nowMinute = _now.hour * 60 + _now.minute;
+    _CourseMoment? next;
+    for (final event in events) {
+      final start = clocks[_sessionStart(event)]?.start;
+      final end = clocks[_sessionEnd(event)]?.end;
+      if (start == null || end == null) continue;
+      if (nowMinute >= start && nowMinute < end) {
+        return _CourseMoment(
+          kind: _CourseMomentKind.ongoing,
+          event: event,
+          minutes: end - nowMinute,
+        );
+      }
+      if (start > nowMinute) {
+        final candidate = _CourseMoment(
+          kind: _CourseMomentKind.next,
+          event: event,
+          minutes: start - nowMinute,
+        );
+        if (next == null || candidate.minutes < next.minutes) next = candidate;
+      }
+    }
+    return next ??
+        _CourseMoment(
+          kind: _CourseMomentKind.finished,
+          event: events.last,
+          minutes: 0,
+        );
+  }
+
+  int? _minuteOfDay(String? raw) {
+    final match = RegExp(r'(\d{1,2})\s*[:：]\s*(\d{1,2})').firstMatch(raw ?? '');
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null || hour > 23 || minute > 59) return null;
+    return hour * 60 + minute;
   }
 
   bool _isTodayCovered(ScheduleData data) {
@@ -240,10 +403,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
 
     if (data == null) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('今日课表'),
-          centerTitle: true,
-        ),
+        appBar: AppBar(title: const Text('今日课表'), centerTitle: true),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -252,15 +412,24 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               children: [
                 const Icon(Icons.event_busy_outlined, size: 48),
                 const SizedBox(height: 16),
-                Text(
-                  _error ??
-                      '暂无可用的课表数据。',
-                ),
+                Text(_error ?? '暂无可用的课表数据。'),
                 const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: () => _loadSchedule(forceRefresh: true),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('重试'),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  children: [
+                    if (_requiresReauthentication)
+                      FilledButton.icon(
+                        onPressed: _reauthenticate,
+                        icon: const Icon(Icons.login),
+                        label: const Text('重新登录'),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: () => _loadSchedule(forceRefresh: true),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重试'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -274,6 +443,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     final weekDayItem = _todayWeekDayItem(data);
     final coveredToday = _isTodayCovered(data);
     final events = coveredToday ? _todayEvents(data) : const <EventItem>[];
+    final moment = coveredToday ? _courseMoment(events) : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -308,13 +478,15 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               weekText: data.weekNum?.trim().isNotEmpty == true
                   ? '第${data.weekNum!.trim()}周'
                   : '本周',
+              freshnessText: _freshnessText,
             ),
+            if (moment != null) ...[
+              const SizedBox(height: 12),
+              _NowNextCard(moment: moment),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
-              _InfoBanner(
-                icon: Icons.wifi_off_outlined,
-                message: _error!,
-              ),
+              _InfoBanner(icon: Icons.wifi_off_outlined, message: _error!),
             ],
             const SizedBox(height: 16),
             if (!coveredToday)
@@ -342,6 +514,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     final sessionLabel = _sessionLabel(event);
     final location = (event.address ?? '').trim();
     final teacher = (event.memberName ?? '').trim();
+    final note = (event.note ?? '').trim();
     final startSession = _sessionStart(event);
     final endSession = _sessionEnd(event);
 
@@ -350,9 +523,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -388,9 +559,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                       ),
                     ),
                     Text(
-                      endSession > startSession
-                          ? '-$endSession'
-                          : '单节',
+                      endSession > startSession ? '-$endSession' : '单节',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
@@ -436,6 +605,17 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                         ),
                       ),
                     ],
+                    if (note.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        note,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.tertiary,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -452,12 +632,14 @@ class _SummaryCard extends StatelessWidget {
   final String dateText;
   final String termText;
   final String weekText;
+  final String freshnessText;
 
   const _SummaryCard({
     required this.title,
     required this.dateText,
     required this.termText,
     required this.weekText,
+    required this.freshnessText,
   });
 
   @override
@@ -480,9 +662,9 @@ class _SummaryCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
           Text(dateText, style: Theme.of(context).textTheme.titleMedium),
@@ -493,6 +675,7 @@ class _SummaryCard extends StatelessWidget {
             children: [
               _MetaChip(label: weekText),
               _MetaChip(label: termText),
+              _MetaChip(label: freshnessText),
             ],
           ),
         ],
@@ -569,17 +752,13 @@ class _EmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(
-            icon,
-            size: 48,
-            color: Theme.of(context).colorScheme.outline,
-          ),
+          Icon(icon, size: 48, color: Theme.of(context).colorScheme.outline),
           const SizedBox(height: 16),
           Text(
             title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
@@ -590,6 +769,109 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+enum _CourseMomentKind { ongoing, next, finished }
+
+class _CourseMoment {
+  final _CourseMomentKind kind;
+  final EventItem event;
+  final int minutes;
+
+  const _CourseMoment({
+    required this.kind,
+    required this.event,
+    required this.minutes,
+  });
+}
+
+class _NowNextCard extends StatelessWidget {
+  final _CourseMoment moment;
+
+  const _NowNextCard({required this.moment});
+
+  String get _title => switch (moment.kind) {
+    _CourseMomentKind.ongoing => '正在上课',
+    _CourseMomentKind.next => '下一节课',
+    _CourseMomentKind.finished => '今日课程已结束',
+  };
+
+  String get _countdown {
+    if (moment.kind == _CourseMomentKind.finished) return '辛苦了';
+    final hours = moment.minutes ~/ 60;
+    final minutes = moment.minutes % 60;
+    final duration = hours > 0 ? '$hours小时$minutes分钟' : '$minutes分钟';
+    return moment.kind == _CourseMomentKind.ongoing
+        ? '距离下课 $duration'
+        : '$duration 后开始';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (moment.event.eventName ?? '').trim();
+    final location = (moment.event.address ?? '').trim();
+    return Card(
+      elevation: 0,
+      color: Theme.of(context).colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(
+              moment.kind == _CourseMomentKind.ongoing
+                  ? Icons.play_circle_fill
+                  : moment.kind == _CourseMomentKind.next
+                  ? Icons.upcoming
+                  : Icons.done_all,
+              size: 34,
+              color: Theme.of(context).colorScheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _title,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  if (moment.kind != _CourseMomentKind.finished)
+                    Text(
+                      name.isEmpty ? '未命名课程' : name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onTertiaryContainer,
+                      ),
+                    ),
+                  if (location.isNotEmpty &&
+                      moment.kind != _CourseMomentKind.finished)
+                    Text(
+                      location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              _countdown,
+              textAlign: TextAlign.end,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).colorScheme.onTertiaryContainer,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -11,12 +11,20 @@ class CourseListWidgetService : RemoteViewsService() {
   override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
     val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
     val dayOffset = intent.getIntExtra(EXTRA_DAY_OFFSET, 0)
+    val followWidgetDayOffset = intent.getBooleanExtra(EXTRA_FOLLOW_WIDGET_DAY_OFFSET, false)
     val addFirstItemTopSpacing = intent.getBooleanExtra(EXTRA_ADD_FIRST_ITEM_TOP_SPACING, false)
-    return CourseListRemoteViewsFactory(applicationContext, appWidgetId, dayOffset, addFirstItemTopSpacing)
+    return CourseListRemoteViewsFactory(
+      applicationContext,
+      appWidgetId,
+      dayOffset,
+      followWidgetDayOffset,
+      addFirstItemTopSpacing,
+    )
   }
 
   companion object {
     const val EXTRA_DAY_OFFSET = "dayOffset"
+    const val EXTRA_FOLLOW_WIDGET_DAY_OFFSET = "followWidgetDayOffset"
     const val EXTRA_ADD_FIRST_ITEM_TOP_SPACING = "addFirstItemTopSpacing"
     const val FIRST_ITEM_TOP_SPACING_DP = 8
   }
@@ -25,16 +33,21 @@ class CourseListWidgetService : RemoteViewsService() {
 private class CourseListRemoteViewsFactory(
   private val context: Context,
   private val appWidgetId: Int,
-  private val dayOffset: Int,
+  initialDayOffset: Int,
+  private val followWidgetDayOffset: Boolean,
   private val addFirstItemTopSpacing: Boolean,
 ) : RemoteViewsService.RemoteViewsFactory {
   private var items: List<TodayWidgetData.CourseItem> = emptyList()
+  private var dayOffset: Int = initialDayOffset
 
   override fun onCreate() {
     items = TodayWidgetData.loadCoursesByDayOffset(context, dayOffset)
   }
 
   override fun onDataSetChanged() {
+    if (followWidgetDayOffset) {
+      dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+    }
     items = TodayWidgetData.loadCoursesByDayOffset(context, dayOffset)
   }
 
@@ -47,17 +60,28 @@ private class CourseListRemoteViewsFactory(
   override fun getViewAt(position: Int): RemoteViews {
     val item = items.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_today_list_item)
-    val palette = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH).palette
+    val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId)
+    val palette = theme.palette
     views.setInt(
       R.id.ll_content,
       "setBackgroundResource",
       palette.itemBackgroundRes,
     )
-    views.setTextColor(R.id.tv_course_name, palette.primaryText)
-    views.setTextColor(R.id.tv_campus, palette.secondaryText)
-    views.setTextColor(R.id.tv_classroom, palette.secondaryText)
-    views.setTextColor(R.id.tv_teacher, palette.secondaryText)
-    views.setTextColor(R.id.tv_periods, palette.secondaryText)
+    WidgetRemoteViewsTheme.setColor(views, R.id.tv_course_name, "setTextColor", theme) {
+      it.primaryText
+    }
+    WidgetRemoteViewsTheme.setColor(views, R.id.tv_campus, "setTextColor", theme) {
+      it.secondaryText
+    }
+    WidgetRemoteViewsTheme.setColor(views, R.id.tv_classroom, "setTextColor", theme) {
+      it.secondaryText
+    }
+    WidgetRemoteViewsTheme.setColor(views, R.id.tv_teacher, "setTextColor", theme) {
+      it.secondaryText
+    }
+    WidgetRemoteViewsTheme.setColor(views, R.id.tv_periods, "setTextColor", theme) {
+      it.secondaryText
+    }
     val topSpacingPx =
       if (addFirstItemTopSpacing && position == 0) {
         (CourseListWidgetService.FIRST_ITEM_TOP_SPACING_DP * context.resources.displayMetrics.density).toInt()
@@ -84,8 +108,8 @@ private class CourseListRemoteViewsFactory(
     views.setInt(R.id.iv_indicator, "setColorFilter", item.indicatorColor)
 
     val fillInIntent = Intent().apply {
-      putExtra("eventName", item.name)
-      putExtra("eventId", item.eventId)
+      putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME, item.name)
+      putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_ID, item.eventId)
     }
     views.setOnClickFillInIntent(R.id.ll_item, fillInIntent)
 

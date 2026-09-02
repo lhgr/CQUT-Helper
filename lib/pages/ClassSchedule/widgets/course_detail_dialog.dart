@@ -6,21 +6,37 @@ void showCourseDetailDialog(
   required String courseName,
   required List<EventItem> events,
   Color? closeButtonColor,
+  Future<void> Function(EventItem event)? onEdit,
+  Future<void> Function(EventItem event)? onDelete,
 }) {
-  final normalizedName = courseName.trim().isEmpty ? '未命名课程' : courseName.trim();
+  final normalizedName = courseName.trim().isEmpty
+      ? '未命名课程'
+      : courseName.trim();
   final teachers =
-      events.map((e) => _safeValue(e.memberName)).toSet().toList(growable: false)..sort();
+      events
+          .map((e) => _safeValue(e.memberName))
+          .toSet()
+          .toList(growable: false)
+        ..sort();
   final classrooms =
-      events.map((e) => _safeValue(e.address)).toSet().toList(growable: false)..sort();
+      events.map((e) => _safeValue(e.address)).toSet().toList(growable: false)
+        ..sort();
   final weekCovers =
-      events.map((e) => _safeValue(e.weekCover)).toSet().toList(growable: false)..sort();
+      events.map((e) => _safeValue(e.weekCover)).toSet().toList(growable: false)
+        ..sort();
   final sessions = _buildSessionLines(events);
-
+  final notes = events
+      .map((event) => (event.note ?? '').trim())
+      .where((note) => note.isNotEmpty)
+      .toSet()
+      .toList(growable: false);
   showDialog<void>(
     context: context,
     builder: (dialogContext) {
       final buttonColor = closeButtonColor;
-      final onButtonColor = buttonColor == null ? null : _onButtonColor(buttonColor);
+      final onButtonColor = buttonColor == null
+          ? null
+          : _onButtonColor(buttonColor);
       final screenWidth = MediaQuery.sizeOf(dialogContext).width;
       final dialogWidth = (screenWidth - 48).clamp(280.0, 360.0);
       return AlertDialog(
@@ -36,8 +52,18 @@ void showCourseDetailDialog(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildDetailRow(dialogContext, Icons.person_outline, "教师", teachers.join("、")),
-                _buildDetailRow(dialogContext, Icons.room_outlined, "教室", classrooms.join("、")),
+                _buildDetailRow(
+                  dialogContext,
+                  Icons.person_outline,
+                  "教师",
+                  teachers.join("、"),
+                ),
+                _buildDetailRow(
+                  dialogContext,
+                  Icons.room_outlined,
+                  "教室",
+                  classrooms.join("、"),
+                ),
                 _buildDetailRow(
                   dialogContext,
                   Icons.calendar_today_outlined,
@@ -50,11 +76,38 @@ void showCourseDetailDialog(
                   "节次",
                   sessions.map((e) => e.text).join('\n'),
                 ),
+                if (notes.isNotEmpty)
+                  _buildDetailRow(
+                    dialogContext,
+                    Icons.notes,
+                    '备注',
+                    notes.join('\n'),
+                  ),
               ],
             ),
           ),
         ),
         actions: [
+          if (events.isNotEmpty && onDelete != null)
+            TextButton.icon(
+              onPressed: () {
+                final event = events.first;
+                Navigator.of(dialogContext).pop();
+                onDelete(event);
+              },
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('删除'),
+            ),
+          if (events.isNotEmpty && onEdit != null)
+            TextButton.icon(
+              onPressed: () {
+                final event = events.first;
+                Navigator.of(dialogContext).pop();
+                onEdit(event);
+              },
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('编辑'),
+            ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: buttonColor,
@@ -88,11 +141,14 @@ Widget _buildDetailRow(
             children: [
               Text(
                 label,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
               ),
-              Text(value.isEmpty ? "未知" : value, style: Theme.of(context).textTheme.bodyMedium),
+              Text(
+                value.isEmpty ? "未知" : value,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
             ],
           ),
         ),
@@ -147,11 +203,10 @@ String _sessionText(EventItem event) {
     final end = start + last - 1;
     return '$start-$end节';
   }
-  final sessions =
-      (event.sessionList ?? const <String>[])
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList(growable: false);
+  final sessions = (event.sessionList ?? const <String>[])
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toList(growable: false);
   if (sessions.isEmpty) return '未知';
   return '${sessions.join(",")}节';
 }

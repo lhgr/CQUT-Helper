@@ -19,17 +19,78 @@ import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import com.dawndrizzle.wing.cqut.widget.TodayListWidgetProvider
-import com.dawndrizzle.wing.cqut.widget.TodayAndNextWidgetProvider
-import com.dawndrizzle.wing.cqut.widget.TodayCourseWidgetProvider
+import com.dawndrizzle.wing.cqut.widget.WidgetNavigationPendingIntent
 
 class MainActivity : FlutterActivity() {
   private val channelName = "cqut/downloads"
-  private val widgetChannelName = "cqut/widget"
   private val powerChannelName = "cqut/power"
+  private val navigationChannelName = "cqut/navigation"
+  private val documentChannelName = "cqut/documents"
+  private val createDocumentRequestCode = 4201
+  private val openDocumentRequestCode = 4202
+  private var navigationChannel: MethodChannel? = null
+  private var pendingWidgetNavigation: Map<String, Any?>? = null
+  private var pendingDocumentResult: MethodChannel.Result? = null
+  private var pendingDocumentContent: String? = null
 
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
+    pendingWidgetNavigation = parseWidgetNavigation(intent)
+
+    navigationChannel =
+      MethodChannel(
+        flutterEngine.dartExecutor.binaryMessenger,
+        navigationChannelName,
+      ).apply {
+        setMethodCallHandler { call, result ->
+          when (call.method) {
+            "getInitialWidgetNavigation" -> {
+              result.success(pendingWidgetNavigation)
+              pendingWidgetNavigation = null
+            }
+            else -> result.notImplemented()
+          }
+        }
+      }
+
+    MethodChannel(
+      flutterEngine.dartExecutor.binaryMessenger,
+      documentChannelName,
+    ).setMethodCallHandler { call, result ->
+      if (pendingDocumentResult != null) {
+        result.error("DOCUMENT_BUSY", "another document request is active", null)
+        return@setMethodCallHandler
+      }
+      when (call.method) {
+        "createTextDocument" -> {
+          val fileName = call.argument<String>("fileName")
+          val mimeType = call.argument<String>("mimeType") ?: "application/json"
+          val content = call.argument<String>("content")
+          if (fileName.isNullOrBlank() || content == null) {
+            result.error("INVALID_ARGS", "fileName/content is required", null)
+            return@setMethodCallHandler
+          }
+          pendingDocumentResult = result
+          pendingDocumentContent = content
+          val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mimeType
+            putExtra(Intent.EXTRA_TITLE, fileName)
+          }
+          startActivityForResult(intent, createDocumentRequestCode)
+        }
+        "openTextDocument" -> {
+          val mimeType = call.argument<String>("mimeType") ?: "application/json"
+          pendingDocumentResult = result
+          val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mimeType
+          }
+          startActivityForResult(intent, openDocumentRequestCode)
+        }
+        else -> result.notImplemented()
+      }
+    }
 
     MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
       .setMethodCallHandler { call, result ->
@@ -135,30 +196,6 @@ class MainActivity : FlutterActivity() {
             } catch (e: Exception) {
               result.error("EXPORT_FAILED", e.toString(), null)
             }
-          }
-
-          else -> result.notImplemented()
-        }
-      }
-
-    MethodChannel(flutterEngine.dartExecutor.binaryMessenger, widgetChannelName)
-      .setMethodCallHandler { call, result ->
-        when (call.method) {
-          "updateTodayWidget" -> {
-            val mode = call.argument<String>("themeMode")
-            val trigger = call.argument<String>("trigger")
-            if (!mode.isNullOrBlank()) {
-              val prefs = applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-              prefs.edit().putString("flutter.theme_mode", mode).commit()
-            }
-            val syncTrigger =
-              if (!mode.isNullOrBlank() || trigger == "app_theme_changed" || trigger == "init") {
-                com.dawndrizzle.wing.cqut.widget.WidgetThemeTrigger.APP_THEME_CHANGED
-              } else {
-                com.dawndrizzle.wing.cqut.widget.WidgetThemeTrigger.DATA_REFRESH
-              }
-            com.dawndrizzle.wing.cqut.widget.WidgetThemeSyncDispatcher.dispatch(applicationContext, syncTrigger)
-            result.success(null)
           }
 
           else -> result.notImplemented()
@@ -366,5 +403,78 @@ class MainActivity : FlutterActivity() {
           else -> result.notImplemented()
         }
       }
+
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    val navigation = parseWidgetNavigation(intent) ?: return
+    val channel = navigationChannel
+    if (channel == null) {
+      pendingWidgetNavigation = navigation
+    } else {
+      channel.invokeMethod("widgetNavigation", navigation)
+    }
+  }
+
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode != createDocumentRequestCode && requestCode != openDocumentRequestCode) {
+      return
+    }
+    val result = pendingDocumentResult ?: return
+    pendingDocumentResult = null
+    if (resultCode != RESULT_OK || data?.data == null) {
+      pendingDocumentContent = null
+      result.success(null)
+      return
+    }
+    val uri = data.data!!
+    try {
+      if (requestCode == createDocumentRequestCode) {
+        val content = pendingDocumentContent ?: ""
+        contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8).use { writer ->
+          if (writer == null) throw IllegalStateException("cannot open document for writing")
+          writer.write(content)
+        }
+        pendingDocumentContent = null
+        result.success(uri.toString())
+      } else {
+        val content = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8).use { reader ->
+          if (reader == null) throw IllegalStateException("cannot open document for reading")
+          val text = reader.readText()
+          if (text.length > 5 * 1024 * 1024) {
+            throw IllegalArgumentException("backup file is too large")
+          }
+          text
+        }
+        result.success(content)
+      }
+    } catch (error: Exception) {
+      pendingDocumentContent = null
+      result.error("DOCUMENT_FAILED", error.toString(), null)
+    }
+  }
+
+  private fun parseWidgetNavigation(intent: Intent?): Map<String, Any?>? {
+    if (intent?.getBooleanExtra(
+        WidgetNavigationPendingIntent.EXTRA_OPEN_TODAY,
+        false,
+      ) != true
+    ) {
+      return null
+    }
+    return mapOf(
+      "dayOffset" to
+        intent.getIntExtra(
+          WidgetNavigationPendingIntent.EXTRA_DAY_OFFSET,
+          0,
+        ),
+      "eventName" to
+        intent.getStringExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME),
+      "eventId" to
+        intent.getStringExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_ID),
+    )
   }
 }

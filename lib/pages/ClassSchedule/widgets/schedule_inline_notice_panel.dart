@@ -41,10 +41,7 @@ class ScheduleInlineNoticePanel extends StatelessWidget {
                   ),
                 ),
               ),
-              TextButton(
-                onPressed: onDismissAll,
-                child: const Text('知道了'),
-              ),
+              TextButton(onPressed: onDismissAll, child: const Text('知道了')),
             ],
           ),
           const SizedBox(height: 4),
@@ -53,7 +50,7 @@ class ScheduleInlineNoticePanel extends StatelessWidget {
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: notices.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              separatorBuilder: (_, _) => const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 return Container(
                   padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
@@ -103,7 +100,12 @@ class ScheduleInlineNoticePanel extends StatelessWidget {
       }
       final bold = (m.group(1) ?? '').trim();
       if (bold.isNotEmpty) {
-        spans.add(TextSpan(text: bold, style: const TextStyle(fontWeight: FontWeight.w700)));
+        spans.add(
+          TextSpan(
+            text: bold,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        );
       }
       start = m.end;
     }

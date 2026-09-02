@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_notice.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
@@ -47,7 +48,8 @@ class ScheduleNoticeRefreshPipeline {
   String _stateKey(String userId, String yearTerm) =>
       'schedule_notice_state_${userId}_$yearTerm';
 
-  String _loginMarkerKey(String userId) => 'schedule_notice_login_marker_$userId';
+  String _loginMarkerKey(String userId) =>
+      'schedule_notice_login_marker_$userId';
 
   Future<ScheduleNoticeRefreshResult> run({
     required ScheduleData currentData,
@@ -83,9 +85,19 @@ class ScheduleNoticeRefreshPipeline {
     }
 
     final prefs = await prefsProvider();
+    if (!ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs)) {
+      return const ScheduleNoticeRefreshResult(
+        changes: <ScheduleWeekChange>[],
+        changedNoticeCount: 0,
+        affectedWeeks: <String>{},
+        affectedKeys: <String>{},
+        apiClosed: false,
+        generatedAt: '',
+      );
+    }
     final userId = (prefs.getString('account') ?? '').trim();
-    final encryptedPassword = ((await credentialStore.readEncryptedPassword()) ?? '')
-        .trim();
+    final encryptedPassword =
+        ((await credentialStore.readEncryptedPassword()) ?? '').trim();
     if (userId.isEmpty || encryptedPassword.isEmpty) {
       return const ScheduleNoticeRefreshResult(
         changes: <ScheduleWeekChange>[],
@@ -118,7 +130,9 @@ class ScheduleNoticeRefreshPipeline {
     }
     final polledYearTerm = pollData.yearTerm.trim();
     if (polledYearTerm.isNotEmpty && polledYearTerm != yearTerm) {
-      throw StateError('调课通知轮询学期不一致: current=$yearTerm, polled=$polledYearTerm');
+      throw StateError(
+        '调课通知轮询学期不一致: current=$yearTerm, polled=$polledYearTerm',
+      );
     }
 
     final stateKey = _stateKey(userId, yearTerm);

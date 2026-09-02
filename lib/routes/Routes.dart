@@ -1,7 +1,7 @@
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Main/Main.dart';
-import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
+import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -19,28 +19,34 @@ class MyApp extends StatelessWidget {
         return DynamicColorBuilder(
           builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
             final themeManager = ThemeManager();
+            final predictiveBackEnabled = !themeManager.predictiveBackDisabled;
+            final usesSystemColor =
+                themeManager.colorSource == ThemeColorSource.system;
+            final usesLightDynamicColor =
+                usesSystemColor && lightDynamic != null;
+            final usesDarkDynamicColor = usesSystemColor && darkDynamic != null;
             ColorScheme lightScheme;
-            if (themeManager.isSystemColor && lightDynamic != null) {
+            if (usesSystemColor && lightDynamic != null) {
               lightScheme = lightDynamic.harmonized();
-            } else if (themeManager.isSystemColor) {
+            } else if (usesSystemColor) {
               lightScheme = ColorScheme.fromSeed(seedColor: defaultSeedColor);
             } else {
               lightScheme = ColorScheme.fromSeed(
-                seedColor: themeManager.customColor,
+                seedColor: themeManager.activeSeedColor,
               );
             }
 
             ColorScheme darkScheme;
-            if (themeManager.isSystemColor && darkDynamic != null) {
+            if (usesSystemColor && darkDynamic != null) {
               darkScheme = darkDynamic.harmonized();
-            } else if (themeManager.isSystemColor) {
+            } else if (usesSystemColor) {
               darkScheme = ColorScheme.fromSeed(
                 seedColor: defaultSeedColor,
                 brightness: Brightness.dark,
               );
             } else {
               darkScheme = ColorScheme.fromSeed(
-                seedColor: themeManager.customColor,
+                seedColor: themeManager.activeSeedColor,
                 brightness: Brightness.dark,
               );
             }
@@ -56,19 +62,15 @@ class MyApp extends StatelessWidget {
                 GlobalWidgetsLocalizations.delegate,
                 GlobalCupertinoLocalizations.delegate,
               ],
-              theme: ThemeData(
-                useMaterial3: true,
-                colorScheme: lightScheme,
-                extensions: <ThemeExtension<dynamic>>[
-                  ScheduleCourseCardTheme.light(),
-                ],
+              theme: AppTheme.light(
+                lightScheme,
+                strengthenSurfaceContrast: usesLightDynamicColor,
+                predictiveBackEnabled: predictiveBackEnabled,
               ),
-              darkTheme: ThemeData(
-                useMaterial3: true,
-                colorScheme: darkScheme,
-                extensions: <ThemeExtension<dynamic>>[
-                  ScheduleCourseCardTheme.dark(),
-                ],
+              darkTheme: AppTheme.dark(
+                darkScheme,
+                strengthenSurfaceContrast: usesDarkDynamicColor,
+                predictiveBackEnabled: predictiveBackEnabled,
               ),
               themeMode: ThemeManager().themeMode,
             );

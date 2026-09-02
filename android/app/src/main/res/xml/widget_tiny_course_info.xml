@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_tiny_course"
+    android:previewImage="@drawable/widget_tiny_course_preview"
+    android:previewLayout="@layout/widget_tiny_course_preview"
+    android:configure="com.dawndrizzle.wing.cqut.widget.WidgetConfigurationActivity"
+    android:resizeMode="horizontal|vertical"
+    android:widgetFeatures="reconfigurable"
+    android:widgetCategory="home_screen" />

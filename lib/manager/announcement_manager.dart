@@ -9,7 +9,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-enum AnnouncementFailureType { backend, user }
+enum AnnouncementFailureType { backend, network, request }
 
 class AnnouncementFailure {
   final AnnouncementFailureType type;
@@ -21,6 +21,66 @@ class AnnouncementFailure {
     required this.message,
     this.statusCode,
   });
+}
+
+AnnouncementFailure announcementFailureFromDio(DioException error) {
+  final statusCode = error.response?.statusCode;
+  final data = error.response?.data;
+  final serverError = data is Map<String, dynamic> ? data['error'] : null;
+  final serverErrorText = serverError is String && serverError.isNotEmpty
+      ? serverError
+      : null;
+
+  if (statusCode != null) {
+    final type = statusCode >= 500
+        ? AnnouncementFailureType.backend
+        : AnnouncementFailureType.request;
+    return AnnouncementFailure(
+      type: type,
+      message: serverErrorText ?? '请求失败（$statusCode）',
+      statusCode: statusCode,
+    );
+  }
+
+  switch (error.type) {
+    case DioExceptionType.connectionTimeout:
+    case DioExceptionType.sendTimeout:
+    case DioExceptionType.receiveTimeout:
+    case DioExceptionType.transformTimeout:
+      return const AnnouncementFailure(
+        type: AnnouncementFailureType.network,
+        message: '连接超时，请稍后重试',
+      );
+    case DioExceptionType.connectionError:
+    case DioExceptionType.badCertificate:
+      return const AnnouncementFailure(
+        type: AnnouncementFailureType.network,
+        message: '连接未建立，请稍后重试',
+      );
+    case DioExceptionType.cancel:
+      return const AnnouncementFailure(
+        type: AnnouncementFailureType.request,
+        message: '请求已取消',
+      );
+    case DioExceptionType.badResponse:
+      return const AnnouncementFailure(
+        type: AnnouncementFailureType.backend,
+        message: '公告服务返回了异常响应',
+      );
+    case DioExceptionType.unknown:
+      return const AnnouncementFailure(
+        type: AnnouncementFailureType.network,
+        message: '连接未建立，请稍后重试',
+      );
+  }
+}
+
+String announcementFailureDisplayText(AnnouncementFailure failure) {
+  return switch (failure.type) {
+    AnnouncementFailureType.backend => '公告服务问题：${failure.message}',
+    AnnouncementFailureType.network => '公告服务连接失败：${failure.message}',
+    AnnouncementFailureType.request => '公告请求未完成：${failure.message}',
+  };
 }
 
 class AnnouncementHealthResult {
@@ -61,60 +121,6 @@ class AnnouncementManager {
   static const _latestPopupIdKey = 'announcement_latest_popup_id_v1';
   static const _cacheTtlMs = 6 * 60 * 60 * 1000;
 
-  AnnouncementFailure _failureFromDio(DioException e) {
-    final statusCode = e.response?.statusCode;
-    final data = e.response?.data;
-    final serverError = data is Map<String, dynamic> ? data['error'] : null;
-    final serverErrorText = serverError is String && serverError.isNotEmpty
-        ? serverError
-        : null;
-
-    if (statusCode != null) {
-      final type = statusCode >= 500
-          ? AnnouncementFailureType.backend
-          : AnnouncementFailureType.user;
-      final message = serverErrorText ?? '请求失败（$statusCode）';
-      return AnnouncementFailure(
-        type: type,
-        message: message,
-        statusCode: statusCode,
-      );
-    }
-
-    switch (e.type) {
-      case DioExceptionType.transformTimeout:
-        return const AnnouncementFailure(
-          type: AnnouncementFailureType.user,
-          message: '数据解析超时，请稍后重试',
-        );
-      case DioExceptionType.connectionTimeout:
-      case DioExceptionType.sendTimeout:
-      case DioExceptionType.receiveTimeout:
-      case DioExceptionType.transformTimeout:
-        return const AnnouncementFailure(
-          type: AnnouncementFailureType.user,
-          message: '网络超时，请检查网络后重试',
-        );
-      case DioExceptionType.connectionError:
-      case DioExceptionType.badCertificate:
-        return const AnnouncementFailure(
-          type: AnnouncementFailureType.user,
-          message: '网络异常，请检查网络后重试',
-        );
-      case DioExceptionType.cancel:
-        return const AnnouncementFailure(
-          type: AnnouncementFailureType.user,
-          message: '请求已取消',
-        );
-      case DioExceptionType.badResponse:
-      case DioExceptionType.unknown:
-        return const AnnouncementFailure(
-          type: AnnouncementFailureType.user,
-          message: '网络异常，请稍后重试',
-        );
-    }
-  }
-
   Future<void> _purgeExpiredCache(SharedPreferences prefs, int nowMs) async {
     final cachedTs = prefs.getInt(_cacheTsKey) ?? 0;
     if (cachedTs > 0 && nowMs - cachedTs >= _cacheTtlMs) {
@@ -152,7 +158,10 @@ class AnnouncementManager {
         ),
       );
     } on DioException catch (e) {
-      return AnnouncementHealthResult(ok: false, failure: _failureFromDio(e));
+      return AnnouncementHealthResult(
+        ok: false,
+        failure: announcementFailureFromDio(e),
+      );
     }
   }
 
@@ -182,18 +191,6 @@ class AnnouncementManager {
     }
 
     try {
-      final healthOk = await _apiService.announcement.health();
-      if (!healthOk) {
-        return AnnouncementListResult(
-          items: cachedFallback ?? const [],
-          failure: const AnnouncementFailure(
-            type: AnnouncementFailureType.backend,
-            message: '公告服务异常，请稍后再试',
-          ),
-          fromCache: cachedFallback != null,
-        );
-      }
-
       final packageInfo = await PackageInfo.fromPlatform();
       final items = await _apiService.announcement.getList(
         appVersion: packageInfo.version,
@@ -209,7 +206,7 @@ class AnnouncementManager {
 
       return AnnouncementListResult(items: items, fromCache: false);
     } on DioException catch (e) {
-      final failure = _failureFromDio(e);
+      final failure = announcementFailureFromDio(e);
       if (cachedFallback != null) {
         return AnnouncementListResult(
           items: cachedFallback,
@@ -227,8 +224,8 @@ class AnnouncementManager {
         return AnnouncementListResult(
           items: cachedFallback,
           failure: const AnnouncementFailure(
-            type: AnnouncementFailureType.user,
-            message: '获取公告失败，请稍后重试',
+            type: AnnouncementFailureType.backend,
+            message: '公告数据处理失败，请稍后重试',
           ),
           fromCache: true,
         );
@@ -236,8 +233,8 @@ class AnnouncementManager {
       return const AnnouncementListResult(
         items: [],
         failure: AnnouncementFailure(
-          type: AnnouncementFailureType.user,
-          message: '获取公告失败，请稍后重试',
+          type: AnnouncementFailureType.backend,
+          message: '公告数据处理失败，请稍后重试',
         ),
         fromCache: false,
       );
@@ -264,7 +261,10 @@ class AnnouncementManager {
       final item = await _apiService.announcement.getDetail(id);
       return AnnouncementDetailResult(item: item);
     } on DioException catch (e) {
-      return AnnouncementDetailResult(item: null, failure: _failureFromDio(e));
+      return AnnouncementDetailResult(
+        item: null,
+        failure: announcementFailureFromDio(e),
+      );
     }
   }
 

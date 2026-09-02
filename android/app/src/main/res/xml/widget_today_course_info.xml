@@ -2,7 +2,11 @@
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp"
     android:minHeight="110dp"
-    android:updatePeriodMillis="7200000"
+    android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_today_course"
+    android:previewImage="@drawable/widget_today_course_preview"
+    android:previewLayout="@layout/widget_today_course_preview"
+    android:configure="com.dawndrizzle.wing.cqut.widget.WidgetConfigurationActivity"
     android:resizeMode="vertical|horizontal"
+    android:widgetFeatures="reconfigurable"
     android:widgetCategory="home_screen" />

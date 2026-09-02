@@ -10,8 +10,11 @@ import android.net.Uri
 import android.widget.RemoteViews
 import com.dawndrizzle.wing.cqut.R
 
-private const val ACTION_UI_MODE_CHANGED = "android.intent.action.UI_MODE_CHANGED"
-private const val ACTION_APPWIDGET_UPDATE_OPTIONS = "android.appwidget.action.APPWIDGET_UPDATE_OPTIONS"
+internal enum class TodayCourseHeaderAction {
+  TOGGLE_DAY,
+  MANUAL_REFRESH,
+  OPEN_APP,
+}
 
 class TodayCourseWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(
@@ -19,26 +22,38 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     appWidgetManager: AppWidgetManager,
     appWidgetIds: IntArray,
   ) {
-    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.INITIALIZATION)
+    val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+    updateAppWidgets(context, appWidgetManager, appWidgetIds, theme)
+    WidgetRefreshCoordinator.ensureScheduled(context, "today_course_update")
+  }
+
+  override fun onEnabled(context: Context) {
+    super.onEnabled(context)
+    WidgetRefreshCoordinator.ensureScheduled(context, "today_course_enabled")
   }
 
   override fun onReceive(context: Context, intent: Intent) {
     super.onReceive(context, intent)
     when (intent.action) {
-      ACTION_REFRESH -> WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
-      Intent.ACTION_CONFIGURATION_CHANGED ->
-        WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
-      ACTION_UI_MODE_CHANGED ->
-        WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
-      ACTION_APPWIDGET_UPDATE_OPTIONS ->
-        WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
+      ACTION_REFRESH -> WidgetRefreshCoordinator.refreshAndRepair(context, "today_course_action")
+      ACTION_THEME_REFRESH -> {
+        updateTheme(context)
+        WidgetRefreshCoordinator.ensureScheduled(context, "today_course_theme")
+      }
+      ACTION_MANUAL_REFRESH -> {
+        val appWidgetId =
+          intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+          ScheduleWidgetRefreshWork.enqueue(context, appWidgetId)
+        }
+      }
       ACTION_TOGGLE_DAY -> {
         val appWidgetId =
           intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
         if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
           toggleDayOffset(context, appWidgetId)
         } else {
-          WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.DATA_REFRESH)
+          WidgetRefreshCoordinator.refreshAndRepair(context, "today_course_toggle_fallback")
         }
       }
     }
@@ -51,19 +66,47 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     newOptions: android.os.Bundle,
   ) {
     super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
-    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
+    updateOne(context, appWidgetId)
+    WidgetRefreshCoordinator.ensureScheduled(context, "today_course_options")
+  }
+
+  override fun onDeleted(
+    context: Context,
+    appWidgetIds: IntArray,
+  ) {
+    WidgetInstanceConfigStore.delete(context, appWidgetIds)
+    super.onDeleted(context, appWidgetIds)
+    WidgetRefreshCoordinator.cancelIfUnused(context, "today_course_deleted")
+  }
+
+  override fun onDisabled(context: Context) {
+    super.onDisabled(context)
+    WidgetRefreshCoordinator.cancelIfUnused(context, "today_course_disabled")
   }
 
   companion object {
     const val ACTION_REFRESH = "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_REFRESH"
+    const val ACTION_THEME_REFRESH =
+      "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_THEME_REFRESH"
     const val ACTION_TOGGLE_DAY = "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_TOGGLE_DAY"
-    private const val PREFS_NAME = "TodayCourseWidgetPrefs"
-
+    const val ACTION_MANUAL_REFRESH =
+      "com.dawndrizzle.wing.cqut.widget.TODAY_COURSE_MANUAL_REFRESH"
     fun updateAll(context: Context, theme: WidgetThemeResolution? = null) {
       val appWidgetManager = AppWidgetManager.getInstance(context)
       val ids =
         appWidgetManager.getAppWidgetIds(ComponentName(context, TodayCourseWidgetProvider::class.java))
       updateAppWidgets(context, appWidgetManager, ids, theme)
+    }
+
+    fun updateTheme(
+      context: Context,
+      appWidgetIds: IntArray? = null,
+    ) {
+      // Full RemoteViews containing a legacy ListView adapter are delivered
+      // through updateAppWidgetDeferred(). HyperOS may never request that
+      // deferred payload, so patch visual fields directly and refresh rows
+      // through the collection callback instead.
+      updateRefreshPresentation(context, appWidgetIds = appWidgetIds, refreshData = true)
     }
 
     private fun updateAppWidgets(
@@ -72,9 +115,130 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       appWidgetIds: IntArray,
       theme: WidgetThemeResolution? = null,
     ) {
-      val resolvedTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val fallbackTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
       for (appWidgetId in appWidgetIds) {
+        val resolvedTheme =
+          WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
         updateAppWidget(context, appWidgetManager, appWidgetId, resolvedTheme)
+      }
+    }
+
+    fun updateOne(
+      context: Context,
+      appWidgetId: Int,
+    ) {
+      val appWidgetManager = AppWidgetManager.getInstance(context)
+      val fallbackTheme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
+      updateAppWidget(context, appWidgetManager, appWidgetId, theme)
+    }
+
+    fun updateRefreshPresentation(
+      context: Context,
+      appWidgetIds: IntArray? = null,
+      refreshData: Boolean = false,
+    ) {
+      val appWidgetManager = AppWidgetManager.getInstance(context)
+      val ids =
+        appWidgetIds
+          ?: appWidgetManager.getAppWidgetIds(
+            ComponentName(context, TodayCourseWidgetProvider::class.java),
+          )
+      val fallbackTheme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+      for (appWidgetId in ids) {
+        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) continue
+        val views = RemoteViews(context.packageName, R.layout.widget_today_course)
+        val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
+        bindTheme(views, theme)
+        val dayOffset = getDayOffset(context, appWidgetId)
+        // MIUI may reapply the partial RemoteViews from its layout defaults.
+        // Include every non-collection field so a status-only patch cannot
+        // surface stale header text from another widget instance.
+        val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
+        val weekCount = TodayWidgetData.loadWeekCountText(context, dayOffset)
+        views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
+        views.setTextViewText(R.id.tv_date, header.dateText)
+        views.setTextViewText(
+          R.id.tv_week_count,
+          if (weekCount.isNotBlank()) " | $weekCount    " else " | ",
+        )
+        views.setTextViewText(R.id.tv_week, header.weekText)
+        views.setTextViewText(
+          R.id.empty_text,
+          TodayWidgetData.loadEmptyStateText(context, dayOffset),
+        )
+        val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
+        bindRefreshPresentation(
+          context,
+          views,
+          appWidgetId,
+          dayOffset,
+          refreshPresentation,
+        )
+        appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
+        if (refreshData) {
+          appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+        }
+      }
+    }
+
+    fun completeManualRefresh(
+      context: Context,
+      previousContentFingerprint: String? = null,
+      refreshId: String = "",
+    ) {
+      val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context)
+      val currentContentFingerprint = TodayWidgetData.loadDisplayedScheduleFingerprint(context)
+      val refreshSucceeded =
+        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NORMAL ||
+          (
+            context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 &&
+              refreshPresentation.state == TodayWidgetData.RefreshPresentationState.NEEDS_SYNC
+          )
+      val refreshData =
+        shouldRefreshData(
+          refreshSucceeded,
+          previousContentFingerprint,
+          currentContentFingerprint,
+        )
+      val contentChanged =
+        previousContentFingerprint == null ||
+          previousContentFingerprint != currentContentFingerprint
+      WidgetNativeLog.info(
+        context,
+        "event=completion refreshId=$refreshId state=${refreshPresentation.state} " +
+          "contentChanged=$contentChanged refreshData=$refreshData",
+        tag = "WidgetManualRefresh",
+      )
+      // The visible rows are time-dependent even when the schedule JSON is
+      // unchanged. A completed refresh must therefore reload the collection so
+      // courses that ended while the worker was running disappear immediately.
+      ScheduleWidgetRefreshWork.updateAllRefreshPresentations(context, refreshData)
+    }
+
+    internal fun shouldRefreshData(
+      refreshSucceeded: Boolean,
+      previousContentFingerprint: String?,
+      currentContentFingerprint: String,
+    ): Boolean {
+      // Keep the fingerprint parameters for diagnostics and binary-compatible
+      // tests, but freshness is not purely content based: elapsed time changes
+      // which courses should be visible.
+      return refreshSucceeded
+    }
+
+    internal fun headerActionFor(
+      state: TodayWidgetData.RefreshPresentationState,
+    ): TodayCourseHeaderAction {
+      return when (state) {
+        TodayWidgetData.RefreshPresentationState.NORMAL -> TodayCourseHeaderAction.TOGGLE_DAY
+        TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID ->
+          TodayCourseHeaderAction.OPEN_APP
+        TodayWidgetData.RefreshPresentationState.NEEDS_SYNC,
+        TodayWidgetData.RefreshPresentationState.STALE,
+        TodayWidgetData.RefreshPresentationState.LOADING,
+        TodayWidgetData.RefreshPresentationState.FAILED,
+        -> TodayCourseHeaderAction.MANUAL_REFRESH
       }
     }
 
@@ -86,35 +250,34 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
-      val palette = theme.palette
-      views.setImageViewResource(
-        R.id.iv_appwidget,
-        palette.imageBackgroundRes,
-      )
-      views.setTextColor(R.id.tv_schedule_name, palette.primaryText)
-      views.setTextColor(R.id.tv_date, palette.primaryText)
-      views.setTextColor(R.id.tv_week_count, palette.secondaryText)
-      views.setTextColor(R.id.tv_week, palette.accent)
-      views.setTextColor(R.id.empty_text, palette.secondaryText)
-      views.setInt(R.id.iv_next, "setColorFilter", palette.icon)
-      views.setInt(R.id.theme_transition_overlay, "setBackgroundColor", palette.transitionOverlay)
-      views.setViewVisibility(
-        R.id.theme_transition_overlay,
-        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
-      )
+      // Keep the background on the containers instead of a full-size
+      // ImageView. Some launchers briefly clear ImageView content while
+      // reapplying RemoteViews, which presents as a black flash.
+      bindTheme(views, theme)
 
       val dayOffset = getDayOffset(context, appWidgetId)
       val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
-      val weekCount = TodayWidgetData.loadWeekCountText(context)
+      val weekCount = TodayWidgetData.loadWeekCountText(context, dayOffset)
       views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
       views.setTextViewText(R.id.tv_date, header.dateText)
       val weekCountPart = if (weekCount.isNotBlank()) " | $weekCount    " else " | "
       views.setTextViewText(R.id.tv_week_count, weekCountPart)
       views.setTextViewText(R.id.tv_week, header.weekText)
+      views.setTextViewText(
+        R.id.empty_text,
+        TodayWidgetData.loadEmptyStateText(context, dayOffset),
+      )
+      val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
+      views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
+      views.setViewVisibility(
+        R.id.tv_sync_status,
+        if (refreshPresentation.text.isBlank()) android.view.View.GONE else android.view.View.VISIBLE,
+      )
 
       val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
+        putExtra(CourseListWidgetService.EXTRA_FOLLOW_WIDGET_DAY_OFFSET, true)
         putExtra(CourseListWidgetService.EXTRA_ADD_FIRST_ITEM_TOP_SPACING, true)
         data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
       }
@@ -135,43 +298,170 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           toggleIntent,
           PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-      views.setOnClickPendingIntent(R.id.iv_next, togglePendingIntent)
-
-      val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-      if (launchIntent != null) {
-        val pendingIntent =
-          PendingIntent.getActivity(
-            context,
-            0,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-          )
-        views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
-        views.setOnClickPendingIntent(R.id.rl_appwidget, pendingIntent)
-        views.setOnClickPendingIntent(R.id.rl_title, pendingIntent)
-        views.setOnClickPendingIntent(android.R.id.empty, pendingIntent)
-        views.setPendingIntentTemplate(R.id.lv_course, pendingIntent)
+      val rootPendingIntent =
+        WidgetNavigationPendingIntent.create(
+          context,
+          appWidgetId,
+          dayOffset,
+          false,
+        )
+      val coursePendingIntent =
+        WidgetNavigationPendingIntent.create(
+          context,
+          appWidgetId,
+          dayOffset,
+          true,
+        )
+      // Clear click actions written by earlier app versions. RemoteViews can
+      // be reapplied without resetting omitted listeners, so merely no longer
+      // binding these ancestors is insufficient for existing widgets.
+      views.setOnClickPendingIntent(R.id.widget_root, null)
+      views.setOnClickPendingIntent(R.id.rl_appwidget, null)
+      views.setOnClickPendingIntent(R.id.rl_title, null)
+      if (rootPendingIntent != null) {
+        // Keep the arrow as a sibling of the only clickable header region.
+        // Clickable ancestors are flattened by some launchers and can steal
+        // taps from the child PendingIntent.
+        views.setOnClickPendingIntent(R.id.header_text, rootPendingIntent)
+        views.setOnClickPendingIntent(android.R.id.empty, rootPendingIntent)
       }
+      if (coursePendingIntent != null) {
+        views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
+      }
+      // Bind the contextual action after the independent header/empty-state
+      // navigation actions so later partial refreshes keep the intended PendingIntent.
+      bindRefreshPresentation(
+        context,
+        views,
+        appWidgetId,
+        dayOffset,
+        refreshPresentation,
+        togglePendingIntent,
+      )
 
       appWidgetManager.updateAppWidget(appWidgetId, views)
       appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
     }
 
+    private fun bindTheme(
+      views: RemoteViews,
+      theme: WidgetThemeResolution,
+    ) {
+      val palette = theme.palette
+      views.setInt(R.id.widget_root, "setBackgroundResource", palette.imageBackgroundRes)
+      views.setInt(R.id.widget_card, "setBackgroundResource", palette.imageBackgroundRes)
+      WidgetRemoteViewsTheme.setColor(views, R.id.tv_schedule_name, "setTextColor", theme) {
+        it.primaryText
+      }
+      WidgetRemoteViewsTheme.setColor(views, R.id.tv_date, "setTextColor", theme) {
+        it.primaryText
+      }
+      WidgetRemoteViewsTheme.setColor(views, R.id.tv_week_count, "setTextColor", theme) {
+        it.secondaryText
+      }
+      WidgetRemoteViewsTheme.setColor(views, R.id.tv_week, "setTextColor", theme) { it.accent }
+      WidgetRemoteViewsTheme.setColor(views, R.id.empty_text, "setTextColor", theme) {
+        it.secondaryText
+      }
+      WidgetRemoteViewsTheme.setColor(views, R.id.tv_sync_status, "setTextColor", theme) {
+        it.secondaryText
+      }
+      WidgetRemoteViewsTheme.setColor(views, R.id.iv_next, "setColorFilter", theme) { it.icon }
+      WidgetRemoteViewsTheme.setColor(
+        views,
+        R.id.theme_transition_overlay,
+        "setBackgroundColor",
+        theme,
+      ) { it.transitionOverlay }
+      views.setViewVisibility(
+        R.id.theme_transition_overlay,
+        if (theme.shouldAnimate) android.view.View.VISIBLE else android.view.View.GONE,
+      )
+    }
+
+    private fun bindRefreshPresentation(
+      context: Context,
+      views: RemoteViews,
+      appWidgetId: Int,
+      dayOffset: Int,
+      refreshPresentation: TodayWidgetData.RefreshPresentation,
+      existingTogglePendingIntent: PendingIntent? = null,
+    ) {
+      views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
+      views.setViewVisibility(
+        R.id.tv_sync_status,
+        if (refreshPresentation.text.isBlank()) android.view.View.GONE else android.view.View.VISIBLE,
+      )
+      val isLoading =
+        refreshPresentation.state == TodayWidgetData.RefreshPresentationState.LOADING
+      val headerAction = headerActionFor(refreshPresentation.state)
+      views.setImageViewResource(
+        R.id.iv_next,
+        if (headerAction == TodayCourseHeaderAction.TOGGLE_DAY) {
+          R.drawable.ic_back
+        } else {
+          android.R.drawable.ic_popup_sync
+        },
+      )
+      views.setFloat(
+        R.id.iv_next,
+        "setRotation",
+        if (headerAction == TodayCourseHeaderAction.TOGGLE_DAY && dayOffset == 0) 180f else 0f,
+      )
+      views.setBoolean(R.id.iv_next, "setEnabled", !isLoading)
+
+      val manualRefreshIntent =
+        Intent(context, TodayCourseWidgetProvider::class.java).apply {
+          action = ACTION_MANUAL_REFRESH
+          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#refresh-$appWidgetId")
+        }
+      val manualRefreshPendingIntent =
+        PendingIntent.getBroadcast(
+          context,
+          appWidgetId + 10000,
+          manualRefreshIntent,
+          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+      val togglePendingIntent =
+        existingTogglePendingIntent
+          ?: PendingIntent.getBroadcast(
+            context,
+            appWidgetId,
+            Intent(context, TodayCourseWidgetProvider::class.java).apply {
+              action = ACTION_TOGGLE_DAY
+              putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+              data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#toggle-$appWidgetId")
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+          )
+      when (headerAction) {
+        TodayCourseHeaderAction.TOGGLE_DAY ->
+          views.setOnClickPendingIntent(R.id.iv_next, togglePendingIntent)
+        TodayCourseHeaderAction.MANUAL_REFRESH ->
+          views.setOnClickPendingIntent(R.id.iv_next, manualRefreshPendingIntent)
+        TodayCourseHeaderAction.OPEN_APP ->
+          WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)?.let {
+            views.setOnClickPendingIntent(R.id.iv_next, it)
+          }
+      }
+    }
+
     private fun getDayOffset(context: Context, appWidgetId: Int): Int {
-      val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      return prefs.getInt("dayOffset_$appWidgetId", 0).coerceIn(0, 1)
+      return WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
     }
 
     private fun toggleDayOffset(context: Context, appWidgetId: Int) {
-      val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      val current = prefs.getInt("dayOffset_$appWidgetId", 0).coerceIn(0, 1)
+      val current = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
       val next = if (current == 0) 1 else 0
-      prefs.edit().putInt("dayOffset_$appWidgetId", next).apply()
+      WidgetInstanceConfigStore.saveDayOffset(context, appWidgetId, next)
 
-      val appWidgetManager = AppWidgetManager.getInstance(context)
-      val theme = WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
-      updateAppWidget(context, appWidgetManager, appWidgetId, theme)
-      WidgetAutoRefreshScheduler.schedule(context)
+      // Rebinding the legacy ListView in a full update lets launchers deliver
+      // rapid toggles out of order. Patch the header/action immediately and
+      // make the existing factory reload the latest persisted day instead.
+      updateRefreshPresentation(context, intArrayOf(appWidgetId), refreshData = true)
+      WidgetRefreshCoordinator.recordRenderedState(context, persistLog = false)
+      WidgetRefreshCoordinator.ensureScheduled(context, "today_course_toggle")
     }
   }
 }

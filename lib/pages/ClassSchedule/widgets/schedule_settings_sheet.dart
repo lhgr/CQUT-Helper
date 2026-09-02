@@ -1,12 +1,19 @@
 import 'dart:async';
 import 'package:cqut_helper/api/notice/notice_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
+import 'package:cqut_helper/widgets/marquee_text.dart';
+import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
 
 class ScheduleSettingsSheet extends StatefulWidget {
+  final String userId;
+  final String yearTerm;
   final bool initialShowWeekend;
   final bool initialTimeInfoEnabled;
   final bool initialBackgroundPollingEnabled;
@@ -21,6 +28,8 @@ class ScheduleSettingsSheet extends StatefulWidget {
 
   const ScheduleSettingsSheet({
     super.key,
+    required this.userId,
+    required this.yearTerm,
     required this.initialShowWeekend,
     required this.initialTimeInfoEnabled,
     required this.initialBackgroundPollingEnabled,
@@ -39,16 +48,18 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   late TextEditingController _noticeApiController;
   late String noticeApiBaseUrl;
   String? _noticeApiError;
-  bool _testingConnectivity = false;
-  bool? _connectivityOk;
-  String _connectivityMessage = '';
+  bool _testingAvailability = false;
+  bool? _availabilityOk;
+  String _availabilityMessage = '';
   String _sheetNoticeMessage = '';
-  int? _connectivityElapsedMs;
+  int? _availabilityElapsedMs;
   bool _noticeConfigExpanded = false;
   bool confirmDialogOpen = false;
   bool _allowPop = false;
   bool _checkingSetup = false;
+  bool _noticePrivacyConsentAcceptedThisSession = false;
   ScheduleBackgroundPollHealthSnapshot? _healthSnapshot;
+  int? _hiddenCourseCount;
 
   late bool _baselineShowWeekend;
   late bool _baselineTimeInfoEnabled;
@@ -85,6 +96,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
     _baselineNoticeApiBaseUrl = noticeApiBaseUrl;
     unawaited(_loadHealthSnapshot());
+    unawaited(_loadHiddenCourseCount());
   }
 
   @override
@@ -106,7 +118,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   String? _validateNoticeApiBaseUrl(String value) {
     if (value.trim().isEmpty) return null;
     if (!ScheduleSettingsManager.isValidNoticeApiBaseUrl(value)) {
-      return '请输入合法域名，例如 https://mydomain.com';
+      return '请输入 HTTPS 服务地址，例如 https://mydomain.com';
     }
     return null;
   }
@@ -119,30 +131,68 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     });
   }
 
-  Future<void> _testConnectivity() async {
+  Future<void> _loadHiddenCourseCount() async {
+    if (widget.userId.trim().isEmpty || widget.yearTerm.trim().isEmpty) {
+      if (mounted) setState(() => _hiddenCourseCount = 0);
+      return;
+    }
+    final courses = await ScheduleCustomizationManager.instance.hiddenCourses(
+      userId: widget.userId,
+      yearTerm: widget.yearTerm,
+    );
+    if (!mounted) return;
+    setState(() => _hiddenCourseCount = courses.length);
+  }
+
+  Future<void> _openHiddenCourses() async {
+    await showHiddenCoursesSheet(
+      context,
+      userId: widget.userId,
+      yearTerm: widget.yearTerm,
+    );
+    if (mounted) await _loadHiddenCourseCount();
+  }
+
+  Future<void> _testAvailability() async {
     final error = _validateNoticeApiBaseUrl(noticeApiBaseUrl);
     if (error != null) {
       setState(() {
         _noticeApiError = error;
-        _connectivityOk = false;
-        _connectivityElapsedMs = null;
-        _connectivityMessage = '请先修正域名格式';
+        _availabilityOk = false;
+        _availabilityElapsedMs = null;
+        _availabilityMessage = '请先修正域名格式';
       });
       return;
     }
     setState(() {
-      _testingConnectivity = true;
-      _connectivityMessage = '正在检测连通性...';
-      _connectivityElapsedMs = null;
-      _connectivityOk = null;
+      _testingAvailability = true;
+      _availabilityMessage = '正在调用调课服务...';
+      _availabilityElapsedMs = null;
+      _availabilityOk = null;
     });
-    final result = await NoticeApi.testConnectivity(noticeApiBaseUrl);
+    NoticeApiAvailabilityResult result;
+    try {
+      final encryptedPassword =
+          ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
+      result = await NoticeApi().testAvailability(
+        baseUrl: noticeApiBaseUrl,
+        username: widget.userId,
+        encryptedPassword: encryptedPassword,
+        yearTerm: widget.yearTerm,
+      );
+    } catch (_) {
+      result = const NoticeApiAvailabilityResult(
+        success: false,
+        elapsedMs: 0,
+        message: '读取登录凭据失败，请重新登录后再检查',
+      );
+    }
     if (!mounted) return;
     setState(() {
-      _testingConnectivity = false;
-      _connectivityOk = result.success;
-      _connectivityElapsedMs = result.elapsedMs;
-      _connectivityMessage = result.message;
+      _testingAvailability = false;
+      _availabilityOk = result.success;
+      _availabilityElapsedMs = result.elapsedMs;
+      _availabilityMessage = result.message;
     });
   }
 
@@ -153,18 +203,21 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
           context: context,
           builder: (context) {
             return AlertDialog(
-              title: const Text('启用后台定时轮询'),
+              title: const Text('开启“调课通知增强”'),
               content: const Text(
-                '启用后会在后台定时检查调课通知。为提升稳定性，建议授予通知权限、忽略电池优化，并在系统中允许应用自启动。',
+                '开启后，应用会将你的学号、教务系统加密密码和当前学期发送到所配置的调课服务，用于代你查询调课通知，并在后台刷新受影响周。\n\n'
+                'CQUT Helper 官方调课服务仅使用上述信息完成查询，不会储存你的学号、密码、学期等隐私数据；若使用自定义服务，其数据处理方式由服务提供者决定。\n\n'
+                '普通课表和桌面小组件不依赖此服务；保持关闭或服务不可用时，仍可正常查看和手动刷新课表。\n\n'
+                '继续后还会申请通知权限，并引导你设置电池优化和自启动。',
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: const Text('暂不开启'),
+                  child: const Text('保持关闭'),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text('继续开启'),
+                  child: const Text('我已了解，继续'),
                 ),
               ],
             );
@@ -172,6 +225,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         ) ??
         false;
     if (!proceed) return false;
+    _noticePrivacyConsentAcceptedThisSession = true;
 
     final granted = await LocalNotifications.ensurePermission();
     if (!mounted) return false;
@@ -252,7 +306,20 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
       noticeApiBaseUrl,
     );
+    final baselineBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
+      _baselineNoticeApiBaseUrl,
+    );
+    if (normalizedBaseUrl != baselineBaseUrl &&
+        !ScheduleSettingsManager.isOfficialNoticeApiBaseUrl(
+          normalizedBaseUrl,
+        ) &&
+        !await confirmCustomNoticeServiceRisk(context)) {
+      return false;
+    }
 
+    if (backgroundPollingEnabled && _noticePrivacyConsentAcceptedThisSession) {
+      await ScheduleSettingsManager.markNoticePrivacyConsentAccepted();
+    }
     await ScheduleUpdateWorker.markEnabledAtIfNeeded(
       enabled: backgroundPollingEnabled,
     );
@@ -390,10 +457,29 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                     },
                   ),
                   ListTile(
-                    title: Text('启用后台定时轮询'),
+                    leading: const Icon(Icons.visibility_off_outlined),
+                    title: const Text('已隐藏课程'),
                     subtitle: Text(
-                      _healthSnapshot == null
-                          ? '后台定时检查调课通知并更新受影响周课表'
+                      _hiddenCourseCount == null
+                          ? '正在读取本地设置…'
+                          : _hiddenCourseCount == 0
+                          ? '暂无隐藏课程'
+                          : '$_hiddenCourseCount 门课程，可在此取消隐藏',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap:
+                        widget.userId.trim().isEmpty ||
+                            widget.yearTerm.trim().isEmpty
+                        ? null
+                        : _openHiddenCourses,
+                  ),
+                  ListTile(
+                    title: Text('调课通知增强（可选）'),
+                    subtitle: Text(
+                      !backgroundPollingEnabled
+                          ? '关闭时不会访问调课服务，普通课表仍可正常刷新'
+                          : _healthSnapshot == null
+                          ? '后台检查调课通知，并只更新受影响周'
                           : '${_healthSnapshot!.title} · ${_healthSnapshot!.detail}',
                     ),
                     onTap: () {
@@ -427,15 +513,22 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Text(
+                            '高级设置',
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                          const SizedBox(height: 8),
                           TextField(
                             controller: _noticeApiController,
                             keyboardType: TextInputType.url,
                             textInputAction: TextInputAction.done,
                             decoration: InputDecoration(
-                              labelText: '调课信息接口域名',
+                              labelText: '调课服务地址',
                               hintText: ScheduleSettingsManager
                                   .officialNoticeApiBaseUrl,
-                              helperText: '留空使用官方域名；仅支持 http/https 且不包含路径',
+                              helper: const MarqueeText(
+                                '仅支持 HTTPS；检查时会使用当前登录凭据实际查询，失败时不会回退其他服务',
+                              ),
                               errorText: _noticeApiError,
                             ),
                           ),
@@ -443,25 +536,25 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                           Row(
                             children: [
                               FilledButton.tonal(
-                                onPressed: _testingConnectivity
+                                onPressed: _testingAvailability
                                     ? null
-                                    : _testConnectivity,
+                                    : _testAvailability,
                                 child: Text(
-                                  _testingConnectivity ? '测试中...' : '测试连通性',
+                                  _testingAvailability ? '检查中...' : '检查服务可用性',
                                 ),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  _connectivityMessage.isEmpty
-                                      ? '输入后可测试 /health 接口连通性'
-                                      : _connectivityElapsedMs == null
-                                      ? _connectivityMessage
-                                      : '$_connectivityMessage（${_connectivityElapsedMs}ms）',
+                                  _availabilityMessage.isEmpty
+                                      ? '输入后可实际查询当前学期调课信息'
+                                      : _availabilityElapsedMs == null
+                                      ? _availabilityMessage
+                                      : '$_availabilityMessage（${_availabilityElapsedMs}ms）',
                                   style: TextStyle(
-                                    color: _connectivityOk == null
+                                    color: _availabilityOk == null
                                         ? Theme.of(context).hintColor
-                                        : _connectivityOk == true
+                                        : _availabilityOk == true
                                         ? Colors.green
                                         : Theme.of(context).colorScheme.error,
                                   ),
@@ -511,6 +604,8 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
 void showScheduleSettingsSheet(
   BuildContext context, {
+  required String userId,
+  required String yearTerm,
   required bool initialShowWeekend,
   required bool initialTimeInfoEnabled,
   required bool initialBackgroundPollingEnabled,
@@ -530,6 +625,8 @@ void showScheduleSettingsSheet(
     isScrollControlled: true,
     builder: (context) {
       return ScheduleSettingsSheet(
+        userId: userId,
+        yearTerm: yearTerm,
         initialShowWeekend: initialShowWeekend,
         initialTimeInfoEnabled: initialTimeInfoEnabled,
         initialBackgroundPollingEnabled: initialBackgroundPollingEnabled,

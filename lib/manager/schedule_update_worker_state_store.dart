@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cqut_helper/model/schedule_week_change.dart';
+import 'package:cqut_helper/manager/schedule_message_center_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String _backgroundPollingEnabledKey =
@@ -9,8 +10,10 @@ const String _backgroundPollingEnabledAtKey =
     'schedule_background_poll_enabled_at';
 const String _backgroundPollingLastSuccessAtKey =
     'schedule_background_poll_last_success_at';
-const String _backgroundPollLastStateKey = 'schedule_background_poll_last_state';
-const String _backgroundPollSyncStateKey = 'schedule_background_poll_sync_state';
+const String _backgroundPollLastStateKey =
+    'schedule_background_poll_last_state';
+const String _backgroundPollSyncStateKey =
+    'schedule_background_poll_sync_state';
 const String _backgroundPollDailyStateKey =
     'schedule_background_poll_daily_state';
 const String _pendingKeyPrefix = 'schedule_pending_changes_';
@@ -164,7 +167,7 @@ Future<void> patchScheduleUpdateWorkerDailyState({
   try {
     final current = await loadScheduleUpdateWorkerDailyState();
     final next = <String, dynamic>{
-      if (current != null) ...current,
+      ...?current,
       'logicalDateBjt': logicalDateBjt,
       ...fields,
     };
@@ -199,6 +202,11 @@ Future<void> writeScheduleUpdateWorkerPendingChanges({
         .toList(),
   });
   await prefs.setString(scheduleUpdateWorkerPendingKeyForUser(userId), payload);
+  await ScheduleMessageCenterManager.appendChanges(
+    userId: userId,
+    yearTerm: yearTerm,
+    changes: changes,
+  );
 }
 
 DateTime? _parseTime(SharedPreferences prefs, String key) {

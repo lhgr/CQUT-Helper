@@ -124,12 +124,7 @@ String scheduleFingerprintFromScheduleData(ScheduleData data) {
   return sha256.convert(utf8.encode(canonical)).toString();
 }
 
-typedef ScheduleDeltaStats = ({
-  int added,
-  int removed,
-  int changed,
-  int same,
-});
+typedef ScheduleDeltaStats = ({int added, int removed, int changed, int same});
 
 ScheduleDeltaStats diffWeekEventFingerprints({
   required Map<String, dynamic>? beforeJson,

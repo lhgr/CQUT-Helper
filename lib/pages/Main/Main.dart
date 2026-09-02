@@ -1,11 +1,17 @@
+import 'dart:async';
+
 import 'package:cqut_helper/manager/announcement_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/update_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
 import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
+import 'package:cqut_helper/utils/widget_navigation.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,23 +26,22 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   bool _isCheckingLogin = true;
   int _lastOpenFromNotificationToken = 0;
   int _currentIndex = 1;
+  int _lastWidgetNavigationToken = 0;
+  final WidgetResumeRefreshGate _widgetResumeRefreshGate =
+      WidgetResumeRefreshGate();
+  final ScheduleSettingsManager _scheduleSettingsManager =
+      ScheduleSettingsManager();
+  ScheduleLayoutSettings _scheduleLayoutSettings =
+      ScheduleSettingsManager.cachedLayoutSettings;
 
   final List<Map<String, dynamic>> _tabList = const [
-    {
-      'icon': Icons.today_outlined,
-      'active_icon': Icons.today,
-      'text': '今日',
-    },
+    {'icon': Icons.today_outlined, 'active_icon': Icons.today, 'text': '今日'},
     {
       'icon': Icons.calendar_today_outlined,
       'active_icon': Icons.calendar_today,
       'text': '课表',
     },
-    {
-      'icon': Icons.person_outline,
-      'active_icon': Icons.person,
-      'text': '我的',
-    },
+    {'icon': Icons.person_outline, 'active_icon': Icons.person, 'text': '我的'},
   ];
 
   @override
@@ -46,7 +51,13 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     ScheduleUpdateIntents.openFromSystemNotification.addListener(
       _onOpenFromSystemNotification,
     );
+    WidgetNavigation.request.addListener(_onWidgetNavigation);
+    ScheduleSettingsManager.settingsEpoch.addListener(
+      _loadScheduleLayoutSettings,
+    );
+    _loadScheduleLayoutSettings();
     _checkLoginStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onWidgetNavigation());
   }
 
   @override
@@ -55,14 +66,26 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     ScheduleUpdateIntents.openFromSystemNotification.removeListener(
       _onOpenFromSystemNotification,
     );
+    WidgetNavigation.request.removeListener(_onWidgetNavigation);
+    ScheduleSettingsManager.settingsEpoch.removeListener(
+      _loadScheduleLayoutSettings,
+    );
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_widgetResumeRefreshGate.shouldRefresh(state)) {
+      unawaited(WidgetUpdater.updateTodayWidget(trigger: 'app_resumed'));
+    }
     if (state == AppLifecycleState.resumed) {
       _markActive();
       ScheduleUpdateWorker.syncFromPreferences();
+      LocalNotifications.consumeOpenCourseReminderFlag().then((open) {
+        if (open && mounted && _currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+        }
+      });
     }
   }
 
@@ -72,6 +95,24 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       'app_last_active_at',
       DateTime.now().millisecondsSinceEpoch,
     );
+  }
+
+  Future<void> _loadScheduleLayoutSettings() async {
+    await _scheduleSettingsManager.load();
+    if (!mounted) return;
+    final layoutSettings = _scheduleSettingsManager.layoutSettings;
+    final backgroundPath = layoutSettings.backgroundImagePath?.trim();
+    if (backgroundPath != null && backgroundPath.isNotEmpty) {
+      await ScheduleBackground.precacheFile(
+        context,
+        backgroundPath,
+        evict: false,
+      );
+      if (!mounted) return;
+    }
+    setState(() {
+      _scheduleLayoutSettings = layoutSettings;
+    });
   }
 
   Future<void> _checkLoginStatus() async {
@@ -87,6 +128,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
     if (!mounted) return;
     setState(() {
+      _currentIndex =
+          (prefs.getInt(ScheduleSettingsManager.defaultHomeTabKey) ?? 1).clamp(
+            0,
+            2,
+          );
       _isCheckingLogin = false;
     });
 
@@ -99,6 +145,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       if (open) {
         _openScheduleAndChanges();
       }
+      final openCourse =
+          await LocalNotifications.consumeOpenCourseReminderFlag();
+      if (openCourse && mounted && _currentIndex != 0) {
+        setState(() => _currentIndex = 0);
+      }
     });
   }
 
@@ -107,6 +158,21 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     if (token == _lastOpenFromNotificationToken) return;
     _lastOpenFromNotificationToken = token;
     _openScheduleAndChanges();
+  }
+
+  void _onWidgetNavigation() {
+    final navigation = WidgetNavigation.request.value;
+    if (navigation == null ||
+        navigation.token == _lastWidgetNavigationToken ||
+        !mounted) {
+      return;
+    }
+    _lastWidgetNavigationToken = navigation.token;
+    if (_currentIndex != 0) {
+      setState(() {
+        _currentIndex = 0;
+      });
+    }
   }
 
   void _openScheduleAndChanges() {
@@ -122,13 +188,15 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   List<NavigationDestination> _getDestinations() {
-    return _tabList.map((item) {
-      return NavigationDestination(
-        icon: Icon(item['icon'] as IconData),
-        selectedIcon: Icon(item['active_icon'] as IconData),
-        label: item['text'] as String,
-      );
-    }).toList(growable: false);
+    return _tabList
+        .map((item) {
+          return NavigationDestination(
+            icon: Icon(item['icon'] as IconData),
+            selectedIcon: Icon(item['active_icon'] as IconData),
+            label: item['text'] as String,
+          );
+        })
+        .toList(growable: false);
   }
 
   List<Widget> _getStackChildren() {
@@ -138,26 +206,70 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (_isCheckingLogin) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final colorScheme = Theme.of(context).colorScheme;
+    final showScheduleBackground =
+        _currentIndex == 1 &&
+        ScheduleBackground.hasImage(_scheduleLayoutSettings);
+
     return Scaffold(
-      body: SafeArea(
-        child: IndexedStack(
-          index: _currentIndex,
-          children: _getStackChildren(),
-        ),
+      extendBody: true,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          ScheduleBackgroundLayer(
+            settings: _scheduleLayoutSettings,
+            visible: showScheduleBackground,
+          ),
+          SafeArea(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: _getStackChildren(),
+            ),
+          ),
+        ],
       ),
-      bottomNavigationBar: NavigationBar(
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        selectedIndex: _currentIndex,
-        destinations: _getDestinations(),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withAlpha(120),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: colorScheme.shadow.withAlpha(
+                    Theme.of(context).brightness == Brightness.dark ? 50 : 20,
+                  ),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: NavigationBar(
+                backgroundColor: showScheduleBackground
+                    ? Colors.transparent
+                    : colorScheme.surfaceContainer,
+                elevation: 0,
+                onDestinationSelected: (index) {
+                  setState(() {
+                    _currentIndex = index;
+                  });
+                },
+                selectedIndex: _currentIndex,
+                destinations: _getDestinations(),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

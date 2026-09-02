@@ -24,7 +24,7 @@ class UpdateModel {
         downloadUrl = apkAsset['browser_download_url'];
       }
     }
-    
+
     // 如果没有 APK，回退到 html_url
     if (downloadUrl.isEmpty) {
       downloadUrl = json['html_url'];

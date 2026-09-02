@@ -47,8 +47,7 @@ class ScheduleNoticeMetrics {
         (state['affected_weeks_total'] ?? 0) + record.affectedWeeks;
     state['last_duration_ms'] = record.durationMs;
     state['last_failure_streak'] = record.failureStreak;
-    state['last_poll_at_sec'] =
-        DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    state['last_poll_at_sec'] = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     state['last_run_type'] = record.runType;
 
     await prefs.setString(_stateKey, json.encode(state));
@@ -65,7 +64,9 @@ class ScheduleNoticeMetrics {
     return _buildPromText(state);
   }
 
-  static Future<Map<String, dynamic>> _loadState(SharedPreferences prefs) async {
+  static Future<Map<String, dynamic>> _loadState(
+    SharedPreferences prefs,
+  ) async {
     final raw = prefs.getString(_stateKey);
     if (raw == null || raw.trim().isEmpty) return <String, dynamic>{};
     try {

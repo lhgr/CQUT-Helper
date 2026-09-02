@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local Flutter package build artifacts
+/packages/**/.gradle/
+/packages/**/build/
+
 # Symbolication related
 app.*.symbols
 
@@ -50,6 +54,7 @@ android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 lib/firebase_options.dart
 android/key.properties
+android/app/upload-keystore.jks
 **/*.keystore
 **/*.jks
 workers
@@ -61,3 +66,5 @@ FastAPI/__pycache__/
 APIs/
 
 .claude/
+
+key/

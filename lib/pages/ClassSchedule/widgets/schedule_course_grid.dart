@@ -15,19 +15,41 @@ class ScheduleCourseGrid extends StatefulWidget {
   final List<Color> descriptionColors;
   final List<Color> buttonColors;
   final bool showWeekend;
+  final bool showGridLines;
+  final bool hideLocation;
+  final bool hideTeacher;
+  final bool removeCampusPrefix;
+  final bool horizontalCenter;
+  final bool verticalCenter;
+  final double cardRadius;
+  final double textScale;
+  final double cardOpacity;
+  final Future<void> Function(EventItem event) onEditCourse;
+  final Future<void> Function(EventItem event) onDeleteCourse;
 
   const ScheduleCourseGrid({
     super.key,
     required this.events,
     required this.yearTerm,
     this.sessionHeight = 60.0,
-    this.sessionCount = 12,
+    this.sessionCount = 10,
     required this.backgroundColors,
     required this.borderColors,
     required this.titleColors,
     required this.descriptionColors,
     required this.buttonColors,
     this.showWeekend = true,
+    this.showGridLines = true,
+    this.hideLocation = false,
+    this.hideTeacher = false,
+    this.removeCampusPrefix = false,
+    this.horizontalCenter = false,
+    this.verticalCenter = false,
+    this.cardRadius = 12,
+    this.textScale = 1,
+    this.cardOpacity = 1,
+    required this.onEditCourse,
+    required this.onDeleteCourse,
   });
 
   @override
@@ -36,12 +58,19 @@ class ScheduleCourseGrid extends StatefulWidget {
 
 class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
   Map<String, int> _courseColorIndexMap = <String, int>{};
+  List<EventItem> _visibleEvents = const <EventItem>[];
+  _ConflictRenderPlan _renderPlan = const _ConflictRenderPlan(
+    cards: <_DisplayCard>[],
+    borders: <_BorderOverlay>[],
+  );
+  List<_BorderOverlay> _sortedBorders = const <_BorderOverlay>[];
 
   @override
   void initState() {
     super.initState();
     _courseColorIndexMap = CourseColorAssignmentManager.instance
         .getCachedAssignments(widget.yearTerm);
+    _rebuildRenderPlan();
     _warmupCourseColorMap();
   }
 
@@ -58,6 +87,32 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
         oldWidget.showWeekend != widget.showWeekend) {
       _warmupCourseColorMap();
     }
+    if (oldWidget.events != widget.events ||
+        oldWidget.showWeekend != widget.showWeekend) {
+      _rebuildRenderPlan();
+    }
+  }
+
+  void _rebuildRenderPlan() {
+    _visibleEvents = widget.showWeekend
+        ? widget.events
+        : widget.events
+              .where((event) {
+                final weekDay = int.tryParse(event.weekDay ?? '1') ?? 1;
+                return weekDay >= 1 && weekDay <= 5;
+              })
+              .toList(growable: false);
+    _renderPlan = _buildRenderPlan(_buildConflictGroups(_visibleEvents));
+    _sortedBorders = List<_BorderOverlay>.from(_renderPlan.borders)
+      ..sort((a, b) {
+        final byDay = a.weekDay.compareTo(b.weekDay);
+        if (byDay != 0) return byDay;
+        final byDuration = b.duration.compareTo(a.duration);
+        if (byDuration != 0) return byDuration;
+        final byStart = a.start.compareTo(b.start);
+        if (byStart != 0) return byStart;
+        return a.insetLevel.compareTo(b.insetLevel);
+      });
   }
 
   String _buildCourseKey(EventItem event) {
@@ -99,6 +154,23 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
     return widget.events
         .where((event) => _buildCourseKey(event) == key)
         .toList(growable: false);
+  }
+
+  void _showCourseDetails(
+    BuildContext context,
+    EventItem event, {
+    required Color closeButtonColor,
+  }) {
+    showCourseDetailDialog(
+      context,
+      courseName: _buildCourseKey(event),
+      events: _eventsWithSameCourseName(event),
+      closeButtonColor: closeButtonColor,
+      onEdit: (_) => widget.onEditCourse(event),
+      onDelete: event.isSchoolCustomCourse
+          ? (_) => widget.onDeleteCourse(event)
+          : null,
+    );
   }
 
   int _safeParsePositiveInt(String? raw, {int fallback = 1}) {
@@ -409,7 +481,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                   child: ListView.separated(
                     shrinkWrap: true,
                     itemCount: group.events.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (itemContext, index) {
                       final event = group.events[index];
                       return ListTile(
@@ -422,11 +494,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                         isThreeLine: true,
                         onTap: () {
                           Navigator.of(sheetContext).pop();
-                          final key = _buildCourseKey(event);
-                          showCourseDetailDialog(
+                          _showCourseDetails(
                             context,
-                            courseName: key,
-                            events: _eventsWithSameCourseName(event),
+                            event,
                             closeButtonColor: closeButtonColor,
                           );
                         },
@@ -449,73 +519,54 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
         final int dayCount = widget.showWeekend ? 7 : 5;
         final double dayWidth = constraints.maxWidth / dayCount;
         final double totalHeight = widget.sessionHeight * widget.sessionCount;
-        final visibleEvents = widget.showWeekend
-            ? widget.events
-            : widget.events
-                  .where((event) {
-                    final weekDay = int.tryParse(event.weekDay ?? '1') ?? 1;
-                    return weekDay >= 1 && weekDay <= 5;
-                  })
-                  .toList(growable: false);
-        final conflictGroups = _buildConflictGroups(visibleEvents);
-        final renderPlan = _buildRenderPlan(conflictGroups);
-        final sortedBorders = List<_BorderOverlay>.from(renderPlan.borders)
-          ..sort((a, b) {
-            final byDay = a.weekDay.compareTo(b.weekDay);
-            if (byDay != 0) return byDay;
-            final byDuration = b.duration.compareTo(a.duration);
-            if (byDuration != 0) return byDuration;
-            final byStart = a.start.compareTo(b.start);
-            if (byStart != 0) return byStart;
-            return a.insetLevel.compareTo(b.insetLevel);
-          });
-
         return SizedBox(
           height: totalHeight,
           child: Stack(
             children: [
               // Grid lines
-              ...List.generate(widget.sessionCount, (index) {
-                return Positioned(
-                  top: index * widget.sessionHeight,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    height: widget.sessionHeight,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outlineVariant.withAlpha(51),
+              if (widget.showGridLines)
+                ...List.generate(widget.sessionCount, (index) {
+                  return Positioned(
+                    top: index * widget.sessionHeight,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: widget.sessionHeight,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outlineVariant.withAlpha(51),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              }),
-              ...List.generate(dayCount, (index) {
-                return Positioned(
-                  left: index * dayWidth,
-                  top: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: dayWidth,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        right: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outlineVariant.withAlpha(51),
+                  );
+                }),
+              if (widget.showGridLines)
+                ...List.generate(dayCount, (index) {
+                  return Positioned(
+                    left: index * dayWidth,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: dayWidth,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          right: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outlineVariant.withAlpha(51),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                }),
 
               // Events
-              if (visibleEvents.isEmpty)
+              if (_visibleEvents.isEmpty)
                 Center(
                   child: Text(
                     "本周无课",
@@ -523,7 +574,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                   ),
                 )
               else ...[
-                ...renderPlan.cards.map((card) {
+                ..._renderPlan.cards.map((card) {
                   final event = card.event;
                   final int weekDay = card.weekDay;
                   final int start = card.start;
@@ -536,7 +587,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
 
                   final key = _buildCourseKey(event);
                   final int colorIndex =
-                      _courseColorIndexMap[key] ?? _fallbackIndexForKey(key);
+                      event.colorIndex ??
+                      _courseColorIndexMap[key] ??
+                      _fallbackIndexForKey(key);
                   final safeIndex = _safeIndex(colorIndex);
                   final Color backgroundColor =
                       widget.backgroundColors[safeIndex];
@@ -566,6 +619,14 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       showContent: false,
                       showConflictBadge: false,
                       enableTap: false,
+                      hideLocation: widget.hideLocation,
+                      hideTeacher: widget.hideTeacher,
+                      removeCampusPrefix: widget.removeCampusPrefix,
+                      horizontalCenter: widget.horizontalCenter,
+                      verticalCenter: widget.verticalCenter,
+                      borderRadius: widget.cardRadius,
+                      textScale: widget.textScale,
+                      cardOpacity: widget.cardOpacity,
                       onTap: () {
                         if (card.group.events.length > 1) {
                           _showConflictSheet(
@@ -574,10 +635,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                             closeButtonColor: widget.buttonColors[safeIndex],
                           );
                         } else {
-                          showCourseDetailDialog(
+                          _showCourseDetails(
                             context,
-                            courseName: key,
-                            events: _eventsWithSameCourseName(event),
+                            event,
                             closeButtonColor: widget.buttonColors[safeIndex],
                           );
                         }
@@ -585,7 +645,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                     ),
                   );
                 }),
-                ...sortedBorders.map((border) {
+                ..._sortedBorders.map((border) {
                   final int weekDay = border.weekDay;
                   final int start = border.start;
                   final int duration = border.duration;
@@ -596,7 +656,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
 
                   final key = _buildCourseKey(border.event);
                   final int colorIndex =
-                      _courseColorIndexMap[key] ?? _fallbackIndexForKey(key);
+                      border.event.colorIndex ??
+                      _courseColorIndexMap[key] ??
+                      _fallbackIndexForKey(key);
                   final safeIndex = _safeIndex(colorIndex);
                   final fillAlpha = (200 - border.priorityRank * 18).clamp(
                     95,
@@ -611,7 +673,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                     2.0,
                   );
                   final fillColor = widget.backgroundColors[safeIndex]
-                      .withAlpha(fillAlpha);
+                      .withAlpha(
+                        (fillAlpha * widget.cardOpacity).round().clamp(0, 255),
+                      );
                   final frameColor = widget.borderColors[safeIndex].withAlpha(
                     (frameAlpha + 8).clamp(160, 250),
                   );
@@ -635,13 +699,15 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                             color: frameColor,
                             width: frameWidth,
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(
+                            widget.cardRadius,
+                          ),
                         ),
                       ),
                     ),
                   );
                 }),
-                ...renderPlan.cards.map((card) {
+                ..._renderPlan.cards.map((card) {
                   final event = card.event;
                   final int weekDay = card.weekDay;
                   final int start = card.start;
@@ -654,7 +720,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
 
                   final key = _buildCourseKey(event);
                   final int colorIndex =
-                      _courseColorIndexMap[key] ?? _fallbackIndexForKey(key);
+                      event.colorIndex ??
+                      _courseColorIndexMap[key] ??
+                      _fallbackIndexForKey(key);
                   final safeIndex = _safeIndex(colorIndex);
                   final Color backgroundColor =
                       widget.backgroundColors[safeIndex];
@@ -684,6 +752,14 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       showContent: true,
                       showConflictBadge: true,
                       enableTap: true,
+                      hideLocation: widget.hideLocation,
+                      hideTeacher: widget.hideTeacher,
+                      removeCampusPrefix: widget.removeCampusPrefix,
+                      horizontalCenter: widget.horizontalCenter,
+                      verticalCenter: widget.verticalCenter,
+                      borderRadius: widget.cardRadius,
+                      textScale: widget.textScale,
+                      cardOpacity: widget.cardOpacity,
                       onTap: () {
                         if (card.group.events.length > 1) {
                           _showConflictSheet(
@@ -692,10 +768,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                             closeButtonColor: widget.buttonColors[safeIndex],
                           );
                         } else {
-                          showCourseDetailDialog(
+                          _showCourseDetails(
                             context,
-                            courseName: key,
-                            events: _eventsWithSameCourseName(event),
+                            event,
                             closeButtonColor: widget.buttonColors[safeIndex],
                           );
                         }

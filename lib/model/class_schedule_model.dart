@@ -30,16 +30,46 @@ class ScheduleData {
           : null,
       weekDayList: json['weekDayList'] != null
           ? (json['weekDayList'] as List)
-              .map((e) => WeekDayItem.fromJson(e))
-              .toList()
+                .map((e) => WeekDayItem.fromJson(e))
+                .toList()
           : null,
       eventList: json['eventList'] != null
           ? (json['eventList'] as List)
-              .map((e) => EventItem.fromJson(e))
-              .toList()
+                .map((e) => EventItem.fromJson(e))
+                .toList()
           : null,
     );
   }
+
+  ScheduleData copyWith({List<EventItem>? eventList}) {
+    return ScheduleData(
+      yearTerm: yearTerm,
+      weekNum: weekNum,
+      nowMonth: nowMonth,
+      yearTermList: yearTermList == null
+          ? null
+          : List<String>.from(yearTermList!),
+      weekList: weekList == null ? null : List<String>.from(weekList!),
+      weekDayList: weekDayList == null
+          ? null
+          : List<WeekDayItem>.from(weekDayList!),
+      eventList:
+          eventList ??
+          (this.eventList == null
+              ? null
+              : List<EventItem>.from(this.eventList!)),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'yearTerm': yearTerm,
+    'weekNum': weekNum,
+    'nowMonth': nowMonth,
+    'yearTermList': yearTermList,
+    'weekList': weekList,
+    'weekDayList': weekDayList?.map((e) => e.toJson()).toList(),
+    'eventList': eventList?.map((e) => e.toJson()).toList(),
+  };
 }
 
 class WeekDayItem {
@@ -56,6 +86,12 @@ class WeekDayItem {
       today: json['today'],
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'weekDay': weekDay,
+    'weekDate': weekDate,
+    'today': today,
+  };
 }
 
 class EventItem {
@@ -73,6 +109,10 @@ class EventItem {
   int? duplicateGroup;
   String? eventType;
   String? eventID;
+  String? note;
+  int? reminderMinutes;
+  int? colorIndex;
+  String? customizationKey;
 
   EventItem({
     this.weekNum,
@@ -89,7 +129,14 @@ class EventItem {
     this.duplicateGroup,
     this.eventType,
     this.eventID,
+    this.note,
+    this.reminderMinutes,
+    this.colorIndex,
+    this.customizationKey,
   });
+
+  bool get isSchoolCustomCourse =>
+      (eventType ?? '').trim() == '3' && (eventID ?? '').trim().isNotEmpty;
 
   factory EventItem.fromJson(Map<String, dynamic> json) {
     return EventItem(
@@ -111,8 +158,64 @@ class EventItem {
       duplicateGroup: json['duplicateGroup'],
       eventType: json['eventType'],
       eventID: json['eventID'],
+      note: json['note'],
+      reminderMinutes: (json['reminderMinutes'] as num?)?.toInt(),
+      colorIndex: (json['colorIndex'] as num?)?.toInt(),
+      customizationKey: json['customizationKey'],
     );
   }
+
+  EventItem copyWith({
+    String? eventName,
+    String? address,
+    String? memberName,
+    String? note,
+    int? reminderMinutes,
+    int? colorIndex,
+    String? customizationKey,
+  }) {
+    return EventItem(
+      weekNum: weekNum,
+      weekDay: weekDay,
+      weekList: weekList == null ? null : List<String>.from(weekList!),
+      weekCover: weekCover,
+      sessionList: sessionList == null ? null : List<String>.from(sessionList!),
+      sessionStart: sessionStart,
+      sessionLast: sessionLast,
+      eventName: eventName ?? this.eventName,
+      address: address ?? this.address,
+      memberName: memberName ?? this.memberName,
+      duplicateGroupType: duplicateGroupType,
+      duplicateGroup: duplicateGroup,
+      eventType: eventType,
+      eventID: eventID,
+      note: note ?? this.note,
+      reminderMinutes: reminderMinutes ?? this.reminderMinutes,
+      colorIndex: colorIndex ?? this.colorIndex,
+      customizationKey: customizationKey ?? this.customizationKey,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'weekNum': weekNum,
+    'weekDay': weekDay,
+    'weekList': weekList,
+    'weekCover': weekCover,
+    'sessionList': sessionList,
+    'sessionStart': sessionStart,
+    'sessionLast': sessionLast,
+    'eventName': eventName,
+    'address': address,
+    'memberName': memberName,
+    'duplicateGroupType': duplicateGroupType,
+    'duplicateGroup': duplicateGroup,
+    'eventType': eventType,
+    'eventID': eventID,
+    if (note != null) 'note': note,
+    if (reminderMinutes != null) 'reminderMinutes': reminderMinutes,
+    if (colorIndex != null) 'colorIndex': colorIndex,
+    if (customizationKey != null) 'customizationKey': customizationKey,
+  };
 }
 
 class CampusTimeInfo {

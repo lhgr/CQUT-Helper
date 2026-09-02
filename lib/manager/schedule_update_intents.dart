@@ -18,4 +18,3 @@ class ScheduleUpdateIntents {
     scheduleUpdated.value++;
   }
 }
-

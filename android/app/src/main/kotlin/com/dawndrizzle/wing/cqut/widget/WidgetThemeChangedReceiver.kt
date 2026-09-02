@@ -12,7 +12,7 @@ class WidgetThemeChangedReceiver : BroadcastReceiver() {
     val action = intent.action
     if (action != Intent.ACTION_CONFIGURATION_CHANGED && action != ACTION_UI_MODE_CHANGED) return
     Log.d("WidgetTheme", "WidgetThemeChangedReceiver action=$action")
-    WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.SYSTEM_THEME_CHANGED)
+    WidgetForceUpdatePusher.pushTheme(context)
   }
 }
 

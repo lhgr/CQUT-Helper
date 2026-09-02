@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
@@ -7,7 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeWeekLoaderScheduleApi extends ScheduleApi {
   ScheduleData? cacheResult;
+  final Map<String, ScheduleData> cacheResults = <String, ScheduleData>{};
   ScheduleData? networkResult;
+  Completer<ScheduleData>? networkCompleter;
   int cacheCalls = 0;
   int networkCalls = 0;
   String? lastEncryptedPassword;
@@ -19,7 +23,7 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
     String? yearTerm,
   }) async {
     cacheCalls++;
-    return cacheResult;
+    return cacheResults[weekNum] ?? cacheResult;
   }
 
   @override
@@ -30,9 +34,13 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    bool notifyWidget = true,
+    String? refreshId,
   }) async {
     networkCalls++;
     lastEncryptedPassword = encryptedPassword;
+    final pending = networkCompleter;
+    if (pending != null) return pending.future;
     return networkResult!;
   }
 }
@@ -67,6 +75,8 @@ void main() {
     late Map<int, ScheduleData> weekCache;
     String? currentTerm;
     List<String>? weekList;
+    String? actualCurrentWeek;
+    String? actualCurrentTerm;
 
     ScheduleWeekLoader buildLoader(
       _FakeWeekLoaderScheduleApi api, {
@@ -80,8 +90,8 @@ void main() {
         getCurrentTerm: () => currentTerm,
         setCurrentTerm: (value) => currentTerm = value,
         setWeekList: (value) => weekList = value,
-        setActualCurrentWeekStr: (_) {},
-        setActualCurrentTermStr: (_) {},
+        setActualCurrentWeekStr: (value) => actualCurrentWeek = value,
+        setActualCurrentTermStr: (value) => actualCurrentTerm = value,
         setNowInTeachingWeek: (_) {},
         setNowStatusLabel: (_) {},
       );
@@ -91,6 +101,8 @@ void main() {
       weekCache = {};
       currentTerm = null;
       weekList = null;
+      actualCurrentWeek = null;
+      actualCurrentTerm = null;
     });
 
     test('processLoadedData 在学期变化时清空旧缓存', () {
@@ -122,8 +134,9 @@ void main() {
       final loader = buildLoader(api);
       weekCache[2] = ScheduleData(weekNum: '2', yearTerm: '2024-2025-2');
 
-      await loader.ensureWeekLoaded('2', '2024-2025-2');
+      final success = await loader.ensureWeekLoaded('2', '2024-2025-2');
 
+      expect(success, isTrue);
       expect(api.cacheCalls, 0);
       expect(api.networkCalls, 0);
     });
@@ -137,17 +150,72 @@ void main() {
         ..cacheResult = ScheduleData(weekNum: '2', yearTerm: '2024-2025-2');
       final loader = buildLoader(api);
 
-      await loader.ensureWeekLoaded('2', '2024-2025-2');
+      final success = await loader.ensureWeekLoaded('2', '2024-2025-2');
 
+      expect(success, isTrue);
       expect(api.cacheCalls, 1);
       expect(api.networkCalls, 0);
       expect(weekCache[2], isNotNull);
     });
 
-    test('ensureWeekLoaded 在无缓存时通过凭证存储读取密码并写入缓存', () async {
+    test('从桌面组件锚点恢复实际本周，供返回本周按钮使用', () async {
       SharedPreferences.setMockInitialValues({
         'account': 'u1',
+        'schedule_widget_week_u1': '6',
+        'schedule_widget_term_u1': '2026-2027-1',
       });
+      final api = _FakeWeekLoaderScheduleApi()
+        ..cacheResult = ScheduleData(
+          weekNum: '3',
+          yearTerm: '2026-2027-1',
+          weekList: const ['1', '2', '3', '4', '5', '6'],
+        );
+      final loader = buildLoader(api);
+
+      await loader.loadFromCache(weekNum: '3', yearTerm: '2026-2027-1');
+
+      expect(actualCurrentWeek, '6');
+      expect(actualCurrentTerm, '2026-2027-1');
+    });
+
+    test('个性化变化会从本地重新应用到所有内存周缓存', () async {
+      SharedPreferences.setMockInitialValues({'account': 'u1'});
+      final api = _FakeWeekLoaderScheduleApi();
+      final loader = buildLoader(api);
+      weekCache[1] = ScheduleData(
+        weekNum: '1',
+        yearTerm: '2024-2025-2',
+        eventList: [EventItem(eventName: '高等数学')],
+      );
+      weekCache[2] = ScheduleData(
+        weekNum: '2',
+        yearTerm: '2024-2025-2',
+        eventList: [EventItem(eventName: '高等数学')],
+      );
+      api.cacheResults['1'] = ScheduleData(
+        weekNum: '1',
+        yearTerm: '2024-2025-2',
+        eventList: const [],
+      );
+      api.cacheResults['2'] = ScheduleData(
+        weekNum: '2',
+        yearTerm: '2024-2025-2',
+        eventList: const [],
+      );
+
+      final count = await loader.reloadMemoryCacheFromDisk(
+        yearTerm: '2024-2025-2',
+      );
+
+      expect(count, 2);
+      expect(api.cacheCalls, 2);
+      expect(api.networkCalls, 0);
+      expect(weekCache[1]!.eventList, isEmpty);
+      expect(weekCache[2]!.eventList, isEmpty);
+    });
+
+    test('ensureWeekLoaded 在无缓存时通过凭证存储读取密码并写入缓存', () async {
+      SharedPreferences.setMockInitialValues({'account': 'u1'});
       final api = _FakeWeekLoaderScheduleApi()
         ..networkResult = ScheduleData(
           weekNum: '2',
@@ -155,22 +223,62 @@ void main() {
           weekList: const ['1', '2', '3'],
           eventList: const [],
         );
-      final credentialStore = _FakeWeekLoaderCredentialStore(value: 'secure-p1');
+      final credentialStore = _FakeWeekLoaderCredentialStore(
+        value: 'secure-p1',
+      );
       final loader = buildLoader(api, credentialStore: credentialStore);
 
-      await loader.ensureWeekLoaded('2', '2024-2025-2');
+      final success = await loader.ensureWeekLoaded('2', '2024-2025-2');
 
+      expect(success, isTrue);
       expect(api.cacheCalls, 1);
       expect(api.networkCalls, 1);
       expect(api.lastEncryptedPassword, 'secure-p1');
       expect(credentialStore.readCalls, 1);
       expect(weekCache[2], isNotNull);
       final prefs = await SharedPreferences.getInstance();
-      expect(
-        prefs.getString('schedule_fp_u1_2024-2025-2_2'),
-        isNotNull,
-      );
+      expect(prefs.getString('schedule_fp_u1_2024-2025-2_2'), isNotNull);
       expect(prefs.getInt('schedule_fetch_at_u1_2024-2025-2_2'), isNotNull);
+    });
+
+    test('ensureWeekLoaded 网络失败时返回 false', () async {
+      SharedPreferences.setMockInitialValues({'account': 'u1'});
+      final api = _FakeWeekLoaderScheduleApi();
+      final credentialStore = _FakeWeekLoaderCredentialStore(
+        value: 'secure-p1',
+      );
+      final loader = buildLoader(api, credentialStore: credentialStore);
+
+      final success = await loader.ensureWeekLoaded('2', '2024-2025-2');
+
+      expect(success, isFalse);
+      expect(weekCache, isEmpty);
+    });
+
+    test('并发加载同一周时复用同一个请求', () async {
+      SharedPreferences.setMockInitialValues({'account': 'u1'});
+      final pending = Completer<ScheduleData>();
+      final api = _FakeWeekLoaderScheduleApi()..networkCompleter = pending;
+      final loader = buildLoader(
+        api,
+        credentialStore: _FakeWeekLoaderCredentialStore(value: 'secure-p1'),
+      );
+
+      final first = loader.ensureWeekLoaded('2', '2024-2025-2');
+      final second = loader.ensureWeekLoaded('2', '2024-2025-2');
+      await Future<void>.delayed(Duration.zero);
+      pending.complete(
+        ScheduleData(
+          weekNum: '2',
+          yearTerm: '2024-2025-2',
+          weekList: const ['1', '2', '3'],
+          eventList: const [],
+        ),
+      );
+
+      expect(await Future.wait([first, second]), [isTrue, isTrue]);
+      expect(api.cacheCalls, 1);
+      expect(api.networkCalls, 1);
     });
   });
 }

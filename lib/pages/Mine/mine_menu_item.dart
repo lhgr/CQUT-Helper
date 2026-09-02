@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class MineMenuItem extends StatelessWidget {
   final IconData icon;
   final String title;
+  final String? subtitle;
   final VoidCallback onTap;
   final Widget? trailing;
 
@@ -10,6 +11,7 @@ class MineMenuItem extends StatelessWidget {
     super.key,
     required this.icon,
     required this.title,
+    this.subtitle,
     required this.onTap,
     this.trailing,
   });
@@ -36,9 +38,20 @@ class MineMenuItem extends StatelessWidget {
               Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
               SizedBox(width: 16),
               Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               trailing ??

@@ -33,7 +33,9 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _cleanException(Object e) {
@@ -79,9 +81,9 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
         _ticket = ticket;
         _step = 1;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('验证码已发送')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('验证码已发送')));
     } catch (e) {
       if (!mounted) return;
       _showError(_cleanException(e));
@@ -113,9 +115,9 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
       setState(() {
         _step = 2;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('验证码验证成功')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('验证码验证成功')));
     } catch (e) {
       if (!mounted) return;
       _showError(_cleanException(e));
@@ -149,9 +151,9 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
     try {
       await _api.setNewPassword(ticket: ticket, password: pwd1);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('密码已重置，请用新密码登录')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('密码已重置，请用新密码登录')));
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
@@ -236,8 +238,9 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed:
-                            _isLoading ? null : () => setState(() => _step = 0),
+                        onPressed: _isLoading
+                            ? null
+                            : () => setState(() => _step = 0),
                         style: OutlinedButton.styleFrom(
                           padding: EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
@@ -262,7 +265,9 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
                             ? SizedBox(
                                 height: 24,
                                 width: 24,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : Text(
                                 '验证验证码',
@@ -285,7 +290,9 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
                     prefixIcon: Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                       ),
                       onPressed: () =>
                           setState(() => _obscurePassword = !_obscurePassword),
@@ -306,10 +313,13 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
                     prefixIcon: Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword2 ? Icons.visibility_off : Icons.visibility,
+                        _obscurePassword2
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                       ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword2 = !_obscurePassword2),
+                      onPressed: () => setState(
+                        () => _obscurePassword2 = !_obscurePassword2,
+                      ),
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -322,16 +332,17 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
                 Text(
                   '密码必须包含:大写字母、小写字母、数字、字符中任意三种以上组合，长度为8-20个字符。',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                 ),
                 SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed:
-                            _isLoading ? null : () => setState(() => _step = 1),
+                        onPressed: _isLoading
+                            ? null
+                            : () => setState(() => _step = 1),
                         style: OutlinedButton.styleFrom(
                           padding: EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
@@ -356,7 +367,9 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
                             ? SizedBox(
                                 height: 24,
                                 width: 24,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : Text(
                                 '重置密码',
@@ -392,7 +405,9 @@ class _StepHeader extends StatelessWidget {
       final active = index == step;
       final done = index < step;
       final bg = done ? color : (active ? color : Colors.transparent);
-      final fg = done || active ? Theme.of(context).colorScheme.onPrimary : outline;
+      final fg = done || active
+          ? Theme.of(context).colorScheme.onPrimary
+          : outline;
       return Expanded(
         child: Column(
           children: [
@@ -414,21 +429,15 @@ class _StepHeader extends StatelessWidget {
             Text(
               label,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: active ? color : outline,
-                    fontWeight: active ? FontWeight.bold : null,
-                  ),
+                color: active ? color : outline,
+                fontWeight: active ? FontWeight.bold : null,
+              ),
             ),
           ],
         ),
       );
     }
 
-    return Row(
-      children: [
-        dot(0, '手机号'),
-        dot(1, '验证码'),
-        dot(2, '新密码'),
-      ],
-    );
+    return Row(children: [dot(0, '手机号'), dot(1, '验证码'), dot(2, '新密码')]);
   }
 }

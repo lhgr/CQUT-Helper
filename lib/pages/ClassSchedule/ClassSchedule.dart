@@ -2,20 +2,29 @@ import 'dart:async';
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_update_manager.dart';
-import 'package:cqut_helper/manager/schedule_update_worker.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/manager/schedule_message_center_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
+import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_app_bar.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_inline_notice_panel.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_page_view.dart';
-import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_settings_sheet.dart';
-import 'package:cqut_helper/pages/ClassSchedule/semester_course_list_page.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_return_week_button.dart';
+import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
+import 'package:cqut_helper/pages/ClassSchedule/custom_course_editor_page.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/week_picker_sheet.dart';
+import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cqut_helper/utils/schedule_ics_service.dart';
+import 'package:cqut_helper/pages/Login/Login.dart';
 
 part 'class_schedule_actions.dart';
 part 'class_schedule_loading.dart';
@@ -47,6 +56,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
 
   bool _loading = true; // 默认为 true，防止初始空数据渲染
   String? _error;
+  DateTime? _lastSuccessfulRefreshAt;
 
   int _lastOpenChangesToken = 0;
   int _lastTimetableCacheEpoch = CacheCleanupManager.timetableCacheEpoch.value;
@@ -56,6 +66,15 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   int _currentWeekIndex = 0; // 对应 weekList 的 0 基索引
   bool _initialBootRequestPending = true;
   bool _userChangedWeekDuringInitialBoot = false;
+  bool _weekPageScrolling = false;
+  bool _initialBackgroundSyncStarted = false;
+  bool _allWeeksPrefetchInFlight = false;
+  bool _allWeeksPrefetchComplete = false;
+  bool _reminderRebuildStarted = false;
+  ScheduleData? _deferredBackgroundData;
+  Timer? _initialBackgroundSyncTimer;
+  Timer? _allWeeksPrefetchTimer;
+  Timer? _reminderRebuildTimer;
 
   DateTime? _lastMessageTime;
   List<String> _inlineNoticeMessages = const <String>[];
@@ -70,6 +89,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     CacheCleanupManager.timetableCacheEpoch.addListener(
       _onTimetableCacheCleared,
     );
+    ScheduleCustomizationManager.instance.addListener(_onCustomizationChanged);
+    ScheduleSettingsManager.settingsEpoch.addListener(_onSettingsChanged);
     _loadPreferences();
     _loadInitialData();
   }
@@ -82,7 +103,14 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     CacheCleanupManager.timetableCacheEpoch.removeListener(
       _onTimetableCacheCleared,
     );
+    ScheduleCustomizationManager.instance.removeListener(
+      _onCustomizationChanged,
+    );
+    ScheduleSettingsManager.settingsEpoch.removeListener(_onSettingsChanged);
     _updateManager.dispose();
+    _initialBackgroundSyncTimer?.cancel();
+    _allWeeksPrefetchTimer?.cancel();
+    _reminderRebuildTimer?.cancel();
     _controller.dispose();
     _pageController?.dispose();
     super.dispose();
@@ -91,6 +119,32 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   void _setState(VoidCallback fn) {
     if (!mounted) return;
     setState(fn);
+  }
+
+  String? get _refreshStatusText {
+    final at = _lastSuccessfulRefreshAt;
+    if (at == null) return null;
+    final now = DateTime.now();
+    final sameDay =
+        now.year == at.year && now.month == at.month && now.day == at.day;
+    final prefix = sameDay ? '今天' : '${at.month}/${at.day}';
+    final hour = at.hour.toString().padLeft(2, '0');
+    final minute = at.minute.toString().padLeft(2, '0');
+    return '$prefix $hour:$minute更新';
+  }
+
+  bool get _requiresReauthentication {
+    final text = (_error ?? '').toLowerCase();
+    return text.contains('登录') ||
+        text.contains('凭证') ||
+        text.contains('鉴权') ||
+        text.contains('credential');
+  }
+
+  Future<void> _reauthenticate() async {
+    if (!await requestReauthentication(context) || !mounted) return;
+    await _controller.loadCredentials();
+    await _loadFromNetwork();
   }
 
   void _onTimetableCacheCleared() {
@@ -133,6 +187,34 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     setState(() {});
   }
 
+  Future<void> _onCustomizationChanged() async {
+    final current = _currentScheduleData;
+    final week = (current?.weekNum ?? '').trim();
+    final term = (current?.yearTerm ?? '').trim();
+    if (week.isEmpty || term.isEmpty) return;
+    await _controller.reloadMemoryCacheFromDisk(yearTerm: term);
+    if (!mounted) return;
+    final currentWeek = int.tryParse(week);
+    final refreshed = currentWeek == null ? null : _weekCache[currentWeek];
+    setState(() {
+      if (refreshed != null) _currentScheduleData = refreshed;
+    });
+  }
+
+  Future<void> _onSettingsChanged() async {
+    await _settingsManager.load();
+    if (mounted) setState(() {});
+    if (_settingsManager.timeInfoEnabled) {
+      final loaded = await _controller.loadTimeInfoFromCacheIfAny();
+      if (loaded && mounted) setState(() {});
+      unawaited(
+        _controller.refreshTimeInfoIfEnabled(force: true).then((changed) {
+          if (changed && mounted) setState(() {});
+        }),
+      );
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -142,16 +224,31 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
 
   @override
   Widget build(BuildContext context) {
+    final hasBackground = ScheduleBackground.hasImage(
+      _settingsManager.layoutSettings,
+    );
     if ((_currentScheduleData == null || _weekList == null) && _loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text("课表"), centerTitle: true),
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text("课表"),
+          centerTitle: true,
+          backgroundColor: hasBackground ? Colors.transparent : null,
+          surfaceTintColor: Colors.transparent,
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if ((_currentScheduleData == null || _weekList == null) && _error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text("课表"), centerTitle: true),
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text("课表"),
+          centerTitle: true,
+          backgroundColor: hasBackground ? Colors.transparent : null,
+          surfaceTintColor: Colors.transparent,
+        ),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -167,10 +264,22 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: () => _loadFromNetwork(),
-                icon: const Icon(Icons.refresh),
-                label: const Text("重试"),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                children: [
+                  if (_requiresReauthentication)
+                    FilledButton.icon(
+                      onPressed: _reauthenticate,
+                      icon: const Icon(Icons.login),
+                      label: const Text('重新登录'),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: () => _loadFromNetwork(),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text("重试"),
+                  ),
+                ],
               ),
             ],
           ),
@@ -181,33 +290,34 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     // 防止 _weekList 为空时导致的 Null Check Error
     if (_weekList == null || _weekList!.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text("课表"), centerTitle: true),
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text("课表"),
+          centerTitle: true,
+          backgroundColor: hasBackground ? Colors.transparent : null,
+          surfaceTintColor: Colors.transparent,
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
-    // 检查是否应该显示 FAB
-    bool showFab = false;
-    if (_actualCurrentWeekStr != null && _weekList != null) {
-      final displayedWeek = _weekList![_currentWeekIndex];
-      if (displayedWeek != _actualCurrentWeekStr) {
-        showFab = true;
-      }
-      if (!_weekList!.contains(_actualCurrentWeekStr)) {
-        showFab = true;
-      }
-      if (_actualCurrentTermStr != null &&
-          _currentScheduleData?.yearTerm != _actualCurrentTermStr) {
-        showFab = true;
-      }
-    }
+    final displayedWeek = _weekList![_currentWeekIndex];
+    final showFab = shouldShowScheduleReturnWeekButton(
+      displayedWeek: displayedWeek,
+      displayedTerm: _currentScheduleData?.yearTerm,
+      actualCurrentWeek: _actualCurrentWeekStr,
+      actualCurrentTerm: _actualCurrentTermStr,
+      displayedScheduleCoversToday:
+          _currentScheduleData != null &&
+          ScheduleDate.dataCoversDate(_currentScheduleData!, DateTime.now()),
+    );
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       floatingActionButton: showFab
-          ? FloatingActionButton(
+          ? ScheduleReturnWeekButton(
               onPressed: _returnToCurrentWeek,
-              tooltip: '返回本周',
-              child: const Icon(Icons.today),
+              transparentBackground: hasBackground,
             )
           : null,
       appBar: ScheduleAppBar(
@@ -217,6 +327,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         currentScheduleData: _currentScheduleData,
         nowInTeachingWeek: _nowInTeachingWeek,
         nowStatusLabel: _nowStatusLabel,
+        refreshStatusText: _refreshStatusText,
         onRefresh: () => _loadFromNetwork(
           weekNum: _weekList![_currentWeekIndex],
           yearTerm: _currentScheduleData?.yearTerm,
@@ -226,10 +337,12 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               (_weekList![_currentWeekIndex] == _actualCurrentWeekStr &&
                   _currentScheduleData?.yearTerm == _actualCurrentTermStr),
         ),
-        onSettings: _showScheduleSettingsSheetWrapper,
+        onSettings: _showScheduleSettingsPage,
         onWeekPicker: _showWeekPickerSheet,
         onTermPicker: _showTermPickerSheet,
-        onSemesterCourses: _openSemesterCourseListPage,
+        onAddCourse: _openCustomCourseEditor,
+        onExportIcs: _exportIcs,
+        transparentBackground: hasBackground,
       ),
       body: Column(
         children: [
@@ -243,6 +356,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
             child: SchedulePageView(
               pageController: _pageController,
               onPageChanged: _onPageChanged,
+              onScrollActivityChanged: _onWeekPageScrollActivityChanged,
               weekList: _weekList!,
               weekCache: _weekCache,
               showWeekend: _settingsManager.showWeekend,
@@ -251,6 +365,9 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               timeInfoList: _settingsManager.timeInfoEnabled
                   ? _controller.timeInfoList
                   : null,
+              layoutSettings: _settingsManager.layoutSettings,
+              onEditCourse: _editCourse,
+              onDeleteCourse: _deleteCustomCourse,
             ),
           ),
         ],

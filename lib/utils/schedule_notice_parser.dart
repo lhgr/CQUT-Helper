@@ -107,7 +107,10 @@ class ScheduleNoticeParser {
     final weekdayMatch = _weekdayReg.firstMatch(text);
     final sessionMatch = _sessionReg.firstMatch(text);
     final week = (weekMatch?.group(1) ?? '').trim();
-    final weekday = (weekdayMatch?.group(1) ?? '').trim().replaceFirst('周', '星期');
+    final weekday = (weekdayMatch?.group(1) ?? '').trim().replaceFirst(
+      '周',
+      '星期',
+    );
     final sessionStart = (sessionMatch?.group(1) ?? '').trim();
     final sessionEnd = (sessionMatch?.group(2) ?? '').trim();
     if (week.isEmpty || weekday.isEmpty || sessionStart.isEmpty) {

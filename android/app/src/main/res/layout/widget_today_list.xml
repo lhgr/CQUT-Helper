@@ -10,10 +10,12 @@
         android:background="@drawable/widget_bg"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
-        <RelativeLayout
+        <LinearLayout
             android:id="@+id/rl_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:layout_marginBottom="8dp">
             <TextView
                 android:id="@+id/tv_schedule_name"
@@ -25,13 +27,29 @@
                 android:maxLength="12"
                 android:text="课表" />
             <TextView
+                android:id="@+id/tv_sync_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:ellipsize="marquee"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"
+                android:singleLine="true"
+                android:textSize="9sp"
+                android:textColor="@color/widget_secondary_text"
+                android:visibility="visible">
+                <requestFocus />
+            </TextView>
+            <TextView
                 android:id="@+id/tv_date"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textSize="12sp"
                 android:textColor="@color/widget_secondary_text"
                 android:layout_marginEnd="4dp"
-                android:layout_toStartOf="@+id/tv_week"
                 android:text="3.26" />
             <TextView
                 android:id="@+id/tv_week"
@@ -39,9 +57,17 @@
                 android:layout_height="wrap_content"
                 android:textSize="12sp"
                 android:textColor="@color/widget_accent"
-                android:layout_alignParentEnd="true"
                 android:text="周六" />
-        </RelativeLayout>
+            <ImageView
+                android:id="@+id/iv_refresh"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="2dp"
+                android:padding="2dp"
+                android:contentDescription="刷新课表"
+                android:src="@android:drawable/ic_popup_sync"
+                android:visibility="gone" />
+        </LinearLayout>
         <ListView
             android:id="@+id/lv_course"
             android:layout_width="match_parent"

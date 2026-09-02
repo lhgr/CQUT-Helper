@@ -6,13 +6,17 @@ class ScheduleTimeColumn extends StatelessWidget {
   final double sessionHeight;
   final int sessionCount;
   final List<CampusTimeInfo>? timeInfoList;
+  final bool showGridLines;
+  final bool transparentBackground;
 
   const ScheduleTimeColumn({
     super.key,
     this.width = 35.0,
     this.sessionHeight = 60.0,
-    this.sessionCount = 12,
+    this.sessionCount = 10,
     this.timeInfoList,
+    this.showGridLines = true,
+    this.transparentBackground = false,
   });
 
   @override
@@ -20,13 +24,17 @@ class ScheduleTimeColumn extends StatelessWidget {
     return Container(
       width: width,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          right: BorderSide(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 1,
-          ),
-        ),
+        color: transparentBackground
+            ? Colors.transparent
+            : Theme.of(context).colorScheme.surface,
+        border: showGridLines
+            ? Border(
+                right: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                  width: 1,
+                ),
+              )
+            : null,
       ),
       child: Column(
         children: List.generate(sessionCount, (index) {
@@ -60,9 +68,9 @@ class ScheduleTimeColumn extends StatelessWidget {
                 Text(
                   "$sessionNum",
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 if (end != null)
                   Text(

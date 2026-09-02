@@ -44,12 +44,12 @@ class _ClearCachePageState extends State<ClearCachePage> {
     }
   }
 
-  int get _selectedBytes {
+  int? get _selectedBytes {
     int total = 0;
     for (final u in _usages) {
       if (!_selected.contains(u.type)) continue;
       final b = u.bytes;
-      if (b == null) continue;
+      if (b == null) return null;
       total += b;
     }
     return total;
@@ -141,9 +141,9 @@ class _ClearCachePageState extends State<ClearCachePage> {
       if (kind == null) return;
       await AppLogger.I.exportLogsWithKind(kind: kind);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('日志已保存在/Download/CQUT-Helper/log文件夹中')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('日志已保存在/Download/CQUT-Helper/log文件夹中')),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -156,18 +156,15 @@ class _ClearCachePageState extends State<ClearCachePage> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedSizeText = _formatBytes(_selectedBytes);
+    final selectedBytes = _selectedBytes;
+    final selectedSizeText = selectedBytes == null
+        ? '无法统计'
+        : _formatBytes(selectedBytes);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('清理缓存'),
+        title: Text('存储与诊断'),
         actions: [
-          IconButton(
-            onPressed: (_loading || _clearing || _exporting)
-                ? null
-                : _exportLogs,
-            icon: Icon(Icons.upload_file),
-          ),
           IconButton(
             onPressed: _clearing ? null : _refresh,
             icon: Icon(Icons.refresh),
@@ -179,6 +176,27 @@ class _ClearCachePageState extends State<ClearCachePage> {
           : ListView(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               children: [
+                Text('诊断', style: Theme.of(context).textTheme.titleSmall),
+                SizedBox(height: 8),
+                Card(
+                  elevation: 0,
+                  child: ListTile(
+                    leading: Icon(Icons.upload_file_outlined),
+                    title: Text('导出日志'),
+                    subtitle: Text('选择网络日志、其他日志或全部日志'),
+                    trailing: _exporting
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(Icons.chevron_right),
+                    onTap: (_clearing || _exporting) ? null : _exportLogs,
+                  ),
+                ),
+                SizedBox(height: 20),
+                Text('缓存', style: Theme.of(context).textTheme.titleSmall),
+                SizedBox(height: 8),
                 for (final u in _usages) _buildUsageTile(u),
                 SizedBox(height: 12),
                 Text(

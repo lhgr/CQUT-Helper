@@ -37,7 +37,9 @@ class ScheduleNotice {
 
     final rawId = norm(json['notice_id']);
     final fallback = sha256
-        .convert(utf8.encode('${norm(json['title'])}|${norm(json['published_at'])}'))
+        .convert(
+          utf8.encode('${norm(json['title'])}|${norm(json['published_at'])}'),
+        )
         .toString();
     return ScheduleNotice(
       noticeId: rawId.isEmpty ? fallback : rawId,

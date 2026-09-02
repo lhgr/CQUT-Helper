@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cqut_helper/manager/app_network_image_cache.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -45,7 +46,13 @@ class CacheCleanupManager {
     final keys = prefs.getKeys();
 
     final timetableKeys = keys.where(_isTimetableCacheKey);
-    final timetableBytes = _estimatePrefsBytes(prefs, timetableKeys);
+    var timetableBytes = _estimatePrefsBytes(prefs, timetableKeys);
+    try {
+      timetableBytes += await ScheduleCacheDatabase.instance.estimatedBytes();
+    } catch (_) {
+      // sqflite is unavailable in pure widget tests; preference usage remains
+      // useful there.
+    }
 
     final userInfoKeys = keys.where((k) => k.startsWith('user_info_'));
     final userInfoBytes = _estimatePrefsBytes(prefs, userInfoKeys);
@@ -71,14 +78,14 @@ class CacheCleanupManager {
       AppCacheUsage(
         type: AppCacheType.imageCache,
         title: titleOf(AppCacheType.imageCache),
-        description: '包含网络图片的磁盘缓存与内存缓存',
+        description: '包含网络图片的磁盘缓存文件，不含自定义背景图',
         bytes: imageCacheBytes,
         supported: true,
       ),
       AppCacheUsage(
         type: AppCacheType.logs,
         title: titleOf(AppCacheType.logs),
-        description: '包含调试、错误与网络请求日志文件',
+        description: '包含调试、错误、网络请求与小组件原生日志文件',
         bytes: logBytes,
         supported: true,
       ),
@@ -97,7 +104,11 @@ class CacheCleanupManager {
       for (final k in toRemove) {
         await prefs.remove(k);
       }
-      clearedCounts[AppCacheType.timetable] = toRemove.length;
+      var removedRows = 0;
+      try {
+        removedRows = await ScheduleCacheDatabase.instance.clearAll();
+      } catch (_) {}
+      clearedCounts[AppCacheType.timetable] = toRemove.length + removedRows;
       timetableCacheEpoch.value = timetableCacheEpoch.value + 1;
     }
 
@@ -113,16 +124,17 @@ class CacheCleanupManager {
     }
 
     if (types.contains(AppCacheType.imageCache)) {
-      await DefaultCacheManager().emptyCache();
+      for (final manager in AppNetworkImageCache.managers) {
+        await manager.emptyCache();
+      }
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
       try {
         final tempDir = await getTemporaryDirectory();
-        final dir = Directory(
-          '${tempDir.path}${Platform.pathSeparator}libCachedImageData',
-        );
-        if (await dir.exists()) {
-          await dir.delete(recursive: true);
+        for (final dir in imageCacheDirectoriesIn(tempDir)) {
+          if (await dir.exists()) {
+            await dir.delete(recursive: true);
+          }
         }
       } catch (_) {}
       clearedCounts[AppCacheType.imageCache] = 1;
@@ -140,6 +152,61 @@ class CacheCleanupManager {
     } catch (_) {}
 
     return clearedCounts;
+  }
+
+  /// Removes data that belongs to one signed-in account while preserving
+  /// device-wide appearance and service settings.
+  static Future<int> clearAccountData(String userId) async {
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) return 0;
+
+    final prefs = await SharedPreferences.getInstance();
+    final toRemove = prefs
+        .getKeys()
+        .where((key) => isAccountScopedKey(key, normalizedUserId))
+        .toList(growable: false);
+    for (final key in toRemove) {
+      await prefs.remove(key);
+    }
+    var removedScheduleRows = 0;
+    try {
+      removedScheduleRows = await ScheduleCacheDatabase.instance.clearUser(
+        normalizedUserId,
+      );
+    } catch (_) {}
+    timetableCacheEpoch.value = timetableCacheEpoch.value + 1;
+    userInfoCacheEpoch.value = userInfoCacheEpoch.value + 1;
+    try {
+      await prefs.reload();
+    } catch (_) {}
+    return toRemove.length + removedScheduleRows;
+  }
+
+  @visibleForTesting
+  static bool isAccountScopedKey(String key, String userId) {
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) return false;
+    if (key == 'user_info_$normalizedUserId') return true;
+
+    final exactKeys = <String>{
+      'schedule_last_week_$normalizedUserId',
+      'schedule_last_term_$normalizedUserId',
+      'schedule_widget_week_$normalizedUserId',
+      'schedule_widget_term_$normalizedUserId',
+      'schedule_pending_changes_$normalizedUserId',
+      'schedule_notice_login_marker_$normalizedUserId',
+      'schedule_last_successful_refresh_at_$normalizedUserId',
+      'schedule_widget_refresh_state_$normalizedUserId',
+      'schedule_widget_refresh_failure_$normalizedUserId',
+    };
+    if (exactKeys.contains(key)) return true;
+
+    return key.startsWith('schedule_${normalizedUserId}_') ||
+        key.startsWith('schedule_remote_${normalizedUserId}_') ||
+        key.startsWith('schedule_fetch_at_${normalizedUserId}_') ||
+        key.startsWith('schedule_notice_state_${normalizedUserId}_') ||
+        key.startsWith('schedule_notified_${normalizedUserId}_') ||
+        key.startsWith('schedule_course_color_map_v1_$normalizedUserId|');
   }
 
   static String titleOf(AppCacheType type) {
@@ -168,7 +235,7 @@ class CacheCleanupManager {
     for (final k in keys) {
       final v = prefs.get(k);
       if (v == null) continue;
-      total += _estimateValueBytes(v);
+      total += utf8.encode(k).length + _estimateValueBytes(v);
     }
     return total;
   }
@@ -191,14 +258,28 @@ class CacheCleanupManager {
   static Future<int?> _getImageCacheBytes() async {
     try {
       final tempDir = await getTemporaryDirectory();
-      final dir = Directory(
-        '${tempDir.path}${Platform.pathSeparator}libCachedImageData',
-      );
-      if (!await dir.exists()) return 0;
-      return await _getDirectoryBytes(dir);
+      return await getImageCacheBytesIn(tempDir);
     } catch (_) {
       return null;
     }
+  }
+
+  @visibleForTesting
+  static Iterable<Directory> imageCacheDirectoriesIn(Directory tempDir) sync* {
+    for (final key in AppNetworkImageCache.diskCacheKeys) {
+      yield Directory('${tempDir.path}${Platform.pathSeparator}$key');
+    }
+  }
+
+  @visibleForTesting
+  static Future<int> getImageCacheBytesIn(Directory tempDir) async {
+    var total = 0;
+    for (final dir in imageCacheDirectoriesIn(tempDir)) {
+      if (await dir.exists()) {
+        total += await _getDirectoryBytes(dir);
+      }
+    }
+    return total;
   }
 
   static Future<int> _getDirectoryBytes(Directory dir) async {

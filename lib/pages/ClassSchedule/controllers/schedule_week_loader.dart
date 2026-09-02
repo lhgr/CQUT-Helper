@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
+import 'package:cqut_helper/manager/schedule_repository.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
@@ -9,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ScheduleWeekLoader {
   final ScheduleApi service;
   final CredentialStore credentialStore;
+  final ScheduleRepository repository;
   final Map<int, ScheduleData> Function() getWeekCache;
   final void Function(Map<int, ScheduleData> value) setWeekCache;
   final String? Function() getCurrentTerm;
@@ -20,9 +24,11 @@ class ScheduleWeekLoader {
   final void Function(String? value) setNowStatusLabel;
   String? _userId;
   String? _encryptedPassword;
+  final Map<String, Future<bool>> _weekLoadRequests = <String, Future<bool>>{};
 
   ScheduleWeekLoader({
     required this.service,
+    ScheduleRepository? repository,
     CredentialStore? credentialStore,
     required this.getWeekCache,
     required this.setWeekCache,
@@ -33,11 +39,13 @@ class ScheduleWeekLoader {
     required this.setActualCurrentTermStr,
     required this.setNowInTeachingWeek,
     required this.setNowStatusLabel,
-  }) : credentialStore = credentialStore ?? CredentialStore();
+  }) : credentialStore = credentialStore ?? CredentialStore(),
+       repository = repository ?? ScheduleRepository(service);
 
   Future<void> loadCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     _userId = prefs.getString('account');
+    _hydrateCurrentAnchorFromPreferences(prefs, _userId);
     _encryptedPassword = await credentialStore.readEncryptedPassword();
   }
 
@@ -47,8 +55,11 @@ class ScheduleWeekLoader {
   String fingerprintKey(String userId, String yearTerm, String weekNum) =>
       'schedule_fp_${userId}_${yearTerm}_$weekNum';
 
-  String fingerprintUpdatedAtKey(String userId, String yearTerm, String weekNum) =>
-      'schedule_fp_updated_at_${userId}_${yearTerm}_$weekNum';
+  String fingerprintUpdatedAtKey(
+    String userId,
+    String yearTerm,
+    String weekNum,
+  ) => 'schedule_fp_updated_at_${userId}_${yearTerm}_$weekNum';
 
   String lastFetchAtKey(String userId, String yearTerm, String weekNum) =>
       'schedule_fetch_at_${userId}_${yearTerm}_$weekNum';
@@ -62,12 +73,54 @@ class ScheduleWeekLoader {
 
     final userId = _userId;
     if (userId == null || userId.isEmpty) return null;
+    _hydrateCurrentAnchorFromPreferences(prefs, userId);
 
     return service.loadFromCache(
       userId: userId,
       weekNum: weekNum,
       yearTerm: yearTerm,
     );
+  }
+
+  void _hydrateCurrentAnchorFromPreferences(
+    SharedPreferences prefs,
+    String? userId,
+  ) {
+    final normalizedUserId = (userId ?? '').trim();
+    if (normalizedUserId.isEmpty) return;
+    final week = prefs
+        .getString('schedule_widget_week_$normalizedUserId')
+        ?.trim();
+    final term = prefs
+        .getString('schedule_widget_term_$normalizedUserId')
+        ?.trim();
+    if (week == null || week.isEmpty || term == null || term.isEmpty) return;
+    setActualCurrentWeekStr(week);
+    setActualCurrentTermStr(term);
+  }
+
+  Future<int> reloadMemoryCacheFromDisk({required String yearTerm}) async {
+    final normalizedTerm = yearTerm.trim();
+    if (normalizedTerm.isEmpty) return 0;
+    final cache = getWeekCache();
+    final weeks = cache.entries
+        .where((entry) => (entry.value.yearTerm ?? '').trim() == normalizedTerm)
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    var refreshedCount = 0;
+    for (final week in weeks) {
+      final refreshed = await loadFromCache(
+        weekNum: week.toString(),
+        yearTerm: normalizedTerm,
+      );
+      if (refreshed == null ||
+          (refreshed.yearTerm ?? '').trim() != normalizedTerm) {
+        continue;
+      }
+      cache[week] = refreshed;
+      refreshedCount++;
+    }
+    return refreshedCount;
   }
 
   Future<ScheduleData> loadFromNetwork({
@@ -89,7 +142,7 @@ class ScheduleWeekLoader {
         updateWidgetPins ||
         ((weekNum == null || weekNum.trim().isEmpty) &&
             (yearTerm == null || yearTerm.trim().isEmpty));
-    final data = await service.loadFromNetwork(
+    final data = await repository.loadFromNetwork(
       userId: _userId!,
       encryptedPassword: _encryptedPassword!,
       weekNum: weekNum,
@@ -120,6 +173,13 @@ class ScheduleWeekLoader {
     return data;
   }
 
+  Future<bool> isFresh(
+    ScheduleData data, {
+    Duration maxAge = const Duration(minutes: 15),
+  }) {
+    return repository.isFresh(data, maxAge: maxAge);
+  }
+
   bool processLoadedData(ScheduleData data) {
     if (data.weekNum == null || data.weekList == null) return false;
 
@@ -137,22 +197,61 @@ class ScheduleWeekLoader {
     return termChanged;
   }
 
-  Future<void> ensureWeekLoaded(
+  void hydrateCurrentStatusFromCache(ScheduleData data) {
+    if (!ScheduleDate.dataCoversDate(data, DateTime.now())) return;
+    setNowInTeachingWeek(true);
+    setNowStatusLabel(null);
+    setActualCurrentWeekStr(data.weekNum);
+    setActualCurrentTermStr(data.yearTerm);
+  }
+
+  Future<bool> ensureWeekLoaded(
     String weekNum,
     String yearTerm, {
     bool forceRefresh = false,
     bool updateLastViewed = false,
   }) async {
+    final requestKey = [
+      yearTerm.trim(),
+      weekNum.trim(),
+      forceRefresh,
+      updateLastViewed,
+    ].join('|');
+    final existing = _weekLoadRequests[requestKey];
+    if (existing != null) return existing;
+
+    final request = _ensureWeekLoadedInternal(
+      weekNum,
+      yearTerm,
+      forceRefresh: forceRefresh,
+      updateLastViewed: updateLastViewed,
+    );
+    _weekLoadRequests[requestKey] = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_weekLoadRequests[requestKey], request)) {
+        _weekLoadRequests.remove(requestKey);
+      }
+    }
+  }
+
+  Future<bool> _ensureWeekLoadedInternal(
+    String weekNum,
+    String yearTerm, {
+    required bool forceRefresh,
+    required bool updateLastViewed,
+  }) async {
     final wInt = int.tryParse(weekNum) ?? 0;
     final cache = getWeekCache();
 
     if (!forceRefresh) {
-      if (cache.containsKey(wInt)) return;
+      if (cache.containsKey(wInt)) return true;
 
       final cached = await loadFromCache(weekNum: weekNum, yearTerm: yearTerm);
       if (cached != null) {
         cache[wInt] = cached;
-        return;
+        return true;
       }
     }
 
@@ -173,11 +272,31 @@ class ScheduleWeekLoader {
         final fpUpdatedAtKey = fingerprintUpdatedAtKey(uid, term, week);
         final fetchAtKey = lastFetchAtKey(uid, term, week);
         final now = DateTime.now().millisecondsSinceEpoch;
-        final fp = scheduleFingerprintFromScheduleData(data);
+        var fp = scheduleFingerprintFromScheduleData(data);
+        try {
+          final raw = await service.getCachedScheduleJson(
+            userId: uid,
+            yearTerm: term,
+            weekNum: week,
+          );
+          if (raw != null && raw.trim().isNotEmpty) {
+            final decoded = jsonDecode(raw);
+            if (decoded is Map) {
+              fp = scheduleFingerprintFromWeekJsonMap(
+                decoded.cast<String, dynamic>(),
+              );
+            }
+          }
+        } catch (_) {
+          // The fingerprint computed from the returned model remains valid;
+          // an optional cache re-read must not turn a successful fetch into a
+          // failed week load.
+        }
         await prefs.setString(fpKey, fp);
         await prefs.setInt(fpUpdatedAtKey, now);
         await prefs.setInt(fetchAtKey, now);
       }
+      return true;
     } catch (e, st) {
       AppLogger.I.event(
         LogLevel.debug,
@@ -193,6 +312,7 @@ class ScheduleWeekLoader {
         stackTrace: st,
         fields: {'week': weekNum, 'term': yearTerm},
       );
+      return false;
     }
   }
 }

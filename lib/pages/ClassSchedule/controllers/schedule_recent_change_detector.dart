@@ -88,7 +88,11 @@ class ScheduleRecentChangeDetector {
       );
 
       final fpKey = weekLoader.fingerprintKey(userId, cTerm, week);
-      final fpUpdatedAtKey = weekLoader.fingerprintUpdatedAtKey(userId, cTerm, week);
+      final fpUpdatedAtKey = weekLoader.fingerprintUpdatedAtKey(
+        userId,
+        cTerm,
+        week,
+      );
       final fetchAtKey = weekLoader.lastFetchAtKey(userId, cTerm, week);
 
       final lastFetchAt = prefs.getInt(fetchAtKey) ?? 0;
@@ -101,7 +105,9 @@ class ScheduleRecentChangeDetector {
 
       Map<String, dynamic>? beforeJson;
       String? beforeFp = prefs.getString(fpKey);
-      if (beforeFp == null && beforeJsonStr != null && beforeJsonStr.isNotEmpty) {
+      if (beforeFp == null &&
+          beforeJsonStr != null &&
+          beforeJsonStr.isNotEmpty) {
         try {
           final decoded = json.decode(beforeJsonStr);
           if (decoded is Map<String, dynamic>) {
@@ -163,7 +169,10 @@ class ScheduleRecentChangeDetector {
           jsonStr: afterStr,
         );
         await prefs.setString(fpKey, afterFp);
-        await prefs.setInt(fpUpdatedAtKey, DateTime.now().millisecondsSinceEpoch);
+        await prefs.setInt(
+          fpUpdatedAtKey,
+          DateTime.now().millisecondsSinceEpoch,
+        );
 
         final wInt = int.tryParse(afterData.weekNum!) ?? 0;
         getWeekCache()[wInt] = afterData;
@@ -192,14 +201,19 @@ class ScheduleRecentChangeDetector {
 
       if (beforeFp == null) {
         final movedAdded = (afterData.eventList ?? const <EventItem>[])
-            .where((event) => removedStableKeys.contains(_stableEventKey(event)))
+            .where(
+              (event) => removedStableKeys.contains(_stableEventKey(event)),
+            )
             .toList(growable: false);
         if (movedAdded.isNotEmpty) {
           final beforeEmpty = ScheduleData(
             weekNum: week,
             eventList: const <EventItem>[],
           );
-          final afterOnlyMoved = ScheduleData(weekNum: week, eventList: movedAdded);
+          final afterOnlyMoved = ScheduleData(
+            weekNum: week,
+            eventList: movedAdded,
+          );
           final lines = diffScheduleWeekLines(
             before: beforeEmpty,
             after: afterOnlyMoved,
@@ -218,7 +232,9 @@ class ScheduleRecentChangeDetector {
 
       List<String> lines = const <String>[];
       try {
-        if (beforeJson == null && beforeJsonStr != null && beforeJsonStr.isNotEmpty) {
+        if (beforeJson == null &&
+            beforeJsonStr != null &&
+            beforeJsonStr.isNotEmpty) {
           final decoded = json.decode(beforeJsonStr);
           if (decoded is Map<String, dynamic>) beforeJson = decoded;
         }

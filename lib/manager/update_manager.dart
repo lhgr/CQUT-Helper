@@ -1,7 +1,7 @@
 import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/model/update_model.dart';
+import 'package:cqut_helper/widgets/release_notes_markdown.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:cqut_helper/utils/github_proxy.dart';
 
@@ -11,23 +11,6 @@ class UpdateManager {
   UpdateManager._internal();
 
   final ApiService _apiService = ApiService();
-
-  String _formatReleaseNotes(String raw) {
-    final normalized = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    final lines = normalized.split('\n');
-    final buffer = StringBuffer();
-    for (int i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      if (line.isNotEmpty && !line.endsWith('  ')) {
-        buffer.write(line);
-        buffer.write('  ');
-      } else {
-        buffer.write(line);
-      }
-      if (i != lines.length - 1) buffer.write('\n');
-    }
-    return buffer.toString();
-  }
 
   /// 检查更新
   /// [context] 用于显示弹窗
@@ -122,13 +105,9 @@ class UpdateManager {
                 SizedBox(height: 8),
                 Text('更新内容:', style: TextStyle(fontWeight: FontWeight.bold)),
                 SizedBox(height: 4),
-                MarkdownBody(
-                  data: _formatReleaseNotes(info.body),
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
-                  onTapLink: (text, href, title) {
-                    if (href == null || href.isEmpty) return;
-                    _launchExternalUrl(context, href);
-                  },
+                ReleaseNotesMarkdown(
+                  data: info.body,
+                  onTapLink: (href) => _launchExternalUrl(context, href),
                 ),
               ],
             ),
@@ -170,13 +149,9 @@ class UpdateManager {
                 SizedBox(height: 8),
                 Text('版本日志:', style: TextStyle(fontWeight: FontWeight.bold)),
                 SizedBox(height: 4),
-                MarkdownBody(
-                  data: _formatReleaseNotes(info.body),
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
-                  onTapLink: (text, href, title) {
-                    if (href == null || href.isEmpty) return;
-                    _launchExternalUrl(context, href);
-                  },
+                ReleaseNotesMarkdown(
+                  data: info.body,
+                  onTapLink: (href) => _launchExternalUrl(context, href),
                 ),
               ],
             ),

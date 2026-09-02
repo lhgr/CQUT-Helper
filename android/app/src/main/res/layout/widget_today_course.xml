@@ -1,26 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
+    android:background="@drawable/appwidget_bg"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
     <FrameLayout
         android:id="@+id/widget_card"
         android:layout_gravity="center"
+        android:background="@drawable/appwidget_bg"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
-        <ImageView
-            android:id="@+id/iv_appwidget_pic_bg"
-            android:background="@drawable/appwidget_bg"
-            android:visibility="gone"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="centerCrop" />
-        <ImageView
-            android:id="@+id/iv_appwidget"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="fitXY"
-            android:src="@drawable/appwidget_bg" />
         <RelativeLayout
             android:id="@+id/rl_appwidget"
             android:padding="12dp"
@@ -32,9 +21,12 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp">
                 <LinearLayout
+                    android:id="@+id/header_text"
                     android:orientation="vertical"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_alignParentStart="true"
+                    android:layout_toStartOf="@+id/iv_next"
                     android:layout_centerVertical="true">
                     <TextView
                         android:id="@+id/tv_date"
@@ -75,16 +67,24 @@
                             android:textColor="@color/widget_accent"
                             android:text="周四" />
                     </LinearLayout>
+                    <TextView
+                        android:id="@+id/tv_sync_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:textSize="10sp"
+                        android:textColor="@color/widget_secondary_text"
+                        android:visibility="gone" />
                 </LinearLayout>
                 <ImageView
                     android:id="@+id/iv_next"
-                    android:padding="8dp"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:padding="12dp"
                     android:src="@drawable/ic_back"
                     android:layout_centerVertical="true"
                     android:rotation="180"
-                    android:layout_marginEnd="8dp"
                     android:layout_alignParentEnd="true" />
             </RelativeLayout>
             <FrameLayout

@@ -78,7 +78,10 @@ Y/akVmYNtghKZzz6jwIDAQAB
 
     state.inFlight = () async {
       if (encryptedPassword != null) {
-        await loginWithEncrypted(account: account, encryptedPassword: encryptedPassword);
+        await loginWithEncrypted(
+          account: account,
+          encryptedPassword: encryptedPassword,
+        );
       } else {
         await login(account: account, password: password!);
       }

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cqut_helper/manager/app_network_image_cache.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -6,20 +9,73 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:cqut_helper/utils/github_proxy.dart';
 
+const _developerAvatarUrl =
+    'https://blog-assets.dawndrizzle.top/images/hero-avatar.png';
+const _wingAvatarUrl = 'https://blog-assets.dawndrizzle.top/images/Wing.jpg';
+
+CachedNetworkImageProvider _aboutAvatarProvider(String url) {
+  return CachedNetworkImageProvider(
+    url,
+    cacheManager: AppNetworkImageCache.aboutMemberAvatars,
+    maxWidth: 256,
+    maxHeight: 256,
+  );
+}
+
+Future<void> _precacheAboutAvatars(BuildContext context) async {
+  await Future.wait(
+    const [_developerAvatarUrl, _wingAvatarUrl].map((url) async {
+      var errorHandled = false;
+      try {
+        await precacheImage(
+          _aboutAvatarProvider(url),
+          context,
+          onError: (error, stackTrace) {
+            errorHandled = true;
+            AppLogger.I.debug(
+              'MineAbout',
+              'about avatar prefetch failed',
+              error: error,
+              stackTrace: stackTrace,
+              fields: {'target_url': url},
+            );
+          },
+        );
+      } catch (error, stackTrace) {
+        if (!errorHandled) {
+          AppLogger.I.debug(
+            'MineAbout',
+            'about avatar prefetch failed',
+            error: error,
+            stackTrace: stackTrace,
+            fields: {'target_url': url},
+          );
+        }
+      }
+    }),
+  );
+}
+
 Future<void> showMineAboutDialog(BuildContext context) async {
   final packageInfo = await PackageInfo.fromPlatform();
   final version = packageInfo.version;
 
   if (!context.mounted) return;
 
+  unawaited(_precacheAboutAvatars(context));
+
   showAboutDialog(
     context: context,
-    applicationName: "CQUT 助手",
+    applicationName: "CQUT Helper",
     applicationVersion: version,
-    applicationIcon: Icon(
-      Icons.school,
-      size: 48,
-      color: Theme.of(context).colorScheme.primary,
+    applicationIcon: ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Image.asset(
+        'lib/assets/Icon.png',
+        width: 48,
+        height: 48,
+        fit: BoxFit.cover,
+      ),
     ),
     children: [
       Text("CQUTer的小助手"),
@@ -29,7 +85,7 @@ Future<void> showMineAboutDialog(BuildContext context) async {
       InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () async {
-          const urlString = 'https://github.com/lhgr';
+          const urlString = 'https://dawndrizzle.top/';
           if (!await GithubProxy.launchExternalUrlString(urlString)) {
             AppLogger.I.event(
               LogLevel.warn,
@@ -49,54 +105,10 @@ Future<void> showMineAboutDialog(BuildContext context) async {
           padding: const EdgeInsets.all(8.0),
           child: Row(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                child: CachedNetworkImage(
-                  imageUrl: GithubProxy.proxyUrlOf('https://github.com/lhgr.png'),
-                  imageBuilder: (context, imageProvider) => CircleAvatar(
-                    radius: 24,
-                    backgroundImage: imageProvider,
-                    backgroundColor: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHigh,
-                  ),
-                  placeholder: (context, url) => CircleAvatar(
-                    radius: 24,
-                    backgroundColor: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHigh,
-                    child: Icon(Icons.person),
-                  ),
-                  errorWidget: (context, url, error) => CachedNetworkImage(
-                    imageUrl: 'https://github.com/lhgr.png',
-                    imageBuilder: (context, imageProvider) => CircleAvatar(
-                      radius: 24,
-                      backgroundImage: imageProvider,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHigh,
-                    ),
-                    placeholder: (context, url) => CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHigh,
-                      child: Icon(Icons.person),
-                    ),
-                    errorWidget: (context, url, error) => CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHigh,
-                      child: Icon(Icons.person),
-                    ),
-                  ),
-                ),
+              const _MemberAvatar(
+                imageUrl: _developerAvatarUrl,
+                semanticLabel: 'Dawn Drizzle 头像',
+                fallbackText: 'DD',
               ),
               SizedBox(width: 16),
               Column(
@@ -106,10 +118,7 @@ Future<void> showMineAboutDialog(BuildContext context) async {
                     "Dawn Drizzle",
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  Text(
-                    "开发者",
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text("开发者", style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ],
@@ -120,16 +129,15 @@ Future<void> showMineAboutDialog(BuildContext context) async {
       InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () async {
-          const String urlString =
-              'https://weibo.com/5401723589?refer_flag=1001030103_';
+          const String urlString = 'https://space.bilibili.com/350065580';
           final Uri url = Uri.parse(urlString);
           if (!await launchUrl(url)) {
             AppLogger.I.event(
               LogLevel.warn,
               'MineAbout',
               event: 'ui_about_open_url_fail',
-              messageZh: '关于页打开吉祥物链接失败',
-              message: 'open mascot url failed',
+              messageZh: '关于页打开 Wing 链接失败',
+              message: 'open Wing url failed',
               module: 'ui',
               action: 'open_url',
               status: 'fail',
@@ -142,33 +150,18 @@ Future<void> showMineAboutDialog(BuildContext context) async {
           padding: const EdgeInsets.all(8.0),
           child: Row(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                child: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHigh,
-                  backgroundImage: AssetImage('lib/assets/Wing.jpg'),
-                ),
+              const _MemberAvatar(
+                imageUrl: _wingAvatarUrl,
+                semanticLabel: 'Wing 头像',
+                fallbackText: 'W',
+                fallbackAsset: 'lib/assets/Wing.jpg',
               ),
               SizedBox(width: 16),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "Wing",
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    "吉祥物",
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text("Wing", style: Theme.of(context).textTheme.titleMedium),
+                  Text("氛围组", style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ],
@@ -206,4 +199,101 @@ Future<void> showMineAboutDialog(BuildContext context) async {
       ),
     ],
   );
+}
+
+class _MemberAvatar extends StatelessWidget {
+  const _MemberAvatar({
+    required this.imageUrl,
+    required this.semanticLabel,
+    required this.fallbackText,
+    this.fallbackAsset,
+  });
+
+  final String imageUrl;
+  final String semanticLabel;
+  final String fallbackText;
+  final String? fallbackAsset;
+
+  static const double _size = 48;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final decodeSize = (_size * devicePixelRatio).ceil().clamp(96, 256).toInt();
+
+    Widget textFallback() {
+      return ColoredBox(
+        color: colors.surfaceContainerHigh,
+        child: Center(
+          child: Text(
+            fallbackText,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget errorFallback() {
+      final asset = fallbackAsset;
+      if (asset == null) return textFallback();
+      return Image.asset(
+        asset,
+        width: _size,
+        height: _size,
+        fit: BoxFit.cover,
+        cacheWidth: decodeSize,
+        cacheHeight: decodeSize,
+        errorBuilder: (context, error, stackTrace) => textFallback(),
+      );
+    }
+
+    return Semantics(
+      image: true,
+      label: semanticLabel,
+      child: Container(
+        width: _size,
+        height: _size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: colors.outlineVariant),
+        ),
+        padding: const EdgeInsets.all(1),
+        child: ClipOval(
+          child: CachedNetworkImage(
+            imageUrl: imageUrl,
+            cacheManager: AppNetworkImageCache.aboutMemberAvatars,
+            width: _size,
+            height: _size,
+            fit: BoxFit.cover,
+            memCacheWidth: decodeSize,
+            memCacheHeight: decodeSize,
+            maxWidthDiskCache: 256,
+            maxHeightDiskCache: 256,
+            fadeInDuration: const Duration(milliseconds: 180),
+            fadeOutDuration: const Duration(milliseconds: 80),
+            placeholderFadeInDuration: Duration.zero,
+            useOldImageOnUrlChange: true,
+            filterQuality: FilterQuality.medium,
+            placeholder: (context, url) => ColoredBox(
+              color: colors.surfaceContainerHigh,
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.primary,
+                  ),
+                ),
+              ),
+            ),
+            errorWidget: (context, url, error) => errorFallback(),
+          ),
+        ),
+      ),
+    );
+  }
 }

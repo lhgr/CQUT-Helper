@@ -5,14 +5,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ScheduleRefreshOrchestrator {
   final bool Function() isDisposed;
-  final Future<void> Function(
+  final Future<bool> Function(
     String weekNum,
     String yearTerm, {
     bool forceRefresh,
     bool updateLastViewed,
-  }) ensureWeekLoaded;
+  })
+  ensureWeekLoaded;
   final Future<String?> Function() loadUserId;
   Timer? _prefetchTimer;
+  int _backgroundPrefetchGeneration = 0;
   Future<void>? _foregroundFullRefreshInFlight;
 
   ScheduleRefreshOrchestrator({
@@ -24,11 +26,13 @@ class ScheduleRefreshOrchestrator {
   static const int _foregroundFullRefreshCooldownMs = 6 * 60 * 60 * 1000;
 
   void dispose() {
-    _prefetchTimer?.cancel();
+    cancelPrefetch();
   }
 
   void cancelPrefetch() {
     _prefetchTimer?.cancel();
+    _prefetchTimer = null;
+    _backgroundPrefetchGeneration++;
   }
 
   String _foregroundFullRefreshAtKey(String userId, String yearTerm) =>
@@ -59,7 +63,7 @@ class ScheduleRefreshOrchestrator {
     if (currentIndex == -1) return;
     if (isDisposed()) return;
 
-    final futures = <Future<void>>[];
+    final futures = <Future<bool>>[];
     if (currentIndex > 0) {
       final prevWeek = wList[currentIndex - 1];
       futures.add(ensureWeekLoaded(prevWeek, cTerm));
@@ -74,28 +78,36 @@ class ScheduleRefreshOrchestrator {
     onUpdate();
   }
 
-  void prefetchAllWeeksInBackground(
+  Future<bool> prefetchAllWeeksInBackground(
     ScheduleData currentData,
-    Function() onUpdate, {
+    void Function()? onUpdate, {
     Duration interval = const Duration(milliseconds: 150),
     bool forceRefresh = false,
   }) {
-    Future(() async {
+    final generation = ++_backgroundPrefetchGeneration;
+    return Future(() async {
       final wList = currentData.weekList;
       final currentWeekStr = currentData.weekNum;
       final cTerm = currentData.yearTerm;
-      if (wList == null || currentWeekStr == null || cTerm == null) return;
+      if (wList == null || currentWeekStr == null || cTerm == null) {
+        return false;
+      }
 
       for (final week in wList) {
-        if (isDisposed()) return;
+        if (isDisposed() || generation != _backgroundPrefetchGeneration) {
+          return false;
+        }
         if (week == currentWeekStr) continue;
         await ensureWeekLoaded(week, cTerm, forceRefresh: forceRefresh);
-        if (isDisposed()) return;
-        onUpdate();
+        if (isDisposed() || generation != _backgroundPrefetchGeneration) {
+          return false;
+        }
+        onUpdate?.call();
         if (interval > Duration.zero) {
           await Future.delayed(interval);
         }
       }
+      return true;
     });
   }
 
