@@ -228,6 +228,12 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     }
 
     internal fun headerActionFor(
+      presentation: TodayWidgetData.RefreshPresentation,
+    ): TodayCourseHeaderAction =
+      if (presentation.manualRefreshAllowed) headerActionFor(presentation.state)
+      else TodayCourseHeaderAction.TOGGLE_DAY
+
+    internal fun headerActionFor(
       state: TodayWidgetData.RefreshPresentationState,
     ): TodayCourseHeaderAction {
       return when (state) {
@@ -394,13 +400,13 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       )
       val isLoading =
         refreshPresentation.state == TodayWidgetData.RefreshPresentationState.LOADING
-      val headerAction = headerActionFor(refreshPresentation.state)
+      val headerAction = headerActionFor(refreshPresentation)
       views.setImageViewResource(
         R.id.iv_next,
         if (headerAction == TodayCourseHeaderAction.TOGGLE_DAY) {
           R.drawable.ic_back
         } else {
-          android.R.drawable.ic_popup_sync
+          R.drawable.ic_widget_refresh
         },
       )
       views.setFloat(
@@ -408,7 +414,21 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         "setRotation",
         if (headerAction == TodayCourseHeaderAction.TOGGLE_DAY && dayOffset == 0) 180f else 0f,
       )
-      views.setBoolean(R.id.iv_next, "setEnabled", !isLoading)
+      views.setBoolean(
+        R.id.iv_next, "setEnabled",
+        headerAction == TodayCourseHeaderAction.TOGGLE_DAY || !isLoading,
+      )
+      val iconPadding = (
+        (if (headerAction == TodayCourseHeaderAction.TOGGLE_DAY) 12 else 14) *
+          context.resources.displayMetrics.density
+        ).toInt()
+      views.setViewPadding(R.id.iv_next, iconPadding, iconPadding, iconPadding, iconPadding)
+      views.setContentDescription(
+        R.id.iv_next,
+        if (headerAction == TodayCourseHeaderAction.TOGGLE_DAY) {
+          if (dayOffset == 0) "查看明天课程" else "查看今天课程"
+        } else refreshActionDescription(refreshPresentation),
+      )
 
       val manualRefreshIntent =
         Intent(context, TodayCourseWidgetProvider::class.java).apply {

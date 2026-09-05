@@ -40,12 +40,19 @@ object TodayWidgetData {
   data class RefreshPresentation(
     val state: RefreshPresentationState,
     val text: String,
+    val manualRefreshAllowed: Boolean = false,
   ) {
     val usesRefreshAction: Boolean
       get() =
-        state == RefreshPresentationState.NEEDS_SYNC ||
+        manualRefreshAllowed && (state == RefreshPresentationState.NEEDS_SYNC ||
           state == RefreshPresentationState.STALE ||
-          state == RefreshPresentationState.FAILED
+          state == RefreshPresentationState.FAILED)
+
+    val showsRefreshButton: Boolean
+      get() = manualRefreshAllowed && state != RefreshPresentationState.CREDENTIAL_INVALID
+
+    val renderSignature: String
+      get() = "${state.name}:$manualRefreshAllowed:$text"
 
     val replacesDateMetadata: Boolean
       get() = state != RefreshPresentationState.NORMAL
@@ -172,6 +179,53 @@ object TodayWidgetData {
     requiredDayOffsets: IntArray? = null,
   ): RefreshPresentation {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
+    val lastSuccessfulAt = if (account.isEmpty()) {
+      null
+    } else {
+      prefs.getString("$KEY_LAST_SUCCESSFUL_REFRESH_AT_PREFIX$account", null)
+        ?.let(::parseIso8601Millis) ?: migrateLegacyRefreshAt(context, prefs, account)
+    }
+    return applyRefreshPolicy(
+      loadRawRefreshPresentation(context, appWidgetId, requiredDayOffsets),
+      isNoticePollingEnabled(context),
+      lastSuccessfulAt,
+      System.currentTimeMillis(),
+      WidgetInstanceConfigStore.load(context, appWidgetId).refreshSuggestionDays,
+    )
+  }
+
+  fun isNoticePollingEnabled(context: Context): Boolean =
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+      .getBoolean(KEY_BACKGROUND_POLLING_ENABLED, false)
+
+  internal fun applyRefreshPolicy(
+    presentation: RefreshPresentation,
+    pollingEnabled: Boolean,
+    lastSuccessfulAt: Long?,
+    nowMillis: Long,
+    suggestionDays: Int,
+  ): RefreshPresentation {
+    val allowed = !pollingEnabled && lastSuccessfulAt != null &&
+      isRefreshStale(lastSuccessfulAt, nowMillis, suggestionDays)
+    val text = when {
+      presentation.state == RefreshPresentationState.NORMAL && pollingEnabled -> ""
+      !allowed && presentation.state == RefreshPresentationState.NEEDS_SYNC ->
+        "课表尚未同步，请打开应用"
+      !allowed && presentation.state == RefreshPresentationState.FAILED ->
+        "更新失败，请打开应用"
+      presentation.state == RefreshPresentationState.STALE -> "课表可能已过期"
+      else -> presentation.text
+    }
+    return presentation.copy(text = text, manualRefreshAllowed = allowed)
+  }
+
+  private fun loadRawRefreshPresentation(
+    context: Context,
+    appWidgetId: Int,
+    requiredDayOffsets: IntArray?,
+  ): RefreshPresentation {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val account =
       prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
     if (account.isEmpty()) {
@@ -274,22 +328,11 @@ object TodayWidgetData {
           "课表可能已过期，点右上角刷新",
         )
       }
-      // A recent successful server response that does not cover the requested
-      // date is authoritative evidence of a holiday/non-teaching week, not a
-      // stale cache. Let the day-level empty state explain that condition.
+      // A recent response does not prove that an uncovered date is a holiday.
+      // The day-level empty state explicitly describes the missing coverage.
     }
 
-    // Keep manual refresh directly reachable while exercising widget behavior
-    // from a debug build. Release builds continue to use the real sync age.
-    if (isDebuggable) {
-      return RefreshPresentation(
-        RefreshPresentationState.NEEDS_SYNC,
-        "调试模式：点右上角刷新",
-      )
-    }
-
-    if (!pollingEnabled &&
-      lastSuccessfulAt != null &&
+    if (lastSuccessfulAt != null &&
       isRefreshStale(lastSuccessfulAt, nowMillis, suggestionDays)
     ) {
       return RefreshPresentation(
@@ -303,11 +346,8 @@ object TodayWidgetData {
     // turn a populated widget into a permanent "not synchronized" state.
     return RefreshPresentation(
       RefreshPresentationState.NORMAL,
-      if (pollingEnabled) {
-        ""
-      } else {
-        lastSuccessfulAt?.let { formatLastUpdated(it, nowMillis) }.orEmpty()
-      },
+      if (pollingEnabled) "" else
+        lastSuccessfulAt?.let { "同步于${formatLastUpdated(it, nowMillis)}" }.orEmpty(),
     )
   }
 
@@ -491,13 +531,30 @@ object TodayWidgetData {
   }
 
   fun loadEmptyStateText(context: Context, dayOffset: Int): String {
-    return emptyStateTextFor(loadDayScheduleAvailability(context, dayOffset))
+    val availability = loadDayScheduleAvailability(context, dayOffset)
+    val todayData = if (dayOffset == 0) {
+      loadScheduleJsonObjectForDate(context, widgetCalendar())
+    } else null
+    val hadCourses = todayData != null && loadCoursesByWeekdayFromSchedule(
+      context,
+      todayData,
+      toMondayBasedWeekday(widgetCalendar()).toString(),
+    ).isNotEmpty()
+    return emptyStateTextFor(availability, dayOffset, hadCourses)
   }
 
-  internal fun emptyStateTextFor(availability: DayScheduleAvailability): String {
+  internal fun emptyStateTextFor(
+    availability: DayScheduleAvailability,
+    dayOffset: Int = 0,
+    hadCourses: Boolean = false,
+  ): String {
     return when (availability) {
-      DayScheduleAvailability.COVERED -> "暂无课程"
-      DayScheduleAvailability.OUTSIDE_TEACHING_WEEK -> "当前不在教学周"
+      DayScheduleAvailability.COVERED -> when {
+        dayOffset != 0 -> "明天没有课程"
+        hadCourses -> "今日课程已结束"
+        else -> "今天没有课程"
+      }
+      DayScheduleAvailability.OUTSIDE_TEACHING_WEEK -> "该日期课表未获取"
       DayScheduleAvailability.MISSING_CACHE -> "课表尚未同步"
     }
   }
@@ -748,12 +805,7 @@ object TodayWidgetData {
   }
 
   fun loadTodayCourseStateText(context: Context): String {
-    val targetDate = widgetCalendar()
-    val data = loadScheduleJsonObjectForDate(context, targetDate)
-      ?: return loadEmptyStateText(context, 0)
-    val weekDay = toMondayBasedWeekday(targetDate).coerceIn(1, 7).toString()
-    val allTodayCourses = loadCoursesByWeekdayFromSchedule(context, data, weekDay)
-    return if (allTodayCourses.isEmpty()) "暂无课程" else "今日课程已结束"
+    return loadEmptyStateText(context, 0)
   }
 
   internal fun selectNextCourse(courses: List<CourseItem>): CourseItem? {

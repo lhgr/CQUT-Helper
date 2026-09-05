@@ -3,9 +3,9 @@ import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
-import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
+import 'package:cqut_helper/widgets/background_polling_setup_dialog.dart';
 import 'package:cqut_helper/widgets/marquee_text.dart';
 import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
 import 'package:flutter/material.dart';
@@ -152,19 +152,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       _showMessage('未授予系统通知权限，无法及时接收调课变更提醒');
       return false;
     }
-    final ignored =
-        await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
-    if (ignored != true) {
-      final opened =
-          await AndroidBackgroundRestrictions.requestIgnoreBatteryOptimizations();
-      if (!opened) {
-        await AndroidBackgroundRestrictions.openBatteryOptimizationSettings();
-      }
-    }
-    await AndroidBackgroundRestrictions.openAutoStartSettings();
     if (!mounted) return false;
-    _showMessage('已尝试完成后台运行设置，稳定性将根据后续运行情况自动判断');
-    return true;
+    return showBackgroundPollingSetupDialog(context);
   }
 
   Future<void> _togglePolling(bool value) async {

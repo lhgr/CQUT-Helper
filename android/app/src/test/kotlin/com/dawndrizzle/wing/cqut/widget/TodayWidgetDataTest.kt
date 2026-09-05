@@ -25,7 +25,7 @@ class TodayWidgetDataTest {
   @Test
   fun `covered day without courses shows empty course state`() {
     assertEquals(
-      "暂无课程",
+      "今天没有课程",
       TodayWidgetData.emptyStateTextFor(
         TodayWidgetData.DayScheduleAvailability.COVERED,
       ),
@@ -33,13 +33,60 @@ class TodayWidgetDataTest {
   }
 
   @Test
-  fun `cached schedule outside teaching week is not reported as unsynced`() {
+  fun `uncovered cached date does not claim to be a holiday`() {
     assertEquals(
-      "当前不在教学周",
+      "该日期课表未获取",
       TodayWidgetData.emptyStateTextFor(
         TodayWidgetData.DayScheduleAvailability.OUTSIDE_TEACHING_WEEK,
       ),
     )
+  }
+
+  @Test
+  fun `completed today and an empty tomorrow have different explanations`() {
+    assertEquals(
+      "今日课程已结束",
+      TodayWidgetData.emptyStateTextFor(
+        TodayWidgetData.DayScheduleAvailability.COVERED, dayOffset = 0, hadCourses = true,
+      ),
+    )
+    assertEquals(
+      "明天没有课程",
+      TodayWidgetData.emptyStateTextFor(
+        TodayWidgetData.DayScheduleAvailability.COVERED, dayOffset = 1,
+      ),
+    )
+    assertEquals(
+      "该日期课表未获取",
+      TodayWidgetData.emptyStateTextFor(
+        TodayWidgetData.DayScheduleAvailability.OUTSIDE_TEACHING_WEEK,
+        dayOffset = 0, hadCourses = true,
+      ),
+    )
+  }
+
+  @Test
+  fun `enabling polling cannot conceal an expired successful sync`() {
+    val day = 24L * 60 * 60 * 1000
+    val lastSync = day
+    for (polling in listOf(false, true)) {
+      for (age in listOf(3 * day - 1, 3 * day, 7 * day)) {
+        val presentation = TodayWidgetData.idleRefreshPresentation(
+          hasCoveredRequiredDate = true,
+          hasAnyScheduleCache = true,
+          isDebuggable = false,
+          pollingEnabled = polling,
+          lastSuccessfulAt = lastSync,
+          nowMillis = lastSync + age,
+          suggestionDays = 3,
+        )
+        assertEquals(
+          if (age < 3 * day) TodayWidgetData.RefreshPresentationState.NORMAL
+          else TodayWidgetData.RefreshPresentationState.STALE,
+          presentation.state,
+        )
+      }
+    }
   }
 
   @Test
@@ -146,7 +193,7 @@ class TodayWidgetDataTest {
   }
 
   @Test
-  fun `background polling hides the last update time`() {
+  fun `background polling hides the last successful update time`() {
     val now = beijingCalendar(2026, Calendar.AUGUST, 11, 18, 30)
     val lastUpdated = beijingCalendar(2026, Calendar.AUGUST, 11, 9, 5)
     val presentation =
@@ -180,7 +227,7 @@ class TodayWidgetDataTest {
       )
 
     assertEquals(TodayWidgetData.RefreshPresentationState.NORMAL, presentation.state)
-    assertEquals("09:05", presentation.text)
+    assertEquals("同步于09:05", presentation.text)
   }
 
   @Test

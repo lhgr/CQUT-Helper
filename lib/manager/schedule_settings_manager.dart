@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 
 enum ScheduleDisplayDensity {
   compact(48),
@@ -262,6 +263,9 @@ class ScheduleSettingsManager {
     bool notify = true,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    final pollingChanged =
+        (prefs.getBool(backgroundPollingEnabledKey) ?? false) !=
+        backgroundPollingEnabled;
     this.showWeekend = showWeekend;
     this.timeInfoEnabled = timeInfoEnabled;
     this.backgroundPollingEnabled = backgroundPollingEnabled;
@@ -272,6 +276,9 @@ class ScheduleSettingsManager {
     await prefs.remove('schedule_update_show_diff');
     await prefs.setBool(backgroundPollingEnabledKey, backgroundPollingEnabled);
     await prefs.setString(_prefsKeyNoticeApiBaseUrl, this.noticeApiBaseUrl);
+    if (pollingChanged) {
+      await WidgetUpdater.updateTodayWidget(trigger: 'notice_polling_changed');
+    }
     if (notify) settingsEpoch.value++;
   }
 }

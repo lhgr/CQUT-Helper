@@ -191,8 +191,9 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       val nextCoursePendingIntent =
         WidgetNavigationPendingIntent.create(context, appWidgetId, 1, true)
       if (rootPendingIntent != null) {
-        views.setOnClickPendingIntent(R.id.widget_root, rootPendingIntent)
-        views.setOnClickPendingIntent(R.id.rl_title, rootPendingIntent)
+        views.setOnClickPendingIntent(R.id.widget_root, null)
+        views.setOnClickPendingIntent(R.id.rl_title, null)
+        views.setOnClickPendingIntent(R.id.header_text, rootPendingIntent)
         views.setOnClickPendingIntent(R.id.empty, rootPendingIntent)
         views.setOnClickPendingIntent(R.id.empty_next_day, rootPendingIntent)
       }
@@ -267,12 +268,7 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
           appWidgetId,
           requiredDayOffsets = intArrayOf(0, 1),
         )
-      val dateVisibility =
-        if (refreshPresentation.replacesDateMetadata) {
-          android.view.View.GONE
-        } else {
-          android.view.View.VISIBLE
-        }
+      val dateVisibility = android.view.View.VISIBLE
       views.setViewVisibility(R.id.tv_date, dateVisibility)
       views.setViewVisibility(R.id.tv_week_count, dateVisibility)
       views.setViewVisibility(R.id.tv_week, dateVisibility)
@@ -283,12 +279,10 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       )
       val isLoading =
         refreshPresentation.state == TodayWidgetData.RefreshPresentationState.LOADING
-      val showRefreshAction = refreshPresentation.usesRefreshAction || isLoading
-      views.setViewVisibility(
-        R.id.iv_refresh,
-        if (showRefreshAction) android.view.View.VISIBLE else android.view.View.GONE,
-      )
+      views.setViewVisibility(R.id.iv_refresh, if (refreshPresentation.showsRefreshButton) android.view.View.VISIBLE else android.view.View.GONE)
       views.setBoolean(R.id.iv_refresh, "setEnabled", !isLoading)
+      views.setImageViewResource(R.id.iv_refresh, R.drawable.ic_widget_refresh)
+      views.setContentDescription(R.id.iv_refresh, refreshActionDescription(refreshPresentation))
       val manualRefreshIntent =
         Intent(context, TodayAndNextWidgetProvider::class.java).apply {
           action = ACTION_MANUAL_REFRESH

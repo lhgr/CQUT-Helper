@@ -175,15 +175,11 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
           appWidgetId,
           requiredDayOffsets = intArrayOf(0),
         )
-      val showRefresh =
-        refresh.usesRefreshAction ||
-          refresh.state == TodayWidgetData.RefreshPresentationState.LOADING
 
       views.setViewVisibility(R.id.course_content, View.GONE)
       views.setViewVisibility(R.id.iv_indicator, View.GONE)
-      views.setViewVisibility(R.id.remaining_badge, View.GONE)
       views.setViewVisibility(R.id.status_content, View.GONE)
-      views.setViewVisibility(R.id.iv_refresh, if (showRefresh) View.VISIBLE else View.GONE)
+      views.setViewVisibility(R.id.iv_refresh, if (refresh.showsRefreshButton) android.view.View.VISIBLE else android.view.View.GONE)
       views.setBoolean(
         R.id.iv_refresh,
         "setEnabled",
@@ -192,7 +188,7 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
 
       val rootIntent =
         if (nextCourse != null) {
-          bindCourse(views, nextCourse, courses.size, refresh)
+          bindCourse(views, nextCourse, courses.size)
           WidgetNavigationPendingIntent.createForCourse(
             context,
             appWidgetId,
@@ -205,7 +201,9 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
           WidgetNavigationPendingIntent.create(context, appWidgetId, 0, false)
         }
       if (rootIntent != null) {
-        views.setOnClickPendingIntent(R.id.widget_root, rootIntent)
+        views.setOnClickPendingIntent(R.id.widget_root, null)
+        views.setOnClickPendingIntent(R.id.course_content, rootIntent)
+        views.setOnClickPendingIntent(R.id.status_content, rootIntent)
       }
 
       val manualRefreshIntent =
@@ -221,6 +219,8 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
           manualRefreshIntent,
           PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+      views.setImageViewResource(R.id.iv_refresh, R.drawable.ic_widget_refresh)
+      views.setContentDescription(R.id.iv_refresh, refreshActionDescription(refresh))
       val refreshIntent =
         if (refresh.state == TodayWidgetData.RefreshPresentationState.CREDENTIAL_INVALID) {
           WidgetNavigationPendingIntent.create(context, appWidgetId, 0, false)
@@ -236,11 +236,9 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
       views: RemoteViews,
       course: TodayWidgetData.CourseItem,
       remainingCount: Int,
-      refresh: TodayWidgetData.RefreshPresentation,
     ) {
       views.setViewVisibility(R.id.course_content, View.VISIBLE)
       views.setViewVisibility(R.id.iv_indicator, View.VISIBLE)
-      views.setViewVisibility(R.id.remaining_badge, View.VISIBLE)
       views.setTextViewText(R.id.tv_course_name, course.name)
       val clock =
         if (course.startTime.isNotBlank() && course.endTime.isNotBlank()) {
@@ -248,18 +246,16 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
         } else {
           course.periods
         }
-      views.setTextViewText(R.id.tv_course_time, clock)
+      views.setTextViewText(R.id.tv_course_time, "$clock · 余${remainingCount}门")
       val location =
         listOf(course.campus.trim(), course.classroom.trim())
           .filter { it.isNotEmpty() }
           .joinToString(" ")
       views.setTextViewText(
         R.id.tv_course_location,
-        if (refresh.replacesDateMetadata && refresh.text.isNotBlank()) refresh.text else location,
+        location,
       )
-      views.setTextViewText(R.id.tv_remaining_count, remainingCount.toString())
       views.setInt(R.id.iv_indicator, "setColorFilter", course.indicatorColor)
-      views.setInt(R.id.iv_badge_background, "setColorFilter", course.indicatorColor)
     }
 
     private fun bindStatus(

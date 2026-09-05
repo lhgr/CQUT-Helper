@@ -1,8 +1,34 @@
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  tearDown(WidgetUpdater.resetDebugOverrides);
+
+  test('调课通知开关持久化后立即更新组件，重复保存不触发', () async {
+    SharedPreferences.setMockInitialValues({});
+    final manager = ScheduleSettingsManager();
+    final received = <bool>[];
+    WidgetUpdater.debugIsAndroidOverride = true;
+    WidgetUpdater.debugMethodInvoker = (method, arguments) async {
+      final prefs = await SharedPreferences.getInstance();
+      received.add(
+        prefs.getBool(ScheduleSettingsManager.backgroundPollingEnabledKey)!,
+      );
+      expect(arguments['trigger'], 'notice_polling_changed');
+    };
+    for (final enabled in [true, true, false]) {
+      await manager.save(
+        showWeekend: true,
+        timeInfoEnabled: true,
+        backgroundPollingEnabled: enabled,
+        noticeApiBaseUrl: ScheduleSettingsManager.officialNoticeApiBaseUrl,
+      );
+    }
+    expect(received, [true, false]);
+  });
+
   group('ScheduleSettingsManager 调课通知增强授权', () {
     test('旧版仅开启轮询但没有新版隐私同意时会自动关闭', () async {
       SharedPreferences.setMockInitialValues({

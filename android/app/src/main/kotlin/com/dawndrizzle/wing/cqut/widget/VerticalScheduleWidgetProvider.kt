@@ -166,8 +166,9 @@ class VerticalScheduleWidgetProvider : AppWidgetProvider() {
       val rootIntent = WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)
       val courseIntent = WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, true)
       if (rootIntent != null) {
-        views.setOnClickPendingIntent(R.id.widget_root, rootIntent)
-        views.setOnClickPendingIntent(R.id.rl_title, rootIntent)
+        views.setOnClickPendingIntent(R.id.widget_root, null)
+        views.setOnClickPendingIntent(R.id.rl_title, null)
+        views.setOnClickPendingIntent(R.id.header_text, rootIntent)
         views.setOnClickPendingIntent(R.id.empty, rootIntent)
       }
       if (courseIntent != null) {
@@ -233,7 +234,7 @@ class VerticalScheduleWidgetProvider : AppWidgetProvider() {
       )
 
       val refresh = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
-      val metadataVisibility = if (refresh.replacesDateMetadata) View.GONE else View.VISIBLE
+      val metadataVisibility = View.VISIBLE
       views.setViewVisibility(R.id.tv_date, metadataVisibility)
       views.setViewVisibility(R.id.tv_week, metadataVisibility)
       views.setViewVisibility(R.id.tv_course_count, metadataVisibility)
@@ -243,9 +244,10 @@ class VerticalScheduleWidgetProvider : AppWidgetProvider() {
         if (refresh.text.isBlank()) View.GONE else View.VISIBLE,
       )
       val isLoading = refresh.state == TodayWidgetData.RefreshPresentationState.LOADING
-      val showRefresh = refresh.usesRefreshAction || isLoading
-      views.setViewVisibility(R.id.iv_refresh, if (showRefresh) View.VISIBLE else View.GONE)
+      views.setViewVisibility(R.id.iv_refresh, if (refresh.showsRefreshButton) android.view.View.VISIBLE else android.view.View.GONE)
       views.setBoolean(R.id.iv_refresh, "setEnabled", !isLoading)
+      views.setImageViewResource(R.id.iv_refresh, R.drawable.ic_widget_refresh)
+      views.setContentDescription(R.id.iv_refresh, refreshActionDescription(refresh))
 
       val manualRefreshIntent =
         Intent(context, VerticalScheduleWidgetProvider::class.java).apply {

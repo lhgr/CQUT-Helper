@@ -38,7 +38,7 @@ internal object WidgetRefreshRenderStateStore {
     ) { appWidgetId ->
       val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
       WidgetSignatures(
-        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).state.name,
+        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).renderSignature,
         content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
       )
     }
@@ -55,7 +55,7 @@ internal object WidgetRefreshRenderStateStore {
               context,
               appWidgetId,
               requiredDayOffsets = intArrayOf(0, 1),
-            ).state.name,
+            ).renderSignature,
         content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(0, 1)),
       )
     }
@@ -67,7 +67,7 @@ internal object WidgetRefreshRenderStateStore {
     ) { appWidgetId ->
       val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
       WidgetSignatures(
-        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).state.name,
+        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).renderSignature,
         content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
       )
     }
@@ -84,7 +84,7 @@ internal object WidgetRefreshRenderStateStore {
               context,
               appWidgetId,
               requiredDayOffsets = intArrayOf(0),
-            ).state.name,
+            ).renderSignature,
         content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(0)),
       )
     }
@@ -96,7 +96,7 @@ internal object WidgetRefreshRenderStateStore {
     ) { appWidgetId ->
       val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
       WidgetSignatures(
-        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).state.name,
+        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).renderSignature,
         content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
       )
     }
