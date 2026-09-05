@@ -31,7 +31,8 @@ if (requestsReleaseBuild && !hasReleaseSigning) {
 
 android {
     namespace = "com.dawndrizzle.wing.cqut"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_secure_storage 11 requires Android API 37.
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
