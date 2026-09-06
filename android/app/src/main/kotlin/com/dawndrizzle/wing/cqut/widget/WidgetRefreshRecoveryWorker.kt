@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
  *
  * WorkManager is intentionally not responsible for network synchronization or
  * starting Flutter. It only asks the existing native render pipeline to reload
- * cached rows, including time-sensitive filtering of completed courses.
+ * cached rows, including time-sensitive filtering of started courses.
  */
 class WidgetRefreshRecoveryWorker(
   appContext: Context,

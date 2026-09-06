@@ -44,6 +44,7 @@ class CqutApplication : Application() {
   private fun registerRuntimeRecoveryReceiver() {
     val filter = IntentFilter().apply {
       addAction(Intent.ACTION_DATE_CHANGED)
+      addAction(Intent.ACTION_USER_PRESENT)
     }
     try {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

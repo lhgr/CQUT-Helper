@@ -43,9 +43,9 @@ class TodayWidgetDataTest {
   }
 
   @Test
-  fun `completed today and an empty tomorrow have different explanations`() {
+  fun `started today and an empty tomorrow have different explanations`() {
     assertEquals(
-      "今日课程已结束",
+      "今日无待上课程",
       TodayWidgetData.emptyStateTextFor(
         TodayWidgetData.DayScheduleAvailability.COVERED, dayOffset = 0, hadCourses = true,
       ),
@@ -295,7 +295,7 @@ class TodayWidgetDataTest {
   }
 
   @Test
-  fun `next course boundary includes both start and end`() {
+  fun `next course boundary only includes the start of each block`() {
     val clocks =
       mapOf(
         1 to (8 * 60 to 8 * 60 + 45),
@@ -309,17 +309,14 @@ class TodayWidgetDataTest {
       TodayWidgetData.nextCourseBoundaryMinuteOfDay(courses, clocks, 7 * 60 + 59),
     )
     assertEquals(
-      9 * 60 + 40,
+      14 * 60,
       TodayWidgetData.nextCourseBoundaryMinuteOfDay(courses, clocks, 8 * 60),
     )
     assertEquals(
       14 * 60,
       TodayWidgetData.nextCourseBoundaryMinuteOfDay(courses, clocks, 9 * 60 + 40),
     )
-    assertEquals(
-      14 * 60 + 45,
-      TodayWidgetData.nextCourseBoundaryMinuteOfDay(courses, clocks, 14 * 60),
-    )
+    assertNull(TodayWidgetData.nextCourseBoundaryMinuteOfDay(courses, clocks, 14 * 60))
   }
 
   @Test
@@ -338,6 +335,47 @@ class TodayWidgetDataTest {
         7 * 60,
       ),
     )
+  }
+
+  @Test
+  fun `started courses disappear exactly at start and recovery removes every missed start`() {
+    val first = courseItem("first", 1).copy(startMinuteOfDay = 480)
+    val second = courseItem("second", 3).copy(startMinuteOfDay = 600)
+    val unknown = courseItem("unknown", 5)
+    val courses = listOf(first, second, unknown)
+    assertEquals(courses, TodayWidgetData.filterStartedCourses(courses, 479))
+    assertEquals(listOf(second, unknown), TodayWidgetData.filterStartedCourses(courses, 480))
+    assertEquals(listOf(unknown), TodayWidgetData.filterStartedCourses(courses, 700))
+    assertEquals(courses, TodayWidgetData.filterStartedCourses(courses, 700, dayOffset = 1))
+    assertEquals(emptyList<TodayWidgetData.CourseItem>(),
+      TodayWidgetData.filterStartedCourses(listOf(first, second), 600))
+  }
+
+  @Test
+  fun `a block uses its first session even when later session clocks are missing`() {
+    val clocks = mapOf(1 to (480 to 525), 3 to (600 to 645))
+    assertEquals(480, TodayWidgetData.courseStartMinute(listOf(2, 1), clocks))
+    assertNull(TodayWidgetData.courseStartMinute(listOf(2, 3), clocks))
+    assertEquals(480, TodayWidgetData.nextCourseBoundaryMinuteOfDay(listOf(listOf(1, 2)), clocks, 479))
+    assertNull(TodayWidgetData.nextCourseBoundaryMinuteOfDay(listOf(listOf(1, 2)), clocks, 480))
+  }
+
+  @Test
+  fun `sunday midnight rolls to monday with an adjacent week date`() {
+    val sunday = beijingCalendar(2026, Calendar.SEPTEMBER, 6, 23, 59, 59)
+    val mondayMillis = TodayWidgetData.nextDayRefreshAtMillis(sunday.timeInMillis)
+    val monday = beijingCalendar(2026, Calendar.SEPTEMBER, 7, 0, 0, 0)
+    assertEquals(monday.timeInMillis, mondayMillis)
+    val previousWeek = listOf(
+      TodayWidgetData.ScheduleDayMarker("2026-08-31", false),
+      TodayWidgetData.ScheduleDayMarker("2026-09-06", true),
+    )
+    val nextWeek = listOf(
+      TodayWidgetData.ScheduleDayMarker("2026-09-07", false),
+      TodayWidgetData.ScheduleDayMarker("2026-09-13", false),
+    )
+    assertFalse(TodayWidgetData.scheduleDayMarkersContainDate(previousWeek, monday))
+    assertTrue(TodayWidgetData.scheduleDayMarkersContainDate(nextWeek, monday))
   }
 
   @Test
@@ -365,7 +403,7 @@ class TodayWidgetDataTest {
   }
 
   @Test
-  fun `visible course fingerprint changes when an ended course disappears`() {
+  fun `visible course fingerprint changes when a started course disappears`() {
     val course = courseItem("course-1", sortOrder = 1)
     val before = TodayWidgetData.visibleCoursesFingerprint(listOf(0 to listOf(course)))
     val same = TodayWidgetData.visibleCoursesFingerprint(listOf(0 to listOf(course.copy())))

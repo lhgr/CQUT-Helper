@@ -125,9 +125,11 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
       appWidgetId: Int,
       theme: WidgetThemeResolution,
     ) {
-      val views = RemoteViews(context.packageName, R.layout.widget_tiny_course)
-      bindPresentation(context, views, appWidgetId, theme)
-      manager.updateAppWidget(appWidgetId, views)
+      WidgetRenderSnapshot.withSnapshot {
+        val views = RemoteViews(context.packageName, R.layout.widget_tiny_course)
+        bindPresentation(context, views, appWidgetId, theme)
+        manager.updateAppWidget(appWidgetId, views)
+      }
     }
 
     private fun bindPresentation(

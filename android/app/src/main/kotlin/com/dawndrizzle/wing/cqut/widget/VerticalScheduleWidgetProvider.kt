@@ -134,14 +134,16 @@ class VerticalScheduleWidgetProvider : AppWidgetProvider() {
       theme: WidgetThemeResolution? = null,
       refreshData: Boolean = false,
     ) {
-      val fallback = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
-      for (appWidgetId in appWidgetIds) {
-        val resolved = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallback)
-        val views = RemoteViews(context.packageName, R.layout.widget_vertical_schedule)
-        bindPresentation(context, views, appWidgetId, resolved)
-        manager.partiallyUpdateAppWidget(appWidgetId, views)
-        if (refreshData) {
-          manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+      WidgetRenderSnapshot.withSnapshot {
+        val fallback = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+        for (appWidgetId in appWidgetIds) {
+          val resolved = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallback)
+          val views = RemoteViews(context.packageName, R.layout.widget_vertical_schedule)
+          bindPresentation(context, views, appWidgetId, resolved)
+          manager.partiallyUpdateAppWidget(appWidgetId, views)
+          if (refreshData) {
+            manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+          }
         }
       }
     }
@@ -152,30 +154,32 @@ class VerticalScheduleWidgetProvider : AppWidgetProvider() {
       appWidgetId: Int,
       theme: WidgetThemeResolution,
     ) {
-      val views = RemoteViews(context.packageName, R.layout.widget_vertical_schedule)
-      bindPresentation(context, views, appWidgetId, theme)
-      val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
-      val serviceIntent = Intent(context, VerticalCourseListWidgetService::class.java).apply {
-        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        putExtra(VerticalCourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
-        data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#vertical-$appWidgetId-$dayOffset")
-      }
-      views.setRemoteAdapter(R.id.lv_course, serviceIntent)
-      views.setEmptyView(R.id.lv_course, R.id.empty)
+      WidgetRenderSnapshot.withSnapshot {
+        val views = RemoteViews(context.packageName, R.layout.widget_vertical_schedule)
+        bindPresentation(context, views, appWidgetId, theme)
+        val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+        val serviceIntent = Intent(context, VerticalCourseListWidgetService::class.java).apply {
+          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+          putExtra(VerticalCourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
+          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#vertical-$appWidgetId-$dayOffset")
+        }
+        views.setRemoteAdapter(R.id.lv_course, serviceIntent)
+        views.setEmptyView(R.id.lv_course, R.id.empty)
 
-      val rootIntent = WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)
-      val courseIntent = WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, true)
-      if (rootIntent != null) {
-        views.setOnClickPendingIntent(R.id.widget_root, null)
-        views.setOnClickPendingIntent(R.id.rl_title, null)
-        views.setOnClickPendingIntent(R.id.header_text, rootIntent)
-        views.setOnClickPendingIntent(R.id.empty, rootIntent)
+        val rootIntent = WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)
+        val courseIntent = WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, true)
+        if (rootIntent != null) {
+          views.setOnClickPendingIntent(R.id.widget_root, null)
+          views.setOnClickPendingIntent(R.id.rl_title, null)
+          views.setOnClickPendingIntent(R.id.header_text, rootIntent)
+          views.setOnClickPendingIntent(R.id.empty, rootIntent)
+        }
+        if (courseIntent != null) {
+          views.setPendingIntentTemplate(R.id.lv_course, courseIntent)
+        }
+        manager.updateAppWidget(appWidgetId, views)
+        manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
       }
-      if (courseIntent != null) {
-        views.setPendingIntentTemplate(R.id.lv_course, courseIntent)
-      }
-      manager.updateAppWidget(appWidgetId, views)
-      manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
     }
 
     private fun bindPresentation(

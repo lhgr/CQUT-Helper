@@ -137,7 +137,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       context: Context,
       appWidgetIds: IntArray? = null,
       refreshData: Boolean = false,
-    ) {
+    ) = WidgetRenderSnapshot.withSnapshot {
       val appWidgetManager = AppWidgetManager.getInstance(context)
       val ids =
         appWidgetIds
@@ -167,6 +167,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           R.id.empty_text,
           TodayWidgetData.loadEmptyStateText(context, dayOffset),
         )
+        bindCourseVisibility(context, views, dayOffset)
         val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
         bindRefreshPresentation(
           context,
@@ -212,7 +213,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       )
       // The visible rows are time-dependent even when the schedule JSON is
       // unchanged. A completed refresh must therefore reload the collection so
-      // courses that ended while the worker was running disappear immediately.
+      // courses that started while the worker was running disappear immediately.
       ScheduleWidgetRefreshWork.updateAllRefreshPresentations(context, refreshData)
     }
 
@@ -254,99 +255,121 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       appWidgetId: Int,
       theme: WidgetThemeResolution,
     ) {
-      val views = RemoteViews(context.packageName, R.layout.widget_today_course)
+      WidgetRenderSnapshot.withSnapshot {
+        val views = RemoteViews(context.packageName, R.layout.widget_today_course)
 
-      // Keep the background on the containers instead of a full-size
-      // ImageView. Some launchers briefly clear ImageView content while
-      // reapplying RemoteViews, which presents as a black flash.
-      bindTheme(views, theme)
+        // Keep the background on the containers instead of a full-size
+        // ImageView. Some launchers briefly clear ImageView content while
+        // reapplying RemoteViews, which presents as a black flash.
+        bindTheme(views, theme)
 
-      val dayOffset = getDayOffset(context, appWidgetId)
-      val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
-      val weekCount = TodayWidgetData.loadWeekCountText(context, dayOffset)
-      views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
-      views.setTextViewText(R.id.tv_date, header.dateText)
-      val weekCountPart = if (weekCount.isNotBlank()) " | $weekCount    " else " | "
-      views.setTextViewText(R.id.tv_week_count, weekCountPart)
-      views.setTextViewText(R.id.tv_week, header.weekText)
-      views.setTextViewText(
-        R.id.empty_text,
-        TodayWidgetData.loadEmptyStateText(context, dayOffset),
-      )
-      val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
-      views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
-      views.setViewVisibility(
-        R.id.tv_sync_status,
-        if (refreshPresentation.text.isBlank()) android.view.View.GONE else android.view.View.VISIBLE,
-      )
+        val dayOffset = getDayOffset(context, appWidgetId)
+        val header = TodayWidgetData.loadHeaderByDayOffset(context, dayOffset)
+        val weekCount = TodayWidgetData.loadWeekCountText(context, dayOffset)
+        views.setTextViewText(R.id.tv_schedule_name, header.scheduleName)
+        views.setTextViewText(R.id.tv_date, header.dateText)
+        val weekCountPart = if (weekCount.isNotBlank()) " | $weekCount    " else " | "
+        views.setTextViewText(R.id.tv_week_count, weekCountPart)
+        views.setTextViewText(R.id.tv_week, header.weekText)
+        views.setTextViewText(
+          R.id.empty_text,
+          TodayWidgetData.loadEmptyStateText(context, dayOffset),
+        )
+        bindCourseVisibility(context, views, dayOffset)
+        val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
+        views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
+        views.setViewVisibility(
+          R.id.tv_sync_status,
+          if (refreshPresentation.text.isBlank()) android.view.View.GONE else android.view.View.VISIBLE,
+        )
 
-      val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
-        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
-        putExtra(CourseListWidgetService.EXTRA_FOLLOW_WIDGET_DAY_OFFSET, true)
-        putExtra(CourseListWidgetService.EXTRA_ADD_FIRST_ITEM_TOP_SPACING, true)
-        data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
-      }
-      views.setRemoteAdapter(R.id.lv_course, svcIntent)
-      views.setEmptyView(R.id.lv_course, android.R.id.empty)
-
-      views.setFloat(R.id.iv_next, "setRotation", if (dayOffset == 0) 180f else 0f)
-      val toggleIntent =
-        Intent(context, TodayCourseWidgetProvider::class.java).apply {
-          action = ACTION_TOGGLE_DAY
+        val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
           putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#toggle-$appWidgetId")
+          putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
+          putExtra(CourseListWidgetService.EXTRA_FOLLOW_WIDGET_DAY_OFFSET, true)
+          putExtra(CourseListWidgetService.EXTRA_ADD_FIRST_ITEM_TOP_SPACING, true)
+          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
         }
-      val togglePendingIntent =
-        PendingIntent.getBroadcast(
-          context,
-          appWidgetId,
-          toggleIntent,
-          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-      val rootPendingIntent =
-        WidgetNavigationPendingIntent.create(
-          context,
-          appWidgetId,
-          dayOffset,
-          false,
-        )
-      val coursePendingIntent =
-        WidgetNavigationPendingIntent.create(
-          context,
-          appWidgetId,
-          dayOffset,
-          true,
-        )
-      // Clear click actions written by earlier app versions. RemoteViews can
-      // be reapplied without resetting omitted listeners, so merely no longer
-      // binding these ancestors is insufficient for existing widgets.
-      views.setOnClickPendingIntent(R.id.widget_root, null)
-      views.setOnClickPendingIntent(R.id.rl_appwidget, null)
-      views.setOnClickPendingIntent(R.id.rl_title, null)
-      if (rootPendingIntent != null) {
-        // Keep the arrow as a sibling of the only clickable header region.
-        // Clickable ancestors are flattened by some launchers and can steal
-        // taps from the child PendingIntent.
-        views.setOnClickPendingIntent(R.id.header_text, rootPendingIntent)
-        views.setOnClickPendingIntent(android.R.id.empty, rootPendingIntent)
-      }
-      if (coursePendingIntent != null) {
-        views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
-      }
-      // Bind the contextual action after the independent header/empty-state
-      // navigation actions so later partial refreshes keep the intended PendingIntent.
-      bindRefreshPresentation(
-        context,
-        views,
-        appWidgetId,
-        dayOffset,
-        refreshPresentation,
-        togglePendingIntent,
-      )
+        views.setRemoteAdapter(R.id.lv_course, svcIntent)
+        // The provider owns empty-state visibility so delayed collection
+        // callbacks cannot bring back rows from the previously selected day.
 
-      appWidgetManager.updateAppWidget(appWidgetId, views)
-      appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+        views.setFloat(R.id.iv_next, "setRotation", if (dayOffset == 0) 180f else 0f)
+        val toggleIntent =
+          Intent(context, TodayCourseWidgetProvider::class.java).apply {
+            action = ACTION_TOGGLE_DAY
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#toggle-$appWidgetId")
+          }
+        val togglePendingIntent =
+          PendingIntent.getBroadcast(
+            context,
+            appWidgetId,
+            toggleIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+          )
+        val rootPendingIntent =
+          WidgetNavigationPendingIntent.create(
+            context,
+            appWidgetId,
+            dayOffset,
+            false,
+          )
+        val coursePendingIntent =
+          WidgetNavigationPendingIntent.create(
+            context,
+            appWidgetId,
+            dayOffset,
+            true,
+          )
+        // Clear click actions written by earlier app versions. RemoteViews can
+        // be reapplied without resetting omitted listeners, so merely no longer
+        // binding these ancestors is insufficient for existing widgets.
+        views.setOnClickPendingIntent(R.id.widget_root, null)
+        views.setOnClickPendingIntent(R.id.rl_appwidget, null)
+        views.setOnClickPendingIntent(R.id.rl_title, null)
+        if (rootPendingIntent != null) {
+          // Keep the arrow as a sibling of the only clickable header region.
+          // Clickable ancestors are flattened by some launchers and can steal
+          // taps from the child PendingIntent.
+          views.setOnClickPendingIntent(R.id.header_text, rootPendingIntent)
+          views.setOnClickPendingIntent(android.R.id.empty, rootPendingIntent)
+        }
+        if (coursePendingIntent != null) {
+          views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
+        }
+        // Bind the contextual action after the independent header/empty-state
+        // navigation actions so later partial refreshes keep the intended PendingIntent.
+        bindRefreshPresentation(
+          context,
+          views,
+          appWidgetId,
+          dayOffset,
+          refreshPresentation,
+          togglePendingIntent,
+        )
+
+        appWidgetManager.updateAppWidget(appWidgetId, views)
+        appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+      }
+    }
+
+    private fun bindCourseVisibility(
+      context: Context,
+      views: RemoteViews,
+      dayOffset: Int,
+    ) {
+      val hasCourses = TodayWidgetData.loadCoursesByDayOffset(context, dayOffset).isNotEmpty()
+      // Hide the parent: ListView can change its own visibility when a cached
+      // adapter result arrives, even after the header has switched dates.
+      views.setViewVisibility(
+        R.id.today_course_list_container,
+        if (hasCourses) android.view.View.VISIBLE else android.view.View.GONE,
+      )
+      views.setViewVisibility(
+        android.R.id.empty,
+        if (hasCourses) android.view.View.GONE else android.view.View.VISIBLE,
+      )
     }
 
     private fun bindTheme(

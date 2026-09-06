@@ -93,11 +93,16 @@
                 android:layout_height="match_parent"
                 android:layout_below="@+id/rl_title"
                 android:layout_alignParentBottom="true">
-                <ListView
-                    android:id="@+id/lv_course"
+                <FrameLayout
+                    android:id="@+id/today_course_list_container"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:divider="@null" />
+                    android:layout_height="match_parent">
+                    <ListView
+                        android:id="@+id/lv_course"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:divider="@null" />
+                </FrameLayout>
                 <LinearLayout
                     android:id="@android:id/empty"
                     android:layout_width="match_parent"

@@ -76,6 +76,7 @@ object TodayWidgetData {
     val sortOrder: Int,
     val startTime: String = "",
     val endTime: String = "",
+    val startMinuteOfDay: Int? = null,
   )
 
   internal data class ScheduleDayMarker(
@@ -125,7 +126,7 @@ object TodayWidgetData {
     )
 
   private fun widgetCalendar(
-    timeInMillis: Long = System.currentTimeMillis(),
+    timeInMillis: Long = WidgetRenderSnapshot.nowMillis(),
   ): Calendar =
     Calendar.getInstance(WIDGET_TIME_ZONE).apply {
       this.timeInMillis = timeInMillis
@@ -190,7 +191,7 @@ object TodayWidgetData {
       loadRawRefreshPresentation(context, appWidgetId, requiredDayOffsets),
       isNoticePollingEnabled(context),
       lastSuccessfulAt,
-      System.currentTimeMillis(),
+      WidgetRenderSnapshot.nowMillis(),
       WidgetInstanceConfigStore.load(context, appWidgetId).refreshSuggestionDays,
     )
   }
@@ -288,11 +289,11 @@ object TodayWidgetData {
       isDebuggable = isDebuggable,
       pollingEnabled = pollingEnabled,
       lastSuccessfulAt = lastSuccessfulAt,
-      nowMillis = System.currentTimeMillis(),
+      nowMillis = WidgetRenderSnapshot.nowMillis(),
       suggestionDays = WidgetInstanceConfigStore.load(context, appWidgetId).refreshSuggestionDays,
     )
     val refreshAgeMillis =
-      lastSuccessfulAt?.let { (System.currentTimeMillis() - it).coerceAtLeast(0L) }
+      lastSuccessfulAt?.let { (WidgetRenderSnapshot.nowMillis() - it).coerceAtLeast(0L) }
     WidgetNativeLog.debug(
       context,
       "offsets=${offsets.joinToString()} covered=$hasCoveredRequiredDate " +
@@ -418,7 +419,7 @@ object TodayWidgetData {
     val migratedAt =
       maxOf(legacyFetchAt, backgroundPollAt).takeIf { it > 0L }
         ?: if (scheduleContainsSystemDate(schedule)) {
-          System.currentTimeMillis()
+          WidgetRenderSnapshot.nowMillis()
         } else {
           return null
         }
@@ -435,7 +436,7 @@ object TodayWidgetData {
 
   internal fun formatLastUpdated(
     timestamp: Long,
-    nowMillis: Long = System.currentTimeMillis(),
+    nowMillis: Long = WidgetRenderSnapshot.nowMillis(),
   ): String {
     val now = widgetCalendar(nowMillis)
     val at = widgetCalendar(timestamp)
@@ -473,21 +474,22 @@ object TodayWidgetData {
   }
 
   fun loadCoursesByDayOffset(context: Context, dayOffset: Int): List<CourseItem> {
-    val targetDate =
-      widgetCalendar().apply {
-        add(Calendar.DAY_OF_YEAR, dayOffset)
-      }
-    val targetData = loadScheduleJsonObjectForDate(context, targetDate) ?: return emptyList()
-    val targetWeekDay = toMondayBasedWeekday(targetDate)
+    WidgetRenderSnapshot.withSnapshot {
+      val targetDate =
+        widgetCalendar().apply {
+          add(Calendar.DAY_OF_YEAR, dayOffset)
+        }
+      val targetData = loadScheduleJsonObjectForDate(context, targetDate) ?: return emptyList()
+      val targetWeekDay = toMondayBasedWeekday(targetDate)
 
-    val courses =
-      loadCoursesByWeekdayFromSchedule(
-        context,
-        targetData,
-        targetWeekDay.coerceIn(1, 7).toString(),
-      )
-    if (dayOffset != 0) return courses
-    return filterEndedCourses(context, targetData, courses)
+      val courses =
+        loadCoursesByWeekdayFromSchedule(
+          context,
+          targetData,
+          targetWeekDay.coerceIn(1, 7).toString(),
+        )
+      return filterStartedCourses(courses, currentMinuteOfDay(), dayOffset)
+    }
   }
 
   internal fun loadVisibleCoursesFingerprint(
@@ -523,6 +525,7 @@ object TodayWidgetData {
               course.sortOrder.toString(),
               course.startTime,
               course.endTime,
+              course.startMinuteOfDay?.toString().orEmpty(),
             ).joinToString("\u0000")
           }
         "$dayOffset\u0003$coursePayload"
@@ -531,16 +534,18 @@ object TodayWidgetData {
   }
 
   fun loadEmptyStateText(context: Context, dayOffset: Int): String {
-    val availability = loadDayScheduleAvailability(context, dayOffset)
-    val todayData = if (dayOffset == 0) {
-      loadScheduleJsonObjectForDate(context, widgetCalendar())
-    } else null
-    val hadCourses = todayData != null && loadCoursesByWeekdayFromSchedule(
-      context,
-      todayData,
-      toMondayBasedWeekday(widgetCalendar()).toString(),
-    ).isNotEmpty()
-    return emptyStateTextFor(availability, dayOffset, hadCourses)
+    WidgetRenderSnapshot.withSnapshot {
+      val availability = loadDayScheduleAvailability(context, dayOffset)
+      val todayData = if (dayOffset == 0) {
+        loadScheduleJsonObjectForDate(context, widgetCalendar())
+      } else null
+      val hadCourses = todayData != null && loadCoursesByWeekdayFromSchedule(
+        context,
+        todayData,
+        toMondayBasedWeekday(widgetCalendar()).toString(),
+      ).isNotEmpty()
+      return emptyStateTextFor(availability, dayOffset, hadCourses)
+    }
   }
 
   internal fun emptyStateTextFor(
@@ -551,7 +556,7 @@ object TodayWidgetData {
     return when (availability) {
       DayScheduleAvailability.COVERED -> when {
         dayOffset != 0 -> "明天没有课程"
-        hadCourses -> "今日课程已结束"
+        hadCourses -> "今日无待上课程"
         else -> "今天没有课程"
       }
       DayScheduleAvailability.OUTSIDE_TEACHING_WEEK -> "该日期课表未获取"
@@ -579,26 +584,28 @@ object TodayWidgetData {
 
   fun nextRefreshAtMillis(
     context: Context,
-    nowMillis: Long = System.currentTimeMillis(),
+    nowMillis: Long = WidgetRenderSnapshot.nowMillis(),
   ): Long? = nextRefreshTarget(context, nowMillis)?.atMillis
 
   internal fun nextRefreshTarget(
     context: Context,
-    nowMillis: Long = System.currentTimeMillis(),
+    nowMillis: Long = WidgetRenderSnapshot.nowMillis(),
   ): RefreshTarget? {
-    val candidates = mutableListOf<RefreshTarget>()
-    candidates.add(
-      RefreshTarget(nextDayRefreshAtMillis(nowMillis), RefreshBoundaryKind.MIDNIGHT),
-    )
-    val nextCourseBoundary = nextCourseBoundaryAtMillisToday(context, nowMillis)
-    if (nextCourseBoundary != null) {
-      candidates.add(RefreshTarget(nextCourseBoundary, RefreshBoundaryKind.COURSE))
+    WidgetRenderSnapshot.withSnapshot(nowMillis) {
+      val candidates = mutableListOf<RefreshTarget>()
+      candidates.add(
+        RefreshTarget(nextDayRefreshAtMillis(nowMillis), RefreshBoundaryKind.MIDNIGHT),
+      )
+      val nextCourseBoundary = nextCourseBoundaryAtMillisToday(context, nowMillis)
+      if (nextCourseBoundary != null) {
+        candidates.add(RefreshTarget(nextCourseBoundary, RefreshBoundaryKind.COURSE))
+      }
+      val nextStaleBoundary = nextStalePresentationAtMillis(context, nowMillis)
+      if (nextStaleBoundary != null) {
+        candidates.add(RefreshTarget(nextStaleBoundary, RefreshBoundaryKind.STALE))
+      }
+      return candidates.filter { it.atMillis > nowMillis }.minByOrNull { it.atMillis }
     }
-    val nextStaleBoundary = nextStalePresentationAtMillis(context, nowMillis)
-    if (nextStaleBoundary != null) {
-      candidates.add(RefreshTarget(nextStaleBoundary, RefreshBoundaryKind.STALE))
-    }
-    return candidates.filter { it.atMillis > nowMillis }.minByOrNull { it.atMillis }
   }
 
   private fun nextStalePresentationAtMillis(
@@ -788,6 +795,7 @@ object TodayWidgetData {
           sortOrder = sortOrder,
           startTime = clockRange?.first.orEmpty(),
           endTime = clockRange?.second.orEmpty(),
+          startMinuteOfDay = courseStartMinute(sessionNumbersOfEvent(e), sessionClockMap),
         ),
       )
     }
@@ -1154,86 +1162,15 @@ object TodayWidgetData {
     return COURSE_TITLE_COLORS[safeIndex]
   }
 
-  private fun filterEndedCourses(
-    context: Context,
-    schedule: JSONObject,
+  internal fun filterStartedCourses(
     courses: List<CourseItem>,
-  ): List<CourseItem> {
-    if (courses.isEmpty()) return courses
-    val sessionClockMap = loadSessionClockMap(context)
-    if (sessionClockMap.isEmpty()) return courses
-
-    val todayWeekDay = toMondayBasedWeekday(widgetCalendar()).toString()
-    val nowMinutes = currentMinuteOfDay()
-    return filterEndedCoursesByClockMap(schedule, courses, sessionClockMap, todayWeekDay, nowMinutes)
-  }
-
-  internal fun filterEndedCoursesByClockMap(
-    schedule: JSONObject,
-    courses: List<CourseItem>,
-    sessionClockMap: Map<Int, Pair<Int, Int>>,
-    targetWeekDay: String,
     nowMinutes: Int,
+    dayOffset: Int = 0,
   ): List<CourseItem> {
-    if (courses.isEmpty()) return courses
-    if (sessionClockMap.isEmpty()) return courses
-    if (nowMinutes < 0) return courses
-
-    val events = schedule.optJSONArray("eventList") ?: return courses
-    val endedEventIds = HashSet<String>()
-    val endedFallbackKeys = HashSet<String>()
-
-    for (i in 0 until events.length()) {
-      val event = events.optJSONObject(i) ?: continue
-      if (event.optString("weekDay", "") != targetWeekDay) continue
-      val eventId = event.optString("eventID", "").trim()
-      val sessionNums = sessionNumbersOfEvent(event)
-      val clockRange = sessionClockRange(sessionNums, sessionClockMap) ?: continue
-      if (clockRange.second <= nowMinutes) {
-        if (eventId.isNotEmpty()) {
-          endedEventIds.add(eventId)
-        } else {
-          val fallbackKey = fallbackCourseKey(event, sessionNums)
-          if (fallbackKey != null) endedFallbackKeys.add(fallbackKey)
-        }
-      }
-    }
-    if (endedEventIds.isEmpty() && endedFallbackKeys.isEmpty()) return courses
-    return courses.filterNot { item ->
-      val eventId = item.eventId?.trim().orEmpty()
-      if (eventId.isNotEmpty()) {
-        endedEventIds.contains(eventId)
-      } else {
-        val fallbackKey = fallbackCourseKey(item.name, item.periods)
-        fallbackKey != null && endedFallbackKeys.contains(fallbackKey)
-      }
-    }
-  }
-
-  private fun fallbackCourseKey(event: JSONObject, sessionNums: List<Int>): String? {
-    val name = event.optString("eventName", "").ifBlank { "课程" }
-    val periods = periodsTextFromSessionNumbers(sessionNums) ?: return null
-    return fallbackCourseKey(name, periods)
-  }
-
-  private fun fallbackCourseKey(name: String, periods: String): String? {
-    val normalizedName = name.trim().ifBlank { "课程" }
-    val normalizedPeriods = periods.trim()
-    if (normalizedPeriods.isEmpty()) return null
-    return "$normalizedName|$normalizedPeriods"
-  }
-
-  private fun periodsTextFromSessionNumbers(sessionNums: List<Int>): String? {
-    if (sessionNums.isEmpty()) return null
-    val nums = sessionNums.filter { it > 0 }.distinct().sorted()
-    if (nums.isEmpty()) return null
-    val isContinuous = nums.last() - nums.first() + 1 == nums.size
-    return if (isContinuous && nums.size > 1) {
-      "第${nums.first()}-${nums.last()}节"
-    } else if (nums.size == 1) {
-      "第${nums.first()}-${nums.first()}节"
-    } else {
-      "第${nums.joinToString(",")}节"
+    if (dayOffset != 0 || nowMinutes < 0) return courses
+    return courses.filter { course ->
+      val start = course.startMinuteOfDay
+      start == null || start !in 0 until 24 * 60 || nowMinutes < start
     }
   }
 
@@ -1273,14 +1210,21 @@ object TodayWidgetData {
     if (sessionGroups.isEmpty() || sessionClockMap.isEmpty() || nowMinutes < 0) return null
     var best: Int? = null
     for (sessionNums in sessionGroups) {
-      val range = sessionClockRange(sessionNums, sessionClockMap) ?: continue
-      for (boundary in intArrayOf(range.first, range.second)) {
-        if (boundary > nowMinutes && (best == null || boundary < best!!)) {
-          best = boundary
-        }
+      val start = courseStartMinute(sessionNums, sessionClockMap) ?: continue
+      if (start > nowMinutes && (best == null || start < best!!)) {
+        best = start
       }
     }
     return best
+  }
+
+  internal fun courseStartMinute(
+    sessionNums: List<Int>,
+    sessionClockMap: Map<Int, Pair<Int, Int>>,
+  ): Int? {
+    // A later session cannot stand in for the missing first session of a block.
+    val firstSession = sessionNums.filter { it > 0 }.minOrNull() ?: return null
+    return sessionClockMap[firstSession]?.first?.takeIf { it in 0 until 24 * 60 }
   }
 
   internal fun sessionClockRange(
@@ -1317,6 +1261,14 @@ object TodayWidgetData {
   }
 
   private fun loadSessionClockMap(context: Context): Map<Int, Pair<Int, Int>> {
+    val snapshot = WidgetRenderSnapshot.current.get()
+    snapshot?.sessionClocks?.let { return it }
+    val clocks = readSessionClockMap(context)
+    snapshot?.sessionClocks = clocks
+    return clocks
+  }
+
+  private fun readSessionClockMap(context: Context): Map<Int, Pair<Int, Int>> {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val raw = prefs.getString(KEY_TIME_INFO_CACHE, null)
     if (raw.isNullOrBlank()) return emptyMap()

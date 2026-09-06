@@ -136,15 +136,17 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       theme: WidgetThemeResolution? = null,
       refreshData: Boolean = false,
     ) {
-      val fallbackTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
-      for (appWidgetId in appWidgetIds) {
-        val resolvedTheme =
-          WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
-        val views = RemoteViews(context.packageName, R.layout.widget_today_list)
-        bindPresentation(context, views, appWidgetId, resolvedTheme)
-        appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
-        if (refreshData) {
-          appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+      WidgetRenderSnapshot.withSnapshot {
+        val fallbackTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+        for (appWidgetId in appWidgetIds) {
+          val resolvedTheme =
+            WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
+          val views = RemoteViews(context.packageName, R.layout.widget_today_list)
+          bindPresentation(context, views, appWidgetId, resolvedTheme)
+          appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
+          if (refreshData) {
+            appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+          }
         }
       }
     }
@@ -165,34 +167,36 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       appWidgetId: Int,
       theme: WidgetThemeResolution,
     ) {
-      val views = RemoteViews(context.packageName, R.layout.widget_today_list)
-      bindPresentation(context, views, appWidgetId, theme)
-      val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+      WidgetRenderSnapshot.withSnapshot {
+        val views = RemoteViews(context.packageName, R.layout.widget_today_list)
+        bindPresentation(context, views, appWidgetId, theme)
+        val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
 
-      val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
-        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
-        data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
-      }
-      views.setRemoteAdapter(R.id.lv_course, svcIntent)
-      views.setEmptyView(R.id.lv_course, R.id.empty)
+        val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
+          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+          putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
+          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
+        }
+        views.setRemoteAdapter(R.id.lv_course, svcIntent)
+        views.setEmptyView(R.id.lv_course, R.id.empty)
 
-      val rootPendingIntent =
-        WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)
-      val coursePendingIntent =
-        WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, true)
-      if (rootPendingIntent != null) {
-        views.setOnClickPendingIntent(R.id.widget_root, null)
-        views.setOnClickPendingIntent(R.id.rl_title, null)
-        views.setOnClickPendingIntent(R.id.header_text, rootPendingIntent)
-        views.setOnClickPendingIntent(R.id.empty, rootPendingIntent)
-      }
-      if (coursePendingIntent != null) {
-        views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
-      }
+        val rootPendingIntent =
+          WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)
+        val coursePendingIntent =
+          WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, true)
+        if (rootPendingIntent != null) {
+          views.setOnClickPendingIntent(R.id.widget_root, null)
+          views.setOnClickPendingIntent(R.id.rl_title, null)
+          views.setOnClickPendingIntent(R.id.header_text, rootPendingIntent)
+          views.setOnClickPendingIntent(R.id.empty, rootPendingIntent)
+        }
+        if (coursePendingIntent != null) {
+          views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
+        }
 
-      appWidgetManager.updateAppWidget(appWidgetId, views)
-      appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+        appWidgetManager.updateAppWidget(appWidgetId, views)
+        appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+      }
     }
 
     private fun bindPresentation(

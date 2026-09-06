@@ -21,6 +21,7 @@ internal data class WidgetAlarmScheduleKey(
 object WidgetAutoRefreshScheduler {
   const val ACTION_AUTO_REFRESH = "com.dawndrizzle.wing.cqut.widget.AUTO_REFRESH"
   private const val REQUEST_CODE = 9017
+  const val EXTRA_TRIGGER_AT = "trigger_at"
   private var lastScheduledKey: WidgetAlarmScheduleKey? = null
   private var cancellationCheckedInProcess = false
 
@@ -36,7 +37,7 @@ object WidgetAutoRefreshScheduler {
         WidgetNativeLog.error(context, "event=alarm_unavailable reason=$reason")
         return false
       }
-    val pendingIntent = pendingIntent(context)
+    val pendingIntent = pendingIntent(context, triggerAt)
     val canScheduleExact =
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         try {
@@ -152,10 +153,11 @@ object WidgetAutoRefreshScheduler {
     }
   }
 
-  private fun pendingIntent(context: Context): PendingIntent {
+  private fun pendingIntent(context: Context, triggerAt: Long = 0L): PendingIntent {
     val intent =
       Intent(context, WidgetAutoRefreshReceiver::class.java).apply {
         action = ACTION_AUTO_REFRESH
+        putExtra(EXTRA_TRIGGER_AT, triggerAt)
       }
     return PendingIntent.getBroadcast(
       context,

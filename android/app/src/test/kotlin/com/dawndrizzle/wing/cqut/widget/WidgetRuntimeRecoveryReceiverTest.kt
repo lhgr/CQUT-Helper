@@ -7,10 +7,10 @@ import org.junit.Test
 
 class WidgetRuntimeRecoveryReceiverTest {
   @Test
-  fun `only date changes are process local recovery actions`() {
+  fun `date changes and unlocks repair widgets while the process is alive`() {
     assertTrue(WidgetRuntimeRecoveryReceiver.isRuntimeRecoveryAction(Intent.ACTION_DATE_CHANGED))
     assertFalse(WidgetRuntimeRecoveryReceiver.isRuntimeRecoveryAction(Intent.ACTION_SCREEN_ON))
-    assertFalse(WidgetRuntimeRecoveryReceiver.isRuntimeRecoveryAction(Intent.ACTION_USER_PRESENT))
+    assertTrue(WidgetRuntimeRecoveryReceiver.isRuntimeRecoveryAction(Intent.ACTION_USER_PRESENT))
     assertFalse(
       WidgetRuntimeRecoveryReceiver.isRuntimeRecoveryAction(Intent.ACTION_TIMEZONE_CHANGED),
     )

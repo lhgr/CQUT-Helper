@@ -38,6 +38,35 @@ class ScheduleTimeInfoCoordinator {
   static const int _maxFailureRetryCooldownMs = 6 * 60 * 60 * 1000;
   static const int _forcedRefreshBurstCooldownMs = 2 * 1000;
 
+  static bool _validClock(String? value) {
+    final match = RegExp(
+      r'^(\d{1,2})[:：](\d{2})(?::\d{2})?$',
+    ).firstMatch(value?.trim() ?? '');
+    return match != null &&
+        int.parse(match[1]!) < 24 &&
+        int.parse(match[2]!) < 60;
+  }
+
+  static bool _validTimeInfo(CampusTimeInfo item) =>
+      (item.sessionNum ?? 0) > 0 &&
+      _validClock(item.startTime) &&
+      _validClock(item.endTime);
+
+  static List<CampusTimeInfo> _decodeValidItems(Object? items) {
+    if (items is! List) return const [];
+    final result = <CampusTimeInfo>[];
+    for (final item in items) {
+      if (item is! Map) continue;
+      try {
+        final parsed = CampusTimeInfo.fromJson(item.cast<String, dynamic>());
+        if (_validTimeInfo(parsed)) result.add(parsed);
+      } catch (_) {
+        // One malformed session must not discard the remaining valid cache.
+      }
+    }
+    return result;
+  }
+
   String _timeInfoFingerprint(List<CampusTimeInfo> list) {
     final items = list.map((e) => e.toJson()).toList();
     items.sort((a, b) {
@@ -52,7 +81,7 @@ class ScheduleTimeInfoCoordinator {
   }
 
   Future<bool> loadTimeInfoFromCacheIfAny() async {
-    if (getTimeInfoList() != null) return true;
+    if (getTimeInfoList()?.isNotEmpty ?? false) return true;
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKeyTimeInfoCache);
     if (raw == null || raw.trim().isEmpty) return false;
@@ -66,14 +95,7 @@ class ScheduleTimeInfoCoordinator {
       if (decoded is! Map<String, dynamic>) return false;
       final items = decoded['items'];
       if (items is! List) return false;
-      final list = <CampusTimeInfo>[];
-      for (final item in items) {
-        if (item is Map<String, dynamic>) {
-          list.add(CampusTimeInfo.fromJson(item));
-        } else if (item is Map) {
-          list.add(CampusTimeInfo.fromJson(item.cast<String, dynamic>()));
-        }
-      }
+      final list = _decodeValidItems(items);
       if (list.isEmpty) return false;
       final snapshot = _TimeInfoCacheSnapshot(
         items: List<CampusTimeInfo>.unmodifiable(list),
@@ -132,6 +154,7 @@ class ScheduleTimeInfoCoordinator {
   }
 
   Future<bool> _refreshTimeInfoIfEnabledInternal({required bool force}) async {
+    await loadTimeInfoFromCacheIfAny();
     final prefs = await SharedPreferences.getInstance();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
@@ -161,14 +184,22 @@ class ScheduleTimeInfoCoordinator {
     campusName ??= '两江校区';
 
     String? oldFp;
+    List<CampusTimeInfo> cachedItems = const [];
     int cachedUpdatedAt = 0;
     final cachedRaw = prefs.getString(_prefsKeyTimeInfoCache);
     if (cachedRaw != null && cachedRaw.trim().isNotEmpty) {
       try {
         final decoded = json.decode(cachedRaw);
         if (decoded is Map<String, dynamic>) {
-          oldFp = decoded['fingerprint']?.toString();
-          cachedUpdatedAt = (decoded['updatedAt'] as num?)?.toInt() ?? 0;
+          if (decoded['campusName'] == campusName) {
+            cachedItems = _decodeValidItems(decoded['items']);
+            if (cachedItems.isNotEmpty) {
+              oldFp =
+                  decoded['fingerprint']?.toString() ??
+                  _timeInfoFingerprint(cachedItems);
+              cachedUpdatedAt = (decoded['updatedAt'] as num?)?.toInt() ?? 0;
+            }
+          }
         }
       } catch (_) {}
     }
@@ -219,7 +250,9 @@ class ScheduleTimeInfoCoordinator {
     );
     List<CampusTimeInfo> fetched;
     try {
-      fetched = await service.fetchCampusTimeInfo(campusName);
+      fetched = (await service.fetchCampusTimeInfo(
+        campusName,
+      )).where(_validTimeInfo).toList();
     } catch (e, st) {
       final failureCount = consecutiveFailures + 1;
       await prefs.setInt(_prefsKeyTimeInfoConsecutiveFailures, failureCount);
@@ -270,6 +303,15 @@ class ScheduleTimeInfoCoordinator {
       return false;
     }
 
+    // A partial response only replaces valid sessions it actually contains.
+    // Keep the other sessions from the last valid cache for this campus.
+    final effectiveItems = <int, CampusTimeInfo>{
+      for (final item in cachedItems) item.sessionNum!: item,
+      for (final item in fetched) item.sessionNum!: item,
+    };
+    fetched = effectiveItems.values.toList()
+      ..sort((a, b) => a.sessionNum!.compareTo(b.sessionNum!));
+
     await prefs.setInt(_prefsKeyTimeInfoConsecutiveFailures, 0);
     await prefs.setInt(_prefsKeyTimeInfoLastSuccessfulCheckAt, nowMs);
 
@@ -319,7 +361,7 @@ class ScheduleTimeInfoCoordinator {
     required bool Function() isDisposed,
   }) async {
     if (isDisposed()) return;
-    if (getTimeInfoList() != null) return;
+    if (getTimeInfoList()?.isNotEmpty ?? false) return;
     await loadTimeInfoFromCacheIfAny();
     await refreshTimeInfoIfEnabled();
   }
