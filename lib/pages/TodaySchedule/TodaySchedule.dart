@@ -203,7 +203,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     final date = sameDay ? '今天' : '${at.month}/${at.day}';
     final hour = at.hour.toString().padLeft(2, '0');
     final minute = at.minute.toString().padLeft(2, '0');
-    return '$_dataSource · $date $hour:$minute更新';
+    return '$_dataSource · $date $hour:$minute 更新';
   }
 
   String _mapError(Object error) {
@@ -451,6 +451,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         centerTitle: true,
         actions: [
           IconButton(
+            tooltip: '刷新课表',
             onPressed: _refreshing
                 ? null
                 : () => _loadSchedule(forceRefresh: true),
@@ -467,6 +468,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       body: RefreshIndicator(
         onRefresh: () => _loadSchedule(forceRefresh: true),
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
             _SummaryCard(
@@ -499,7 +501,6 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               const _EmptyState(
                 icon: Icons.free_breakfast_outlined,
                 title: '今天没课',
-                message: '今天没有排课。',
               )
             else
               ...events.map((event) => _buildEventCard(context, event)),
@@ -644,13 +645,15 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Theme.of(context).colorScheme.primaryContainer,
-            Theme.of(context).colorScheme.secondaryContainer,
+            Color.lerp(colors.surface, colors.primaryContainer, 0.55)!,
+            Color.lerp(colors.surface, colors.secondaryContainer, 0.4)!,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -660,23 +663,41 @@ class _SummaryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colors.onSurface,
+                ),
+              ),
+              Text(
+                dateText,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(dateText, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               _MetaChip(label: weekText),
               _MetaChip(label: termText),
-              _MetaChip(label: freshnessText),
             ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            freshnessText,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -692,12 +713,17 @@ class _MetaChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface.withAlpha(180),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(label),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }
@@ -738,36 +764,36 @@ class _InfoBanner extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String message;
+  final String? message;
 
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.message,
-  });
+  const _EmptyState({required this.icon, required this.title, this.message});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 48),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 36),
       child: Column(
         children: [
-          Icon(icon, size: 48, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 16),
+          Icon(icon, size: 40, color: Theme.of(context).colorScheme.outline),
+          const SizedBox(height: 12),
           Text(
             title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            message,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w500,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
+          if (message != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              message!,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ],
       ),
     );
