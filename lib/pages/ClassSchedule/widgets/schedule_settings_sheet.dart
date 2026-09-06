@@ -6,7 +6,7 @@ import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
 import 'package:flutter/material.dart';
-import 'package:cqut_helper/utils/android_background_restrictions.dart';
+import 'package:cqut_helper/widgets/background_polling_setup_dialog.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/widgets/marquee_text.dart';
 import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
@@ -236,24 +236,11 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       return false;
     }
 
-    final ignored =
-        await AndroidBackgroundRestrictions.isIgnoringBatteryOptimizations();
-    if (ignored != true) {
-      final opened =
-          await AndroidBackgroundRestrictions.requestIgnoreBatteryOptimizations();
-      if (!opened) {
-        await AndroidBackgroundRestrictions.openBatteryOptimizationSettings();
-      }
-    }
-    if (!mounted) return false;
-
-    await AndroidBackgroundRestrictions.openAutoStartSettings();
-    if (!mounted) return false;
+    final prepared = await showBackgroundPollingSetupDialog(context);
+    if (!prepared || !mounted) return false;
 
     setState(() {
-      _sheetNoticeMessage = ignored == true
-          ? '已检测到忽略电池优化；已尝试打开自启动设置，后续会根据后台运行情况自动判断稳定性。'
-          : '已尝试打开电池优化与自启动相关设置；后台轮询仍可开启，实际稳定性以后续后台运行记录为准。';
+      _sheetNoticeMessage = '后台轮询已开启，实际稳定性以后续后台运行记录为准；可在“同步与诊断”中检查设置。';
     });
     return true;
   }

@@ -18,20 +18,22 @@ object WidgetRefreshCoordinator {
     reason: String,
   ) {
     synchronized(refreshLock) {
-      val current = WidgetRefreshRenderStateStore.capture(context)
-      val previous = WidgetRefreshRenderStateStore.load(context)
-      if (
-        WidgetRefreshRenderStateStore.shouldCoalesce(
-          previous,
-          current,
-          REFRESH_COALESCE_WINDOW_MILLIS,
-        )
-      ) {
-        WidgetNativeLog.debug(context, "event=refresh_coalesced reason=$reason")
-        ensureScheduled(context, reason)
-        return
+      WidgetRenderSnapshot.withSnapshot {
+        val current = WidgetRefreshRenderStateStore.capture(context)
+        val previous = WidgetRefreshRenderStateStore.load(context)
+        if (
+          WidgetRefreshRenderStateStore.shouldCoalesce(
+            previous,
+            current,
+            REFRESH_COALESCE_WINDOW_MILLIS,
+          )
+        ) {
+          WidgetNativeLog.debug(context, "event=refresh_coalesced reason=$reason")
+          ensureScheduled(context, reason)
+          return
+        }
+        refreshAndRepair(context, reason, current, previous)
       }
-      refreshAndRepair(context, reason, current, previous)
     }
   }
 
@@ -43,23 +45,25 @@ object WidgetRefreshCoordinator {
     context: Context,
     reason: String,
   ): Boolean {
-    if (!hasActiveWidgets(context)) {
-      cancelAll(context, reason)
-      return false
-    }
     synchronized(refreshLock) {
-      val current = WidgetRefreshRenderStateStore.capture(context)
-      val previous = WidgetRefreshRenderStateStore.load(context)
-      if (WidgetRefreshRenderStateStore.shouldRefresh(previous, current)) {
-        refreshAndRepair(context, reason, current, previous)
-        return true
+      if (!hasActiveWidgets(context)) {
+        cancelAll(context, reason)
+        return false
       }
-      WidgetNativeLog.debug(
-        context,
-        "event=repair_not_due reason=$reason logicalDate=${current.logicalDate}",
-      )
-      ensureScheduled(context, reason)
-      return false
+      WidgetRenderSnapshot.withSnapshot {
+        val current = WidgetRefreshRenderStateStore.capture(context)
+        val previous = WidgetRefreshRenderStateStore.load(context)
+        if (WidgetRefreshRenderStateStore.shouldRefresh(previous, current)) {
+          refreshAndRepair(context, reason, current, previous)
+          return true
+        }
+        WidgetNativeLog.debug(
+          context,
+          "event=repair_not_due reason=$reason logicalDate=${current.logicalDate}",
+        )
+        ensureScheduled(context, reason)
+        return false
+      }
     }
   }
 
@@ -132,20 +136,22 @@ object WidgetRefreshCoordinator {
     current: WidgetRefreshRenderState,
     previous: WidgetRefreshRenderState?,
   ) {
-    val fullUpdate = WidgetRefreshRenderStateStore.shouldUseFullUpdate(previous, current)
-    WidgetNativeLog.info(
-      context,
-      "event=refresh reason=$reason at=${System.currentTimeMillis()} full=$fullUpdate " +
-        "previousDate=${previous?.logicalDate.orEmpty()} currentDate=${current.logicalDate} " +
-        "previousPresentation=${previous?.presentationSignature.orEmpty()} " +
-        "currentPresentation=${current.presentationSignature}",
-    )
-    WidgetThemeSyncDispatcher.dispatch(
-      context,
-      WidgetThemeTrigger.DATA_REFRESH,
-      forceFullUpdate = fullUpdate,
-      renderedState = current,
-    )
+    WidgetRenderSnapshot.withSnapshot {
+      val fullUpdate = WidgetRefreshRenderStateStore.shouldUseFullUpdate(previous, current)
+      WidgetNativeLog.info(
+        context,
+        "event=refresh reason=$reason at=${System.currentTimeMillis()} full=$fullUpdate " +
+          "previousDate=${previous?.logicalDate.orEmpty()} currentDate=${current.logicalDate} " +
+          "previousPresentation=${previous?.presentationSignature.orEmpty()} " +
+          "currentPresentation=${current.presentationSignature}",
+      )
+      WidgetThemeSyncDispatcher.dispatch(
+        context,
+        WidgetThemeTrigger.DATA_REFRESH,
+        forceFullUpdate = fullUpdate,
+        renderedState = current,
+      )
+    }
   }
 
   private fun cancelAll(

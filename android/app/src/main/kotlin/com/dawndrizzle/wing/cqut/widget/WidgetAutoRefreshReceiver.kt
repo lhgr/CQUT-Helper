@@ -7,9 +7,12 @@ import android.content.Intent
 class WidgetAutoRefreshReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     val action = intent.action ?: return
+    val receivedAt = System.currentTimeMillis()
+    val scheduledAt = intent.getLongExtra(WidgetAutoRefreshScheduler.EXTRA_TRIGGER_AT, 0L)
     WidgetNativeLog.info(
       context,
-      "event=broadcast_received action=$action at=${System.currentTimeMillis()}",
+      "event=broadcast_received action=$action at=$receivedAt scheduledAt=$scheduledAt " +
+        "delayMs=${if (scheduledAt > 0L) receivedAt - scheduledAt else -1L}",
     )
     if (action == ACTION_APP_THEME_REFRESH) {
       WidgetForceUpdatePusher.pushTheme(context)

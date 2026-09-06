@@ -24,89 +24,91 @@ internal object WidgetRefreshRenderStateStore {
 
   fun capture(
     context: Context,
-    nowMillis: Long = System.currentTimeMillis(),
+    nowMillis: Long = WidgetRenderSnapshot.nowMillis(),
   ): WidgetRefreshRenderState {
-    val manager = AppWidgetManager.getInstance(context)
-    val presentationSignatures = ArrayList<String>()
-    val contentSignatures = ArrayList<String>()
+    WidgetRenderSnapshot.withSnapshot(nowMillis) {
+      val manager = AppWidgetManager.getInstance(context)
+      val presentationSignatures = ArrayList<String>()
+      val contentSignatures = ArrayList<String>()
 
-    appendWidgetSignatures(
-      presentationSignatures,
-      contentSignatures,
-      "list",
-      manager.getAppWidgetIds(ComponentName(context, TodayListWidgetProvider::class.java)),
-    ) { appWidgetId ->
-      val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
-      WidgetSignatures(
-        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).state.name,
-        content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
-      )
-    }
-    appendWidgetSignatures(
-      presentationSignatures,
-      contentSignatures,
-      "next",
-      manager.getAppWidgetIds(ComponentName(context, TodayAndNextWidgetProvider::class.java)),
-    ) { appWidgetId ->
-      WidgetSignatures(
-        presentation =
-          TodayWidgetData
-            .loadRefreshPresentation(
-              context,
-              appWidgetId,
-              requiredDayOffsets = intArrayOf(0, 1),
-            ).state.name,
-        content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(0, 1)),
-      )
-    }
-    appendWidgetSignatures(
-      presentationSignatures,
-      contentSignatures,
-      "course",
-      manager.getAppWidgetIds(ComponentName(context, TodayCourseWidgetProvider::class.java)),
-    ) { appWidgetId ->
-      val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
-      WidgetSignatures(
-        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).state.name,
-        content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
-      )
-    }
-    appendWidgetSignatures(
-      presentationSignatures,
-      contentSignatures,
-      "tiny",
-      manager.getAppWidgetIds(ComponentName(context, TinyCourseWidgetProvider::class.java)),
-    ) { appWidgetId ->
-      WidgetSignatures(
-        presentation =
-          TodayWidgetData
-            .loadRefreshPresentation(
-              context,
-              appWidgetId,
-              requiredDayOffsets = intArrayOf(0),
-            ).state.name,
-        content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(0)),
-      )
-    }
-    appendWidgetSignatures(
-      presentationSignatures,
-      contentSignatures,
-      "vertical",
-      manager.getAppWidgetIds(ComponentName(context, VerticalScheduleWidgetProvider::class.java)),
-    ) { appWidgetId ->
-      val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
-      WidgetSignatures(
-        presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).state.name,
-        content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
-      )
-    }
+      appendWidgetSignatures(
+        presentationSignatures,
+        contentSignatures,
+        "list",
+        manager.getAppWidgetIds(ComponentName(context, TodayListWidgetProvider::class.java)),
+      ) { appWidgetId ->
+        val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+        WidgetSignatures(
+          presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).renderSignature,
+          content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
+        )
+      }
+      appendWidgetSignatures(
+        presentationSignatures,
+        contentSignatures,
+        "next",
+        manager.getAppWidgetIds(ComponentName(context, TodayAndNextWidgetProvider::class.java)),
+      ) { appWidgetId ->
+        WidgetSignatures(
+          presentation =
+            TodayWidgetData
+              .loadRefreshPresentation(
+                context,
+                appWidgetId,
+                requiredDayOffsets = intArrayOf(0, 1),
+              ).renderSignature,
+          content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(0, 1)),
+        )
+      }
+      appendWidgetSignatures(
+        presentationSignatures,
+        contentSignatures,
+        "course",
+        manager.getAppWidgetIds(ComponentName(context, TodayCourseWidgetProvider::class.java)),
+      ) { appWidgetId ->
+        val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+        WidgetSignatures(
+          presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).renderSignature,
+          content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
+        )
+      }
+      appendWidgetSignatures(
+        presentationSignatures,
+        contentSignatures,
+        "tiny",
+        manager.getAppWidgetIds(ComponentName(context, TinyCourseWidgetProvider::class.java)),
+      ) { appWidgetId ->
+        WidgetSignatures(
+          presentation =
+            TodayWidgetData
+              .loadRefreshPresentation(
+                context,
+                appWidgetId,
+                requiredDayOffsets = intArrayOf(0),
+              ).renderSignature,
+          content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(0)),
+        )
+      }
+      appendWidgetSignatures(
+        presentationSignatures,
+        contentSignatures,
+        "vertical",
+        manager.getAppWidgetIds(ComponentName(context, VerticalScheduleWidgetProvider::class.java)),
+      ) { appWidgetId ->
+        val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+        WidgetSignatures(
+          presentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId).renderSignature,
+          content = TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(dayOffset)),
+        )
+      }
 
-    return WidgetRefreshRenderState(
-      logicalDate = logicalDateAtMillis(nowMillis),
-      presentationSignature = presentationSignatures.joinToString("|"),
-      contentSignature = contentSignatures.joinToString("|"),
-      renderedAtMillis = nowMillis,
-    )
+      return WidgetRefreshRenderState(
+        logicalDate = logicalDateAtMillis(nowMillis),
+        presentationSignature = presentationSignatures.joinToString("|"),
+        contentSignature = contentSignatures.joinToString("|"),
+        renderedAtMillis = nowMillis,
+      )
+    }
   }
 
   fun load(context: Context): WidgetRefreshRenderState? {

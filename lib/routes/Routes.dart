@@ -2,6 +2,7 @@ import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Main/Main.dart';
 import 'package:cqut_helper/theme/app_theme.dart';
+import 'package:cqut_helper/theme/dynamic_color_scheme.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -17,7 +18,7 @@ class MyApp extends StatelessWidget {
       listenable: ThemeManager(),
       builder: (context, child) {
         return DynamicColorBuilder(
-          builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
+          builder: (lightDynamic, darkDynamic) {
             final themeManager = ThemeManager();
             final predictiveBackEnabled = !themeManager.predictiveBackDisabled;
             final usesSystemColor =
@@ -27,7 +28,7 @@ class MyApp extends StatelessWidget {
             final usesDarkDynamicColor = usesSystemColor && darkDynamic != null;
             ColorScheme lightScheme;
             if (usesSystemColor && lightDynamic != null) {
-              lightScheme = lightDynamic.harmonized();
+              lightScheme = lightDynamic.harmonized().toFlutterColorScheme();
             } else if (usesSystemColor) {
               lightScheme = ColorScheme.fromSeed(seedColor: defaultSeedColor);
             } else {
@@ -38,7 +39,7 @@ class MyApp extends StatelessWidget {
 
             ColorScheme darkScheme;
             if (usesSystemColor && darkDynamic != null) {
-              darkScheme = darkDynamic.harmonized();
+              darkScheme = darkDynamic.harmonized().toFlutterColorScheme();
             } else if (usesSystemColor) {
               darkScheme = ColorScheme.fromSeed(
                 seedColor: defaultSeedColor,

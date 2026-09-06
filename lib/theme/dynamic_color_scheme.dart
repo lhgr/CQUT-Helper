@@ -1,0 +1,57 @@
+import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart' as material_ui;
+
+/// Adapts dynamic_color 2.x palettes to the app's Flutter Material theme.
+extension FlutterColorSchemeConversion on material_ui.ColorScheme {
+  ColorScheme toFlutterColorScheme() {
+    return ColorScheme(
+      brightness: brightness,
+      primary: primary,
+      onPrimary: onPrimary,
+      primaryContainer: primaryContainer,
+      onPrimaryContainer: onPrimaryContainer,
+      primaryFixed: primaryFixed,
+      primaryFixedDim: primaryFixedDim,
+      onPrimaryFixed: onPrimaryFixed,
+      onPrimaryFixedVariant: onPrimaryFixedVariant,
+      secondary: secondary,
+      onSecondary: onSecondary,
+      secondaryContainer: secondaryContainer,
+      onSecondaryContainer: onSecondaryContainer,
+      secondaryFixed: secondaryFixed,
+      secondaryFixedDim: secondaryFixedDim,
+      onSecondaryFixed: onSecondaryFixed,
+      onSecondaryFixedVariant: onSecondaryFixedVariant,
+      tertiary: tertiary,
+      onTertiary: onTertiary,
+      tertiaryContainer: tertiaryContainer,
+      onTertiaryContainer: onTertiaryContainer,
+      tertiaryFixed: tertiaryFixed,
+      tertiaryFixedDim: tertiaryFixedDim,
+      onTertiaryFixed: onTertiaryFixed,
+      onTertiaryFixedVariant: onTertiaryFixedVariant,
+      error: error,
+      onError: onError,
+      errorContainer: errorContainer,
+      onErrorContainer: onErrorContainer,
+      surface: surface,
+      onSurface: onSurface,
+      surfaceDim: surfaceDim,
+      surfaceBright: surfaceBright,
+      surfaceContainerLowest: surfaceContainerLowest,
+      surfaceContainerLow: surfaceContainerLow,
+      surfaceContainer: surfaceContainer,
+      surfaceContainerHigh: surfaceContainerHigh,
+      surfaceContainerHighest: surfaceContainerHighest,
+      onSurfaceVariant: onSurfaceVariant,
+      outline: outline,
+      outlineVariant: outlineVariant,
+      shadow: shadow,
+      scrim: scrim,
+      inverseSurface: inverseSurface,
+      onInverseSurface: onInverseSurface,
+      inversePrimary: inversePrimary,
+      surfaceTint: surfaceTint,
+    );
+  }
+}

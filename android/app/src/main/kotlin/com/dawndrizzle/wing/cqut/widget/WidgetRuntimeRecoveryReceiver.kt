@@ -26,6 +26,6 @@ class WidgetRuntimeRecoveryReceiver : BroadcastReceiver() {
 
   companion object {
     internal fun isRuntimeRecoveryAction(action: String): Boolean =
-      action == Intent.ACTION_DATE_CHANGED
+      action == Intent.ACTION_DATE_CHANGED || action == Intent.ACTION_USER_PRESENT
   }
 }

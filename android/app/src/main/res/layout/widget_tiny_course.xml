@@ -1,142 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
-
-    <RelativeLayout
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent">
+    <LinearLayout
         android:id="@+id/widget_card"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@drawable/widget_bg"
-        android:padding="10dp">
-
-        <ImageView
-            android:id="@+id/iv_indicator"
-            android:layout_width="4dp"
-            android:layout_height="42dp"
-            android:layout_alignParentStart="true"
-            android:layout_centerVertical="true"
-            android:src="@drawable/appwidget_bg" />
-
-        <LinearLayout
-            android:id="@+id/course_content"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_centerVertical="true"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:layout_toEndOf="@id/iv_indicator"
-            android:layout_toStartOf="@id/remaining_badge"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/tv_course_name"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/widget_primary_text"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tv_course_time"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:ellipsize="end"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/widget_secondary_text"
-                android:textSize="10sp" />
-
-            <TextView
-                android:id="@+id/tv_course_location"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="1dp"
-                android:ellipsize="end"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/widget_secondary_text"
-                android:textSize="10sp" />
-        </LinearLayout>
-
+        android:padding="6dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
         <FrameLayout
-            android:id="@+id/remaining_badge"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true">
-
-            <ImageView
-                android:id="@+id/iv_badge_background"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="match_parent">
+            <LinearLayout
+                android:id="@+id/course_content"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:src="@drawable/widget_course_badge" />
-
-            <TextView
-                android:id="@+id/tv_remaining_count"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone">
+                <ImageView
+                    android:id="@+id/iv_indicator"
+                    android:layout_width="4dp"
+                    android:layout_height="42dp"
+                    android:src="@drawable/widget_preview_indicator_blue" />
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="4dp"
+                    android:orientation="vertical">
+                    <TextView
+                        android:id="@+id/tv_course_name"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:textSize="13dp"
+                        android:textColor="@color/widget_primary_text"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/tv_course_time"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:textSize="10dp"
+                        android:textColor="@color/widget_secondary_text"
+                        android:layout_marginTop="2dp" />
+                    <TextView
+                        android:id="@+id/tv_course_location"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:textSize="10dp"
+                        android:textColor="@color/widget_secondary_text"
+                        android:layout_marginTop="1dp" />
+                </LinearLayout>
+            </LinearLayout>
+            <LinearLayout
+                android:id="@+id/status_content"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:gravity="center"
-                android:textColor="@android:color/white"
-                android:textSize="10sp"
-                android:textStyle="bold" />
+                android:orientation="vertical"
+                android:visibility="gone">
+                <TextView
+                    android:id="@+id/tv_status_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLines="2"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:textSize="12dp"
+                    android:textColor="@color/widget_primary_text"
+                    android:gravity="center"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/tv_status_message"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:textSize="10dp"
+                    android:textColor="@color/widget_secondary_text"
+                    android:gravity="center"
+                    android:layout_marginTop="3dp" />
+            </LinearLayout>
         </FrameLayout>
-
         <ImageView
             android:id="@+id/iv_refresh"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="14dp"
+            android:src="@drawable/ic_widget_refresh"
             android:contentDescription="刷新课表"
-            android:padding="2dp"
-            android:src="@android:drawable/ic_popup_sync"
             android:visibility="gone" />
-
-        <LinearLayout
-            android:id="@+id/status_content"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_centerInParent="true"
-            android:layout_marginEnd="28dp"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/tv_status_title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:gravity="center"
-                android:maxLines="1"
-                android:textColor="@color/widget_primary_text"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tv_status_message"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:ellipsize="end"
-                android:gravity="center"
-                android:maxLines="1"
-                android:textColor="@color/widget_secondary_text"
-                android:textSize="9sp" />
-        </LinearLayout>
-
-        <ImageView
-            android:id="@+id/theme_transition_overlay"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="#00000000"
-            android:src="@android:color/transparent"
-            android:visibility="gone" />
-    </RelativeLayout>
+    </LinearLayout>
+    <ImageView
+        android:id="@+id/theme_transition_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#00000000"
+        android:src="@android:color/transparent"
+        android:visibility="gone" />
 </FrameLayout>

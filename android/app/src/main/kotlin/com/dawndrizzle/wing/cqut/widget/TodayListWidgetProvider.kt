@@ -136,15 +136,17 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       theme: WidgetThemeResolution? = null,
       refreshData: Boolean = false,
     ) {
-      val fallbackTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
-      for (appWidgetId in appWidgetIds) {
-        val resolvedTheme =
-          WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
-        val views = RemoteViews(context.packageName, R.layout.widget_today_list)
-        bindPresentation(context, views, appWidgetId, resolvedTheme)
-        appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
-        if (refreshData) {
-          appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+      WidgetRenderSnapshot.withSnapshot {
+        val fallbackTheme = theme ?: WidgetTheme.resolve(context, WidgetThemeTrigger.DATA_REFRESH)
+        for (appWidgetId in appWidgetIds) {
+          val resolvedTheme =
+            WidgetInstanceConfigStore.resolveTheme(context, appWidgetId, fallbackTheme)
+          val views = RemoteViews(context.packageName, R.layout.widget_today_list)
+          bindPresentation(context, views, appWidgetId, resolvedTheme)
+          appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
+          if (refreshData) {
+            appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+          }
         }
       }
     }
@@ -165,33 +167,36 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       appWidgetId: Int,
       theme: WidgetThemeResolution,
     ) {
-      val views = RemoteViews(context.packageName, R.layout.widget_today_list)
-      bindPresentation(context, views, appWidgetId, theme)
-      val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+      WidgetRenderSnapshot.withSnapshot {
+        val views = RemoteViews(context.packageName, R.layout.widget_today_list)
+        bindPresentation(context, views, appWidgetId, theme)
+        val dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
 
-      val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
-        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
-        data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
-      }
-      views.setRemoteAdapter(R.id.lv_course, svcIntent)
-      views.setEmptyView(R.id.lv_course, R.id.empty)
+        val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
+          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+          putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
+          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
+        }
+        views.setRemoteAdapter(R.id.lv_course, svcIntent)
+        views.setEmptyView(R.id.lv_course, R.id.empty)
 
-      val rootPendingIntent =
-        WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)
-      val coursePendingIntent =
-        WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, true)
-      if (rootPendingIntent != null) {
-        views.setOnClickPendingIntent(R.id.widget_root, rootPendingIntent)
-        views.setOnClickPendingIntent(R.id.rl_title, rootPendingIntent)
-        views.setOnClickPendingIntent(R.id.empty, rootPendingIntent)
-      }
-      if (coursePendingIntent != null) {
-        views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
-      }
+        val rootPendingIntent =
+          WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)
+        val coursePendingIntent =
+          WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, true)
+        if (rootPendingIntent != null) {
+          views.setOnClickPendingIntent(R.id.widget_root, null)
+          views.setOnClickPendingIntent(R.id.rl_title, null)
+          views.setOnClickPendingIntent(R.id.header_text, rootPendingIntent)
+          views.setOnClickPendingIntent(R.id.empty, rootPendingIntent)
+        }
+        if (coursePendingIntent != null) {
+          views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
+        }
 
-      appWidgetManager.updateAppWidget(appWidgetId, views)
-      appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+        appWidgetManager.updateAppWidget(appWidgetId, views)
+        appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+      }
     }
 
     private fun bindPresentation(
@@ -235,12 +240,7 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       views.setTextViewText(R.id.empty, TodayWidgetData.loadEmptyStateText(context, dayOffset))
 
       val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
-      val dateVisibility =
-        if (refreshPresentation.replacesDateMetadata) {
-          android.view.View.GONE
-        } else {
-          android.view.View.VISIBLE
-        }
+      val dateVisibility = android.view.View.VISIBLE
       views.setViewVisibility(R.id.tv_date, dateVisibility)
       views.setViewVisibility(R.id.tv_week, dateVisibility)
       views.setTextViewText(R.id.tv_sync_status, refreshPresentation.text)
@@ -250,12 +250,10 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       )
       val isLoading =
         refreshPresentation.state == TodayWidgetData.RefreshPresentationState.LOADING
-      val showRefreshAction = refreshPresentation.usesRefreshAction || isLoading
-      views.setViewVisibility(
-        R.id.iv_refresh,
-        if (showRefreshAction) android.view.View.VISIBLE else android.view.View.GONE,
-      )
+      views.setViewVisibility(R.id.iv_refresh, if (refreshPresentation.showsRefreshButton) android.view.View.VISIBLE else android.view.View.GONE)
       views.setBoolean(R.id.iv_refresh, "setEnabled", !isLoading)
+      views.setImageViewResource(R.id.iv_refresh, R.drawable.ic_widget_refresh)
+      views.setContentDescription(R.id.iv_refresh, refreshActionDescription(refreshPresentation))
       val manualRefreshIntent =
         Intent(context, TodayListWidgetProvider::class.java).apply {
           action = ACTION_MANUAL_REFRESH

@@ -27,9 +27,10 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="2dp"
+
                     android:text="9月1日"
                     android:textColor="@color/widget_primary_text"
-                    android:textSize="16sp"
+                    android:textSize="16dp"
                     android:textStyle="bold" />
 
                 <LinearLayout
@@ -40,25 +41,28 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+
                         android:text="课表"
                         android:textColor="@color/widget_primary_text"
-                        android:textSize="12sp"
+                        android:textSize="12dp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+
                         android:text=" | 第3周    "
                         android:textColor="@color/widget_secondary_text"
-                        android:textSize="12sp"
+                        android:textSize="12dp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+
                         android:text="周二"
                         android:textColor="@color/widget_accent"
-                        android:textSize="12sp"
+                        android:textSize="12dp"
                         android:textStyle="bold" />
                 </LinearLayout>
             </LinearLayout>
@@ -101,9 +105,10 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
+
                     android:text="软件工程"
                     android:textColor="@color/widget_primary_text"
-                    android:textSize="14sp"
+                    android:textSize="14dp"
                     android:textStyle="bold" />
 
                 <TextView
@@ -111,18 +116,20 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
+
                     android:text="两江校区 A101"
                     android:textColor="@color/widget_secondary_text"
-                    android:textSize="11sp" />
+                    android:textSize="11dp" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="1"
+
                     android:text="张老师 · 第1-2节"
                     android:textColor="@color/widget_secondary_text"
-                    android:textSize="11sp" />
+                    android:textSize="11dp" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

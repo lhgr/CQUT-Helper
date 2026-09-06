@@ -65,6 +65,7 @@ class WidgetConfigurationActivity : Activity() {
   private var existingConfig = WidgetInstanceConfig()
   private var supportsDaySelection = false
   private var supportsRefreshSuggestion = false
+  private var refreshSuggestionSection: LinearLayout? = null
   private var exactAlarmStatusText: TextView? = null
   private var exactAlarmPermissionButton: Button? = null
 
@@ -110,6 +111,8 @@ class WidgetConfigurationActivity : Activity() {
 
   override fun onResume() {
     super.onResume()
+    refreshSuggestionSection?.visibility =
+      if (TodayWidgetData.isNoticePollingEnabled(this)) View.GONE else View.VISIBLE
     updateExactAlarmPermissionPresentation()
     if (canScheduleExactWidgetAlarms()) {
       WidgetRefreshCoordinator.ensureScheduled(this, "configuration_resumed")
@@ -207,12 +210,14 @@ class WidgetConfigurationActivity : Activity() {
     refreshSuggestionGroup = RadioGroup(this)
     customRefreshDaysInput = EditText(this)
     if (supportsRefreshSuggestion) {
-      content.addView(
-        sectionTitle("更新提示间隔").apply {
+      val section = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+      refreshSuggestionSection = section
+      section.addView(
+        sectionTitle("未同步提醒间隔").apply {
           setPadding(0, dp(22), 0, dp(4))
         },
       )
-      content.addView(
+      section.addView(
         TextView(this).apply {
           text = "超过该天数未同步时，小组件会提示刷新。"
           textSize = 13f
@@ -227,7 +232,7 @@ class WidgetConfigurationActivity : Activity() {
         addView(option(refreshWeeklyId, "7 天"))
         addView(option(refreshCustomId, "自定义"))
       }
-      content.addView(refreshSuggestionGroup)
+      section.addView(refreshSuggestionGroup)
       customRefreshDaysInput.apply {
         hint = "输入天数"
         inputType = android.text.InputType.TYPE_CLASS_NUMBER
@@ -238,7 +243,7 @@ class WidgetConfigurationActivity : Activity() {
         }
         setOnClickListener { refreshSuggestionGroup.check(refreshCustomId) }
       }
-      content.addView(
+      section.addView(
         customRefreshDaysInput,
         LinearLayout.LayoutParams(
           LinearLayout.LayoutParams.MATCH_PARENT,
@@ -257,6 +262,7 @@ class WidgetConfigurationActivity : Activity() {
         customRefreshDaysInput.setText(existing.refreshSuggestionDays.toString())
       }
       refreshSuggestionGroup.check(selectedRefreshId)
+      content.addView(section)
     }
 
     content.addView(
@@ -317,7 +323,7 @@ class WidgetConfigurationActivity : Activity() {
 
   private fun widgetDescription(providerName: String): String {
     return when (providerName) {
-      TodayListWidgetProvider::class.java.name -> "单日课程：以列表展示今天或明天的全部课程"
+      TodayListWidgetProvider::class.java.name -> "单日课程：以列表展示今天剩余课程或明天的课程"
       TodayAndNextWidgetProvider::class.java.name -> "近日课程：同时展示今天和明天"
       TodayCourseWidgetProvider::class.java.name -> "日视图：可在今天和明天之间快速切换"
       TinyCourseWidgetProvider::class.java.name -> "超小课程：仅展示今天最近一节未结束课程"
@@ -419,7 +425,9 @@ class WidgetConfigurationActivity : Activity() {
   }
 
   private fun selectedRefreshSuggestionDays(): Int? {
-    if (!supportsRefreshSuggestion) return existingConfig.refreshSuggestionDays
+    if (!supportsRefreshSuggestion || TodayWidgetData.isNoticePollingEnabled(this)) {
+      return existingConfig.refreshSuggestionDays
+    }
     return when (refreshSuggestionGroup.checkedRadioButtonId) {
       refreshDailyId -> 1
       refreshThreeDaysId -> 3

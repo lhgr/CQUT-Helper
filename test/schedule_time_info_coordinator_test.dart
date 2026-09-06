@@ -11,10 +11,12 @@ class _FakeTimeInfoScheduleApi extends ScheduleApi {
   _FakeTimeInfoScheduleApi({
     required this.response,
     this.resolvedCampusName = '两江校区',
+    this.error,
   });
 
   final List<CampusTimeInfo> response;
   final String resolvedCampusName;
+  final Object? error;
   int fetchCount = 0;
 
   @override
@@ -23,6 +25,7 @@ class _FakeTimeInfoScheduleApi extends ScheduleApi {
   @override
   Future<List<CampusTimeInfo>> fetchCampusTimeInfo(String campusName) async {
     fetchCount++;
+    if (error != null) throw error!;
     return response;
   }
 }
@@ -44,6 +47,106 @@ class _BlockingTimeInfoScheduleApi extends _FakeTimeInfoScheduleApi {
 
 void main() {
   group('ScheduleTimeInfoCoordinator', () {
+    CampusTimeInfo session(int number, String start, String end) =>
+        CampusTimeInfo(
+          campusName: '两江校区',
+          sessionNum: number,
+          startTime: start,
+          endTime: end,
+        );
+
+    String seedCache() {
+      final items = [
+        session(1, '08:00', '08:45').toJson(),
+        session(2, '08:55', '09:40').toJson(),
+      ];
+      final raw = json.encode({
+        'campusName': '两江校区',
+        'fingerprint': json.encode(items),
+        'updatedAt': 1,
+        'items': items,
+      });
+      SharedPreferences.setMockInitialValues({
+        'schedule_time_info_cache_v1': raw,
+        'schedule_time_info_last_campus': '两江校区',
+      });
+      return raw;
+    }
+
+    for (final mode in ['empty', 'error', 'invalid']) {
+      test('$mode 响应保留已有缓存并加载到当前页面', () async {
+        final raw = seedCache();
+        List<CampusTimeInfo>? state;
+        var notifications = 0;
+        final coordinator = ScheduleTimeInfoCoordinator(
+          service: _FakeTimeInfoScheduleApi(
+            response: mode == 'invalid' ? [session(1, '25:00', '08:45')] : [],
+            error: mode == 'error' ? StateError('offline') : null,
+          ),
+          getTimeInfoList: () => state,
+          setTimeInfoList: (value) => state = value,
+          onTimeInfoUpdated: () async {
+            notifications++;
+          },
+        );
+        expect(
+          await coordinator.refreshTimeInfoIfEnabled(force: true),
+          isFalse,
+        );
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('schedule_time_info_cache_v1'), raw);
+        expect(state!.map((item) => item.startTime), ['08:00', '08:55']);
+        expect(notifications, 0);
+      });
+    }
+
+    test('部分有效响应更新对应节次并用缓存补齐无效与缺失节次', () async {
+      seedCache();
+      List<CampusTimeInfo>? state;
+      var notifications = 0;
+      final coordinator = ScheduleTimeInfoCoordinator(
+        service: _FakeTimeInfoScheduleApi(
+          response: [
+            session(1, '08:10', '08:55'),
+            session(2, '', '09:40'),
+            session(3, '10:00', '10:45'),
+          ],
+        ),
+        getTimeInfoList: () => state,
+        setTimeInfoList: (value) => state = value,
+        onTimeInfoUpdated: () async {
+          notifications++;
+        },
+      );
+      expect(await coordinator.refreshTimeInfoIfEnabled(force: true), isTrue);
+      expect(state!.map((item) => item.startTime), ['08:10', '08:55', '10:00']);
+      final prefs = await SharedPreferences.getInstance();
+      final saved = json.decode(
+        prefs.getString('schedule_time_info_cache_v1')!,
+      );
+      expect((saved['items'] as List).length, 3);
+      expect(notifications, 1);
+    });
+
+    test('部分响应与已有缓存一致时无需重绘', () async {
+      final raw = seedCache();
+      List<CampusTimeInfo>? state;
+      final coordinator = ScheduleTimeInfoCoordinator(
+        service: _FakeTimeInfoScheduleApi(
+          response: [session(1, '08:00', '08:45')],
+        ),
+        getTimeInfoList: () => state,
+        setTimeInfoList: (value) => state = value,
+        onTimeInfoUpdated: () async {
+          fail('unchanged cache should not notify');
+        },
+      );
+      expect(await coordinator.refreshTimeInfoIfEnabled(force: true), isFalse);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('schedule_time_info_cache_v1'), raw);
+      expect(state!.length, 2);
+    });
+
     test('失败重试按指数退避并封顶六小时', () {
       expect(
         ScheduleTimeInfoCoordinator.failureRetryCooldownMs(0),
