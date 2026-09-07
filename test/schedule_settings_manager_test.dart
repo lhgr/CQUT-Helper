@@ -166,6 +166,63 @@ void main() {
     expect(layout.cardOpacity, 0.1);
   });
 
+  test('未保存过背景设置时默认新值保持旧版默认视觉', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+
+    expect(manager.layoutSettings.backgroundOpacity, 0.68);
+  });
+
+  test('旧版图片不透明度升级为互补的覆盖层不透明度', () async {
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.backgroundOpacityKey: 0.73,
+    });
+
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+    final prefs = await SharedPreferences.getInstance();
+
+    expect(manager.layoutSettings.backgroundOpacity, closeTo(0.27, 0.0001));
+    expect(prefs.getDouble(ScheduleSettingsManager.backgroundOpacityKey), 0.73);
+    expect(
+      prefs.getInt(
+        ScheduleSettingsManager.backgroundOpacitySemanticsVersionKey,
+      ),
+      isNull,
+    );
+
+    await manager.saveLayoutSettings(
+      manager.layoutSettings.copyWith(backgroundOpacity: 0.6),
+    );
+
+    expect(prefs.getDouble(ScheduleSettingsManager.backgroundOpacityKey), 0.6);
+    expect(
+      prefs.getInt(
+        ScheduleSettingsManager.backgroundOpacitySemanticsVersionKey,
+      ),
+      ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
+    );
+
+    final reloaded = ScheduleSettingsManager();
+    await reloaded.load();
+    expect(reloaded.layoutSettings.backgroundOpacity, 0.6);
+  });
+
+  test('新版背景图片不透明度不会被重复反转', () async {
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.backgroundOpacityKey: 0.73,
+      ScheduleSettingsManager.backgroundOpacitySemanticsVersionKey:
+          ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
+    });
+
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+
+    expect(manager.layoutSettings.backgroundOpacity, 0.73);
+  });
+
   test('启动预读后新管理器可同步获取课表背景设置', () async {
     SharedPreferences.setMockInitialValues({
       ScheduleSettingsManager.backgroundImagePathKey: '/tmp/background.jpg',

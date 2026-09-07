@@ -33,6 +33,35 @@ void main() {
     expect(image.key, isA<ValueKey<String>>());
   });
 
+  testWidgets('背景图片始终完整绘制并由新值控制表面覆盖层', (tester) async {
+    final file = File(
+      [
+        Directory.current.path,
+        'lib',
+        'assets',
+        'Icon.png',
+      ].join(Platform.pathSeparator),
+    );
+    const savedOpacity = 0.73;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ScheduleBackground(
+          settings: ScheduleLayoutSettings(
+            backgroundImagePath: file.path,
+            backgroundOpacity: savedOpacity,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(Opacity), findsNothing);
+    final overlay = tester.widget<ColoredBox>(
+      find.byKey(ScheduleBackground.opacityOverlayKey),
+    );
+    expect(overlay.color.a, closeTo(savedOpacity, 0.0001));
+  });
+
   testWidgets('首帧绘制前背景图片已进入缓存', (tester) async {
     final file = File(
       [

@@ -56,6 +56,7 @@ class MyApp extends StatelessWidget {
               title: 'CQUT Helper',
               initialRoute: "/",
               routes: getRootRoutes(),
+              onUnknownRoute: buildUnknownRoute,
               locale: const Locale('zh', 'CN'),
               supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
               localizationsDelegates: const [
@@ -88,4 +89,11 @@ Widget getRootWidget() {
 
 Map<String, Widget Function(BuildContext)> getRootRoutes() {
   return {"/": (context) => MainPage(), "/login": (context) => LoginPage()};
+}
+
+Route<dynamic> buildUnknownRoute(RouteSettings settings) {
+  return MaterialPageRoute<void>(
+    settings: const RouteSettings(name: '/'),
+    builder: (context) => MainPage(),
+  );
 }

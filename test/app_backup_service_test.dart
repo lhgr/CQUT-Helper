@@ -73,4 +73,44 @@ void main() {
     await manager.load();
     expect(manager.layoutSettings.gridLineOpacity, 0.65);
   });
+
+  test('新版背景图片不透明度语义版本随备份完整恢复', () async {
+    SharedPreferences.setMockInitialValues({
+      'account': 'source-account',
+      ScheduleSettingsManager.backgroundOpacityKey: 0.65,
+      ScheduleSettingsManager.backgroundOpacitySemanticsVersionKey:
+          ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
+    });
+    final sourcePreferences = await SharedPreferences.getInstance();
+    final backedUpSettings = AppBackupService.collectSettingsForTesting(
+      sourcePreferences,
+      'source-account',
+    );
+
+    expect(
+      backedUpSettings[ScheduleSettingsManager.backgroundOpacityKey],
+      0.65,
+    );
+    expect(
+      backedUpSettings[ScheduleSettingsManager
+          .backgroundOpacitySemanticsVersionKey],
+      ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
+    );
+
+    final serializedSettings = (jsonDecode(jsonEncode(backedUpSettings)) as Map)
+        .cast<String, dynamic>();
+    SharedPreferences.setMockInitialValues({'account': 'target-account'});
+    final targetPreferences = await SharedPreferences.getInstance();
+    final restoredCount = await AppBackupService.restoreSettingsForTesting(
+      prefs: targetPreferences,
+      settings: serializedSettings,
+      sourceAccount: 'source-account',
+      account: 'target-account',
+    );
+
+    expect(restoredCount, 2);
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+    expect(manager.layoutSettings.backgroundOpacity, 0.65);
+  });
 }

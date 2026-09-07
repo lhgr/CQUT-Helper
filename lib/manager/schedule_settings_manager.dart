@@ -42,7 +42,10 @@ class ScheduleSettingsManager {
   static const String _showGridLinesKey = 'schedule_show_grid_lines';
   static const String _gridLineOpacityKey = 'schedule_grid_line_opacity';
   static const String backgroundImagePathKey = 'schedule_background_image_path';
-  static const String _backgroundOpacityKey = 'schedule_background_opacity';
+  static const String backgroundOpacityKey = 'schedule_background_opacity';
+  static const String backgroundOpacitySemanticsVersionKey =
+      'schedule_background_opacity_semantics_version';
+  static const int currentBackgroundOpacitySemanticsVersion = 2;
   static const String _backgroundBlurKey = 'schedule_background_blur';
   static const String _hideLocationKey = 'schedule_card_hide_location';
   static const String _hideTeacherKey = 'schedule_card_hide_teacher';
@@ -149,6 +152,18 @@ class ScheduleSettingsManager {
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
+    final storedBackgroundOpacity = prefs.getDouble(backgroundOpacityKey);
+    final storedBackgroundOpacityVersion =
+        prefs.getInt(backgroundOpacitySemanticsVersionKey) ?? 1;
+    // Version 1 controlled image opacity. Version 2 controls the surface layer
+    // drawn over a fully opaque image. Complementing the value keeps the same
+    // pixels on upgrade; the next explicit save persists the version 2 value.
+    final backgroundOpacity = storedBackgroundOpacity == null
+        ? const ScheduleLayoutSettings().backgroundOpacity
+        : storedBackgroundOpacityVersion >=
+              currentBackgroundOpacitySemanticsVersion
+        ? storedBackgroundOpacity
+        : 1 - storedBackgroundOpacity;
     showWeekend = prefs.getBool(_prefsKeyShowWeekend) ?? false;
     timeInfoEnabled = prefs.getBool(_prefsKeyTimeInfoEnabled) ?? true;
     final wasPreviouslyEnabled =
@@ -190,9 +205,7 @@ class ScheduleSettingsManager {
               .clamp(0.0, 1.0)
               .toDouble(),
       backgroundImagePath: prefs.getString(backgroundImagePathKey),
-      backgroundOpacity: (prefs.getDouble(_backgroundOpacityKey) ?? 0.32)
-          .clamp(0.0, 1.0)
-          .toDouble(),
+      backgroundOpacity: backgroundOpacity.clamp(0.0, 1.0).toDouble(),
       backgroundBlur: (prefs.getDouble(_backgroundBlurKey) ?? 0)
           .clamp(0.0, 20.0)
           .toDouble(),
@@ -249,7 +262,11 @@ class ScheduleSettingsManager {
     } else {
       await prefs.setString(backgroundImagePathKey, backgroundPath);
     }
-    await prefs.setDouble(_backgroundOpacityKey, normalized.backgroundOpacity);
+    await prefs.setDouble(backgroundOpacityKey, normalized.backgroundOpacity);
+    await prefs.setInt(
+      backgroundOpacitySemanticsVersionKey,
+      currentBackgroundOpacitySemanticsVersion,
+    );
     await prefs.setDouble(_backgroundBlurKey, normalized.backgroundBlur);
     await prefs.setBool(_hideLocationKey, normalized.hideLocation);
     await prefs.setBool(_hideTeacherKey, normalized.hideTeacher);
@@ -320,7 +337,7 @@ class ScheduleLayoutSettings {
     this.showGridLines = true,
     this.gridLineOpacity = defaultGridLineOpacity,
     this.backgroundImagePath,
-    this.backgroundOpacity = 0.32,
+    this.backgroundOpacity = 0.68,
     this.backgroundBlur = 0,
     this.hideLocation = false,
     this.hideTeacher = false,

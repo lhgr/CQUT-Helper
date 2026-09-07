@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/Settings/appearance_startup_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_courses_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_layout_preview.dart';
@@ -57,10 +60,16 @@ void main() {
     expect(find.text('从背景图片取色'), findsNothing);
   });
 
-  testWidgets('已选择背景时显示透明度和模糊度设置', (tester) async {
+  testWidgets('已选择背景时显示不透明度和模糊度设置', (tester) async {
+    final backgroundPath = [
+      Directory.current.path,
+      'lib',
+      'assets',
+      'Icon.png',
+    ].join(Platform.pathSeparator);
     SharedPreferences.setMockInitialValues({
       'account': 'test-user',
-      'schedule_background_image_path': 'test-background.jpg',
+      'schedule_background_image_path': backgroundPath,
     });
     await tester.pumpWidget(
       const MaterialApp(
@@ -76,6 +85,33 @@ void main() {
     expect(find.text('背景图片不透明度'), findsOneWidget);
     expect(find.text('背景模糊度'), findsOneWidget);
     expect(find.text('从背景图片取色'), findsOneWidget);
+
+    Finder backgroundOpacitySlider() {
+      final setting = find
+          .ancestor(of: find.text('背景图片不透明度'), matching: find.byType(Padding))
+          .first;
+      return find.descendant(of: setting, matching: find.byType(Slider));
+    }
+
+    tester.widget<Slider>(backgroundOpacitySlider()).onChanged!(1);
+    await tester.pump();
+    var previewOverlay = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byType(ScheduleLayoutPreview),
+        matching: find.byKey(ScheduleBackground.opacityOverlayKey),
+      ),
+    );
+    expect(previewOverlay.color.a, 1);
+
+    tester.widget<Slider>(backgroundOpacitySlider()).onChanged!(0);
+    await tester.pump();
+    previewOverlay = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byType(ScheduleLayoutPreview),
+        matching: find.byKey(ScheduleBackground.opacityOverlayKey),
+      ),
+    );
+    expect(previewOverlay.color.a, 0);
   });
 
   testWidgets('课表布局修改未保存时离开会显示提示', (tester) async {

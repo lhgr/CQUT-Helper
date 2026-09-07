@@ -50,6 +50,7 @@ class AppBackupService {
     'schedule_show_grid_lines',
     'schedule_grid_line_opacity',
     'schedule_background_opacity',
+    'schedule_background_opacity_semantics_version',
     'schedule_background_blur',
     'schedule_card_hide_location',
     'schedule_card_hide_teacher',

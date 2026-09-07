@@ -522,9 +522,9 @@ class _ScheduleCoursesSettingsPageState
                                     value: _layout.backgroundOpacity,
                                     defaultValue:
                                         _defaultLayout.backgroundOpacity,
-                                    min: 0.05,
+                                    min: 0,
                                     max: 1,
-                                    divisions: 19,
+                                    divisions: 20,
                                     valueLabel:
                                         '${(_layout.backgroundOpacity * 100).round()}%',
                                     onChanged: (value) => _change(

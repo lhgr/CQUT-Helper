@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
@@ -56,7 +54,7 @@ class ScheduleLayoutPreview extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _PreviewBackground(settings: settings, file: backgroundFile),
+                  ScheduleBackground(settings: settings),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: SizedBox(
@@ -109,38 +107,6 @@ class ScheduleLayoutPreview extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _PreviewBackground extends StatelessWidget {
-  final ScheduleLayoutSettings settings;
-  final File? file;
-
-  const _PreviewBackground({required this.settings, required this.file});
-
-  @override
-  Widget build(BuildContext context) {
-    if (file == null) {
-      return ColoredBox(color: Theme.of(context).colorScheme.surface);
-    }
-    return ClipRect(
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(
-          sigmaX: settings.backgroundBlur,
-          sigmaY: settings.backgroundBlur,
-        ),
-        child: Opacity(
-          opacity: settings.backgroundOpacity,
-          child: Image.file(
-            file!,
-            fit: BoxFit.cover,
-            alignment: ScheduleBackground.imageAlignment,
-            gaplessPlayback: true,
-            filterQuality: FilterQuality.medium,
-          ),
-        ),
-      ),
     );
   }
 }
