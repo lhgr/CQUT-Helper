@@ -200,7 +200,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   List<Widget> _getStackChildren() {
-    return const [TodayScheduleView(), ClassscheduleView(), MineView()];
+    return [
+      TodayScheduleView(isActive: _currentIndex == 0),
+      const ClassscheduleView(),
+      const MineView(),
+    ];
   }
 
   @override
