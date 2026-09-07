@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 
 class ScheduleHeader extends StatelessWidget {
   final ScheduleData scheduleData;
@@ -7,6 +8,7 @@ class ScheduleHeader extends StatelessWidget {
   final double timeColumnWidth;
   final bool showWeekend;
   final bool showGridLines;
+  final double gridLineOpacity;
   final bool transparentBackground;
 
   const ScheduleHeader({
@@ -16,6 +18,7 @@ class ScheduleHeader extends StatelessWidget {
     this.timeColumnWidth = 30.0,
     this.showWeekend = true,
     this.showGridLines = true,
+    this.gridLineOpacity = 0.2,
     this.transparentBackground = false,
   });
 
@@ -31,7 +34,10 @@ class ScheduleHeader extends StatelessWidget {
         color: transparentBackground ? Colors.transparent : colorScheme.surface,
         border: showGridLines
             ? Border(
-                bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
+                bottom: BorderSide(
+                  color: scheduleGridLineColor(context, gridLineOpacity),
+                  width: 1,
+                ),
               )
             : null,
       ),

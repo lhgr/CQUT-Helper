@@ -107,6 +107,39 @@ void main() {
     );
   });
 
+  testWidgets('网格线透明度仅在显示网格线时可调整', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ScheduleCoursesSettingsPage(
+          scope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+
+    Slider opacitySlider() => tester.widget<Slider>(
+      find.byWidgetPredicate(
+        (widget) => widget is Slider && widget.value == 0.2,
+      ),
+    );
+
+    expect(find.text('网格线透明度'), findsOneWidget);
+    expect(opacitySlider().onChanged, isNotNull);
+
+    await tester.tap(find.text('显示网格线'));
+    await tester.pumpAndSettle();
+
+    expect(opacitySlider().onChanged, isNull);
+
+    await tester.tap(find.text('显示网格线'));
+    await tester.pumpAndSettle();
+
+    expect(opacitySlider().onChanged, isNotNull);
+  });
+
   testWidgets('顶部重置需要二次确认', (tester) async {
     SharedPreferences.setMockInitialValues({
       'account': 'test-user',

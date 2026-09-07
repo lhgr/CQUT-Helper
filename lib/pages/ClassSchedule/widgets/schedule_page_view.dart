@@ -106,6 +106,7 @@ class SchedulePageView extends StatelessWidget {
                           timeColumnWidth: _timeColumnWidth,
                           showWeekend: showWeekend,
                           showGridLines: layoutSettings.showGridLines,
+                          gridLineOpacity: layoutSettings.gridLineOpacity,
                           transparentBackground:
                               layoutSettings.backgroundImagePath != null,
                         ),
@@ -119,6 +120,8 @@ class SchedulePageView extends StatelessWidget {
                                   sessionHeight: layoutSettings.gridCellHeight,
                                   timeInfoList: timeInfoList,
                                   showGridLines: layoutSettings.showGridLines,
+                                  gridLineOpacity:
+                                      layoutSettings.gridLineOpacity,
                                   transparentBackground:
                                       layoutSettings.backgroundImagePath !=
                                       null,
@@ -132,6 +135,8 @@ class SchedulePageView extends StatelessWidget {
                                         layoutSettings.gridCellHeight,
                                     showWeekend: showWeekend,
                                     showGridLines: layoutSettings.showGridLines,
+                                    gridLineOpacity:
+                                        layoutSettings.gridLineOpacity,
                                     hideLocation: layoutSettings.hideLocation,
                                     hideTeacher: layoutSettings.hideTeacher,
                                     removeCampusPrefix:

@@ -6,6 +6,7 @@ import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
+import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 import 'package:flutter/material.dart';
 
 class ScheduleLayoutPreview extends StatelessWidget {
@@ -64,6 +65,7 @@ class ScheduleLayoutPreview extends StatelessWidget {
                             dayCount: dayCount,
                             gridWidth: gridWidth,
                             showGridLines: settings.showGridLines,
+                            gridLineOpacity: settings.gridLineOpacity,
                           ),
                           Expanded(
                             child: SingleChildScrollView(
@@ -76,6 +78,7 @@ class ScheduleLayoutPreview extends StatelessWidget {
                                       rowHeight: settings.gridCellHeight,
                                       showTimes: timeInfoEnabled,
                                       showGridLines: settings.showGridLines,
+                                      gridLineOpacity: settings.gridLineOpacity,
                                     ),
                                     SizedBox(
                                       width: gridWidth,
@@ -135,18 +138,20 @@ class _PreviewHeader extends StatelessWidget {
   final int dayCount;
   final double gridWidth;
   final bool showGridLines;
+  final double gridLineOpacity;
 
   const _PreviewHeader({
     required this.dayCount,
     required this.gridWidth,
     required this.showGridLines,
+    required this.gridLineOpacity,
   });
 
   @override
   Widget build(BuildContext context) {
     const days = ['一', '二', '三', '四', '五', '六', '日'];
     final surface = Theme.of(context).colorScheme.surface.withAlpha(225);
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final borderColor = scheduleGridLineColor(context, gridLineOpacity);
     return Container(
       height: ScheduleLayoutPreview._headerHeight,
       color: surface,
@@ -191,16 +196,18 @@ class _PreviewTimeColumn extends StatelessWidget {
   final double rowHeight;
   final bool showTimes;
   final bool showGridLines;
+  final double gridLineOpacity;
 
   const _PreviewTimeColumn({
     required this.rowHeight,
     required this.showTimes,
     required this.showGridLines,
+    required this.gridLineOpacity,
   });
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final borderColor = scheduleGridLineColor(context, gridLineOpacity);
     return Container(
       width: ScheduleLayoutPreview._timeWidth,
       color: Theme.of(context).colorScheme.surface.withAlpha(225),
@@ -287,7 +294,10 @@ class _PreviewGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dayWidth = gridWidth / dayCount;
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final borderColor = scheduleGridLineColor(
+      context,
+      settings.gridLineOpacity,
+    );
     return Stack(
       children: [
         if (settings.showGridLines)

@@ -585,11 +585,28 @@ class _ScheduleCoursesSettingsPageState
                                 ),
                                 SwitchListTile(
                                   title: const Text('显示网格线'),
-                                  subtitle: const Text('关闭后隐藏课表横向与纵向分隔线'),
+                                  subtitle: const Text('颜色跟随当前动态主题，关闭后隐藏全部分隔线'),
                                   value: _layout.showGridLines,
                                   onChanged: (value) => _change(
                                     () => _layout = _layout.copyWith(
                                       showGridLines: value,
+                                    ),
+                                  ),
+                                ),
+                                _slider(
+                                  context,
+                                  label: '网格线透明度',
+                                  value: _layout.gridLineOpacity,
+                                  defaultValue: _defaultLayout.gridLineOpacity,
+                                  min: 0,
+                                  max: 1,
+                                  divisions: 20,
+                                  valueLabel:
+                                      '${(_layout.gridLineOpacity * 100).round()}%',
+                                  enabled: _layout.showGridLines,
+                                  onChanged: (value) => _change(
+                                    () => _layout = _layout.copyWith(
+                                      gridLineOpacity: value,
                                     ),
                                   ),
                                 ),

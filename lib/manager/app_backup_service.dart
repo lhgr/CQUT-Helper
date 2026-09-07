@@ -6,6 +6,7 @@ import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppBackupPreview {
@@ -47,6 +48,7 @@ class AppBackupService {
     'schedule_grid_cell_width',
     'schedule_grid_cell_height',
     'schedule_show_grid_lines',
+    'schedule_grid_line_opacity',
     'schedule_background_opacity',
     'schedule_background_blur',
     'schedule_card_hide_location',
@@ -70,16 +72,7 @@ class AppBackupService {
     final prefs = await SharedPreferences.getInstance();
     final account = (prefs.getString('account') ?? '').trim();
     if (account.isEmpty) throw StateError('请先登录后再备份');
-    final settings = <String, Object?>{};
-    final colorPrefix = 'schedule_course_color_map_v1_$account|';
-    final messageKey = 'schedule_message_history_v1_$account';
-    for (final key in prefs.getKeys()) {
-      if (_allowedSettings.contains(key) ||
-          key.startsWith(colorPrefix) ||
-          key == messageKey) {
-        settings[key] = prefs.get(key);
-      }
-    }
+    final settings = _collectSettings(prefs, account);
     final courses = await ScheduleCustomizationManager.instance
         .exportCoursePreferences(account);
     return const JsonEncoder.withIndent('  ').convert({
@@ -113,24 +106,13 @@ class AppBackupService {
     final account = (prefs.getString('account') ?? '').trim();
     if (account.isEmpty) throw StateError('请先登录后再恢复');
     final settings = (root['settings'] as Map?)?.cast<String, dynamic>() ?? {};
-    var restoredSettings = 0;
     final sourceAccount = (root['sourceAccount'] ?? '').toString().trim();
-    for (final entry in settings.entries) {
-      var key = entry.key;
-      if (sourceAccount.isNotEmpty &&
-          key.startsWith('schedule_course_color_map_v1_$sourceAccount|')) {
-        key = key.replaceFirst(
-          'schedule_course_color_map_v1_$sourceAccount|',
-          'schedule_course_color_map_v1_$account|',
-        );
-      } else if (sourceAccount.isNotEmpty &&
-          key == 'schedule_message_history_v1_$sourceAccount') {
-        key = 'schedule_message_history_v1_$account';
-      } else if (!_allowedSettings.contains(key)) {
-        continue;
-      }
-      if (await _setPreference(prefs, key, entry.value)) restoredSettings++;
-    }
+    final restoredSettings = await _restoreSettings(
+      prefs: prefs,
+      settings: settings,
+      sourceAccount: sourceAccount,
+      account: account,
+    );
     final rawCourses = root['coursePreferences'];
     final courses = rawCourses is List
         ? rawCourses
@@ -165,6 +147,68 @@ class AppBackupService {
     }
     return root;
   }
+
+  static Map<String, Object?> _collectSettings(
+    SharedPreferences prefs,
+    String account,
+  ) {
+    final settings = <String, Object?>{};
+    final colorPrefix = 'schedule_course_color_map_v1_$account|';
+    final messageKey = 'schedule_message_history_v1_$account';
+    for (final key in prefs.getKeys()) {
+      if (_allowedSettings.contains(key) ||
+          key.startsWith(colorPrefix) ||
+          key == messageKey) {
+        settings[key] = prefs.get(key);
+      }
+    }
+    return settings;
+  }
+
+  static Future<int> _restoreSettings({
+    required SharedPreferences prefs,
+    required Map<String, dynamic> settings,
+    required String sourceAccount,
+    required String account,
+  }) async {
+    var restoredSettings = 0;
+    for (final entry in settings.entries) {
+      var key = entry.key;
+      if (sourceAccount.isNotEmpty &&
+          key.startsWith('schedule_course_color_map_v1_$sourceAccount|')) {
+        key = key.replaceFirst(
+          'schedule_course_color_map_v1_$sourceAccount|',
+          'schedule_course_color_map_v1_$account|',
+        );
+      } else if (sourceAccount.isNotEmpty &&
+          key == 'schedule_message_history_v1_$sourceAccount') {
+        key = 'schedule_message_history_v1_$account';
+      } else if (!_allowedSettings.contains(key)) {
+        continue;
+      }
+      if (await _setPreference(prefs, key, entry.value)) restoredSettings++;
+    }
+    return restoredSettings;
+  }
+
+  @visibleForTesting
+  static Map<String, Object?> collectSettingsForTesting(
+    SharedPreferences prefs,
+    String account,
+  ) => _collectSettings(prefs, account);
+
+  @visibleForTesting
+  static Future<int> restoreSettingsForTesting({
+    required SharedPreferences prefs,
+    required Map<String, dynamic> settings,
+    required String sourceAccount,
+    required String account,
+  }) => _restoreSettings(
+    prefs: prefs,
+    settings: settings,
+    sourceAccount: sourceAccount,
+    account: account,
+  );
 
   static Future<bool> _setPreference(
     SharedPreferences prefs,

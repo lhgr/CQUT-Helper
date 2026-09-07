@@ -3,6 +3,7 @@ import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
+import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 
 class ScheduleCourseGrid extends StatefulWidget {
   final List<EventItem> events;
@@ -16,6 +17,7 @@ class ScheduleCourseGrid extends StatefulWidget {
   final List<Color> buttonColors;
   final bool showWeekend;
   final bool showGridLines;
+  final double gridLineOpacity;
   final bool hideLocation;
   final bool hideTeacher;
   final bool removeCampusPrefix;
@@ -40,6 +42,7 @@ class ScheduleCourseGrid extends StatefulWidget {
     required this.buttonColors,
     this.showWeekend = true,
     this.showGridLines = true,
+    this.gridLineOpacity = 0.2,
     this.hideLocation = false,
     this.hideTeacher = false,
     this.removeCampusPrefix = false,
@@ -535,9 +538,10 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       decoration: BoxDecoration(
                         border: Border(
                           bottom: BorderSide(
-                            color: Theme.of(
+                            color: scheduleGridLineColor(
                               context,
-                            ).colorScheme.outlineVariant.withAlpha(51),
+                              widget.gridLineOpacity,
+                            ),
                           ),
                         ),
                       ),
@@ -555,9 +559,10 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       decoration: BoxDecoration(
                         border: Border(
                           right: BorderSide(
-                            color: Theme.of(
+                            color: scheduleGridLineColor(
                               context,
-                            ).colorScheme.outlineVariant.withAlpha(51),
+                              widget.gridLineOpacity,
+                            ),
                           ),
                         ),
                       ),

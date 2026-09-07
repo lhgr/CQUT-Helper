@@ -131,6 +131,7 @@ void main() {
         gridCellWidth: 200,
         gridCellHeight: 20,
         showGridLines: false,
+        gridLineOpacity: 2,
         backgroundImagePath: '  /tmp/background.jpg  ',
         backgroundOpacity: 2,
         backgroundBlur: 99,
@@ -151,6 +152,7 @@ void main() {
     expect(layout.gridCellWidth, ScheduleLayoutSettings.maxGridCellWidth);
     expect(layout.gridCellHeight, ScheduleLayoutSettings.minGridCellHeight);
     expect(layout.showGridLines, isFalse);
+    expect(layout.gridLineOpacity, 1);
     expect(layout.backgroundImagePath, '/tmp/background.jpg');
     expect(layout.backgroundOpacity, 1);
     expect(layout.backgroundBlur, 20);

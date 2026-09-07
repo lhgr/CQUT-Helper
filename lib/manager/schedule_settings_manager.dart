@@ -40,6 +40,7 @@ class ScheduleSettingsManager {
   static const String _gridCellWidthKey = 'schedule_grid_cell_width';
   static const String _gridCellHeightKey = 'schedule_grid_cell_height';
   static const String _showGridLinesKey = 'schedule_show_grid_lines';
+  static const String _gridLineOpacityKey = 'schedule_grid_line_opacity';
   static const String backgroundImagePathKey = 'schedule_background_image_path';
   static const String _backgroundOpacityKey = 'schedule_background_opacity';
   static const String _backgroundBlurKey = 'schedule_background_blur';
@@ -183,6 +184,11 @@ class ScheduleSettingsManager {
               )
               .toDouble(),
       showGridLines: prefs.getBool(_showGridLinesKey) ?? true,
+      gridLineOpacity:
+          (prefs.getDouble(_gridLineOpacityKey) ??
+                  ScheduleLayoutSettings.defaultGridLineOpacity)
+              .clamp(0.0, 1.0)
+              .toDouble(),
       backgroundImagePath: prefs.getString(backgroundImagePathKey),
       backgroundOpacity: (prefs.getDouble(_backgroundOpacityKey) ?? 0.32)
           .clamp(0.0, 1.0)
@@ -236,6 +242,7 @@ class ScheduleSettingsManager {
     await prefs.setDouble(_gridCellWidthKey, normalized.gridCellWidth);
     await prefs.setDouble(_gridCellHeightKey, normalized.gridCellHeight);
     await prefs.setBool(_showGridLinesKey, normalized.showGridLines);
+    await prefs.setDouble(_gridLineOpacityKey, normalized.gridLineOpacity);
     final backgroundPath = normalized.backgroundImagePath?.trim();
     if (backgroundPath == null || backgroundPath.isEmpty) {
       await prefs.remove(backgroundImagePathKey);
@@ -289,10 +296,12 @@ class ScheduleLayoutSettings {
   static const double maxGridCellWidth = 96;
   static const double minGridCellHeight = 40;
   static const double maxGridCellHeight = 96;
+  static const double defaultGridLineOpacity = 0.2;
 
   final double gridCellWidth;
   final double gridCellHeight;
   final bool showGridLines;
+  final double gridLineOpacity;
   final String? backgroundImagePath;
   final double backgroundOpacity;
   final double backgroundBlur;
@@ -309,6 +318,7 @@ class ScheduleLayoutSettings {
     this.gridCellWidth = 52,
     this.gridCellHeight = 60,
     this.showGridLines = true,
+    this.gridLineOpacity = defaultGridLineOpacity,
     this.backgroundImagePath,
     this.backgroundOpacity = 0.32,
     this.backgroundBlur = 0,
@@ -326,6 +336,7 @@ class ScheduleLayoutSettings {
     double? gridCellWidth,
     double? gridCellHeight,
     bool? showGridLines,
+    double? gridLineOpacity,
     String? backgroundImagePath,
     bool clearBackgroundImage = false,
     double? backgroundOpacity,
@@ -343,6 +354,7 @@ class ScheduleLayoutSettings {
       gridCellWidth: gridCellWidth ?? this.gridCellWidth,
       gridCellHeight: gridCellHeight ?? this.gridCellHeight,
       showGridLines: showGridLines ?? this.showGridLines,
+      gridLineOpacity: gridLineOpacity ?? this.gridLineOpacity,
       backgroundImagePath: clearBackgroundImage
           ? null
           : backgroundImagePath ?? this.backgroundImagePath,
@@ -366,6 +378,7 @@ class ScheduleLayoutSettings {
     gridCellHeight: gridCellHeight
         .clamp(minGridCellHeight, maxGridCellHeight)
         .toDouble(),
+    gridLineOpacity: gridLineOpacity.clamp(0.0, 1.0).toDouble(),
     backgroundOpacity: backgroundOpacity.clamp(0.0, 1.0).toDouble(),
     backgroundBlur: backgroundBlur.clamp(0.0, 20.0).toDouble(),
     cardRadius: cardRadius.clamp(0.0, 28.0).toDouble(),
