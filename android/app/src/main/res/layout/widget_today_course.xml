@@ -103,6 +103,17 @@
                         android:layout_height="match_parent"
                         android:divider="@null" />
                 </FrameLayout>
+                <FrameLayout
+                    android:id="@+id/tomorrow_course_list_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone">
+                    <ListView
+                        android:id="@+id/lv_course_next_day"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:divider="@null" />
+                </FrameLayout>
                 <LinearLayout
                     android:id="@android:id/empty"
                     android:layout_width="match_parent"
