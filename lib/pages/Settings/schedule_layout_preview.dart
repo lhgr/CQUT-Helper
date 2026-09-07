@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
@@ -33,6 +34,7 @@ class ScheduleLayoutPreview extends StatelessWidget {
             ? ScheduleCourseCardTheme.dark()
             : ScheduleCourseCardTheme.light());
     final dayCount = showWeekend ? 7 : 5;
+    final backgroundFile = ScheduleBackground.imageFile(settings);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -54,7 +56,7 @@ class ScheduleLayoutPreview extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _PreviewBackground(settings: settings),
+                  _PreviewBackground(settings: settings, file: backgroundFile),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: SizedBox(
@@ -66,6 +68,7 @@ class ScheduleLayoutPreview extends StatelessWidget {
                             gridWidth: gridWidth,
                             showGridLines: settings.showGridLines,
                             gridLineOpacity: settings.gridLineOpacity,
+                            transparentBackground: backgroundFile != null,
                           ),
                           Expanded(
                             child: SingleChildScrollView(
@@ -79,6 +82,8 @@ class ScheduleLayoutPreview extends StatelessWidget {
                                       showTimes: timeInfoEnabled,
                                       showGridLines: settings.showGridLines,
                                       gridLineOpacity: settings.gridLineOpacity,
+                                      transparentBackground:
+                                          backgroundFile != null,
                                     ),
                                     SizedBox(
                                       width: gridWidth,
@@ -110,13 +115,13 @@ class ScheduleLayoutPreview extends StatelessWidget {
 
 class _PreviewBackground extends StatelessWidget {
   final ScheduleLayoutSettings settings;
+  final File? file;
 
-  const _PreviewBackground({required this.settings});
+  const _PreviewBackground({required this.settings, required this.file});
 
   @override
   Widget build(BuildContext context) {
-    final path = settings.backgroundImagePath?.trim();
-    if (path == null || path.isEmpty || !File(path).existsSync()) {
+    if (file == null) {
       return ColoredBox(color: Theme.of(context).colorScheme.surface);
     }
     return ClipRect(
@@ -127,7 +132,13 @@ class _PreviewBackground extends StatelessWidget {
         ),
         child: Opacity(
           opacity: settings.backgroundOpacity,
-          child: Image.file(File(path), fit: BoxFit.cover),
+          child: Image.file(
+            file!,
+            fit: BoxFit.cover,
+            alignment: ScheduleBackground.imageAlignment,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+          ),
         ),
       ),
     );
@@ -139,20 +150,25 @@ class _PreviewHeader extends StatelessWidget {
   final double gridWidth;
   final bool showGridLines;
   final double gridLineOpacity;
+  final bool transparentBackground;
 
   const _PreviewHeader({
     required this.dayCount,
     required this.gridWidth,
     required this.showGridLines,
     required this.gridLineOpacity,
+    required this.transparentBackground,
   });
 
   @override
   Widget build(BuildContext context) {
     const days = ['一', '二', '三', '四', '五', '六', '日'];
-    final surface = Theme.of(context).colorScheme.surface.withAlpha(225);
+    final surface = transparentBackground
+        ? Colors.transparent
+        : Theme.of(context).colorScheme.surface;
     final borderColor = scheduleGridLineColor(context, gridLineOpacity);
     return Container(
+      key: const ValueKey('schedule-layout-preview-header'),
       height: ScheduleLayoutPreview._headerHeight,
       color: surface,
       child: Row(
@@ -197,20 +213,25 @@ class _PreviewTimeColumn extends StatelessWidget {
   final bool showTimes;
   final bool showGridLines;
   final double gridLineOpacity;
+  final bool transparentBackground;
 
   const _PreviewTimeColumn({
     required this.rowHeight,
     required this.showTimes,
     required this.showGridLines,
     required this.gridLineOpacity,
+    required this.transparentBackground,
   });
 
   @override
   Widget build(BuildContext context) {
     final borderColor = scheduleGridLineColor(context, gridLineOpacity);
     return Container(
+      key: const ValueKey('schedule-layout-preview-time-column'),
       width: ScheduleLayoutPreview._timeWidth,
-      color: Theme.of(context).colorScheme.surface.withAlpha(225),
+      color: transparentBackground
+          ? Colors.transparent
+          : Theme.of(context).colorScheme.surface,
       child: Column(
         children: List.generate(
           ScheduleLayoutPreview._sessionCount,

@@ -10,6 +10,10 @@ class ScheduleBackground extends StatelessWidget {
 
   const ScheduleBackground({super.key, required this.settings});
 
+  /// Keep the top of a portrait wallpaper visible when the viewport is shorter
+  /// than the full schedule page (for example, in the layout preview).
+  static const Alignment imageAlignment = Alignment.topCenter;
+
   static File? imageFile(ScheduleLayoutSettings settings) {
     final path = settings.backgroundImagePath?.trim();
     if (path == null || path.isEmpty) return null;
@@ -83,6 +87,7 @@ class ScheduleBackground extends StatelessWidget {
                 file,
                 key: imageKey,
                 fit: BoxFit.cover,
+                alignment: imageAlignment,
                 gaplessPlayback: true,
                 filterQuality: FilterQuality.medium,
                 errorBuilder: (_, _, _) => ColoredBox(color: surface),

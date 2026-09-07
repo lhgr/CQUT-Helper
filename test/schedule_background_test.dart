@@ -28,6 +28,7 @@ void main() {
     );
 
     final image = tester.widget<Image>(find.byType(Image));
+    expect(image.alignment, ScheduleBackground.imageAlignment);
     expect(image.gaplessPlayback, isTrue);
     expect(image.key, isA<ValueKey<String>>());
   });
