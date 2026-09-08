@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cqut_helper/manager/app_network_image_cache.dart';
+import 'package:cqut_helper/manager/background_image_temp_manager.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:flutter/foundation.dart';
@@ -78,7 +79,7 @@ class CacheCleanupManager {
       AppCacheUsage(
         type: AppCacheType.imageCache,
         title: titleOf(AppCacheType.imageCache),
-        description: '包含网络图片的磁盘缓存文件，不含自定义背景图',
+        description: '包含网络图片及背景处理临时文件，不含已保存的自定义背景图',
         bytes: imageCacheBytes,
         supported: true,
       ),
@@ -136,6 +137,7 @@ class CacheCleanupManager {
             await dir.delete(recursive: true);
           }
         }
+        await BackgroundImageTempManager.cleanupIn(tempDir);
       } catch (_) {}
       clearedCounts[AppCacheType.imageCache] = 1;
       imageCacheEpoch.value = imageCacheEpoch.value + 1;
@@ -279,6 +281,7 @@ class CacheCleanupManager {
         total += await _getDirectoryBytes(dir);
       }
     }
+    total += await BackgroundImageTempManager.bytesIn(tempDir);
     return total;
   }
 

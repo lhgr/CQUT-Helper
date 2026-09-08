@@ -1,6 +1,8 @@
-import 'dart:io';
+import 'dart:async';
 
+import 'package:cqut_helper/manager/background_image_temp_manager.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/manager/schedule_background_file_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
@@ -8,7 +10,6 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart
 import 'package:cqut_helper/utils/background_color_extractor.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'schedule_background_crop_page.dart';
@@ -50,6 +51,15 @@ class _ScheduleCoursesSettingsPageState
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    final pendingPath = _pickedImagePath;
+    if (pendingPath != null) {
+      unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
+    }
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -99,22 +109,59 @@ class _ScheduleCoursesSettingsPageState
 
   Future<void> _pickBackground() async {
     try {
+      final tempDir = await getTemporaryDirectory();
+      final existingPendingPath = _pickedImagePath;
+      await BackgroundImageTempManager.cleanupIn(
+        tempDir,
+        excluding: existingPendingPath == null
+            ? const []
+            : [existingPendingPath],
+      );
       final image = await _imagePicker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 2400,
         imageQuality: 92,
       );
-      if (image == null || !mounted) return;
+      if (image == null) return;
+      if (!mounted) {
+        await BackgroundImageTempManager.deleteTemporaryPathIn(
+          image.path,
+          tempDir,
+        );
+        await BackgroundImageTempManager.cleanupIn(tempDir);
+        return;
+      }
       final screenSize = MediaQuery.sizeOf(context);
-      final croppedPath = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          builder: (_) => ScheduleBackgroundCropPage(
-            imagePath: image.path,
-            targetAspectRatio: screenSize.width / screenSize.height,
+      String? croppedPath;
+      try {
+        croppedPath = await Navigator.of(context).push<String>(
+          MaterialPageRoute(
+            builder: (_) => ScheduleBackgroundCropPage(
+              imagePath: image.path,
+              targetAspectRatio: screenSize.width / screenSize.height,
+            ),
           ),
-        ),
-      );
-      if (croppedPath == null || !mounted) return;
+        );
+      } finally {
+        await BackgroundImageTempManager.deleteTemporaryPathIn(
+          image.path,
+          tempDir,
+        );
+        final excludedPaths = <String>[];
+        final currentPendingPath = _pickedImagePath;
+        if (currentPendingPath != null) excludedPaths.add(currentPendingPath);
+        if (croppedPath != null) excludedPaths.add(croppedPath);
+        await BackgroundImageTempManager.cleanupIn(
+          tempDir,
+          excluding: excludedPaths,
+        );
+      }
+      if (croppedPath == null) return;
+      if (!mounted) {
+        await BackgroundImageTempManager.deleteTemporaryPath(croppedPath);
+        return;
+      }
+      final previousPickedPath = _pickedImagePath;
       _change(() {
         _pickedImagePath = croppedPath;
         _layout = _layout.copyWith(backgroundImagePath: croppedPath);
@@ -122,6 +169,11 @@ class _ScheduleCoursesSettingsPageState
         _backgroundChanged = true;
         _backgroundRemoved = false;
       });
+      if (previousPickedPath != null && previousPickedPath != croppedPath) {
+        unawaited(
+          BackgroundImageTempManager.deleteTemporaryPath(previousPickedPath),
+        );
+      }
       final shouldExtract = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -151,6 +203,7 @@ class _ScheduleCoursesSettingsPageState
   }
 
   void _removeBackground() {
+    final pendingPath = _pickedImagePath;
     _change(() {
       _pickedImagePath = null;
       _layout = _layout.copyWith(clearBackgroundImage: true);
@@ -158,6 +211,9 @@ class _ScheduleCoursesSettingsPageState
       _backgroundChanged = true;
       _backgroundRemoved = true;
     });
+    if (pendingPath != null) {
+      unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
+    }
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('保存后将删除背景图，并切换为系统自动取色')));
@@ -193,25 +249,13 @@ class _ScheduleCoursesSettingsPageState
   Future<String?> _persistPickedBackground() async {
     final sourcePath = _pickedImagePath;
     if (sourcePath == null) return _layout.backgroundImagePath;
-    final source = File(sourcePath);
-    if (!await source.exists()) return null;
-    final directory = await getApplicationDocumentsDirectory();
-    final rawExtension = p.extension(sourcePath).toLowerCase();
-    final extension = RegExp(r'^\.[a-z0-9]{1,5}$').hasMatch(rawExtension)
-        ? rawExtension
-        : '.jpg';
-    final target = File(
-      p.join(directory.path, 'schedule_background$extension'),
-    );
-    if (p.normalize(source.path) != p.normalize(target.path)) {
-      await source.copy(target.path);
-    }
-    return target.path;
+    return ScheduleBackgroundFileManager.copyToDocuments(sourcePath);
   }
 
   Future<bool> _save() async {
     if (_saving) return false;
     setState(() => _saving = true);
+    final pendingPath = _pickedImagePath;
     try {
       final backgroundPath = await _persistPickedBackground();
       final layout = backgroundPath == null
@@ -240,6 +284,9 @@ class _ScheduleCoursesSettingsPageState
       } else if (_backgroundChanged) {
         await themeManager.invalidateScheduleBackgroundColor();
       }
+      await ScheduleBackgroundFileManager.removeObsolete(
+        keeping: layout.backgroundImagePath,
+      );
       if (!mounted) return false;
       setState(() {
         _layout = layout;
@@ -249,6 +296,9 @@ class _ScheduleCoursesSettingsPageState
         _backgroundRemoved = false;
         _pendingExtractedThemeColor = null;
       });
+      if (pendingPath != null) {
+        unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('课表布局已保存')));
@@ -302,6 +352,7 @@ class _ScheduleCoursesSettingsPageState
   }
 
   void _reset() {
+    final pendingPath = _pickedImagePath;
     _change(() {
       _showWeekend = false;
       _timeInfoEnabled = true;
@@ -311,6 +362,9 @@ class _ScheduleCoursesSettingsPageState
       _backgroundChanged = true;
       _backgroundRemoved = true;
     });
+    if (pendingPath != null) {
+      unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
+    }
   }
 
   Future<void> _confirmReset() async {

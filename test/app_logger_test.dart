@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -185,5 +187,77 @@ void main() {
       debugIsLogFileDiscovered(fileName: 'unrelated.log', includeExports: true),
       isFalse,
     );
+  });
+
+  test('运行时日志清理覆盖不同日期文件并删除校验伴随文件', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cqut_log_age_prune_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final now = DateTime.utc(2026, 9, 8, 12);
+    final oldLog = File(
+      '${directory.path}${Platform.pathSeparator}cqut_2026-09-01.log',
+    );
+    final oldSha = File('${oldLog.path}.sha256');
+    final recentLog = File(
+      '${directory.path}${Platform.pathSeparator}cqut_net_2026-09-08.log',
+    );
+    final unrelated = File(
+      '${directory.path}${Platform.pathSeparator}unrelated.log',
+    );
+    await oldLog.writeAsString('old');
+    await oldSha.writeAsString('digest');
+    await recentLog.writeAsString('recent');
+    await unrelated.writeAsString('keep');
+    await oldLog.setLastModified(now.subtract(const Duration(days: 7)));
+    await recentLog.setLastModified(now.subtract(const Duration(hours: 1)));
+
+    final removed = await debugPruneLogFilesInDirectory(
+      directory,
+      now: now,
+      maxAge: const Duration(days: 2),
+      maxFiles: 20,
+      maxTotalBytes: 1024,
+    );
+
+    expect(removed, 1);
+    expect(await oldLog.exists(), isFalse);
+    expect(await oldSha.exists(), isFalse);
+    expect(await recentLog.exists(), isTrue);
+    expect(await unrelated.exists(), isTrue);
+  });
+
+  test('运行时日志总量上限优先保留最新文件', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cqut_log_size_prune_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final now = DateTime.utc(2026, 9, 8, 12);
+    final oldest = File('${directory.path}${Platform.pathSeparator}cqut_a.log');
+    final middle = File('${directory.path}${Platform.pathSeparator}cqut_b.log');
+    final newest = File('${directory.path}${Platform.pathSeparator}cqut_c.log');
+    for (final file in [oldest, middle, newest]) {
+      await file.writeAsBytes(List<int>.filled(6, 1));
+    }
+    await oldest.setLastModified(now.subtract(const Duration(hours: 3)));
+    await middle.setLastModified(now.subtract(const Duration(hours: 2)));
+    await newest.setLastModified(now.subtract(const Duration(hours: 1)));
+
+    final removed = await debugPruneLogFilesInDirectory(
+      directory,
+      now: now,
+      maxAge: const Duration(days: 30),
+      maxFiles: 10,
+      maxTotalBytes: 10,
+    );
+
+    expect(removed, 2);
+    expect(await oldest.exists(), isFalse);
+    expect(await middle.exists(), isFalse);
+    expect(await newest.exists(), isTrue);
   });
 }

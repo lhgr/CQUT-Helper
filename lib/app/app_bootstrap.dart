@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cqut_helper/manager/background_image_temp_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
@@ -11,6 +12,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
+  final staleBackgroundCleanup = BackgroundImageTempManager.cleanup();
   final logDate = DateTime.now().toIso8601String().split('T').first;
   await AppLogger.I.init(
     minLevel: kDebugMode ? LogLevel.debug : LogLevel.info,
@@ -31,6 +33,7 @@ Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
   await ScheduleUpdateWorker.initialize();
   await WidgetNavigation.initialize();
   await scheduleBackgroundReady;
+  await staleBackgroundCleanup;
 
   runApp(rootBuilder());
   unawaited(ScheduleUpdateWorker.syncFromPreferences());
