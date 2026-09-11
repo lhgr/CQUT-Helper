@@ -60,7 +60,7 @@ void main() {
     expect(find.text('从背景图片取色'), findsNothing);
   });
 
-  testWidgets('已选择背景时显示不透明度和模糊度设置', (tester) async {
+  testWidgets('已选择背景时显示背景与课表局部配色设置', (tester) async {
     final backgroundPath = [
       Directory.current.path,
       'lib',
@@ -70,6 +70,7 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'account': 'test-user',
       'schedule_background_image_path': backgroundPath,
+      'schedule_background_interface_brightness': 'light',
     });
     await tester.pumpWidget(
       const MaterialApp(
@@ -85,6 +86,10 @@ void main() {
     expect(find.text('背景图片不透明度'), findsOneWidget);
     expect(find.text('背景模糊度'), findsOneWidget);
     expect(find.text('从背景图片取色'), findsOneWidget);
+    expect(find.text('课表配色模式'), findsOneWidget);
+    expect(find.textContaining('自动 · 当前：'), findsOneWidget);
+    expect(find.text('导航区域背景强度'), findsNothing);
+    expect(find.text('高级模式'), findsNothing);
 
     Finder backgroundOpacitySlider() {
       final setting = find
@@ -112,6 +117,24 @@ void main() {
       ),
     );
     expect(previewOverlay.color.a, 0);
+
+    await tester.tap(find.text('课表配色模式'));
+    await tester.pumpAndSettle();
+    expect(find.text('自动匹配背景'), findsOneWidget);
+    expect(find.text('浅色界面'), findsOneWidget);
+    expect(find.text('深色界面'), findsOneWidget);
+    expect(find.text('跟随应用'), findsOneWidget);
+
+    await tester.tap(find.text('深色界面'));
+    await tester.pumpAndSettle();
+    expect(find.text('深色界面'), findsOneWidget);
+    expect(
+      tester
+          .widget<ScheduleLayoutPreview>(find.byType(ScheduleLayoutPreview))
+          .settings
+          .colorMode,
+      ScheduleColorMode.dark,
+    );
   });
 
   testWidgets('课表布局修改未保存时离开会显示提示', (tester) async {

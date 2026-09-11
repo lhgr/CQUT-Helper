@@ -8,6 +8,7 @@ import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/utils/background_color_extractor.dart';
+import 'package:cqut_helper/utils/schedule_background_brightness_analyzer.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -161,10 +162,20 @@ class _ScheduleCoursesSettingsPageState
         await BackgroundImageTempManager.deleteTemporaryPath(croppedPath);
         return;
       }
+      final analyzedBrightness =
+          await ScheduleBackgroundBrightnessAnalyzer.analyzePath(croppedPath);
+      if (!mounted) {
+        await BackgroundImageTempManager.deleteTemporaryPath(croppedPath);
+        return;
+      }
       final previousPickedPath = _pickedImagePath;
       _change(() {
         _pickedImagePath = croppedPath;
-        _layout = _layout.copyWith(backgroundImagePath: croppedPath);
+        _layout = _layout.copyWith(
+          backgroundImagePath: croppedPath,
+          analyzedBackgroundBrightness: analyzedBrightness,
+          clearAnalyzedBackgroundBrightness: analyzedBrightness == null,
+        );
         _pendingExtractedThemeColor = null;
         _backgroundChanged = true;
         _backgroundRemoved = false;
@@ -206,7 +217,10 @@ class _ScheduleCoursesSettingsPageState
     final pendingPath = _pickedImagePath;
     _change(() {
       _pickedImagePath = null;
-      _layout = _layout.copyWith(clearBackgroundImage: true);
+      _layout = _layout.copyWith(
+        clearBackgroundImage: true,
+        clearAnalyzedBackgroundBrightness: true,
+      );
       _pendingExtractedThemeColor = null;
       _backgroundChanged = true;
       _backgroundRemoved = true;
@@ -251,6 +265,89 @@ class _ScheduleCoursesSettingsPageState
     if (sourcePath == null) return _layout.backgroundImagePath;
     return ScheduleBackgroundFileManager.copyToDocuments(sourcePath);
   }
+
+  Future<void> _chooseColorMode() async {
+    final selected = await showModalBottomSheet<ScheduleColorMode>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text('课表配色模式'),
+              subtitle: Text('仅影响课表界面，不改变应用的全局主题'),
+            ),
+            for (final mode in ScheduleColorMode.values)
+              ListTile(
+                leading: Icon(_colorModeIcon(mode)),
+                title: Text(_colorModeTitle(mode)),
+                subtitle: Text(_colorModeDescription(mode)),
+                trailing: mode == _layout.colorMode
+                    ? const Icon(Icons.check_rounded)
+                    : null,
+                onTap: () => Navigator.pop(sheetContext, mode),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || selected == _layout.colorMode || !mounted) return;
+    Brightness? analyzedBrightness;
+    final backgroundPath = _layout.backgroundImagePath;
+    if (selected == ScheduleColorMode.auto &&
+        _layout.analyzedBackgroundBrightness == null &&
+        backgroundPath != null) {
+      analyzedBrightness =
+          await ScheduleBackgroundBrightnessAnalyzer.analyzePath(
+            backgroundPath,
+          );
+      if (!mounted) return;
+    }
+    _change(() {
+      _layout = _layout.copyWith(
+        colorMode: selected,
+        analyzedBackgroundBrightness: analyzedBrightness,
+      );
+    });
+  }
+
+  String _colorModeStatus(BuildContext context) {
+    return switch (_layout.colorMode) {
+      ScheduleColorMode.auto =>
+        _layout.analyzedBackgroundBrightness == null
+            ? '自动 · 当前：跟随应用'
+            : '自动 · 当前：${_brightnessTitle(_layout.analyzedBackgroundBrightness!)}',
+      ScheduleColorMode.light => '浅色界面',
+      ScheduleColorMode.dark => '深色界面',
+      ScheduleColorMode.followApp =>
+        '跟随应用 · 当前：${_brightnessTitle(Theme.of(context).brightness)}',
+    };
+  }
+
+  static String _brightnessTitle(Brightness brightness) =>
+      brightness == Brightness.dark ? '深色界面' : '浅色界面';
+
+  static String _colorModeTitle(ScheduleColorMode mode) => switch (mode) {
+    ScheduleColorMode.auto => '自动匹配背景',
+    ScheduleColorMode.light => '浅色界面',
+    ScheduleColorMode.dark => '深色界面',
+    ScheduleColorMode.followApp => '跟随应用',
+  };
+
+  static String _colorModeDescription(ScheduleColorMode mode) => switch (mode) {
+    ScheduleColorMode.auto => '根据背景关键区域的明暗自动选择',
+    ScheduleColorMode.light => '使用深色文字与浅色控件',
+    ScheduleColorMode.dark => '使用浅色文字与深色控件',
+    ScheduleColorMode.followApp => '与应用当前的浅色或深色模式一致',
+  };
+
+  static IconData _colorModeIcon(ScheduleColorMode mode) => switch (mode) {
+    ScheduleColorMode.auto => Icons.auto_awesome_outlined,
+    ScheduleColorMode.light => Icons.light_mode_outlined,
+    ScheduleColorMode.dark => Icons.dark_mode_outlined,
+    ScheduleColorMode.followApp => Icons.sync_outlined,
+  };
 
   Future<bool> _save() async {
     if (_saving) return false;
@@ -603,6 +700,18 @@ class _ScheduleCoursesSettingsPageState
                                         backgroundBlur: value,
                                       ),
                                     ),
+                                  ),
+                                  ListTile(
+                                    key: const ValueKey(
+                                      'schedule-color-mode-selector',
+                                    ),
+                                    leading: Icon(
+                                      _colorModeIcon(_layout.colorMode),
+                                    ),
+                                    title: const Text('课表配色模式'),
+                                    subtitle: Text(_colorModeStatus(context)),
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: _chooseColorMode,
                                   ),
                                 ],
                                 _slider(

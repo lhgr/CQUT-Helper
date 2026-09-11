@@ -1,5 +1,6 @@
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -135,6 +136,8 @@ void main() {
         backgroundImagePath: '  /tmp/background.jpg  ',
         backgroundOpacity: 2,
         backgroundBlur: 99,
+        colorMode: ScheduleColorMode.dark,
+        analyzedBackgroundBrightness: Brightness.light,
         hideLocation: true,
         hideTeacher: true,
         removeCampusPrefix: true,
@@ -156,6 +159,8 @@ void main() {
     expect(layout.backgroundImagePath, '/tmp/background.jpg');
     expect(layout.backgroundOpacity, 1);
     expect(layout.backgroundBlur, 20);
+    expect(layout.colorMode, ScheduleColorMode.dark);
+    expect(layout.analyzedBackgroundBrightness, Brightness.light);
     expect(layout.hideLocation, isTrue);
     expect(layout.hideTeacher, isTrue);
     expect(layout.removeCampusPrefix, isTrue);
@@ -166,13 +171,88 @@ void main() {
     expect(layout.cardOpacity, 0.1);
   });
 
-  test('未保存过背景设置时默认新值保持旧版默认视觉', () async {
+  test('未保存过背景设置时默认自动配色并跟随应用', () async {
     SharedPreferences.setMockInitialValues({});
 
     final manager = ScheduleSettingsManager();
     await manager.load();
 
     expect(manager.layoutSettings.backgroundOpacity, 0.68);
+    expect(manager.layoutSettings.colorMode, ScheduleColorMode.auto);
+    expect(manager.layoutSettings.analyzedBackgroundBrightness, isNull);
+    expect(
+      manager.layoutSettings.resolveBrightness(
+        appBrightness: Brightness.dark,
+        hasBackground: false,
+      ),
+      Brightness.dark,
+    );
+  });
+
+  test('课表配色模式按背景存在状态解析并持久化', () async {
+    SharedPreferences.setMockInitialValues({});
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+
+    final automatic = manager.layoutSettings.copyWith(
+      backgroundImagePath: '/tmp/background.jpg',
+      colorMode: ScheduleColorMode.auto,
+      analyzedBackgroundBrightness: Brightness.light,
+    );
+    expect(
+      automatic.resolveBrightness(
+        appBrightness: Brightness.dark,
+        hasBackground: true,
+      ),
+      Brightness.light,
+    );
+    expect(
+      automatic.resolveBrightness(
+        appBrightness: Brightness.dark,
+        hasBackground: false,
+      ),
+      Brightness.dark,
+    );
+
+    final manual = automatic.copyWith(colorMode: ScheduleColorMode.dark);
+    await manager.saveLayoutSettings(manual);
+    final reloaded = ScheduleSettingsManager();
+    await reloaded.load();
+
+    expect(reloaded.layoutSettings.colorMode, ScheduleColorMode.dark);
+    expect(
+      reloaded.layoutSettings.analyzedBackgroundBrightness,
+      Brightness.light,
+    );
+  });
+
+  test('保存新设置时清理已移除的导航表面强度字段', () async {
+    SharedPreferences.setMockInitialValues({
+      'schedule_top_bar_surface_opacity': 0.3,
+      'schedule_side_bar_surface_opacity': 0.5,
+      'schedule_bottom_bar_surface_opacity': 0.7,
+      'schedule_navigation_surface_opacity': 0.4,
+      'schedule_navigation_surface_advanced_mode': true,
+      'schedule_navigation_surface_advanced_initialized': true,
+    });
+
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+    await manager.saveLayoutSettings(manager.layoutSettings);
+    final prefs = await SharedPreferences.getInstance();
+
+    expect(
+      prefs.getKeys().where((key) => key.contains('surface_opacity')),
+      isEmpty,
+    );
+    expect(
+      prefs.containsKey('schedule_navigation_surface_advanced_mode'),
+      isFalse,
+    );
+    expect(
+      prefs.containsKey('schedule_navigation_surface_advanced_initialized'),
+      isFalse,
+    );
   });
 
   test('旧版图片不透明度升级为互补的覆盖层不透明度', () async {

@@ -176,7 +176,14 @@ class TodayListWidgetProvider : AppWidgetProvider() {
           putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
           putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
           putExtra(CourseListWidgetService.EXTRA_ADD_FIRST_ITEM_TOP_SPACING, true)
-          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
+          data =
+            Uri.parse(
+              WidgetCollectionAdapterIdentity.dataUri(
+                kind = "today-list",
+                appWidgetId = appWidgetId,
+                dayOffset = dayOffset,
+              ),
+            )
         }
         views.setRemoteAdapter(R.id.lv_course, svcIntent)
         views.setEmptyView(R.id.lv_course, R.id.empty)

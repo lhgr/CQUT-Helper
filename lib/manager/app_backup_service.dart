@@ -52,6 +52,8 @@ class AppBackupService {
     'schedule_background_opacity',
     'schedule_background_opacity_semantics_version',
     'schedule_background_blur',
+    'schedule_color_mode',
+    'schedule_background_interface_brightness',
     'schedule_card_hide_location',
     'schedule_card_hide_teacher',
     'schedule_card_remove_campus_prefix',

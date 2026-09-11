@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cqut_helper/manager/app_backup_service.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -40,10 +41,12 @@ void main() {
     );
   });
 
-  test('网格线透明度可被备份识别并完整恢复', () async {
+  test('课表局部配色设置可被备份识别并完整恢复', () async {
     SharedPreferences.setMockInitialValues({
       'account': 'source-account',
       'schedule_grid_line_opacity': 0.65,
+      ScheduleSettingsManager.scheduleColorModeKey: 'dark',
+      ScheduleSettingsManager.analyzedBackgroundBrightnessKey: 'light',
       'not_allowed': 'must-not-be-backed-up',
     });
     final sourcePreferences = await SharedPreferences.getInstance();
@@ -53,11 +56,22 @@ void main() {
     );
 
     expect(backedUpSettings['schedule_grid_line_opacity'], 0.65);
+    expect(
+      backedUpSettings[ScheduleSettingsManager.scheduleColorModeKey],
+      'dark',
+    );
+    expect(
+      backedUpSettings[ScheduleSettingsManager.analyzedBackgroundBrightnessKey],
+      'light',
+    );
     expect(backedUpSettings, isNot(contains('not_allowed')));
 
     final serializedSettings = (jsonDecode(jsonEncode(backedUpSettings)) as Map)
         .cast<String, dynamic>();
-    SharedPreferences.setMockInitialValues({'account': 'target-account'});
+    SharedPreferences.setMockInitialValues({
+      'account': 'target-account',
+      ScheduleSettingsManager.backgroundImagePathKey: '/tmp/background.jpg',
+    });
     final targetPreferences = await SharedPreferences.getInstance();
     final restoredCount = await AppBackupService.restoreSettingsForTesting(
       prefs: targetPreferences,
@@ -66,12 +80,17 @@ void main() {
       account: 'target-account',
     );
 
-    expect(restoredCount, 1);
+    expect(restoredCount, 3);
     expect(targetPreferences.getDouble('schedule_grid_line_opacity'), 0.65);
 
     final manager = ScheduleSettingsManager();
     await manager.load();
     expect(manager.layoutSettings.gridLineOpacity, 0.65);
+    expect(manager.layoutSettings.colorMode, ScheduleColorMode.dark);
+    expect(
+      manager.layoutSettings.analyzedBackgroundBrightness,
+      Brightness.light,
+    );
   });
 
   test('新版背景图片不透明度语义版本随备份完整恢复', () async {

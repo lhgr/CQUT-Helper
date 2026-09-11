@@ -4,6 +4,8 @@ import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
+import 'package:cqut_helper/theme/app_theme.dart';
+import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 import 'package:flutter/material.dart';
@@ -26,87 +28,126 @@ class ScheduleLayoutPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardTheme =
-        Theme.of(context).extension<ScheduleCourseCardTheme>() ??
-        (Theme.of(context).brightness == Brightness.dark
-            ? ScheduleCourseCardTheme.dark()
-            : ScheduleCourseCardTheme.light());
-    final dayCount = showWeekend ? 7 : 5;
     final backgroundFile = ScheduleBackground.imageFile(settings);
+    final appTheme = Theme.of(context);
+    final brightness = settings.resolveBrightness(
+      appBrightness: appTheme.brightness,
+      hasBackground: backgroundFile != null,
+    );
+    final previewInterfaceTheme =
+        AppThemeCatalog.maybeOf(context)?.themeFor(brightness) ??
+        (brightness == Brightness.dark
+            ? AppTheme.dark(
+                ColorScheme.fromSeed(
+                  seedColor: appTheme.colorScheme.primary,
+                  brightness: Brightness.dark,
+                ),
+              )
+            : AppTheme.light(
+                ColorScheme.fromSeed(seedColor: appTheme.colorScheme.primary),
+              ));
+    final previewTheme = withAppScheduleCourseCardTheme(
+      interfaceTheme: previewInterfaceTheme,
+      appTheme: appTheme,
+    );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final gridWidth = math.max(
-          settings.gridCellWidth * dayCount,
-          constraints.maxWidth - _timeWidth,
-        );
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: SizedBox(
-              height: 310,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ScheduleBackground(settings: settings),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: _timeWidth + gridWidth,
-                      child: Column(
-                        children: [
-                          _PreviewHeader(
-                            dayCount: dayCount,
-                            gridWidth: gridWidth,
-                            showGridLines: settings.showGridLines,
-                            gridLineOpacity: settings.gridLineOpacity,
-                            transparentBackground: backgroundFile != null,
-                          ),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              child: SizedBox(
-                                height: settings.gridCellHeight * _sessionCount,
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _PreviewTimeColumn(
-                                      rowHeight: settings.gridCellHeight,
-                                      showTimes: timeInfoEnabled,
-                                      showGridLines: settings.showGridLines,
-                                      gridLineOpacity: settings.gridLineOpacity,
-                                      transparentBackground:
-                                          backgroundFile != null,
-                                    ),
-                                    SizedBox(
-                                      width: gridWidth,
-                                      child: _PreviewGrid(
-                                        settings: settings,
-                                        dayCount: dayCount,
-                                        gridWidth: gridWidth,
-                                        cardTheme: cardTheme,
+    return Theme(
+      data: previewTheme,
+      child: Builder(
+        builder: (context) {
+          final cardTheme = Theme.of(
+            context,
+          ).extension<ScheduleCourseCardTheme>()!;
+          final dayCount = showWeekend ? 7 : 5;
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final gridWidth = math.max(
+                settings.gridCellWidth * dayCount,
+                constraints.maxWidth - _timeWidth,
+              );
+              return DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(15),
+                  child: SizedBox(
+                    height: 310,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ScheduleBackground(settings: settings),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: _timeWidth + gridWidth,
+                            child: Column(
+                              children: [
+                                _PreviewHeader(
+                                  dayCount: dayCount,
+                                  gridWidth: gridWidth,
+                                  showGridLines: settings.showGridLines,
+                                  gridLineOpacity: settings.gridLineOpacity,
+                                  transparentBackground: backgroundFile != null,
+                                ),
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    child: SizedBox(
+                                      height:
+                                          settings.gridCellHeight *
+                                          _sessionCount,
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _PreviewTimeColumn(
+                                            rowHeight: settings.gridCellHeight,
+                                            showTimes: timeInfoEnabled,
+                                            showGridLines:
+                                                settings.showGridLines,
+                                            gridLineOpacity:
+                                                settings.gridLineOpacity,
+                                            transparentBackground:
+                                                backgroundFile != null,
+                                          ),
+                                          SizedBox(
+                                            width: gridWidth,
+                                            child: _PreviewGrid(
+                                              settings: settings,
+                                              dayCount: dayCount,
+                                              gridWidth: gridWidth,
+                                              cardTheme: cardTheme,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        Positioned(
+                          left: 52,
+                          right: 16,
+                          bottom: 10,
+                          child: _PreviewBottomBar(
+                            transparentBackground: backgroundFile != null,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
@@ -221,6 +262,45 @@ class _PreviewTimeColumn extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PreviewBottomBar extends StatelessWidget {
+  final bool transparentBackground;
+
+  const _PreviewBottomBar({required this.transparentBackground});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final backgroundColor = transparentBackground
+        ? Colors.transparent
+        : colorScheme.surfaceContainer;
+    return Container(
+      key: const ValueKey('schedule-layout-preview-bottom-bar'),
+      height: 40,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colorScheme.outlineVariant.withAlpha(120)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          Icon(
+            Icons.today_outlined,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          Icon(Icons.calendar_today, size: 17, color: colorScheme.primary),
+          Icon(
+            Icons.person_outline,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ],
       ),
     );
   }

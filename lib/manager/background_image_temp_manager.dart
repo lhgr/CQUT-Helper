@@ -34,7 +34,7 @@ abstract final class BackgroundImageTempManager {
 
   static Future<int> bytes() async {
     try {
-      return bytesIn(await getTemporaryDirectory());
+      return await bytesIn(await getTemporaryDirectory());
     } catch (_) {
       return 0;
     }
@@ -42,7 +42,10 @@ abstract final class BackgroundImageTempManager {
 
   static Future<int> cleanup({Iterable<String> excluding = const []}) async {
     try {
-      return cleanupIn(await getTemporaryDirectory(), excluding: excluding);
+      return await cleanupIn(
+        await getTemporaryDirectory(),
+        excluding: excluding,
+      );
     } catch (_) {
       return 0;
     }
@@ -51,7 +54,7 @@ abstract final class BackgroundImageTempManager {
   static Future<bool> deleteTemporaryPath(String? path) async {
     if (path == null || path.trim().isEmpty) return false;
     try {
-      return deleteTemporaryPathIn(path, await getTemporaryDirectory());
+      return await deleteTemporaryPathIn(path, await getTemporaryDirectory());
     } catch (_) {
       return false;
     }

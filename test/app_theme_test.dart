@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:cqut_helper/theme/app_theme.dart';
+import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,6 +77,26 @@ void main() {
     expect(
       theme.pageTransitionsTheme.builders[TargetPlatform.android],
       isA<ZoomPageTransitionsBuilder>(),
+    );
+  });
+
+  test('课表局部深色界面不改变应用浅色课程卡片', () {
+    final appTheme = AppTheme.light(
+      ColorScheme.fromSeed(seedColor: Colors.blue),
+    );
+    final interfaceTheme = AppTheme.dark(
+      ColorScheme.fromSeed(seedColor: Colors.blue, brightness: Brightness.dark),
+    );
+
+    final composed = withAppScheduleCourseCardTheme(
+      interfaceTheme: interfaceTheme,
+      appTheme: appTheme,
+    );
+
+    expect(composed.brightness, Brightness.dark);
+    expect(
+      composed.extension<ScheduleCourseCardTheme>()!.backgrounds,
+      appTheme.extension<ScheduleCourseCardTheme>()!.backgrounds,
     );
   });
 

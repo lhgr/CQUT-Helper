@@ -175,12 +175,26 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
         val todayIntent = Intent(context, CourseListWidgetService::class.java).apply {
           putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
           putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, 0)
-          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#today")
+          data =
+            Uri.parse(
+              WidgetCollectionAdapterIdentity.dataUri(
+                kind = "today-and-next",
+                appWidgetId = appWidgetId,
+                dayOffset = 0,
+              ),
+            )
         }
         val nextIntent = Intent(context, CourseListWidgetService::class.java).apply {
           putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
           putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, 1)
-          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#next")
+          data =
+            Uri.parse(
+              WidgetCollectionAdapterIdentity.dataUri(
+                kind = "today-and-next",
+                appWidgetId = appWidgetId,
+                dayOffset = 1,
+              ),
+            )
         }
         views.setRemoteAdapter(R.id.lv_course, todayIntent)
         views.setRemoteAdapter(R.id.lv_course_next_day, nextIntent)

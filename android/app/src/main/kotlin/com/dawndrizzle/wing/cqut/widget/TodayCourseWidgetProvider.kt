@@ -357,7 +357,14 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
         putExtra(CourseListWidgetService.EXTRA_ADD_FIRST_ITEM_TOP_SPACING, true)
-        data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#day-$dayOffset")
+        data =
+          Uri.parse(
+            WidgetCollectionAdapterIdentity.dataUri(
+              kind = "today-course",
+              appWidgetId = appWidgetId,
+              dayOffset = dayOffset,
+            ),
+          )
       }
 
     internal fun listSelectionFor(

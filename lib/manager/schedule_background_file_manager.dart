@@ -13,7 +13,7 @@ abstract final class ScheduleBackgroundFileManager {
 
   static Future<int> removeObsolete({String? keeping}) async {
     try {
-      return removeObsoleteIn(
+      return await removeObsoleteIn(
         await getApplicationDocumentsDirectory(),
         keeping: keeping,
       );
