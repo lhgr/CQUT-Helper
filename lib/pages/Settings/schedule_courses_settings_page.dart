@@ -1,14 +1,16 @@
-import 'dart:io';
+import 'dart:async';
 
+import 'package:cqut_helper/manager/background_image_temp_manager.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/manager/schedule_background_file_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/utils/background_color_extractor.dart';
+import 'package:cqut_helper/utils/schedule_background_brightness_analyzer.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'schedule_background_crop_page.dart';
@@ -50,6 +52,15 @@ class _ScheduleCoursesSettingsPageState
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    final pendingPath = _pickedImagePath;
+    if (pendingPath != null) {
+      unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
+    }
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -99,29 +110,81 @@ class _ScheduleCoursesSettingsPageState
 
   Future<void> _pickBackground() async {
     try {
+      final tempDir = await getTemporaryDirectory();
+      final existingPendingPath = _pickedImagePath;
+      await BackgroundImageTempManager.cleanupIn(
+        tempDir,
+        excluding: existingPendingPath == null
+            ? const []
+            : [existingPendingPath],
+      );
       final image = await _imagePicker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 2400,
         imageQuality: 92,
       );
-      if (image == null || !mounted) return;
+      if (image == null) return;
+      if (!mounted) {
+        await BackgroundImageTempManager.deleteTemporaryPathIn(
+          image.path,
+          tempDir,
+        );
+        await BackgroundImageTempManager.cleanupIn(tempDir);
+        return;
+      }
       final screenSize = MediaQuery.sizeOf(context);
-      final croppedPath = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          builder: (_) => ScheduleBackgroundCropPage(
-            imagePath: image.path,
-            targetAspectRatio: screenSize.width / screenSize.height,
+      String? croppedPath;
+      try {
+        croppedPath = await Navigator.of(context).push<String>(
+          MaterialPageRoute(
+            builder: (_) => ScheduleBackgroundCropPage(
+              imagePath: image.path,
+              targetAspectRatio: screenSize.width / screenSize.height,
+            ),
           ),
-        ),
-      );
-      if (croppedPath == null || !mounted) return;
+        );
+      } finally {
+        await BackgroundImageTempManager.deleteTemporaryPathIn(
+          image.path,
+          tempDir,
+        );
+        final excludedPaths = <String>[];
+        final currentPendingPath = _pickedImagePath;
+        if (currentPendingPath != null) excludedPaths.add(currentPendingPath);
+        if (croppedPath != null) excludedPaths.add(croppedPath);
+        await BackgroundImageTempManager.cleanupIn(
+          tempDir,
+          excluding: excludedPaths,
+        );
+      }
+      if (croppedPath == null) return;
+      if (!mounted) {
+        await BackgroundImageTempManager.deleteTemporaryPath(croppedPath);
+        return;
+      }
+      final analyzedBrightness =
+          await ScheduleBackgroundBrightnessAnalyzer.analyzePath(croppedPath);
+      if (!mounted) {
+        await BackgroundImageTempManager.deleteTemporaryPath(croppedPath);
+        return;
+      }
+      final previousPickedPath = _pickedImagePath;
       _change(() {
         _pickedImagePath = croppedPath;
-        _layout = _layout.copyWith(backgroundImagePath: croppedPath);
+        _layout = _layout.copyWith(
+          backgroundImagePath: croppedPath,
+          analyzedBackgroundBrightness: analyzedBrightness,
+          clearAnalyzedBackgroundBrightness: analyzedBrightness == null,
+        );
         _pendingExtractedThemeColor = null;
         _backgroundChanged = true;
         _backgroundRemoved = false;
       });
+      if (previousPickedPath != null && previousPickedPath != croppedPath) {
+        unawaited(
+          BackgroundImageTempManager.deleteTemporaryPath(previousPickedPath),
+        );
+      }
       final shouldExtract = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -151,13 +214,20 @@ class _ScheduleCoursesSettingsPageState
   }
 
   void _removeBackground() {
+    final pendingPath = _pickedImagePath;
     _change(() {
       _pickedImagePath = null;
-      _layout = _layout.copyWith(clearBackgroundImage: true);
+      _layout = _layout.copyWith(
+        clearBackgroundImage: true,
+        clearAnalyzedBackgroundBrightness: true,
+      );
       _pendingExtractedThemeColor = null;
       _backgroundChanged = true;
       _backgroundRemoved = true;
     });
+    if (pendingPath != null) {
+      unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
+    }
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('保存后将删除背景图，并切换为系统自动取色')));
@@ -193,25 +263,96 @@ class _ScheduleCoursesSettingsPageState
   Future<String?> _persistPickedBackground() async {
     final sourcePath = _pickedImagePath;
     if (sourcePath == null) return _layout.backgroundImagePath;
-    final source = File(sourcePath);
-    if (!await source.exists()) return null;
-    final directory = await getApplicationDocumentsDirectory();
-    final rawExtension = p.extension(sourcePath).toLowerCase();
-    final extension = RegExp(r'^\.[a-z0-9]{1,5}$').hasMatch(rawExtension)
-        ? rawExtension
-        : '.jpg';
-    final target = File(
-      p.join(directory.path, 'schedule_background$extension'),
-    );
-    if (p.normalize(source.path) != p.normalize(target.path)) {
-      await source.copy(target.path);
-    }
-    return target.path;
+    return ScheduleBackgroundFileManager.copyToDocuments(sourcePath);
   }
+
+  Future<void> _chooseColorMode() async {
+    final selected = await showModalBottomSheet<ScheduleColorMode>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text('课表配色模式'),
+              subtitle: Text('仅影响课表界面，不改变应用的全局主题'),
+            ),
+            for (final mode in ScheduleColorMode.values)
+              ListTile(
+                leading: Icon(_colorModeIcon(mode)),
+                title: Text(_colorModeTitle(mode)),
+                subtitle: Text(_colorModeDescription(mode)),
+                trailing: mode == _layout.colorMode
+                    ? const Icon(Icons.check_rounded)
+                    : null,
+                onTap: () => Navigator.pop(sheetContext, mode),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || selected == _layout.colorMode || !mounted) return;
+    Brightness? analyzedBrightness;
+    final backgroundPath = _layout.backgroundImagePath;
+    if (selected == ScheduleColorMode.auto &&
+        _layout.analyzedBackgroundBrightness == null &&
+        backgroundPath != null) {
+      analyzedBrightness =
+          await ScheduleBackgroundBrightnessAnalyzer.analyzePath(
+            backgroundPath,
+          );
+      if (!mounted) return;
+    }
+    _change(() {
+      _layout = _layout.copyWith(
+        colorMode: selected,
+        analyzedBackgroundBrightness: analyzedBrightness,
+      );
+    });
+  }
+
+  String _colorModeStatus(BuildContext context) {
+    return switch (_layout.colorMode) {
+      ScheduleColorMode.auto =>
+        _layout.analyzedBackgroundBrightness == null
+            ? '自动 · 当前：跟随应用'
+            : '自动 · 当前：${_brightnessTitle(_layout.analyzedBackgroundBrightness!)}',
+      ScheduleColorMode.light => '浅色界面',
+      ScheduleColorMode.dark => '深色界面',
+      ScheduleColorMode.followApp =>
+        '跟随应用 · 当前：${_brightnessTitle(Theme.of(context).brightness)}',
+    };
+  }
+
+  static String _brightnessTitle(Brightness brightness) =>
+      brightness == Brightness.dark ? '深色界面' : '浅色界面';
+
+  static String _colorModeTitle(ScheduleColorMode mode) => switch (mode) {
+    ScheduleColorMode.auto => '自动匹配背景',
+    ScheduleColorMode.light => '浅色界面',
+    ScheduleColorMode.dark => '深色界面',
+    ScheduleColorMode.followApp => '跟随应用',
+  };
+
+  static String _colorModeDescription(ScheduleColorMode mode) => switch (mode) {
+    ScheduleColorMode.auto => '根据背景关键区域的明暗自动选择',
+    ScheduleColorMode.light => '使用深色文字与浅色控件',
+    ScheduleColorMode.dark => '使用浅色文字与深色控件',
+    ScheduleColorMode.followApp => '与应用当前的浅色或深色模式一致',
+  };
+
+  static IconData _colorModeIcon(ScheduleColorMode mode) => switch (mode) {
+    ScheduleColorMode.auto => Icons.auto_awesome_outlined,
+    ScheduleColorMode.light => Icons.light_mode_outlined,
+    ScheduleColorMode.dark => Icons.dark_mode_outlined,
+    ScheduleColorMode.followApp => Icons.sync_outlined,
+  };
 
   Future<bool> _save() async {
     if (_saving) return false;
     setState(() => _saving = true);
+    final pendingPath = _pickedImagePath;
     try {
       final backgroundPath = await _persistPickedBackground();
       final layout = backgroundPath == null
@@ -240,6 +381,9 @@ class _ScheduleCoursesSettingsPageState
       } else if (_backgroundChanged) {
         await themeManager.invalidateScheduleBackgroundColor();
       }
+      await ScheduleBackgroundFileManager.removeObsolete(
+        keeping: layout.backgroundImagePath,
+      );
       if (!mounted) return false;
       setState(() {
         _layout = layout;
@@ -249,6 +393,9 @@ class _ScheduleCoursesSettingsPageState
         _backgroundRemoved = false;
         _pendingExtractedThemeColor = null;
       });
+      if (pendingPath != null) {
+        unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('课表布局已保存')));
@@ -302,6 +449,7 @@ class _ScheduleCoursesSettingsPageState
   }
 
   void _reset() {
+    final pendingPath = _pickedImagePath;
     _change(() {
       _showWeekend = false;
       _timeInfoEnabled = true;
@@ -311,6 +459,9 @@ class _ScheduleCoursesSettingsPageState
       _backgroundChanged = true;
       _backgroundRemoved = true;
     });
+    if (pendingPath != null) {
+      unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
+    }
   }
 
   Future<void> _confirmReset() async {
@@ -522,9 +673,9 @@ class _ScheduleCoursesSettingsPageState
                                     value: _layout.backgroundOpacity,
                                     defaultValue:
                                         _defaultLayout.backgroundOpacity,
-                                    min: 0.05,
+                                    min: 0,
                                     max: 1,
-                                    divisions: 19,
+                                    divisions: 20,
                                     valueLabel:
                                         '${(_layout.backgroundOpacity * 100).round()}%',
                                     onChanged: (value) => _change(
@@ -549,6 +700,18 @@ class _ScheduleCoursesSettingsPageState
                                         backgroundBlur: value,
                                       ),
                                     ),
+                                  ),
+                                  ListTile(
+                                    key: const ValueKey(
+                                      'schedule-color-mode-selector',
+                                    ),
+                                    leading: Icon(
+                                      _colorModeIcon(_layout.colorMode),
+                                    ),
+                                    title: const Text('课表配色模式'),
+                                    subtitle: Text(_colorModeStatus(context)),
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: _chooseColorMode,
                                   ),
                                 ],
                                 _slider(
@@ -585,11 +748,28 @@ class _ScheduleCoursesSettingsPageState
                                 ),
                                 SwitchListTile(
                                   title: const Text('显示网格线'),
-                                  subtitle: const Text('关闭后隐藏课表横向与纵向分隔线'),
+                                  subtitle: const Text('颜色跟随当前动态主题，关闭后隐藏全部分隔线'),
                                   value: _layout.showGridLines,
                                   onChanged: (value) => _change(
                                     () => _layout = _layout.copyWith(
                                       showGridLines: value,
+                                    ),
+                                  ),
+                                ),
+                                _slider(
+                                  context,
+                                  label: '网格线透明度',
+                                  value: _layout.gridLineOpacity,
+                                  defaultValue: _defaultLayout.gridLineOpacity,
+                                  min: 0,
+                                  max: 1,
+                                  divisions: 20,
+                                  valueLabel:
+                                      '${(_layout.gridLineOpacity * 100).round()}%',
+                                  enabled: _layout.showGridLines,
+                                  onChanged: (value) => _change(
+                                    () => _layout = _layout.copyWith(
+                                      gridLineOpacity: value,
                                     ),
                                   ),
                                 ),

@@ -237,7 +237,7 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
     private fun bindCourse(
       views: RemoteViews,
       course: TodayWidgetData.CourseItem,
-      remainingCount: Int,
+      visibleCourseCount: Int,
     ) {
       views.setViewVisibility(R.id.course_content, View.VISIBLE)
       views.setViewVisibility(R.id.iv_indicator, View.VISIBLE)
@@ -248,7 +248,7 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
         } else {
           course.periods
         }
-      views.setTextViewText(R.id.tv_course_time, "$clock · 余${remainingCount}门")
+      views.setTextViewText(R.id.tv_course_time, "$clock · ${courseProgressText(visibleCourseCount)}")
       val location =
         listOf(course.campus.trim(), course.classroom.trim())
           .filter { it.isNotEmpty() }
@@ -258,6 +258,14 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
         location,
       )
       views.setInt(R.id.iv_indicator, "setColorFilter", course.indicatorColor)
+    }
+
+    internal fun courseProgressText(visibleCourseCount: Int): String {
+      return when {
+        visibleCourseCount <= 0 -> ""
+        visibleCourseCount == 1 -> "今日最后一节"
+        else -> "后续${visibleCourseCount - 1}节"
+      }
     }
 
     private fun bindStatus(

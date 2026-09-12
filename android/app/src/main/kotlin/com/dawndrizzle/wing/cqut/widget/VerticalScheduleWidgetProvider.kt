@@ -161,7 +161,19 @@ class VerticalScheduleWidgetProvider : AppWidgetProvider() {
         val serviceIntent = Intent(context, VerticalCourseListWidgetService::class.java).apply {
           putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
           putExtra(VerticalCourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
-          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#vertical-$appWidgetId-$dayOffset")
+          data =
+            Uri.parse(
+              WidgetCollectionAdapterIdentity.dataUri(
+                kind = "vertical",
+                appWidgetId = appWidgetId,
+                dayOffset = dayOffset,
+                contentFingerprint =
+                  TodayWidgetData.loadVisibleCoursesFingerprint(
+                    context,
+                    intArrayOf(dayOffset),
+                  ),
+              ),
+            )
         }
         views.setRemoteAdapter(R.id.lv_course, serviceIntent)
         views.setEmptyView(R.id.lv_course, R.id.empty)

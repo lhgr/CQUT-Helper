@@ -615,6 +615,9 @@ class AppLogger {
   String _fileName = 'cqut.log';
   String _networkFileName = 'cqut_net.log';
   int _maxFileBytes = 2 * 1024 * 1024;
+  Duration _maxAge = const Duration(days: 2);
+  int _maxFiles = 8;
+  int _maxTotalBytes = 8 * 1024 * 1024;
   bool _enableFile = true;
   final String _exportDirName = 'exports';
   final String _downloadExportDirName = 'CQUT-Helper';
@@ -641,8 +644,8 @@ class AppLogger {
     int maxFieldsChars = 4000,
     int maxMessageChars = 2000,
     Duration maxAge = const Duration(days: 2),
-    int maxFiles = 40,
-    int maxTotalBytes = 64 * 1024 * 1024,
+    int maxFiles = 8,
+    int maxTotalBytes = 8 * 1024 * 1024,
     bool enableGzipArchive = true,
     bool enableIntegrity = true,
   }) async {
@@ -651,6 +654,9 @@ class AppLogger {
     _fileName = fileName;
     _networkFileName = _deriveNetworkFileName(fileName);
     _maxFileBytes = maxFileBytes;
+    _maxAge = maxAge;
+    _maxFiles = maxFiles;
+    _maxTotalBytes = maxTotalBytes;
     _enableFile = enableFile;
     _queueCapacity = queueCapacity;
     _maxFieldsChars = maxFieldsChars;
@@ -662,6 +668,12 @@ class AppLogger {
     final sinks = <LogSink>[];
     if (enableConsole) sinks.add(ConsoleLogSink());
     if (enableFile) {
+      await _pruneLogFilesInDirectory(
+        await _resolveRuntimeLogDirectory(),
+        maxAge: maxAge,
+        maxFiles: maxFiles * 2 + 3,
+        maxTotalBytes: maxTotalBytes * 2,
+      );
       final otherSink = FileLogSink(
         fileName: fileName,
         maxBytes: maxFileBytes,
@@ -830,35 +842,12 @@ class AppLogger {
     final cutoff = DateTime.now().subtract(maxAge);
     await _detachFileSink();
     try {
-      final logFiles = await _listLogFiles(includeExports: false);
-      for (final f in logFiles) {
-        final name = pBasename(f.path).toLowerCase();
-        if (name == _fileName.toLowerCase() ||
-            name == _networkFileName.toLowerCase()) {
-          continue;
-        }
-        try {
-          final st = await f.stat();
-          if (st.modified.isBefore(cutoff)) {
-            await f.delete();
-            final sha = File('${f.path}.sha256');
-            if (await sha.exists()) {
-              try {
-                await sha.delete();
-              } catch (_) {}
-            }
-          }
-        } catch (_) {}
-      }
-
-      final currentOther = await _resolveCurrentLogFile(_fileName);
-      if (await currentOther.exists()) {
-        await _rewriteLogFileKeepingSince(currentOther, cutoff);
-      }
-      final currentNet = await _resolveCurrentLogFile(_networkFileName);
-      if (await currentNet.exists()) {
-        await _rewriteLogFileKeepingSince(currentNet, cutoff);
-      }
+      await _pruneLogFilesInDirectory(
+        await _resolveRuntimeLogDirectory(),
+        maxAge: maxAge,
+        maxFiles: _maxFiles * 2 + 3,
+        maxTotalBytes: _maxTotalBytes * 2,
+      );
 
       final exports = await _listExportFiles();
       for (final f in exports) {
@@ -1453,9 +1442,9 @@ class AppLogger {
     final otherSink = FileLogSink(
       fileName: _fileName,
       maxBytes: _maxFileBytes,
-      maxAge: const Duration(days: 2),
-      maxTotalBytes: 64 * 1024 * 1024,
-      maxFiles: 40,
+      maxAge: _maxAge,
+      maxTotalBytes: _maxTotalBytes,
+      maxFiles: _maxFiles,
       enableGzipArchive: true,
       directoryProvider: _resolveRuntimeLogDirectory,
       onWriteError: _onSinkWriteError,
@@ -1463,9 +1452,9 @@ class AppLogger {
     final netSink = FileLogSink(
       fileName: _networkFileName,
       maxBytes: _maxFileBytes,
-      maxAge: const Duration(days: 2),
-      maxTotalBytes: 64 * 1024 * 1024,
-      maxFiles: 40,
+      maxAge: _maxAge,
+      maxTotalBytes: _maxTotalBytes,
+      maxFiles: _maxFiles,
       enableGzipArchive: true,
       directoryProvider: _resolveRuntimeLogDirectory,
       onWriteError: _onSinkWriteError,
@@ -1633,48 +1622,104 @@ class AppLogger {
     final dir = await _resolveRuntimeLogDirectory();
     return File('${dir.path}${Platform.pathSeparator}${fileName ?? _fileName}');
   }
+}
 
-  Future<void> _rewriteLogFileKeepingSince(File file, DateTime cutoff) async {
-    final tmp = File('${file.path}.tmp');
-    await tmp.parent.create(recursive: true);
+class _RuntimeLogCandidate {
+  final File file;
+  final DateTime modified;
+  final int bytes;
 
-    final out = tmp.openWrite(mode: FileMode.write, encoding: utf8);
-    bool keepBlock = false;
-    try {
-      final lines = file
-          .openRead()
-          .transform(utf8.decoder)
-          .transform(const LineSplitter());
-      await for (final line in lines) {
-        final ts = _tryParseLogLineTimestamp(line);
-        if (ts != null) {
-          keepBlock = !ts.isBefore(cutoff);
-        }
-        if (keepBlock) {
-          out.writeln(line);
-        }
-      }
-      await out.flush();
-    } catch (_) {
-      await out.flush();
-    } finally {
-      await out.close();
+  const _RuntimeLogCandidate({
+    required this.file,
+    required this.modified,
+    required this.bytes,
+  });
+}
+
+Future<int> _pruneLogFilesInDirectory(
+  Directory directory, {
+  required Duration maxAge,
+  required int maxFiles,
+  required int maxTotalBytes,
+  DateTime? now,
+}) async {
+  if (!await directory.exists()) return 0;
+  final cutoff = (now ?? DateTime.now()).subtract(maxAge);
+  final candidates = <_RuntimeLogCandidate>[];
+  await for (final entity in directory.list(followLinks: false)) {
+    if (entity is! File ||
+        !debugIsLogFileDiscovered(
+          fileName: pBasename(entity.path),
+          includeExports: false,
+        )) {
+      continue;
     }
-
     try {
-      await file.delete();
+      final stat = await entity.stat();
+      candidates.add(
+        _RuntimeLogCandidate(
+          file: entity,
+          modified: stat.modified,
+          bytes: stat.size,
+        ),
+      );
     } catch (_) {}
-    try {
-      await tmp.rename(file.path);
-    } catch (_) {
-      try {
-        final bytes = await tmp.readAsBytes();
-        await file.writeAsBytes(bytes, flush: true);
-        await tmp.delete();
-      } catch (_) {}
+  }
+
+  candidates.sort((a, b) {
+    final byTime = a.modified.compareTo(b.modified);
+    return byTime != 0 ? byTime : a.file.path.compareTo(b.file.path);
+  });
+
+  var removed = 0;
+  final survivors = <_RuntimeLogCandidate>[];
+  for (final candidate in candidates) {
+    if (candidate.modified.isBefore(cutoff)) {
+      if (await _deleteRuntimeLog(candidate.file)) removed++;
+    } else {
+      survivors.add(candidate);
     }
   }
+
+  var totalBytes = survivors.fold<int>(0, (sum, item) => sum + item.bytes);
+  final fileLimit = maxFiles < 0 ? 0 : maxFiles;
+  final byteLimit = maxTotalBytes < 0 ? 0 : maxTotalBytes;
+  while (survivors.isNotEmpty &&
+      (survivors.length > fileLimit || totalBytes > byteLimit)) {
+    final candidate = survivors.removeAt(0);
+    if (await _deleteRuntimeLog(candidate.file)) removed++;
+    totalBytes -= candidate.bytes;
+  }
+  return removed;
 }
+
+Future<bool> _deleteRuntimeLog(File file) async {
+  try {
+    await file.delete();
+  } catch (_) {
+    return false;
+  }
+  final sha = File('${file.path}.sha256');
+  try {
+    if (await sha.exists()) await sha.delete();
+  } catch (_) {}
+  return true;
+}
+
+@visibleForTesting
+Future<int> debugPruneLogFilesInDirectory(
+  Directory directory, {
+  required Duration maxAge,
+  required int maxFiles,
+  required int maxTotalBytes,
+  DateTime? now,
+}) => _pruneLogFilesInDirectory(
+  directory,
+  maxAge: maxAge,
+  maxFiles: maxFiles,
+  maxTotalBytes: maxTotalBytes,
+  now: now,
+);
 
 @visibleForTesting
 bool debugIsLogFileSelectedForExport({
@@ -1723,13 +1768,6 @@ bool debugIsLogFileDiscovered({
   if (!lower.startsWith('cqut')) return false;
   if (!lower.endsWith('.log') && !lower.endsWith('.log.gz')) return false;
   return includeExports || !lower.startsWith('cqut_export');
-}
-
-DateTime? _tryParseLogLineTimestamp(String line) {
-  final i = line.indexOf(' ');
-  if (i <= 0) return null;
-  final head = line.substring(0, i);
-  return DateTime.tryParse(head);
 }
 
 String _logBaseName(String fileName) {

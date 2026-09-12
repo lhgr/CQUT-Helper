@@ -20,6 +20,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import com.dawndrizzle.wing.cqut.widget.WidgetNavigationPendingIntent
+import com.dawndrizzle.wing.cqut.widget.WidgetNativeLog
+import com.dawndrizzle.wing.cqut.widget.WidgetRefreshCoordinator
 
 class MainActivity : FlutterActivity() {
   private val channelName = "cqut/downloads"
@@ -32,6 +34,20 @@ class MainActivity : FlutterActivity() {
   private var pendingWidgetNavigation: Map<String, Any?>? = null
   private var pendingDocumentResult: MethodChannel.Result? = null
   private var pendingDocumentContent: String? = null
+
+  override fun onResume() {
+    super.onResume()
+    try {
+      WidgetRefreshCoordinator.forceRebind(applicationContext, "activity_resumed")
+    } catch (error: RuntimeException) {
+      // A launcher-side widget failure must never prevent the app from opening.
+      WidgetNativeLog.error(
+        applicationContext,
+        "event=activity_resume_rebind_failed",
+        error,
+      )
+    }
+  }
 
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)

@@ -1,11 +1,13 @@
-import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
+import 'package:cqut_helper/theme/app_theme.dart';
+import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
+import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 import 'package:flutter/material.dart';
 
 class ScheduleLayoutPreview extends StatelessWidget {
@@ -26,106 +28,125 @@ class ScheduleLayoutPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardTheme =
-        Theme.of(context).extension<ScheduleCourseCardTheme>() ??
-        (Theme.of(context).brightness == Brightness.dark
-            ? ScheduleCourseCardTheme.dark()
-            : ScheduleCourseCardTheme.light());
-    final dayCount = showWeekend ? 7 : 5;
+    final backgroundFile = ScheduleBackground.imageFile(settings);
+    final appTheme = Theme.of(context);
+    final brightness = settings.resolveBrightness(
+      appBrightness: appTheme.brightness,
+      hasBackground: backgroundFile != null,
+    );
+    final previewInterfaceTheme =
+        AppThemeCatalog.maybeOf(context)?.themeFor(brightness) ??
+        (brightness == Brightness.dark
+            ? AppTheme.dark(
+                ColorScheme.fromSeed(
+                  seedColor: appTheme.colorScheme.primary,
+                  brightness: Brightness.dark,
+                ),
+              )
+            : AppTheme.light(
+                ColorScheme.fromSeed(seedColor: appTheme.colorScheme.primary),
+              ));
+    final previewTheme = withAppScheduleCourseCardTheme(
+      interfaceTheme: previewInterfaceTheme,
+      appTheme: appTheme,
+    );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final gridWidth = math.max(
-          settings.gridCellWidth * dayCount,
-          constraints.maxWidth - _timeWidth,
-        );
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: SizedBox(
-              height: 310,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _PreviewBackground(settings: settings),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: _timeWidth + gridWidth,
-                      child: Column(
-                        children: [
-                          _PreviewHeader(
-                            dayCount: dayCount,
-                            gridWidth: gridWidth,
-                            showGridLines: settings.showGridLines,
-                          ),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              child: SizedBox(
-                                height: settings.gridCellHeight * _sessionCount,
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _PreviewTimeColumn(
-                                      rowHeight: settings.gridCellHeight,
-                                      showTimes: timeInfoEnabled,
-                                      showGridLines: settings.showGridLines,
-                                    ),
-                                    SizedBox(
-                                      width: gridWidth,
-                                      child: _PreviewGrid(
-                                        settings: settings,
-                                        dayCount: dayCount,
-                                        gridWidth: gridWidth,
-                                        cardTheme: cardTheme,
+    return Theme(
+      data: previewTheme,
+      child: Builder(
+        builder: (context) {
+          final cardTheme = Theme.of(
+            context,
+          ).extension<ScheduleCourseCardTheme>()!;
+          final dayCount = showWeekend ? 7 : 5;
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final gridWidth = math.max(
+                settings.gridCellWidth * dayCount,
+                constraints.maxWidth - _timeWidth,
+              );
+              return DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(15),
+                  child: SizedBox(
+                    height: 310,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ScheduleBackground(settings: settings),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: _timeWidth + gridWidth,
+                            child: Column(
+                              children: [
+                                _PreviewHeader(
+                                  dayCount: dayCount,
+                                  gridWidth: gridWidth,
+                                  showGridLines: settings.showGridLines,
+                                  gridLineOpacity: settings.gridLineOpacity,
+                                  transparentBackground: backgroundFile != null,
+                                ),
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    child: SizedBox(
+                                      height:
+                                          settings.gridCellHeight *
+                                          _sessionCount,
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _PreviewTimeColumn(
+                                            rowHeight: settings.gridCellHeight,
+                                            showTimes: timeInfoEnabled,
+                                            showGridLines:
+                                                settings.showGridLines,
+                                            gridLineOpacity:
+                                                settings.gridLineOpacity,
+                                            transparentBackground:
+                                                backgroundFile != null,
+                                          ),
+                                          SizedBox(
+                                            width: gridWidth,
+                                            child: _PreviewGrid(
+                                              settings: settings,
+                                              dayCount: dayCount,
+                                              gridWidth: gridWidth,
+                                              cardTheme: cardTheme,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        Positioned(
+                          left: 52,
+                          right: 16,
+                          bottom: 10,
+                          child: _PreviewBottomBar(
+                            transparentBackground: backgroundFile != null,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _PreviewBackground extends StatelessWidget {
-  final ScheduleLayoutSettings settings;
-
-  const _PreviewBackground({required this.settings});
-
-  @override
-  Widget build(BuildContext context) {
-    final path = settings.backgroundImagePath?.trim();
-    if (path == null || path.isEmpty || !File(path).existsSync()) {
-      return ColoredBox(color: Theme.of(context).colorScheme.surface);
-    }
-    return ClipRect(
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(
-          sigmaX: settings.backgroundBlur,
-          sigmaY: settings.backgroundBlur,
-        ),
-        child: Opacity(
-          opacity: settings.backgroundOpacity,
-          child: Image.file(File(path), fit: BoxFit.cover),
-        ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -135,19 +156,26 @@ class _PreviewHeader extends StatelessWidget {
   final int dayCount;
   final double gridWidth;
   final bool showGridLines;
+  final double gridLineOpacity;
+  final bool transparentBackground;
 
   const _PreviewHeader({
     required this.dayCount,
     required this.gridWidth,
     required this.showGridLines,
+    required this.gridLineOpacity,
+    required this.transparentBackground,
   });
 
   @override
   Widget build(BuildContext context) {
     const days = ['一', '二', '三', '四', '五', '六', '日'];
-    final surface = Theme.of(context).colorScheme.surface.withAlpha(225);
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final surface = transparentBackground
+        ? Colors.transparent
+        : Theme.of(context).colorScheme.surface;
+    final borderColor = scheduleGridLineColor(context, gridLineOpacity);
     return Container(
+      key: const ValueKey('schedule-layout-preview-header'),
       height: ScheduleLayoutPreview._headerHeight,
       color: surface,
       child: Row(
@@ -191,19 +219,26 @@ class _PreviewTimeColumn extends StatelessWidget {
   final double rowHeight;
   final bool showTimes;
   final bool showGridLines;
+  final double gridLineOpacity;
+  final bool transparentBackground;
 
   const _PreviewTimeColumn({
     required this.rowHeight,
     required this.showTimes,
     required this.showGridLines,
+    required this.gridLineOpacity,
+    required this.transparentBackground,
   });
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final borderColor = scheduleGridLineColor(context, gridLineOpacity);
     return Container(
+      key: const ValueKey('schedule-layout-preview-time-column'),
       width: ScheduleLayoutPreview._timeWidth,
-      color: Theme.of(context).colorScheme.surface.withAlpha(225),
+      color: transparentBackground
+          ? Colors.transparent
+          : Theme.of(context).colorScheme.surface,
       child: Column(
         children: List.generate(
           ScheduleLayoutPreview._sessionCount,
@@ -227,6 +262,45 @@ class _PreviewTimeColumn extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PreviewBottomBar extends StatelessWidget {
+  final bool transparentBackground;
+
+  const _PreviewBottomBar({required this.transparentBackground});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final backgroundColor = transparentBackground
+        ? Colors.transparent
+        : colorScheme.surfaceContainer;
+    return Container(
+      key: const ValueKey('schedule-layout-preview-bottom-bar'),
+      height: 40,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colorScheme.outlineVariant.withAlpha(120)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          Icon(
+            Icons.today_outlined,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          Icon(Icons.calendar_today, size: 17, color: colorScheme.primary),
+          Icon(
+            Icons.person_outline,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ],
       ),
     );
   }
@@ -287,7 +361,10 @@ class _PreviewGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dayWidth = gridWidth / dayCount;
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final borderColor = scheduleGridLineColor(
+      context,
+      settings.gridLineOpacity,
+    );
     return Stack(
       children: [
         if (settings.showGridLines)

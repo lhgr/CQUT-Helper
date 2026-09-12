@@ -1,7 +1,10 @@
 import 'dart:convert';
 
 import 'package:cqut_helper/manager/app_backup_service.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   test('备份预览只读取元数据和项目数量', () {
@@ -36,5 +39,97 @@ void main() {
       ),
       throwsFormatException,
     );
+  });
+
+  test('课表局部配色设置可被备份识别并完整恢复', () async {
+    SharedPreferences.setMockInitialValues({
+      'account': 'source-account',
+      'schedule_grid_line_opacity': 0.65,
+      ScheduleSettingsManager.scheduleColorModeKey: 'dark',
+      ScheduleSettingsManager.analyzedBackgroundBrightnessKey: 'light',
+      'not_allowed': 'must-not-be-backed-up',
+    });
+    final sourcePreferences = await SharedPreferences.getInstance();
+    final backedUpSettings = AppBackupService.collectSettingsForTesting(
+      sourcePreferences,
+      'source-account',
+    );
+
+    expect(backedUpSettings['schedule_grid_line_opacity'], 0.65);
+    expect(
+      backedUpSettings[ScheduleSettingsManager.scheduleColorModeKey],
+      'dark',
+    );
+    expect(
+      backedUpSettings[ScheduleSettingsManager.analyzedBackgroundBrightnessKey],
+      'light',
+    );
+    expect(backedUpSettings, isNot(contains('not_allowed')));
+
+    final serializedSettings = (jsonDecode(jsonEncode(backedUpSettings)) as Map)
+        .cast<String, dynamic>();
+    SharedPreferences.setMockInitialValues({
+      'account': 'target-account',
+      ScheduleSettingsManager.backgroundImagePathKey: '/tmp/background.jpg',
+    });
+    final targetPreferences = await SharedPreferences.getInstance();
+    final restoredCount = await AppBackupService.restoreSettingsForTesting(
+      prefs: targetPreferences,
+      settings: serializedSettings,
+      sourceAccount: 'source-account',
+      account: 'target-account',
+    );
+
+    expect(restoredCount, 3);
+    expect(targetPreferences.getDouble('schedule_grid_line_opacity'), 0.65);
+
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+    expect(manager.layoutSettings.gridLineOpacity, 0.65);
+    expect(manager.layoutSettings.colorMode, ScheduleColorMode.dark);
+    expect(
+      manager.layoutSettings.analyzedBackgroundBrightness,
+      Brightness.light,
+    );
+  });
+
+  test('新版背景图片不透明度语义版本随备份完整恢复', () async {
+    SharedPreferences.setMockInitialValues({
+      'account': 'source-account',
+      ScheduleSettingsManager.backgroundOpacityKey: 0.65,
+      ScheduleSettingsManager.backgroundOpacitySemanticsVersionKey:
+          ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
+    });
+    final sourcePreferences = await SharedPreferences.getInstance();
+    final backedUpSettings = AppBackupService.collectSettingsForTesting(
+      sourcePreferences,
+      'source-account',
+    );
+
+    expect(
+      backedUpSettings[ScheduleSettingsManager.backgroundOpacityKey],
+      0.65,
+    );
+    expect(
+      backedUpSettings[ScheduleSettingsManager
+          .backgroundOpacitySemanticsVersionKey],
+      ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
+    );
+
+    final serializedSettings = (jsonDecode(jsonEncode(backedUpSettings)) as Map)
+        .cast<String, dynamic>();
+    SharedPreferences.setMockInitialValues({'account': 'target-account'});
+    final targetPreferences = await SharedPreferences.getInstance();
+    final restoredCount = await AppBackupService.restoreSettingsForTesting(
+      prefs: targetPreferences,
+      settings: serializedSettings,
+      sourceAccount: 'source-account',
+      account: 'target-account',
+    );
+
+    expect(restoredCount, 2);
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+    expect(manager.layoutSettings.backgroundOpacity, 0.65);
   });
 }

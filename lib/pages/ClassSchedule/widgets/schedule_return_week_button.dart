@@ -17,32 +17,37 @@ bool shouldShowScheduleReturnWeekButton({
 class ScheduleReturnWeekButton extends StatelessWidget {
   final VoidCallback onPressed;
   final bool transparentBackground;
+  final double bottomOffset;
 
   const ScheduleReturnWeekButton({
     super.key,
     required this.onPressed,
     required this.transparentBackground,
-  });
+    this.bottomOffset = 0,
+  }) : assert(bottomOffset >= 0);
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return FloatingActionButton(
-      onPressed: onPressed,
-      tooltip: '返回本周',
-      backgroundColor: transparentBackground ? Colors.transparent : null,
-      foregroundColor: transparentBackground
-          ? colorScheme.onSurfaceVariant
-          : null,
-      shape: transparentBackground
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-              side: BorderSide(
-                color: colorScheme.outlineVariant.withAlpha(120),
-              ),
-            )
-          : null,
-      child: const Icon(Icons.today),
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomOffset),
+      child: FloatingActionButton(
+        onPressed: onPressed,
+        tooltip: '返回本周',
+        backgroundColor: transparentBackground ? Colors.transparent : null,
+        foregroundColor: transparentBackground
+            ? colorScheme.onSurfaceVariant
+            : null,
+        shape: transparentBackground
+            ? RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: BorderSide(
+                  color: colorScheme.outlineVariant.withAlpha(120),
+                ),
+              )
+            : null,
+        child: const Icon(Icons.today),
+      ),
     );
   }
 }

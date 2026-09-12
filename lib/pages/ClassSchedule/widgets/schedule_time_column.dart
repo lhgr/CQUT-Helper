@@ -1,5 +1,6 @@
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:flutter/material.dart';
+import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 
 class ScheduleTimeColumn extends StatelessWidget {
   final double width;
@@ -7,6 +8,7 @@ class ScheduleTimeColumn extends StatelessWidget {
   final int sessionCount;
   final List<CampusTimeInfo>? timeInfoList;
   final bool showGridLines;
+  final double gridLineOpacity;
   final bool transparentBackground;
 
   const ScheduleTimeColumn({
@@ -16,6 +18,7 @@ class ScheduleTimeColumn extends StatelessWidget {
     this.sessionCount = 10,
     this.timeInfoList,
     this.showGridLines = true,
+    this.gridLineOpacity = 0.2,
     this.transparentBackground = false,
   });
 
@@ -30,7 +33,7 @@ class ScheduleTimeColumn extends StatelessWidget {
         border: showGridLines
             ? Border(
                 right: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
+                  color: scheduleGridLineColor(context, gridLineOpacity),
                   width: 1,
                 ),
               )

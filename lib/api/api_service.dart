@@ -2,6 +2,7 @@ import 'auth/auth_api.dart';
 import 'announcement/announcement_api.dart';
 import 'course/course_api.dart';
 import 'notice/notice_api.dart';
+import 'quote/daily_quote_api.dart';
 import 'user/user_api.dart';
 import 'update/update_api.dart';
 
@@ -11,6 +12,7 @@ class ApiService {
   late final AuthApi auth;
   late final CourseApi course;
   late final NoticeApi notice;
+  late final DailyQuoteApi dailyQuote;
   late final UserApi user;
   late final UpdateApi update;
 
@@ -21,6 +23,7 @@ class ApiService {
     auth = AuthApi();
     course = CourseApi();
     notice = NoticeApi();
+    dailyQuote = DailyQuoteApi();
     user = UserApi();
     update = UpdateApi();
   }

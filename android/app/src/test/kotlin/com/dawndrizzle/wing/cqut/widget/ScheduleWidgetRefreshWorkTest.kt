@@ -75,6 +75,30 @@ class ScheduleWidgetRefreshWorkTest {
   }
 
   @Test
+  fun `today and tomorrow use independent list containers`() {
+    assertEquals(
+      TodayCourseListSelection(showToday = true, showTomorrow = false, showEmpty = false),
+      TodayCourseWidgetProvider.listSelectionFor(dayOffset = 0, hasCourses = true),
+    )
+    assertEquals(
+      TodayCourseListSelection(showToday = false, showTomorrow = true, showEmpty = false),
+      TodayCourseWidgetProvider.listSelectionFor(dayOffset = 1, hasCourses = true),
+    )
+  }
+
+  @Test
+  fun `empty day hides both list containers`() {
+    assertEquals(
+      TodayCourseListSelection(showToday = false, showTomorrow = false, showEmpty = true),
+      TodayCourseWidgetProvider.listSelectionFor(dayOffset = 0, hasCourses = false),
+    )
+    assertEquals(
+      TodayCourseListSelection(showToday = false, showTomorrow = false, showEmpty = true),
+      TodayCourseWidgetProvider.listSelectionFor(dayOffset = 1, hasCourses = false),
+    )
+  }
+
+  @Test
   fun `credential failure header action opens the app`() {
     assertEquals(
       TodayCourseHeaderAction.OPEN_APP,

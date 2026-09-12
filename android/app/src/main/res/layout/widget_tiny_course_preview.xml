@@ -45,7 +45,7 @@
                         android:textStyle="bold" />
                     <TextView
                         android:id="@+id/tv_course_time"
-                        android:text="08:00-09:40 · 余2门"
+                        android:text="08:00-09:40 · 后续1节"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:maxLines="1"

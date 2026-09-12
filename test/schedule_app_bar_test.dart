@@ -4,6 +4,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('背景图下顶栏保持透明', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          appBar: ScheduleAppBar(
+            loading: false,
+            weekList: const ['1'],
+            currentWeekIndex: 0,
+            currentScheduleData: ScheduleData(yearTerm: '2026-2027-1'),
+            onRefresh: () {},
+            onSettings: () {},
+            onWeekPicker: () {},
+            onTermPicker: () {},
+            transparentBackground: true,
+          ),
+        ),
+      ),
+    );
+
+    final appBar = tester.widget<AppBar>(find.byType(AppBar));
+    expect(appBar.backgroundColor, Colors.transparent);
+  });
+
   testWidgets('刷新按钮下不展示最后更新时间', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

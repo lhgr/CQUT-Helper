@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'package:cqut_helper/utils/schedule_background_brightness_analyzer.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 
 enum ScheduleDisplayDensity {
@@ -10,6 +11,8 @@ enum ScheduleDisplayDensity {
   final double sessionHeight;
   const ScheduleDisplayDensity(this.sessionHeight);
 }
+
+enum ScheduleColorMode { auto, light, dark, followApp }
 
 class ScheduleSettingsManager {
   static ScheduleLayoutSettings _cachedLayoutSettings =
@@ -40,9 +43,16 @@ class ScheduleSettingsManager {
   static const String _gridCellWidthKey = 'schedule_grid_cell_width';
   static const String _gridCellHeightKey = 'schedule_grid_cell_height';
   static const String _showGridLinesKey = 'schedule_show_grid_lines';
+  static const String _gridLineOpacityKey = 'schedule_grid_line_opacity';
   static const String backgroundImagePathKey = 'schedule_background_image_path';
-  static const String _backgroundOpacityKey = 'schedule_background_opacity';
+  static const String backgroundOpacityKey = 'schedule_background_opacity';
+  static const String backgroundOpacitySemanticsVersionKey =
+      'schedule_background_opacity_semantics_version';
+  static const int currentBackgroundOpacitySemanticsVersion = 2;
   static const String _backgroundBlurKey = 'schedule_background_blur';
+  static const String scheduleColorModeKey = 'schedule_color_mode';
+  static const String analyzedBackgroundBrightnessKey =
+      'schedule_background_interface_brightness';
   static const String _hideLocationKey = 'schedule_card_hide_location';
   static const String _hideTeacherKey = 'schedule_card_hide_teacher';
   static const String _removeCampusPrefixKey =
@@ -148,6 +158,44 @@ class ScheduleSettingsManager {
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
+    final storedBackgroundOpacity = prefs.getDouble(backgroundOpacityKey);
+    final storedBackgroundOpacityVersion =
+        prefs.getInt(backgroundOpacitySemanticsVersionKey) ?? 1;
+    // Version 1 controlled image opacity. Version 2 controls the surface layer
+    // drawn over a fully opaque image. Complementing the value keeps the same
+    // pixels on upgrade; the next explicit save persists the version 2 value.
+    final backgroundOpacity = storedBackgroundOpacity == null
+        ? const ScheduleLayoutSettings().backgroundOpacity
+        : storedBackgroundOpacityVersion >=
+              currentBackgroundOpacitySemanticsVersion
+        ? storedBackgroundOpacity
+        : 1 - storedBackgroundOpacity;
+    final backgroundImagePath = prefs.getString(backgroundImagePathKey)?.trim();
+    final savedColorMode = prefs.getString(scheduleColorModeKey);
+    final scheduleColorMode = ScheduleColorMode.values.firstWhere(
+      (mode) => mode.name == savedColorMode,
+      orElse: () => ScheduleColorMode.auto,
+    );
+    final savedBrightness = prefs.getString(analyzedBackgroundBrightnessKey);
+    Brightness? analyzedBackgroundBrightness = switch (savedBrightness) {
+      'light' => Brightness.light,
+      'dark' => Brightness.dark,
+      _ => null,
+    };
+    if (backgroundImagePath == null || backgroundImagePath.isEmpty) {
+      analyzedBackgroundBrightness = null;
+      await prefs.remove(analyzedBackgroundBrightnessKey);
+    } else if (scheduleColorMode == ScheduleColorMode.auto &&
+        analyzedBackgroundBrightness == null) {
+      analyzedBackgroundBrightness =
+          await ScheduleBackgroundBrightnessAnalyzer.analyzePath(
+            backgroundImagePath,
+          );
+      final brightness = analyzedBackgroundBrightness;
+      if (brightness != null) {
+        await prefs.setString(analyzedBackgroundBrightnessKey, brightness.name);
+      }
+    }
     showWeekend = prefs.getBool(_prefsKeyShowWeekend) ?? false;
     timeInfoEnabled = prefs.getBool(_prefsKeyTimeInfoEnabled) ?? true;
     final wasPreviouslyEnabled =
@@ -183,13 +231,18 @@ class ScheduleSettingsManager {
               )
               .toDouble(),
       showGridLines: prefs.getBool(_showGridLinesKey) ?? true,
-      backgroundImagePath: prefs.getString(backgroundImagePathKey),
-      backgroundOpacity: (prefs.getDouble(_backgroundOpacityKey) ?? 0.32)
-          .clamp(0.0, 1.0)
-          .toDouble(),
+      gridLineOpacity:
+          (prefs.getDouble(_gridLineOpacityKey) ??
+                  ScheduleLayoutSettings.defaultGridLineOpacity)
+              .clamp(0.0, 1.0)
+              .toDouble(),
+      backgroundImagePath: backgroundImagePath,
+      backgroundOpacity: backgroundOpacity.clamp(0.0, 1.0).toDouble(),
       backgroundBlur: (prefs.getDouble(_backgroundBlurKey) ?? 0)
           .clamp(0.0, 20.0)
           .toDouble(),
+      colorMode: scheduleColorMode,
+      analyzedBackgroundBrightness: analyzedBackgroundBrightness,
       hideLocation: prefs.getBool(_hideLocationKey) ?? false,
       hideTeacher: prefs.getBool(_hideTeacherKey) ?? false,
       removeCampusPrefix: prefs.getBool(_removeCampusPrefixKey) ?? false,
@@ -236,14 +289,39 @@ class ScheduleSettingsManager {
     await prefs.setDouble(_gridCellWidthKey, normalized.gridCellWidth);
     await prefs.setDouble(_gridCellHeightKey, normalized.gridCellHeight);
     await prefs.setBool(_showGridLinesKey, normalized.showGridLines);
+    await prefs.setDouble(_gridLineOpacityKey, normalized.gridLineOpacity);
     final backgroundPath = normalized.backgroundImagePath?.trim();
     if (backgroundPath == null || backgroundPath.isEmpty) {
       await prefs.remove(backgroundImagePathKey);
     } else {
       await prefs.setString(backgroundImagePathKey, backgroundPath);
     }
-    await prefs.setDouble(_backgroundOpacityKey, normalized.backgroundOpacity);
+    await prefs.setDouble(backgroundOpacityKey, normalized.backgroundOpacity);
+    await prefs.setInt(
+      backgroundOpacitySemanticsVersionKey,
+      currentBackgroundOpacitySemanticsVersion,
+    );
     await prefs.setDouble(_backgroundBlurKey, normalized.backgroundBlur);
+    await prefs.setString(scheduleColorModeKey, normalized.colorMode.name);
+    final analyzedBrightness = normalized.analyzedBackgroundBrightness;
+    if (analyzedBrightness == null || backgroundPath == null) {
+      await prefs.remove(analyzedBackgroundBrightnessKey);
+    } else {
+      await prefs.setString(
+        analyzedBackgroundBrightnessKey,
+        analyzedBrightness.name,
+      );
+    }
+    for (final obsoleteKey in const [
+      'schedule_top_bar_surface_opacity',
+      'schedule_side_bar_surface_opacity',
+      'schedule_bottom_bar_surface_opacity',
+      'schedule_navigation_surface_opacity',
+      'schedule_navigation_surface_advanced_mode',
+      'schedule_navigation_surface_advanced_initialized',
+    ]) {
+      await prefs.remove(obsoleteKey);
+    }
     await prefs.setBool(_hideLocationKey, normalized.hideLocation);
     await prefs.setBool(_hideTeacherKey, normalized.hideTeacher);
     await prefs.setBool(_removeCampusPrefixKey, normalized.removeCampusPrefix);
@@ -289,13 +367,17 @@ class ScheduleLayoutSettings {
   static const double maxGridCellWidth = 96;
   static const double minGridCellHeight = 40;
   static const double maxGridCellHeight = 96;
+  static const double defaultGridLineOpacity = 0.2;
 
   final double gridCellWidth;
   final double gridCellHeight;
   final bool showGridLines;
+  final double gridLineOpacity;
   final String? backgroundImagePath;
   final double backgroundOpacity;
   final double backgroundBlur;
+  final ScheduleColorMode colorMode;
+  final Brightness? analyzedBackgroundBrightness;
   final bool hideLocation;
   final bool hideTeacher;
   final bool removeCampusPrefix;
@@ -309,9 +391,12 @@ class ScheduleLayoutSettings {
     this.gridCellWidth = 52,
     this.gridCellHeight = 60,
     this.showGridLines = true,
+    this.gridLineOpacity = defaultGridLineOpacity,
     this.backgroundImagePath,
-    this.backgroundOpacity = 0.32,
+    this.backgroundOpacity = 0.68,
     this.backgroundBlur = 0,
+    this.colorMode = ScheduleColorMode.auto,
+    this.analyzedBackgroundBrightness,
     this.hideLocation = false,
     this.hideTeacher = false,
     this.removeCampusPrefix = false,
@@ -326,10 +411,14 @@ class ScheduleLayoutSettings {
     double? gridCellWidth,
     double? gridCellHeight,
     bool? showGridLines,
+    double? gridLineOpacity,
     String? backgroundImagePath,
     bool clearBackgroundImage = false,
     double? backgroundOpacity,
     double? backgroundBlur,
+    ScheduleColorMode? colorMode,
+    Brightness? analyzedBackgroundBrightness,
+    bool clearAnalyzedBackgroundBrightness = false,
     bool? hideLocation,
     bool? hideTeacher,
     bool? removeCampusPrefix,
@@ -343,11 +432,16 @@ class ScheduleLayoutSettings {
       gridCellWidth: gridCellWidth ?? this.gridCellWidth,
       gridCellHeight: gridCellHeight ?? this.gridCellHeight,
       showGridLines: showGridLines ?? this.showGridLines,
+      gridLineOpacity: gridLineOpacity ?? this.gridLineOpacity,
       backgroundImagePath: clearBackgroundImage
           ? null
           : backgroundImagePath ?? this.backgroundImagePath,
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
       backgroundBlur: backgroundBlur ?? this.backgroundBlur,
+      colorMode: colorMode ?? this.colorMode,
+      analyzedBackgroundBrightness: clearAnalyzedBackgroundBrightness
+          ? null
+          : analyzedBackgroundBrightness ?? this.analyzedBackgroundBrightness,
       hideLocation: hideLocation ?? this.hideLocation,
       hideTeacher: hideTeacher ?? this.hideTeacher,
       removeCampusPrefix: removeCampusPrefix ?? this.removeCampusPrefix,
@@ -366,6 +460,7 @@ class ScheduleLayoutSettings {
     gridCellHeight: gridCellHeight
         .clamp(minGridCellHeight, maxGridCellHeight)
         .toDouble(),
+    gridLineOpacity: gridLineOpacity.clamp(0.0, 1.0).toDouble(),
     backgroundOpacity: backgroundOpacity.clamp(0.0, 1.0).toDouble(),
     backgroundBlur: backgroundBlur.clamp(0.0, 20.0).toDouble(),
     cardRadius: cardRadius.clamp(0.0, 28.0).toDouble(),
@@ -373,4 +468,17 @@ class ScheduleLayoutSettings {
     cardOpacity: cardOpacity.clamp(0.1, 1.0).toDouble(),
     backgroundImagePath: backgroundImagePath?.trim(),
   );
+
+  Brightness resolveBrightness({
+    required Brightness appBrightness,
+    required bool hasBackground,
+  }) {
+    if (!hasBackground) return appBrightness;
+    return switch (colorMode) {
+      ScheduleColorMode.light => Brightness.light,
+      ScheduleColorMode.dark => Brightness.dark,
+      ScheduleColorMode.followApp => appBrightness,
+      ScheduleColorMode.auto => analyzedBackgroundBrightness ?? appBrightness,
+    };
+  }
 }

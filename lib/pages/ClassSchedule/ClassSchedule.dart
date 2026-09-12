@@ -31,7 +31,12 @@ part 'class_schedule_loading.dart';
 part 'class_schedule_updates.dart';
 
 class ClassscheduleView extends StatefulWidget {
-  const ClassscheduleView({super.key});
+  final double floatingActionButtonBottomOffset;
+
+  const ClassscheduleView({
+    super.key,
+    this.floatingActionButtonBottomOffset = 0,
+  }) : assert(floatingActionButtonBottomOffset >= 0);
 
   @override
   State<ClassscheduleView> createState() => _ClassscheduleViewState();
@@ -318,6 +323,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
           ? ScheduleReturnWeekButton(
               onPressed: _returnToCurrentWeek,
               transparentBackground: hasBackground,
+              bottomOffset: widget.floatingActionButtonBottomOffset,
             )
           : null,
       appBar: ScheduleAppBar(

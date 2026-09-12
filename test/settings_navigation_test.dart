@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/Settings/appearance_startup_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_courses_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_layout_preview.dart';
@@ -57,10 +60,17 @@ void main() {
     expect(find.text('从背景图片取色'), findsNothing);
   });
 
-  testWidgets('已选择背景时显示透明度和模糊度设置', (tester) async {
+  testWidgets('已选择背景时显示背景与课表局部配色设置', (tester) async {
+    final backgroundPath = [
+      Directory.current.path,
+      'lib',
+      'assets',
+      'Icon.png',
+    ].join(Platform.pathSeparator);
     SharedPreferences.setMockInitialValues({
       'account': 'test-user',
-      'schedule_background_image_path': 'test-background.jpg',
+      'schedule_background_image_path': backgroundPath,
+      'schedule_background_interface_brightness': 'light',
     });
     await tester.pumpWidget(
       const MaterialApp(
@@ -76,6 +86,55 @@ void main() {
     expect(find.text('背景图片不透明度'), findsOneWidget);
     expect(find.text('背景模糊度'), findsOneWidget);
     expect(find.text('从背景图片取色'), findsOneWidget);
+    expect(find.text('课表配色模式'), findsOneWidget);
+    expect(find.textContaining('自动 · 当前：'), findsOneWidget);
+    expect(find.text('导航区域背景强度'), findsNothing);
+    expect(find.text('高级模式'), findsNothing);
+
+    Finder backgroundOpacitySlider() {
+      final setting = find
+          .ancestor(of: find.text('背景图片不透明度'), matching: find.byType(Padding))
+          .first;
+      return find.descendant(of: setting, matching: find.byType(Slider));
+    }
+
+    tester.widget<Slider>(backgroundOpacitySlider()).onChanged!(1);
+    await tester.pump();
+    var previewOverlay = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byType(ScheduleLayoutPreview),
+        matching: find.byKey(ScheduleBackground.opacityOverlayKey),
+      ),
+    );
+    expect(previewOverlay.color.a, 1);
+
+    tester.widget<Slider>(backgroundOpacitySlider()).onChanged!(0);
+    await tester.pump();
+    previewOverlay = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byType(ScheduleLayoutPreview),
+        matching: find.byKey(ScheduleBackground.opacityOverlayKey),
+      ),
+    );
+    expect(previewOverlay.color.a, 0);
+
+    await tester.tap(find.text('课表配色模式'));
+    await tester.pumpAndSettle();
+    expect(find.text('自动匹配背景'), findsOneWidget);
+    expect(find.text('浅色界面'), findsOneWidget);
+    expect(find.text('深色界面'), findsOneWidget);
+    expect(find.text('跟随应用'), findsOneWidget);
+
+    await tester.tap(find.text('深色界面'));
+    await tester.pumpAndSettle();
+    expect(find.text('深色界面'), findsOneWidget);
+    expect(
+      tester
+          .widget<ScheduleLayoutPreview>(find.byType(ScheduleLayoutPreview))
+          .settings
+          .colorMode,
+      ScheduleColorMode.dark,
+    );
   });
 
   testWidgets('课表布局修改未保存时离开会显示提示', (tester) async {
@@ -105,6 +164,39 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('网格线透明度仅在显示网格线时可调整', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ScheduleCoursesSettingsPage(
+          scope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+
+    Slider opacitySlider() => tester.widget<Slider>(
+      find.byWidgetPredicate(
+        (widget) => widget is Slider && widget.value == 0.2,
+      ),
+    );
+
+    expect(find.text('网格线透明度'), findsOneWidget);
+    expect(opacitySlider().onChanged, isNotNull);
+
+    await tester.tap(find.text('显示网格线'));
+    await tester.pumpAndSettle();
+
+    expect(opacitySlider().onChanged, isNull);
+
+    await tester.tap(find.text('显示网格线'));
+    await tester.pumpAndSettle();
+
+    expect(opacitySlider().onChanged, isNotNull);
   });
 
   testWidgets('顶部重置需要二次确认', (tester) async {

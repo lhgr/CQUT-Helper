@@ -16,6 +16,12 @@ internal enum class TodayCourseHeaderAction {
   OPEN_APP,
 }
 
+internal data class TodayCourseListSelection(
+  val showToday: Boolean,
+  val showTomorrow: Boolean,
+  val showEmpty: Boolean,
+)
+
 class TodayCourseWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(
     context: Context,
@@ -176,9 +182,11 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           dayOffset,
           refreshPresentation,
         )
+        bindCurrentDayNavigation(context, views, appWidgetId, dayOffset)
         appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
         if (refreshData) {
           appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+          appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course_next_day)
         }
       }
     }
@@ -283,16 +291,18 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           if (refreshPresentation.text.isBlank()) android.view.View.GONE else android.view.View.VISIBLE,
         )
 
-        val svcIntent = Intent(context, CourseListWidgetService::class.java).apply {
-          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-          putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
-          putExtra(CourseListWidgetService.EXTRA_FOLLOW_WIDGET_DAY_OFFSET, true)
-          putExtra(CourseListWidgetService.EXTRA_ADD_FIRST_ITEM_TOP_SPACING, true)
-          data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME) + "#$dayOffset")
-        }
-        views.setRemoteAdapter(R.id.lv_course, svcIntent)
-        // The provider owns empty-state visibility so delayed collection
-        // callbacks cannot bring back rows from the previously selected day.
+        // Keep one immutable adapter per day. Collection refresh callbacks are
+        // asynchronous and may arrive out of order; mutating one factory from
+        // today to tomorrow lets an older callback overwrite the current day.
+        // Switching container visibility makes such callbacks independent.
+        views.setRemoteAdapter(
+          R.id.lv_course,
+          courseServiceIntent(context, appWidgetId, dayOffset = 0),
+        )
+        views.setRemoteAdapter(
+          R.id.lv_course_next_day,
+          courseServiceIntent(context, appWidgetId, dayOffset = 1),
+        )
 
         views.setFloat(R.id.iv_next, "setRotation", if (dayOffset == 0) 180f else 0f)
         val toggleIntent =
@@ -308,35 +318,18 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
             toggleIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
           )
-        val rootPendingIntent =
-          WidgetNavigationPendingIntent.create(
-            context,
-            appWidgetId,
-            dayOffset,
-            false,
-          )
-        val coursePendingIntent =
-          WidgetNavigationPendingIntent.create(
-            context,
-            appWidgetId,
-            dayOffset,
-            true,
-          )
         // Clear click actions written by earlier app versions. RemoteViews can
         // be reapplied without resetting omitted listeners, so merely no longer
         // binding these ancestors is insufficient for existing widgets.
         views.setOnClickPendingIntent(R.id.widget_root, null)
         views.setOnClickPendingIntent(R.id.rl_appwidget, null)
         views.setOnClickPendingIntent(R.id.rl_title, null)
-        if (rootPendingIntent != null) {
-          // Keep the arrow as a sibling of the only clickable header region.
-          // Clickable ancestors are flattened by some launchers and can steal
-          // taps from the child PendingIntent.
-          views.setOnClickPendingIntent(R.id.header_text, rootPendingIntent)
-          views.setOnClickPendingIntent(android.R.id.empty, rootPendingIntent)
+        bindCurrentDayNavigation(context, views, appWidgetId, dayOffset)
+        WidgetNavigationPendingIntent.create(context, appWidgetId, 0, true)?.let {
+          views.setPendingIntentTemplate(R.id.lv_course, it)
         }
-        if (coursePendingIntent != null) {
-          views.setPendingIntentTemplate(R.id.lv_course, coursePendingIntent)
+        WidgetNavigationPendingIntent.create(context, appWidgetId, 1, true)?.let {
+          views.setPendingIntentTemplate(R.id.lv_course_next_day, it)
         }
         // Bind the contextual action after the independent header/empty-state
         // navigation actions so later partial refreshes keep the intended PendingIntent.
@@ -351,8 +344,43 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
 
         appWidgetManager.updateAppWidget(appWidgetId, views)
         appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course)
+        appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_course_next_day)
       }
     }
+
+    private fun courseServiceIntent(
+      context: Context,
+      appWidgetId: Int,
+      dayOffset: Int,
+    ): Intent =
+      Intent(context, CourseListWidgetService::class.java).apply {
+        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+        putExtra(CourseListWidgetService.EXTRA_DAY_OFFSET, dayOffset)
+        putExtra(CourseListWidgetService.EXTRA_ADD_FIRST_ITEM_TOP_SPACING, true)
+        data =
+          Uri.parse(
+            WidgetCollectionAdapterIdentity.dataUri(
+              kind = "today-course",
+              appWidgetId = appWidgetId,
+              dayOffset = dayOffset,
+              contentFingerprint =
+                TodayWidgetData.loadVisibleCoursesFingerprint(
+                  context,
+                  intArrayOf(dayOffset),
+                ),
+            ),
+          )
+      }
+
+    internal fun listSelectionFor(
+      dayOffset: Int,
+      hasCourses: Boolean,
+    ): TodayCourseListSelection =
+      TodayCourseListSelection(
+        showToday = hasCourses && dayOffset == 0,
+        showTomorrow = hasCourses && dayOffset != 0,
+        showEmpty = !hasCourses,
+      )
 
     private fun bindCourseVisibility(
       context: Context,
@@ -360,16 +388,34 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       dayOffset: Int,
     ) {
       val hasCourses = TodayWidgetData.loadCoursesByDayOffset(context, dayOffset).isNotEmpty()
-      // Hide the parent: ListView can change its own visibility when a cached
-      // adapter result arrives, even after the header has switched dates.
+      val selection = listSelectionFor(dayOffset, hasCourses)
       views.setViewVisibility(
         R.id.today_course_list_container,
-        if (hasCourses) android.view.View.VISIBLE else android.view.View.GONE,
+        if (selection.showToday) android.view.View.VISIBLE else android.view.View.GONE,
+      )
+      views.setViewVisibility(
+        R.id.tomorrow_course_list_container,
+        if (selection.showTomorrow) android.view.View.VISIBLE else android.view.View.GONE,
       )
       views.setViewVisibility(
         android.R.id.empty,
-        if (hasCourses) android.view.View.GONE else android.view.View.VISIBLE,
+        if (selection.showEmpty) android.view.View.VISIBLE else android.view.View.GONE,
       )
+    }
+
+    private fun bindCurrentDayNavigation(
+      context: Context,
+      views: RemoteViews,
+      appWidgetId: Int,
+      dayOffset: Int,
+    ) {
+      WidgetNavigationPendingIntent.create(context, appWidgetId, dayOffset, false)?.let {
+        // Keep the arrow as a sibling of the only clickable header region.
+        // Clickable ancestors are flattened by some launchers and can steal
+        // taps from the child PendingIntent.
+        views.setOnClickPendingIntent(R.id.header_text, it)
+        views.setOnClickPendingIntent(android.R.id.empty, it)
+      }
     }
 
     private fun bindTheme(

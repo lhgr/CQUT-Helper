@@ -10,6 +10,17 @@ class ScheduleBackground extends StatelessWidget {
 
   const ScheduleBackground({super.key, required this.settings});
 
+  /// Keep the top of a portrait wallpaper visible when the viewport is shorter
+  /// than the full schedule page (for example, in the layout preview).
+  static const Alignment imageAlignment = Alignment.topCenter;
+  static const Key opacityOverlayKey = ValueKey(
+    'schedule-background-opacity-overlay',
+  );
+
+  static Color opacityOverlayColor(Color surface, double opacity) {
+    return surface.withValues(alpha: opacity.clamp(0.0, 1.0).toDouble());
+  }
+
   static File? imageFile(ScheduleLayoutSettings settings) {
     final path = settings.backgroundImagePath?.trim();
     if (path == null || path.isEmpty) return null;
@@ -77,18 +88,22 @@ class ScheduleBackground extends StatelessWidget {
               sigmaX: settings.backgroundBlur,
               sigmaY: settings.backgroundBlur,
             ),
-            child: Opacity(
-              opacity: settings.backgroundOpacity,
-              child: Image.file(
-                file,
-                key: imageKey,
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-                filterQuality: FilterQuality.medium,
-                errorBuilder: (_, _, _) => ColoredBox(color: surface),
-              ),
+            child: Image.file(
+              file,
+              key: imageKey,
+              fit: BoxFit.cover,
+              alignment: imageAlignment,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, _, _) => ColoredBox(color: surface),
             ),
           ),
+        ),
+        // The new value is the opacity of the surface over a fully drawn image.
+        // Legacy image opacity L migrates to 1 - L, preserving the composition.
+        ColoredBox(
+          key: opacityOverlayKey,
+          color: opacityOverlayColor(surface, settings.backgroundOpacity),
         ),
       ],
     );

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cqut_helper/manager/announcement_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
@@ -9,6 +10,8 @@ import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
 import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
+import 'package:cqut_helper/theme/app_theme.dart';
+import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
@@ -23,6 +26,9 @@ class MainPage extends StatefulWidget {
 }
 
 class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
+  static const double _defaultBottomNavigationBarHeight = 80;
+  static const double _bottomNavigationBarMinimumInset = 8;
+
   bool _isCheckingLogin = true;
   int _lastOpenFromNotificationToken = 0;
   int _currentIndex = 1;
@@ -199,8 +205,14 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         .toList(growable: false);
   }
 
-  List<Widget> _getStackChildren() {
-    return const [TodayScheduleView(), ClassscheduleView(), MineView()];
+  List<Widget> _getStackChildren({required double scheduleFabBottomOffset}) {
+    return [
+      TodayScheduleView(isActive: _currentIndex == 0),
+      ClassscheduleView(
+        floatingActionButtonBottomOffset: scheduleFabBottomOffset,
+      ),
+      const MineView(),
+    ];
   }
 
   @override
@@ -209,63 +221,102 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final colorScheme = Theme.of(context).colorScheme;
-    final showScheduleBackground =
-        _currentIndex == 1 &&
-        ScheduleBackground.hasImage(_scheduleLayoutSettings);
-
-    return Scaffold(
-      extendBody: true,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          ScheduleBackgroundLayer(
-            settings: _scheduleLayoutSettings,
-            visible: showScheduleBackground,
-          ),
-          SafeArea(
-            child: IndexedStack(
-              index: _currentIndex,
-              children: _getStackChildren(),
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.only(bottom: 8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: colorScheme.outlineVariant.withAlpha(120),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: colorScheme.shadow.withAlpha(
-                    Theme.of(context).brightness == Brightness.dark ? 50 : 20,
-                  ),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
+    final appTheme = Theme.of(context);
+    final hasScheduleBackground = ScheduleBackground.hasImage(
+      _scheduleLayoutSettings,
+    );
+    final showScheduleBackground = _currentIndex == 1 && hasScheduleBackground;
+    final scheduleBrightness = _scheduleLayoutSettings.resolveBrightness(
+      appBrightness: appTheme.brightness,
+      hasBackground: hasScheduleBackground,
+    );
+    final catalog = AppThemeCatalog.maybeOf(context);
+    final scheduleInterfaceTheme =
+        catalog?.themeFor(scheduleBrightness) ??
+        (scheduleBrightness == Brightness.dark
+            ? AppTheme.dark(
+                ColorScheme.fromSeed(
+                  seedColor: appTheme.colorScheme.primary,
+                  brightness: Brightness.dark,
                 ),
-              ],
+              )
+            : AppTheme.light(
+                ColorScheme.fromSeed(seedColor: appTheme.colorScheme.primary),
+              ));
+    final scheduleTheme = withAppScheduleCourseCardTheme(
+      interfaceTheme: scheduleInterfaceTheme,
+      appTheme: appTheme,
+    );
+    final effectiveTheme = _currentIndex == 1 ? scheduleTheme : appTheme;
+    final colorScheme = effectiveTheme.colorScheme;
+    final systemBottomInset = MediaQuery.paddingOf(context).bottom;
+    final bottomNavigationBarHeight =
+        effectiveTheme.navigationBarTheme.height ??
+        _defaultBottomNavigationBarHeight;
+    final scheduleFabBottomOffset =
+        bottomNavigationBarHeight +
+        math.max(0.0, _bottomNavigationBarMinimumInset - systemBottomInset);
+
+    return Theme(
+      data: effectiveTheme,
+      child: Scaffold(
+        extendBody: true,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            ScheduleBackgroundLayer(
+              settings: _scheduleLayoutSettings,
+              visible: showScheduleBackground,
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: NavigationBar(
-                backgroundColor: showScheduleBackground
-                    ? Colors.transparent
-                    : colorScheme.surfaceContainer,
-                elevation: 0,
-                onDestinationSelected: (index) {
-                  setState(() {
-                    _currentIndex = index;
-                  });
-                },
-                selectedIndex: _currentIndex,
-                destinations: _getDestinations(),
+            // Child Scaffolds own their system insets. Wrapping this stack in a
+            // SafeArea would split the status bar from the AppBar surface and
+            // break the schedule page's immersive top-bar treatment.
+            IndexedStack(
+              index: _currentIndex,
+              children: _getStackChildren(
+                scheduleFabBottomOffset: scheduleFabBottomOffset,
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.only(
+            bottom: _bottomNavigationBarMinimumInset,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withAlpha(120),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.shadow.withAlpha(
+                      effectiveTheme.brightness == Brightness.dark ? 50 : 20,
+                    ),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: NavigationBar(
+                  backgroundColor: showScheduleBackground
+                      ? Colors.transparent
+                      : colorScheme.surfaceContainer,
+                  elevation: 0,
+                  onDestinationSelected: (index) {
+                    setState(() {
+                      _currentIndex = index;
+                    });
+                  },
+                  selectedIndex: _currentIndex,
+                  destinations: _getDestinations(),
+                ),
               ),
             ),
           ),

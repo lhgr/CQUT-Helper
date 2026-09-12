@@ -2,9 +2,9 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:cqut_helper/manager/background_image_temp_manager.dart';
+import 'package:cqut_helper/utils/schedule_background_image_processing.dart';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 class ScheduleBackgroundCropPage extends StatefulWidget {
   final String imagePath;
@@ -123,32 +123,37 @@ class _ScheduleBackgroundCropPageState
         _viewportSize.width / _scale,
         _viewportSize.height / _scale,
       );
-      final outputWidth = sourceRect.width.round().clamp(1, image.width);
-      final outputHeight = sourceRect.height.round().clamp(1, image.height);
+      final naturalWidth = sourceRect.width.round().clamp(1, image.width);
+      final naturalHeight = sourceRect.height.round().clamp(1, image.height);
+      final outputSize = constrainScheduleBackgroundSize(
+        width: naturalWidth,
+        height: naturalHeight,
+      );
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
       canvas.drawImageRect(
         image,
         sourceRect,
-        Rect.fromLTWH(0, 0, outputWidth.toDouble(), outputHeight.toDouble()),
+        Rect.fromLTWH(
+          0,
+          0,
+          outputSize.width.toDouble(),
+          outputSize.height.toDouble(),
+        ),
         Paint()..filterQuality = FilterQuality.high,
       );
-      final cropped = await recorder.endRecording().toImage(
-        outputWidth,
-        outputHeight,
-      );
-      final bytes = await cropped.toByteData(format: ui.ImageByteFormat.png);
-      cropped.dispose();
-      if (bytes == null) throw StateError('无法生成裁切图片');
-      final directory = await getTemporaryDirectory();
-      final target = File(
-        p.join(
-          directory.path,
-          'schedule_background_crop_${DateTime.now().microsecondsSinceEpoch}.png',
-        ),
-      );
-      await target.writeAsBytes(bytes.buffer.asUint8List(), flush: true);
-      if (mounted) Navigator.of(context).pop(target.path);
+      final picture = recorder.endRecording();
+      ui.Image? cropped;
+      try {
+        cropped = await picture.toImage(outputSize.width, outputSize.height);
+        final bytes = await encodeScheduleBackgroundJpeg(cropped);
+        final target = await BackgroundImageTempManager.createCropFile();
+        await target.writeAsBytes(bytes, flush: true);
+        if (mounted) Navigator.of(context).pop(target.path);
+      } finally {
+        cropped?.dispose();
+        picture.dispose();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _cropping = false);

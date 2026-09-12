@@ -2,6 +2,7 @@ import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Main/Main.dart';
 import 'package:cqut_helper/theme/app_theme.dart';
+import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/theme/dynamic_color_scheme.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
@@ -52,10 +53,22 @@ class MyApp extends StatelessWidget {
               );
             }
 
+            final lightTheme = AppTheme.light(
+              lightScheme,
+              strengthenSurfaceContrast: usesLightDynamicColor,
+              predictiveBackEnabled: predictiveBackEnabled,
+            );
+            final darkTheme = AppTheme.dark(
+              darkScheme,
+              strengthenSurfaceContrast: usesDarkDynamicColor,
+              predictiveBackEnabled: predictiveBackEnabled,
+            );
+
             return MaterialApp(
               title: 'CQUT Helper',
               initialRoute: "/",
               routes: getRootRoutes(),
+              onUnknownRoute: buildUnknownRoute,
               locale: const Locale('zh', 'CN'),
               supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
               localizationsDelegates: const [
@@ -63,16 +76,13 @@ class MyApp extends StatelessWidget {
                 GlobalWidgetsLocalizations.delegate,
                 GlobalCupertinoLocalizations.delegate,
               ],
-              theme: AppTheme.light(
-                lightScheme,
-                strengthenSurfaceContrast: usesLightDynamicColor,
-                predictiveBackEnabled: predictiveBackEnabled,
+              builder: (context, child) => AppThemeCatalog(
+                lightTheme: lightTheme,
+                darkTheme: darkTheme,
+                child: child ?? const SizedBox.shrink(),
               ),
-              darkTheme: AppTheme.dark(
-                darkScheme,
-                strengthenSurfaceContrast: usesDarkDynamicColor,
-                predictiveBackEnabled: predictiveBackEnabled,
-              ),
+              theme: lightTheme,
+              darkTheme: darkTheme,
               themeMode: ThemeManager().themeMode,
             );
           },
@@ -88,4 +98,11 @@ Widget getRootWidget() {
 
 Map<String, Widget Function(BuildContext)> getRootRoutes() {
   return {"/": (context) => MainPage(), "/login": (context) => LoginPage()};
+}
+
+Route<dynamic> buildUnknownRoute(RouteSettings settings) {
+  return MaterialPageRoute<void>(
+    settings: const RouteSettings(name: '/'),
+    builder: (context) => MainPage(),
+  );
 }

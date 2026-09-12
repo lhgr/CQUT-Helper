@@ -122,5 +122,8 @@ private class CourseListRemoteViewsFactory(
 
   override fun getItemId(position: Int): Long = position.toLong()
 
-  override fun hasStableIds(): Boolean = true
+  // Position is not a stable identity when a schedule refresh replaces rows.
+  // Advertising it as stable lets launchers reuse a RemoteViews row belonging
+  // to a different course.
+  override fun hasStableIds(): Boolean = false
 }

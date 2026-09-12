@@ -5,13 +5,16 @@ import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
+import 'package:cqut_helper/pages/TodaySchedule/widgets/daily_quote_card.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:flutter/material.dart';
 
 class TodayScheduleView extends StatefulWidget {
-  const TodayScheduleView({super.key});
+  final bool isActive;
+
+  const TodayScheduleView({super.key, this.isActive = true});
 
   @override
   State<TodayScheduleView> createState() => _TodayScheduleViewState();
@@ -29,6 +32,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   int _lastHandledWidgetNavigationToken = 0;
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
+  int _quoteRefreshToken = 0;
 
   List<CampusTimeInfo>? get _timeInfoList => _controller.timeInfoList;
 
@@ -128,6 +132,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     setState(() {
       if (forceRefresh) {
         _refreshing = true;
+        _quoteRefreshToken++;
       } else {
         _loading = true;
       }
@@ -504,6 +509,11 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               )
             else
               ...events.map((event) => _buildEventCard(context, event)),
+            DailyQuoteCard(
+              key: const ValueKey('today_daily_quote'),
+              active: widget.isActive,
+              refreshToken: _quoteRefreshToken,
+            ),
           ],
         ),
       ),
