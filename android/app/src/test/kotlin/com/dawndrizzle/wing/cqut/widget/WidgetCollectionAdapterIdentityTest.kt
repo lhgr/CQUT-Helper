@@ -19,6 +19,32 @@ class WidgetCollectionAdapterIdentityTest {
   }
 
   @Test
+  fun `adapter identity changes when visible collection content changes`() {
+    val now = Instant.parse("2026-08-28T08:00:00Z").toEpochMilli()
+
+    val before =
+      WidgetCollectionAdapterIdentity.dataUri(
+        "today-list",
+        7,
+        0,
+        contentFingerprint = "courses-before",
+        nowMillis = now,
+      )
+    val after =
+      WidgetCollectionAdapterIdentity.dataUri(
+        "today-list",
+        7,
+        0,
+        contentFingerprint = "courses-after",
+        nowMillis = now,
+      )
+
+    assertNotEquals(before, after)
+    assertTrue(before.contains("/courses-before/"))
+    assertTrue(after.contains("/courses-after/"))
+  }
+
+  @Test
   fun `adapter identity changes at Beijing midnight`() {
     val beforeMidnight = Instant.parse("2026-08-28T15:59:59Z").toEpochMilli()
     val atMidnight = Instant.parse("2026-08-28T16:00:00Z").toEpochMilli()
@@ -27,8 +53,8 @@ class WidgetCollectionAdapterIdentityTest {
     val after = WidgetCollectionAdapterIdentity.dataUri("today-course", 7, 0, atMidnight)
 
     assertNotEquals(before, after)
-    assertTrue(before.endsWith("/2026-08-28"))
-    assertTrue(after.endsWith("/2026-08-29"))
+    assertTrue(before.endsWith("/empty/2026-08-28"))
+    assertTrue(after.endsWith("/empty/2026-08-29"))
   }
 
   @Test
@@ -38,7 +64,7 @@ class WidgetCollectionAdapterIdentityTest {
     assertTrue(
       WidgetCollectionAdapterIdentity
         .dataUri("today-and-next", 11, 1, now)
-        .endsWith("/1/2026-08-29"),
+        .endsWith("/1/empty/2026-08-29"),
     )
   }
 }

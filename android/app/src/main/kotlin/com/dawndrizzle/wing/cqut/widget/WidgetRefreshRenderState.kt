@@ -151,7 +151,8 @@ internal object WidgetRefreshRenderStateStore {
   ): Boolean =
     previous == null ||
       previous.logicalDate != current.logicalDate ||
-      previous.presentationSignature != current.presentationSignature
+      previous.presentationSignature != current.presentationSignature ||
+      previous.contentSignature != current.contentSignature
 
   internal fun shouldRefresh(
     previous: WidgetRefreshRenderState?,

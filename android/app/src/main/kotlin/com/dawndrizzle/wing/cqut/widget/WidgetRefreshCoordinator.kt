@@ -38,6 +38,32 @@ object WidgetRefreshCoordinator {
   }
 
   /**
+   * Rebinds every collection adapter even when the logical render state is
+   * unchanged. App foregrounding is a reliable repair opportunity for a
+   * launcher that silently dropped an earlier collection update.
+   */
+  fun forceRebind(
+    context: Context,
+    reason: String,
+  ): Boolean {
+    synchronized(refreshLock) {
+      if (!hasActiveWidgets(context)) return false
+      WidgetRenderSnapshot.withSnapshot {
+        val current = WidgetRefreshRenderStateStore.capture(context)
+        val previous = WidgetRefreshRenderStateStore.load(context)
+        refreshAndRepair(
+          context,
+          reason,
+          current,
+          previous,
+          forceFullUpdate = true,
+        )
+      }
+      return true
+    }
+  }
+
+  /**
    * Uses any process start as a repair opportunity without redrawing on every
    * worker or service launch.
    */
@@ -135,9 +161,11 @@ object WidgetRefreshCoordinator {
     reason: String,
     current: WidgetRefreshRenderState,
     previous: WidgetRefreshRenderState?,
+    forceFullUpdate: Boolean = false,
   ) {
     WidgetRenderSnapshot.withSnapshot {
-      val fullUpdate = WidgetRefreshRenderStateStore.shouldUseFullUpdate(previous, current)
+      val fullUpdate =
+        forceFullUpdate || WidgetRefreshRenderStateStore.shouldUseFullUpdate(previous, current)
       WidgetNativeLog.info(
         context,
         "event=refresh reason=$reason at=${System.currentTimeMillis()} full=$fullUpdate " +

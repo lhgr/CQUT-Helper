@@ -363,6 +363,11 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
               kind = "today-course",
               appWidgetId = appWidgetId,
               dayOffset = dayOffset,
+              contentFingerprint =
+                TodayWidgetData.loadVisibleCoursesFingerprint(
+                  context,
+                  intArrayOf(dayOffset),
+                ),
             ),
           )
       }

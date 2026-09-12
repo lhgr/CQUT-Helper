@@ -65,7 +65,7 @@ class WidgetRefreshCoordinatorTest {
   }
 
   @Test
-  fun `visible course changes require repair but remain a partial update`() {
+  fun `visible course changes require a full collection rebind`() {
     val previous =
       WidgetRefreshRenderState(
         logicalDate = "2026-08-28",
@@ -76,7 +76,7 @@ class WidgetRefreshCoordinatorTest {
     val current = previous.copy(contentSignature = "course-b", renderedAtMillis = 2_000L)
 
     assertTrue(WidgetRefreshRenderStateStore.shouldRefresh(previous, current))
-    assertFalse(WidgetRefreshRenderStateStore.shouldUseFullUpdate(previous, current))
+    assertTrue(WidgetRefreshRenderStateStore.shouldUseFullUpdate(previous, current))
   }
 
   @Test
