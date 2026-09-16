@@ -248,6 +248,12 @@ class VerticalScheduleWidgetProvider : AppWidgetProvider() {
         R.id.tv_course_count,
         courseCountText(dayOffset, courseCount),
       )
+      WidgetCollectionVisibility.bind(
+        views,
+        listViewId = R.id.lv_course,
+        emptyViewId = R.id.empty,
+        itemCount = courseCount,
+      )
 
       val refresh = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
       val metadataVisibility = View.VISIBLE

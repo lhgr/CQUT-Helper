@@ -30,7 +30,7 @@ object WidgetThemeSyncDispatcher {
         context,
         "event=render_dispatched trigger=$trigger mode=${if (fullUpdate) "full" else "partial"}",
       )
-      updateWidgets(context, resolution, fullUpdate)
+      updateWidgets(context, resolution, trigger, fullUpdate)
       WidgetNativeLog.info(context, "event=render_submitted at=${System.currentTimeMillis()}")
       WidgetRefreshCoordinator.recordRenderedState(context, renderedState)
       WidgetRefreshCoordinator.ensureScheduled(context, "theme_dispatch:$trigger")
@@ -40,7 +40,12 @@ object WidgetThemeSyncDispatcher {
             WidgetRenderSnapshot.withSnapshot {
               WidgetTheme.commitTransition(context)
               val commitResolution = WidgetTheme.resolve(context, WidgetThemeTrigger.TRANSITION_COMMIT)
-              updateWidgets(context, commitResolution, fullUpdate = true)
+              updateWidgets(
+                context,
+                commitResolution,
+                WidgetThemeTrigger.TRANSITION_COMMIT,
+                fullUpdate = true,
+              )
               WidgetRefreshCoordinator.recordRenderedState(context)
               WidgetRefreshCoordinator.ensureScheduled(context, "theme_commit")
             }
@@ -58,24 +63,29 @@ object WidgetThemeSyncDispatcher {
   private fun updateWidgets(
     context: Context,
     resolution: WidgetThemeResolution,
+    trigger: WidgetThemeTrigger,
     fullUpdate: Boolean,
   ) {
     WidgetRenderSnapshot.withSnapshot {
-      if (fullUpdate) {
-        // Theme changes need a complete RemoteViews rebind. Several launchers
-        // retain background resources during partial updates, making FOLLOW_APP
-        // appear pinned to the theme used when the widget was placed.
-        TodayListWidgetProvider.updateAll(context, resolution)
-        TodayAndNextWidgetProvider.updateAll(context, resolution)
-        VerticalScheduleWidgetProvider.updateAll(context, resolution)
-      } else {
-        // Ordinary data refreshes keep their collection adapters and click
-        // templates to avoid a dark/empty frame on MIUI.
+      if (!fullUpdate || trigger == WidgetThemeTrigger.DATA_REFRESH) {
+        // A provider-only partial payload is delivered synchronously by
+        // launchers that defer full RemoteViews containing collection
+        // adapters. Apply list/empty visibility before a possible rebind so a
+        // 1 -> 0 transition cannot leave the final cached row on screen.
         TodayListWidgetProvider.refreshAll(context, resolution)
         TodayAndNextWidgetProvider.refreshAll(context, resolution)
+        TodayCourseWidgetProvider.updateRefreshPresentation(context, refreshData = true)
         VerticalScheduleWidgetProvider.refreshAll(context, resolution)
       }
-      TodayCourseWidgetProvider.updateAll(context, resolution)
+      if (fullUpdate) {
+        // Theme changes and collection identity changes still need a complete
+        // RemoteViews rebind. The data-refresh visibility patch above protects
+        // the screen while a launcher processes this potentially deferred work.
+        TodayListWidgetProvider.updateAll(context, resolution)
+        TodayAndNextWidgetProvider.updateAll(context, resolution)
+        TodayCourseWidgetProvider.updateAll(context, resolution)
+        VerticalScheduleWidgetProvider.updateAll(context, resolution)
+      }
       TinyCourseWidgetProvider.updateAll(context, resolution)
     }
   }

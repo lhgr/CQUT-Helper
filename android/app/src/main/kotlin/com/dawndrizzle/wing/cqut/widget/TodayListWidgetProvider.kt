@@ -251,6 +251,12 @@ class TodayListWidgetProvider : AppWidgetProvider() {
       views.setTextViewText(R.id.tv_date, header.dateText)
       views.setTextViewText(R.id.tv_week, header.weekText)
       views.setTextViewText(R.id.empty, TodayWidgetData.loadEmptyStateText(context, dayOffset))
+      WidgetCollectionVisibility.bind(
+        views,
+        listViewId = R.id.lv_course,
+        emptyViewId = R.id.empty,
+        itemCount = TodayWidgetData.loadCoursesByDayOffset(context, dayOffset).size,
+      )
 
       val refreshPresentation = TodayWidgetData.loadRefreshPresentation(context, appWidgetId)
       val dateVisibility = android.view.View.VISIBLE
