@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cqut_helper/manager/schedule_update_manager.dart';
+import 'package:cqut_helper/manager/schedule_update_result.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,21 +22,6 @@ void main() {
 
       expect(result.yearTerm, isNull);
       expect(result.changes, isEmpty);
-    });
-
-    test('非法 JSON 返回空结果并移除 pending key', () async {
-      final key = ScheduleUpdateWorker.pendingKeyForUser('u1');
-      SharedPreferences.setMockInitialValues({
-        'account': 'u1',
-        key: '{bad json',
-      });
-
-      final result = await manager.checkPendingChanges();
-      final prefs = await SharedPreferences.getInstance();
-
-      expect(result.yearTerm, isNull);
-      expect(result.changes, isEmpty);
-      expect(prefs.getString(key), isNull);
     });
 
     test('合法 payload 能正确解析并移除 pending key', () async {
@@ -66,6 +52,31 @@ void main() {
       expect(result.changes.single.weekNum, '3');
       expect(result.changes.single.lines, ['新增：高等数学', '42']);
       expect(prefs.getString(key), isNull);
+    });
+  });
+
+  group('parseScheduleUpdatePendingPayload', () {
+    test('payload 不是 map 时返回空结果', () {
+      final result = parseScheduleUpdatePendingPayload(json.encode(['bad']));
+
+      expect(result.yearTerm, isNull);
+      expect(result.changes, isEmpty);
+    });
+
+    test('changes 不是 list 时保留 yearTerm 并返回空 changes', () {
+      final result = parseScheduleUpdatePendingPayload(
+        json.encode({'yearTerm': '2025-2026-2', 'changes': 'oops'}),
+      );
+
+      expect(result.yearTerm, '2025-2026-2');
+      expect(result.changes, isEmpty);
+    });
+
+    test('非法 JSON 返回空结果', () {
+      final result = parseScheduleUpdatePendingPayload('{bad json');
+
+      expect(result.yearTerm, isNull);
+      expect(result.changes, isEmpty);
     });
   });
 }
