@@ -19,6 +19,7 @@ class SchedulePageView extends StatelessWidget {
   final int currentWeekIndex;
   final List<CampusTimeInfo>? timeInfoList;
   final ScheduleLayoutSettings layoutSettings;
+  final CourseDetailEventsResolver? resolveCourseDetailEvents;
   final Future<void> Function(EventItem event) onEditCourse;
   final Future<void> Function(EventItem event) onDeleteCourse;
 
@@ -38,6 +39,7 @@ class SchedulePageView extends StatelessWidget {
     required this.currentWeekIndex,
     this.timeInfoList,
     this.layoutSettings = const ScheduleLayoutSettings(),
+    this.resolveCourseDetailEvents,
     required this.onEditCourse,
     required this.onDeleteCourse,
   });
@@ -154,6 +156,8 @@ class SchedulePageView extends StatelessWidget {
                                     descriptionColors:
                                         cardTheme.descriptionColors,
                                     buttonColors: cardTheme.buttonColors,
+                                    resolveCourseDetailEvents:
+                                        resolveCourseDetailEvents,
                                     onEditCourse: onEditCourse,
                                     onDeleteCourse: onDeleteCourse,
                                   ),

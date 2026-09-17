@@ -372,6 +372,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                   ? _controller.timeInfoList
                   : null,
               layoutSettings: _settingsManager.layoutSettings,
+              resolveCourseDetailEvents: _resolveCourseDetailEvents,
               onEditCourse: _editCourse,
               onDeleteCourse: _deleteCustomCourse,
             ),

@@ -5,6 +5,9 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dar
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 
+typedef CourseDetailEventsResolver =
+    Future<List<EventItem>> Function(EventItem event);
+
 class ScheduleCourseGrid extends StatefulWidget {
   final List<EventItem> events;
   final String yearTerm;
@@ -26,6 +29,7 @@ class ScheduleCourseGrid extends StatefulWidget {
   final double cardRadius;
   final double textScale;
   final double cardOpacity;
+  final CourseDetailEventsResolver? resolveCourseDetailEvents;
   final Future<void> Function(EventItem event) onEditCourse;
   final Future<void> Function(EventItem event) onDeleteCourse;
 
@@ -51,6 +55,7 @@ class ScheduleCourseGrid extends StatefulWidget {
     this.cardRadius = 12,
     this.textScale = 1,
     this.cardOpacity = 1,
+    this.resolveCourseDetailEvents,
     required this.onEditCourse,
     required this.onDeleteCourse,
   });
@@ -152,22 +157,133 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
     });
   }
 
-  List<EventItem> _eventsWithSameCourseName(EventItem target) {
+  List<EventItem> _eventsWithSameCourseName(
+    EventItem target,
+    List<EventItem> candidates,
+  ) {
     final key = _buildCourseKey(target);
-    return widget.events
-        .where((event) => _buildCourseKey(event) == key)
-        .toList(growable: false);
+    final seen = <String>{};
+    final result = <EventItem>[];
+    for (final event in candidates) {
+      if (_buildCourseKey(event) != key) continue;
+      if (!seen.add(_courseDetailIdentity(event))) continue;
+      result.add(event);
+    }
+    return result;
   }
 
-  void _showCourseDetails(
+  String _courseDetailIdentity(EventItem event) {
+    final sessions =
+        (event.sessionList ?? const <String>[])
+            .map((session) => session.trim())
+            .where((session) => session.isNotEmpty)
+            .toList(growable: false)
+          ..sort();
+    return <String>[
+      _buildCourseKey(event),
+      (event.weekDay ?? '').trim(),
+      (event.weekCover ?? '').trim(),
+      sessions.join(','),
+      (event.sessionStart ?? '').trim(),
+      (event.sessionLast ?? '').trim(),
+      (event.memberName ?? '').trim(),
+      (event.address ?? '').trim(),
+      (event.note ?? '').trim(),
+    ].join('\u0000');
+  }
+
+  Future<void> _showCourseDetails(
     BuildContext context,
     EventItem event, {
+    required Color closeButtonColor,
+  }) async {
+    final resolver = widget.resolveCourseDetailEvents;
+    if (resolver == null) {
+      final events = _eventsWithSameCourseName(event, widget.events);
+      _openCourseDetailDialog(
+        context,
+        event,
+        events: events,
+        closeButtonColor: closeButtonColor,
+      );
+      return;
+    }
+
+    NavigatorState? loadingNavigator;
+    Route<dynamic>? loadingRoute;
+    final loadingDialog = showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        loadingNavigator = Navigator.of(dialogContext);
+        loadingRoute = ModalRoute.of(dialogContext);
+        return const PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 18),
+                Expanded(child: Text('正在整理本学期课程信息…')),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    await WidgetsBinding.instance.endOfFrame;
+
+    List<EventItem> candidates;
+    try {
+      candidates = await resolver(event);
+    } catch (error) {
+      await _dismissLoadingDialog(
+        loadingNavigator,
+        loadingRoute,
+        loadingDialog,
+      );
+      if (!mounted) return;
+      final message = error is StateError ? error.message : error.toString();
+      ScaffoldMessenger.of(this.context).showSnackBar(
+        SnackBar(
+          content: Text('课程详情加载失败：$message'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    await _dismissLoadingDialog(loadingNavigator, loadingRoute, loadingDialog);
+    if (!mounted) return;
+    final events = _eventsWithSameCourseName(event, candidates);
+    _openCourseDetailDialog(
+      this.context,
+      event,
+      events: events,
+      closeButtonColor: closeButtonColor,
+    );
+  }
+
+  Future<void> _dismissLoadingDialog(
+    NavigatorState? navigator,
+    Route<dynamic>? route,
+    Future<void> completion,
+  ) async {
+    if (navigator == null || !navigator.mounted || route == null) return;
+    navigator.removeRoute(route);
+    await completion;
+  }
+
+  void _openCourseDetailDialog(
+    BuildContext context,
+    EventItem event, {
+    required List<EventItem> events,
     required Color closeButtonColor,
   }) {
     showCourseDetailDialog(
       context,
       courseName: _buildCourseKey(event),
-      events: _eventsWithSameCourseName(event),
+      events: events.isEmpty ? <EventItem>[event] : events,
       closeButtonColor: closeButtonColor,
       onEdit: (_) => widget.onEditCourse(event),
       onDelete: event.isSchoolCustomCourse

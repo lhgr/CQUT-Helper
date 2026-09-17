@@ -61,6 +61,36 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       .where((week) => week > 0)
       .toList(growable: false);
 
+  Future<List<EventItem>> _resolveCourseDetailEvents(EventItem target) async {
+    final term = (_currentScheduleData?.yearTerm ?? _currentTerm ?? '').trim();
+    final weeks = _weekList ?? const <String>[];
+    if (term.isEmpty || weeks.isEmpty) return <EventItem>[target];
+
+    for (final rawWeek in weeks) {
+      final week = rawWeek.trim();
+      if (week.isEmpty) continue;
+      await _controller.ensureWeekLoaded(week, term, updateLastViewed: false);
+    }
+
+    final missingWeeks = weeks
+        .where((rawWeek) {
+          final week = int.tryParse(rawWeek.trim());
+          if (week == null) return true;
+          final data = _weekCache[week];
+          return data == null || (data.yearTerm ?? '').trim() != term;
+        })
+        .toList(growable: false);
+    if (missingWeeks.isNotEmpty) {
+      throw StateError('第${missingWeeks.join('、')}周课表尚未加载完整，请稍后重试');
+    }
+
+    return weeks
+        .map((week) => _weekCache[int.tryParse(week.trim())])
+        .whereType<ScheduleData>()
+        .expand((data) => data.eventList ?? const <EventItem>[])
+        .toList(growable: false);
+  }
+
   Future<void> _refreshAfterCustomCourseMutation() async {
     final userId = (_controller.userId ?? '').trim();
     final term = (_currentScheduleData?.yearTerm ?? '').trim();
