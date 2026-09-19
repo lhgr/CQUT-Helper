@@ -47,6 +47,7 @@ void main() {
       'schedule_grid_line_opacity': 0.65,
       ScheduleSettingsManager.scheduleColorModeKey: 'dark',
       ScheduleSettingsManager.analyzedBackgroundBrightnessKey: 'light',
+      'academic_calendar_snapshot_v1_2026-2027-1': '{"revision":"r1"}',
       'not_allowed': 'must-not-be-backed-up',
     });
     final sourcePreferences = await SharedPreferences.getInstance();
@@ -65,6 +66,10 @@ void main() {
       'light',
     );
     expect(backedUpSettings, isNot(contains('not_allowed')));
+    expect(
+      backedUpSettings,
+      isNot(contains('academic_calendar_snapshot_v1_2026-2027-1')),
+    );
 
     final serializedSettings = (jsonDecode(jsonEncode(backedUpSettings)) as Map)
         .cast<String, dynamic>();

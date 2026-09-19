@@ -1,4 +1,5 @@
 import json
+import hmac
 import logging
 import multiprocessing
 import os
@@ -11,13 +12,14 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 try:
     # pydantic v2
     from pydantic import BaseModel, Field, field_validator
@@ -26,6 +28,8 @@ except ImportError:
     from pydantic import BaseModel, Field, validator as field_validator
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
+
+from calendar_overrides import CalendarError, CalendarStore, default_store, validate_year_term
 
 logger = logging.getLogger("jwxt_automation")
 
@@ -501,6 +505,40 @@ class PipelineRequest(BaseModel):
         return normalized
 
 
+class CalendarNoticeRequest(BaseModel):
+    year_term: str = Field(..., pattern=r"^\d{4}-\d{4}-[12]$")
+    title: str = Field(..., min_length=1, max_length=256)
+    body: str = Field(..., min_length=1, max_length=60000)
+
+    @field_validator("year_term")
+    @classmethod
+    def validate_calendar_year_term(cls, value: str) -> str:
+        return validate_year_term(value)
+
+
+class CalendarOverrideRequest(BaseModel):
+    year_term: str = Field(..., pattern=r"^\d{4}-\d{4}-[12]$")
+    date: str = Field(..., min_length=10, max_length=10)
+    action: str = Field(..., pattern=r"^(upsert|suppress)$")
+    kind: Optional[str] = None
+    schedule_date: Optional[str] = None
+    label: Optional[str] = None
+
+    @field_validator("year_term")
+    @classmethod
+    def validate_override_year_term(cls, value: str) -> str:
+        return validate_year_term(value)
+
+
+class CalendarPublishRequest(BaseModel):
+    year_term: str = Field(..., pattern=r"^\d{4}-\d{4}-[12]$")
+
+    @field_validator("year_term")
+    @classmethod
+    def validate_publish_year_term(cls, value: str) -> str:
+        return validate_year_term(value)
+
+
 class ServiceError(Exception):
     def __init__(self, status_code: int, code: str, message: str):
         super().__init__(message)
@@ -678,6 +716,51 @@ _pipeline_slots = threading.BoundedSemaphore(
 app = FastAPI(title="JWXT Automation API", version="1.1.0")
 
 
+def _calendar_store() -> CalendarStore:
+    """Return the process-local calendar store.
+
+    Keeping the store on ``app.state`` makes the database location explicit in
+    tests and avoids opening a connection (or creating the database file) when
+    the application module is merely imported.
+    """
+    store = getattr(app.state, "calendar_store", None)
+    configured_path = os.getenv("CALENDAR_DB_PATH")
+    expected_path = str(Path(configured_path)) if configured_path else str(Path(__file__).with_name("calendar.db"))
+    if store is None or str(getattr(store, "db_path", "")) != expected_path:
+        store = default_store()
+        app.state.calendar_store = store
+    return store
+
+
+def _require_calendar_admin(request: Request) -> None:
+    """Authenticate administration endpoints with the configured bearer token."""
+    configured = os.getenv("CALENDAR_ADMIN_TOKEN", "").strip()
+    if not configured:
+        raise ServiceError(503, "calendar_admin_unconfigured", "校历管理接口尚未配置访问令牌")
+    authorization = request.headers.get("authorization", "")
+    scheme, _, supplied = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not supplied.strip() or not hmac.compare_digest(
+        supplied.strip(), configured
+    ):
+        raise ServiceError(401, "calendar_admin_unauthorized", "校历管理接口访问令牌无效")
+
+
+def _calendar_error(exc: CalendarError) -> ServiceError:
+    return ServiceError(400, "calendar_invalid", str(exc))
+
+
+_CALENDAR_ADMIN_HTML = """<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>校历发布台</title>
+<style>
+:root{--ink:#16213b;--muted:#6b7892;--line:#e6eaf2;--bg:#f5f7fb;--card:#fff;--brand:#4967e8;--brand2:#6d4de8;--ok:#14866d;--warn:#b66b00;--bad:#c44153;--shadow:0 10px 30px #25365d12}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}button,input,textarea,select{font:inherit}button{border:0;border-radius:9px;padding:9px 14px;cursor:pointer;background:#eef1f8;color:var(--ink);font-weight:600}button:hover{filter:brightness(.97)}button.primary{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff}button.danger{color:var(--bad);background:#fff0f2}button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1180px;margin:auto;padding:25px 20px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px}.brand{display:flex;align-items:center;gap:12px}.logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;display:grid;place-items:center;font-size:22px}.brand h1{font-size:21px;margin:0}.brand p{margin:2px 0 0;color:var(--muted)}.controls{display:flex;align-items:center;gap:8px}.field{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:0}.field:focus{border-color:var(--brand);box-shadow:0 0 0 3px #4967e81a}.term{width:145px}.token{width:190px}.grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(320px,.8fr);gap:18px}.stack{display:grid;gap:18px;align-content:start}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px}.card h2{font-size:16px;margin:0 0 5px}.sub{color:var(--muted);margin:0 0 16px}.section-head{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:15px}.badge{display:inline-flex;border-radius:99px;padding:4px 9px;font-size:12px;font-weight:700;background:#edf0f8;color:var(--muted)}.badge.ok{background:#e6f7f1;color:var(--ok)}.badge.bad{background:#fff0f2;color:var(--bad)}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.metric{background:#f7f8fc;border-radius:11px;padding:12px}.metric b{display:block;font-size:21px}.metric.meta{grid-column:span 3;padding:8px 10px}.metric.meta b{font-size:12px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere}.metric span{color:var(--muted);font-size:12px}.table-wrap{overflow:auto}.days{width:100%;border-collapse:collapse}.days th,.days td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}.days th{font-size:12px;color:var(--muted)}.days .holiday{color:var(--bad)}.days .teaching{color:var(--ok)}.notice{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}.notice-top{display:flex;justify-content:space-between;gap:8px}.notice h3{font-size:14px;margin:0}.notice small{color:var(--muted)}.notice-actions{display:flex;gap:6px}.notice-actions button{padding:5px 9px;font-size:12px}.issues{color:var(--bad);font-size:12px;margin:7px 0}.editor label,.override label{display:block;font-size:12px;color:var(--muted);margin:11px 0 5px}.editor input,.editor textarea,.override input,.override select{width:100%}.editor textarea{min-height:185px;resize:vertical}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.override-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}.preview-status{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 13px;border-radius:10px;background:#f7f8fc;margin:14px 0}.diff{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.diff-box{border:1px solid var(--line);border-radius:10px;padding:10px}.diff-box b{display:block;font-size:18px}.diff-box span{color:var(--muted);font-size:12px}.alert{padding:10px 12px;border-radius:10px;margin-top:9px;font-size:13px}.alert.bad{background:#fff0f2;color:var(--bad)}.alert.warn{background:#fff6e4;color:var(--warn)}.empty{text-align:center;color:var(--muted);padding:25px 8px}.muted{color:var(--muted)}.toast{position:fixed;right:20px;bottom:20px;background:#1f2a44;color:#fff;padding:11px 16px;border-radius:10px;box-shadow:var(--shadow);opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none}.toast.show{opacity:1;transform:none}.loading{position:fixed;inset:0;background:#16213b22;display:grid;place-items:center;z-index:5}.loading[hidden]{display:none}.loading span{background:#fff;padding:15px 20px;border-radius:12px;box-shadow:var(--shadow)}@media(max-width:800px){.top{align-items:stretch;flex-direction:column}.controls{flex-wrap:wrap}.token{flex:1;min-width:160px}.grid{grid-template-columns:1fr}.summary{grid-template-columns:repeat(3,1fr)}.card{padding:16px}}@media(max-width:480px){.summary,.diff{grid-template-columns:1fr 1fr}.summary .metric.meta{grid-column:1/-1}.summary .metric:last-child{grid-column:1/-1}}
+</style></head><body><div class="shell"><header class="top"><div class="brand"><div class="logo">历</div><div><h1>假期与调休发布台</h1><p>整理通知，确认草稿后发布校历快照</p></div></div><div class="controls"><input id="term" class="field term" value="2026-2027-1" aria-label="学期"><input id="token" class="field token" type="password" placeholder="管理令牌" autocomplete="off" aria-label="管理令牌"><button onclick="refreshAll()">刷新</button></div></header><main class="grid"><div class="stack"><section class="card"><div class="section-head"><div><h2>已发布校历</h2><p class="sub">客户端当前正在使用的版本</p></div><span id="publish-badge" class="badge">尚未加载</span></div><div id="published-summary" class="summary"></div><div id="published-table" class="table-wrap"><div class="empty">点击“刷新”查看已发布内容</div></div></section><section class="card"><div class="section-head"><div><h2>通知资料</h2><p class="sub">解析学校通知，生成可发布的候选日期</p></div><button onclick="newNotice()">新建通知</button></div><div id="notices"><div class="empty">正在加载通知…</div></div></section><section class="card editor"><h2 id="editor-heading">新建通知</h2><p class="sub">原文会保存在本地管理库中，解析结果用于草稿。</p><label for="title">通知标题</label><input id="title" class="field" placeholder="例如：2026年国庆节放假安排通知"><label for="body">通知正文</label><textarea id="body" class="field" placeholder="粘贴学校通知正文"></textarea><div class="actions"><button class="primary" onclick="saveNotice()">保存并解析</button><button onclick="clearEditor()">清空</button></div></section></div><div class="stack"><section class="card override"><div class="section-head"><div><h2>人工覆盖</h2><p class="sub">修正单个日期，不必改动原通知</p></div></div><div class="override-grid"><div><label for="override-date">实际日期</label><input id="override-date" class="field" type="date"></div><div><label for="override-action">动作</label><select id="override-action" class="field"><option value="upsert">新增 / 修改</option><option value="suppress">屏蔽该日</option></select></div><div id="override-kind-field"><label for="override-kind">类型</label><select id="override-kind" class="field"><option value="holiday">放假</option><option value="teaching_day">调休上课</option></select></div><div id="override-source-field"><label for="override-source">课表来源日期</label><input id="override-source" class="field" type="date"></div></div><div id="override-label-field"><label for="override-label">说明</label><input id="override-label" class="field" value="人工调整"></div><div class="actions"><button class="primary" onclick="setOverride()">保存覆盖</button><button class="danger" onclick="removeOverride()">移除该日期覆盖</button></div></section><section class="card"><div class="section-head"><div><h2>草稿预览</h2><p class="sub">发布前检查变化、冲突与解析完整性</p></div><button onclick="preview()">重新预览</button></div><div id="preview"><div class="empty">点击“重新预览”查看草稿</div></div><div class="actions"><button id="publish-btn" class="primary" disabled onclick="publish()">发布当前草稿</button></div></section></div></main></div><div id="toast" class="toast" role="status"></div><div id="loading" class="loading" hidden><span>正在处理…</span></div><script>
+const $=id=>document.getElementById(id);let notices=[];let editingId=null;let lastPreview=null;let pending=0;const tokenKey='calendar-admin-token';$('token').value=sessionStorage.getItem(tokenKey)||'';$('token').addEventListener('change',()=>sessionStorage.setItem(tokenKey,$('token').value));function escapeHtml(value){return String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));}function term(){return $('term').value.trim()}function headers(){return {'Content-Type':'application/json','Authorization':'Bearer '+$('token').value.trim()}}function toast(message,bad=false){const el=$('toast');el.textContent=message;el.style.background=bad?'#c44153':'#1f2a44';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3000)}function busy(on){pending=Math.max(0,pending+(on?1:-1));$('loading').hidden=pending<=0}async function call(url,options={}){busy(true);try{const requestOptions={...options};delete requestOptions.auth;const authHeaders=options.auth===false?{'Content-Type':'application/json'}:headers();const r=await fetch(url,{...requestOptions,headers:{...authHeaders,...(options.headers||{})}});const text=await r.text();let data;try{data=JSON.parse(text)}catch(_){data={success:false,error:{message:text.replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim().slice(0,160)||('HTTP '+r.status)}}}if(!r.ok||data.success===false){const e=new Error(data.error?.message||('请求失败（HTTP '+r.status+'）'));e.status=r.status;if(r.status!==404)toast(e.message,true);throw e}return data}catch(e){if(!e.status)toast(e.message,true);throw e}finally{busy(false)}}
+function dateLabel(item){return item.kind==='holiday'?'放假':'调休上课'}function renderDays(days){if(!days.length)return '<div class="empty">暂无已发布日期</div>';return '<table class="days"><thead><tr><th>日期</th><th>安排</th><th>说明</th><th>课表来源</th></tr></thead><tbody>'+days.map(d=>'<tr><td>'+escapeHtml(d.date)+'</td><td class="'+(d.kind==='holiday'?'holiday':'teaching')+'">'+escapeHtml(dateLabel(d))+'</td><td>'+escapeHtml(d.label||'—')+'</td><td>'+escapeHtml(d.schedule_date||'—')+'</td></tr>').join('')+'</tbody></table>'}function renderPublished(snapshot){if(!snapshot){$('publish-badge').textContent='尚未发布';$('publish-badge').className='badge bad';$('published-summary').innerHTML='';$('published-table').innerHTML='<div class="empty">该学期还没有发布快照</div>';return}const days=snapshot.days||[];const revision=String(snapshot.revision||'');$('publish-badge').textContent='已发布';$('publish-badge').title=revision;$('publish-badge').className='badge ok';$('published-summary').innerHTML='<div class="metric"><b>'+days.length+'</b><span>日期规则</span></div><div class="metric"><b>'+days.filter(d=>d.kind==='holiday').length+'</b><span>放假</span></div><div class="metric"><b>'+days.filter(d=>d.kind==='teaching_day').length+'</b><span>调休上课</span></div><div class="metric meta"><b>'+escapeHtml(snapshot.generated_at||'—')+'</b><span>发布时间</span></div><div class="metric meta"><b>'+escapeHtml(revision||'—')+'</b><span>revision</span></div>';$('published-table').innerHTML=renderDays(days)}async function loadPublished(){try{const data=await call('/api/calendar/term-overrides?year_term='+encodeURIComponent(term()),{auth:false});renderPublished(data&&data.data?data.data:data)}catch(e){if(e.status===404)renderPublished(null);else $('published-table').innerHTML='<div class="empty">加载已发布快照失败，请检查服务状态</div>'}}
+function renderNotices(){if(!notices.length){$('notices').innerHTML='<div class="empty">还没有通知，先粘贴一份学校通知吧</div>';return}$('notices').innerHTML=notices.map(n=>'<article class="notice"><div class="notice-top"><div><h3>'+escapeHtml(n.title||'无标题')+'</h3><small>'+escapeHtml(n.updated_at||'')+' · '+n.candidates.length+' 条日期候选</small></div><div class="notice-actions"><button onclick="loadNotice('+Number(n.id)+')">编辑</button><button class="danger" onclick="deleteNotice('+Number(n.id)+')">删除</button></div></div>'+(n.parse_complete?'<span class="badge ok">解析完整</span>':'<div class="issues">解析未完成：'+escapeHtml((n.parse_issues||[]).join('；'))+'</div>')+'</article>').join('')}async function listNotices(){try{const data=await call('/admin/calendar/notices?year_term='+encodeURIComponent(term()));notices=data.data||[];renderNotices()}catch(_){}}function newNotice(){editingId=null;$('editor-heading').textContent='新建通知';$('title').value='';$('body').value='';document.querySelector('.editor .actions button:last-child').textContent='清空'}function clearEditor(){newNotice()}function loadNotice(id){const n=notices.find(item=>item.id===id);if(!n)return;editingId=n.id;$('editor-heading').textContent='编辑通知 #'+n.id;document.querySelector('.editor .actions button:last-child').textContent='取消编辑';$('title').value=n.title;$('body').value=n.body;$('body').scrollIntoView({behavior:'smooth',block:'center'})}async function saveNotice(){const payload={year_term:term(),title:$('title').value.trim(),body:$('body').value};try{await call(editingId?'/admin/calendar/notices/'+editingId:'/admin/calendar/notices',{method:editingId?'PUT':'POST',body:JSON.stringify(payload)});toast(editingId?'通知已更新':'通知已解析');newNotice();await listNotices();await preview()}catch(_){} }async function deleteNotice(id){if(!confirm('确定删除这条通知吗？'))return;try{await call('/admin/calendar/notices/'+id,{method:'DELETE'});toast('通知已删除');if(editingId===id)newNotice();await listNotices();await preview()}catch(_){}}
+function ruleText(rule){if(!rule)return '无';return (rule.kind==='holiday'?'放假':'调休上课')+' · '+(rule.label||'—')+(rule.schedule_date?' · 课表 '+rule.schedule_date:'')}function renderPreview(p){lastPreview=p;$('publish-btn').disabled=!p.publishable||!p.changed;const diff=p.diff||{added:[],changed:[],removed:[]};const detail=(items,mode)=>items.length?'<ul>'+items.map(x=>'<li><b>'+escapeHtml(x.date)+'</b>：'+(mode==='removed'?escapeHtml(ruleText(x.before)):mode==='added'?escapeHtml(ruleText(x.after)):escapeHtml(ruleText(x.before))+' → '+escapeHtml(ruleText(x.after)))+'</li>').join('')+'</ul>':'<span class="muted">无</span>';const conflicts=p.conflicts||[],incomplete=p.incomplete_notices||[];$('preview').innerHTML='<div class="preview-status"><span>草稿 '+(p.publishable?'可以发布':'暂不可发布')+'</span><span class="badge '+(p.changed?'':'ok')+'">'+(p.changed?'有变更':'与已发布一致')+'</span></div><div class="diff"><div class="diff-box"><b>'+diff.added.length+'</b><span>新增日期</span></div><div class="diff-box"><b>'+diff.changed.length+'</b><span>调整日期</span></div><div class="diff-box"><b>'+diff.removed.length+'</b><span>移除日期</span></div></div><div class="alert"><b>新增规则</b>'+detail(diff.added,'added')+'</div><div class="alert"><b>调整规则</b>'+detail(diff.changed,'changed')+'</div><div class="alert"><b>移除规则</b>'+detail(diff.removed,'removed')+'</div>'+(conflicts.length?'<div class="alert bad"><b>日期冲突</b>'+conflicts.map(c=>'<div>'+escapeHtml(c.date)+'：'+c.candidates.map(ruleText).map(escapeHtml).join('；')+'</div>').join('')+'</div>':'')+(incomplete.length?'<div class="alert warn"><b>解析未完成</b>'+incomplete.map(n=>'<div>'+escapeHtml(n.title||('通知 #'+n.id))+'：'+escapeHtml((n.parse_issues||[]).join('；'))+'</div>').join('')+'</div>':'')+'<div class="table-wrap" style="margin-top:12px">'+renderDays(p.days||[])+'</div>'}async function preview(){try{const data=await call('/admin/calendar/preview?year_term='+encodeURIComponent(term()));renderPreview(data.data||{})}catch(_){}}async function publish(){try{await preview()}catch(_){return}if(!lastPreview||!lastPreview.publishable||!lastPreview.changed)return;if(!confirm('确认发布当前草稿？客户端将使用新的校历快照。'))return;try{await call('/admin/calendar/publish',{method:'POST',body:JSON.stringify({year_term:term()})});toast('发布成功');await Promise.all([loadPublished(),preview(),listNotices()])}catch(_){}}async function setOverride(){const action=$('override-action').value;const kind=$('override-kind').value;const date=$('override-date').value;if(!date){toast('请先选择实际日期',true);return}try{await call('/admin/calendar/overrides',{method:'POST',body:JSON.stringify({year_term:term(),date:date,action:action,kind:action==='upsert'?kind:null,schedule_date:action==='upsert'&&kind==='teaching_day'?($('override-source').value||null):null,label:action==='upsert'?$('override-label').value:null})});toast('人工覆盖已保存');await preview()}catch(_){}}async function removeOverride(){const date=$('override-date').value;if(!date){toast('请先选择要移除的日期',true);return}if(!confirm('移除 '+date+' 的人工覆盖？'))return;try{await call('/admin/calendar/overrides?year_term='+encodeURIComponent(term())+'&date='+encodeURIComponent(date),{method:'DELETE'});toast('人工覆盖已移除');await preview()}catch(_){}}async function refreshAll(){await loadPublished();if(!$('token').value.trim()){$('notices').innerHTML='<div class="empty">输入管理令牌后刷新管理数据</div>';$('preview').innerHTML='<div class="empty">输入管理令牌后刷新草稿</div>';return}await Promise.all([listNotices(),preview()])} $('term').addEventListener('change',()=>{notices=[];editingId=null;lastPreview=null;newNotice();$('notices').innerHTML='<div class="empty">正在加载通知…</div>';$('preview').innerHTML='<div class="empty">正在加载草稿…</div>';$('publish-btn').disabled=true;refreshAll()});function syncOverrideFields(){const kindField=$('override-kind-field');const sourceField=$('override-source-field');const labelField=$('override-label-field');const suppress=$('override-action').value==='suppress';const teaching=$('override-kind').value==='teaching_day'&&!suppress;$('override-kind').disabled=suppress;$('override-source').disabled=!teaching;sourceField.hidden=!teaching;kindField.hidden=suppress;labelField.hidden=suppress}$('override-action').addEventListener('change',syncOverrideFields);$('override-kind').addEventListener('change',syncOverrideFields);syncOverrideFields();refreshAll();
+</script></body></html>"""
+
+
 @app.middleware("http")
 async def security_headers_and_body_limit(request: Request, call_next: Any) -> JSONResponse:
     content_length = request.headers.get("content-length", "").strip()
@@ -730,6 +813,129 @@ async def validation_error_handler(
 @app.get("/health")
 def health() -> Dict[str, Any]:
     return {"status": "ok", "ready": True}
+
+
+@app.get("/admin/calendar", response_class=HTMLResponse)
+def calendar_admin_page(request: Request) -> HTMLResponse:
+    return HTMLResponse(_CALENDAR_ADMIN_HTML)
+
+
+@app.get("/admin/calendar/notices")
+def calendar_list_notices(request: Request, year_term: str = Query(...)) -> Dict[str, Any]:
+    _require_calendar_admin(request)
+    try:
+        notices = _calendar_store().list_notices(year_term)
+    except CalendarError as exc:
+        raise _calendar_error(exc) from exc
+    return {"success": True, "data": notices}
+
+
+@app.post("/admin/calendar/notices")
+def calendar_create_notice(payload: CalendarNoticeRequest, request: Request) -> Dict[str, Any]:
+    _require_calendar_admin(request)
+    try:
+        notice = _calendar_store().create_notice(payload.year_term, payload.title, payload.body)
+    except CalendarError as exc:
+        raise _calendar_error(exc) from exc
+    return {"success": True, "data": notice}
+
+
+@app.put("/admin/calendar/notices/{notice_id}")
+def calendar_update_notice(
+    notice_id: int, payload: CalendarNoticeRequest, request: Request
+) -> Dict[str, Any]:
+    _require_calendar_admin(request)
+    try:
+        notice = _calendar_store().update_notice(notice_id, payload.year_term, payload.title, payload.body)
+    except CalendarError as exc:
+        raise _calendar_error(exc) from exc
+    return {"success": True, "data": notice}
+
+
+@app.delete("/admin/calendar/notices/{notice_id}")
+def calendar_delete_notice(notice_id: int, request: Request) -> Dict[str, Any]:
+    _require_calendar_admin(request)
+    try:
+        _calendar_store().delete_notice(notice_id)
+    except CalendarError as exc:
+        raise _calendar_error(exc) from exc
+    return {"success": True}
+
+
+@app.get("/admin/calendar/preview")
+def calendar_preview(request: Request, year_term: str = Query(...)) -> Dict[str, Any]:
+    _require_calendar_admin(request)
+    try:
+        preview = _calendar_store().preview(year_term)
+    except CalendarError as exc:
+        raise _calendar_error(exc) from exc
+    return {"success": True, "data": preview}
+
+
+@app.post("/admin/calendar/overrides")
+@app.post("/admin/calendar/override")
+def calendar_set_override(
+    payload: CalendarOverrideRequest, request: Request
+) -> Dict[str, Any]:
+    _require_calendar_admin(request)
+    try:
+        override = _calendar_store().set_override(
+            payload.year_term,
+            payload.date,
+            payload.action,
+            payload.kind,
+            payload.schedule_date,
+            payload.label,
+        )
+    except CalendarError as exc:
+        raise _calendar_error(exc) from exc
+    return {"success": True, "data": override}
+
+
+@app.delete("/admin/calendar/overrides")
+def calendar_delete_override(
+    request: Request, year_term: str = Query(...), date: str = Query(...)
+) -> Dict[str, Any]:
+    _require_calendar_admin(request)
+    try:
+        _calendar_store().delete_override(year_term, date)
+    except CalendarError as exc:
+        raise _calendar_error(exc) from exc
+    return {"success": True}
+
+
+@app.post("/admin/calendar/publish")
+def calendar_publish(payload: CalendarPublishRequest, request: Request) -> Dict[str, Any]:
+    _require_calendar_admin(request)
+    try:
+        snapshot = _calendar_store().publish(payload.year_term)
+    except CalendarError as exc:
+        raise _calendar_error(exc) from exc
+    return {"success": True, "data": snapshot}
+
+
+@app.get("/api/calendar/term-overrides")
+def calendar_term_overrides(
+    request: Request, year_term: str = Query(...)
+) -> Any:
+    """Return the last explicitly published calendar snapshot for a term."""
+    try:
+        snapshot = _calendar_store().get_snapshot(year_term)
+    except CalendarError as exc:
+        raise _calendar_error(exc) from exc
+    if snapshot is None:
+        raise ServiceError(404, "calendar_not_published", "该学期尚未发布校历")
+
+    revision = str(snapshot["revision"])
+    supplied = request.headers.get("if-none-match", "").strip()
+    # Accept both the plain revision emitted by this service and the quoted
+    # form used by some HTTP clients/proxies.
+    if supplied.strip('"') == revision:
+        return Response(status_code=304, headers={"ETag": revision})
+    return JSONResponse(
+        content={"success": True, "data": snapshot},
+        headers={"ETag": revision},
+    )
 
 
 @app.post("/api/jwxt/term-schedule-notices")

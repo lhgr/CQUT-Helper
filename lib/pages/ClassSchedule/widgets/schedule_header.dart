@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
+import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 
 class ScheduleHeader extends StatelessWidget {
@@ -10,6 +13,7 @@ class ScheduleHeader extends StatelessWidget {
   final bool showGridLines;
   final double gridLineOpacity;
   final bool transparentBackground;
+  final Map<String, AcademicCalendarResolvedDay> resolvedDays;
 
   const ScheduleHeader({
     super.key,
@@ -20,6 +24,7 @@ class ScheduleHeader extends StatelessWidget {
     this.showGridLines = true,
     this.gridLineOpacity = 0.2,
     this.transparentBackground = false,
+    this.resolvedDays = const <String, AcademicCalendarResolvedDay>{},
   });
 
   @override
@@ -60,6 +65,15 @@ class ScheduleHeader extends StatelessWidget {
             child: Row(
               children: weekDayList.map((day) {
                 final isToday = day.today == true;
+                final date = ScheduleDate.tryParseWeekDate(day.weekDate);
+                final resolved = date == null
+                    ? null
+                    : resolvedDays[academicCalendarDateKey(date)];
+                final marker = resolved?.isHoliday == true
+                    ? '休'
+                    : resolved?.isTeachingDay == true
+                    ? '调'
+                    : null;
                 return Expanded(
                   child: Container(
                     decoration: isToday
@@ -86,15 +100,34 @@ class ScheduleHeader extends StatelessWidget {
                               ),
                         ),
                         SizedBox(height: 2),
-                        Text(
-                          day.weekDate ?? "",
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                fontSize: 10,
-                                color: isToday
-                                    ? colorScheme.primary
-                                    : colorScheme.onSurfaceVariant,
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              day.weekDate ?? "",
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    fontSize: 10,
+                                    color: isToday
+                                        ? colorScheme.primary
+                                        : colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                            if (marker != null) ...[
+                              const SizedBox(width: 3),
+                              Text(
+                                marker,
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: resolved?.isHoliday == true
+                                          ? colorScheme.error
+                                          : colorScheme.primary,
+                                    ),
                               ),
+                            ],
+                          ],
                         ),
                       ],
                     ),

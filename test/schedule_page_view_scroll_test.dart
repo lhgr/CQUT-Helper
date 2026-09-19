@@ -18,6 +18,8 @@ void main() {
             weekList: const ['1', '2'],
             weekCache: const {},
             showWeekend: true,
+            weekendNoticeDismissed: false,
+            onDismissWeekendNotice: () {},
             onBoundaryMessage: (_) {},
             currentWeekIndex: 0,
             onEditCourse: (_) async {},

@@ -47,6 +47,12 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
 
     if (_currentScheduleData != null) {
       final currentData = _currentScheduleData!;
+      unawaited(
+        _loadAcademicCalendar(
+          (currentData.yearTerm ?? '').trim(),
+          checkDue: true,
+        ),
+      );
       if (!currentWeekScheduledPrefetch) {
         _schedulePrefetch(currentData);
       }
@@ -226,6 +232,10 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     if (data.weekNum == null || data.weekList == null) return;
 
     _controller.processLoadedData(data);
+    final calendarTerm = (data.yearTerm ?? '').trim();
+    if (calendarTerm.isNotEmpty) {
+      unawaited(_loadAcademicCalendar(calendarTerm));
+    }
 
     _setState(() {
       final newIndex = _controller.weekList!.indexOf(data.weekNum!);

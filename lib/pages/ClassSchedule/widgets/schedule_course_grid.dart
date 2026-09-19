@@ -10,6 +10,13 @@ typedef CourseDetailEventsResolver =
 
 class ScheduleCourseGrid extends StatefulWidget {
   final List<EventItem> events;
+
+  /// Actual column weekday for events copied from a teaching-day source.
+  /// Keeping the original EventItem preserves customization/edit identity.
+  final Map<EventItem, int> displayWeekdays;
+
+  /// Events shown on an academic-calendar holiday use a disabled palette.
+  final Set<EventItem> disabledEvents;
   final String yearTerm;
   final double sessionHeight;
   final int sessionCount;
@@ -36,6 +43,8 @@ class ScheduleCourseGrid extends StatefulWidget {
   const ScheduleCourseGrid({
     super.key,
     required this.events,
+    this.displayWeekdays = const <EventItem, int>{},
+    this.disabledEvents = const <EventItem>{},
     required this.yearTerm,
     this.sessionHeight = 60.0,
     this.sessionCount = 10,
@@ -91,11 +100,15 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
     }
     if (oldWidget.yearTerm != widget.yearTerm ||
         oldWidget.events != widget.events ||
+        oldWidget.displayWeekdays != widget.displayWeekdays ||
+        oldWidget.disabledEvents != widget.disabledEvents ||
         oldWidget.backgroundColors.length != widget.backgroundColors.length ||
         oldWidget.showWeekend != widget.showWeekend) {
       _warmupCourseColorMap();
     }
     if (oldWidget.events != widget.events ||
+        oldWidget.displayWeekdays != widget.displayWeekdays ||
+        oldWidget.disabledEvents != widget.disabledEvents ||
         oldWidget.showWeekend != widget.showWeekend) {
       _rebuildRenderPlan();
     }
@@ -106,7 +119,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
         ? widget.events
         : widget.events
               .where((event) {
-                final weekDay = int.tryParse(event.weekDay ?? '1') ?? 1;
+                final weekDay = _displayWeekday(event);
                 return weekDay >= 1 && weekDay <= 5;
               })
               .toList(growable: false);
@@ -121,6 +134,30 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
         if (byStart != 0) return byStart;
         return a.insetLevel.compareTo(b.insetLevel);
       });
+  }
+
+  int _displayWeekday(EventItem event) =>
+      widget.displayWeekdays[event] ?? int.tryParse(event.weekDay ?? '1') ?? 1;
+
+  bool _isDisabled(EventItem event) => widget.disabledEvents.contains(event);
+
+  Color _disabledColor(Color color) =>
+      HSLColor.fromColor(color).withSaturation(0).toColor();
+
+  _CourseCardColors _cardColors(EventItem event, int safeIndex) {
+    final colors = _CourseCardColors(
+      background: widget.backgroundColors[safeIndex],
+      border: widget.borderColors[safeIndex],
+      title: widget.titleColors[safeIndex],
+      description: widget.descriptionColors[safeIndex],
+    );
+    if (!_isDisabled(event)) return colors;
+    return _CourseCardColors(
+      background: _disabledColor(colors.background),
+      border: _disabledColor(colors.border),
+      title: _disabledColor(colors.title),
+      description: _disabledColor(colors.description),
+    );
   }
 
   String _buildCourseKey(EventItem event) {
@@ -311,7 +348,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
   List<_ConflictGroup> _buildConflictGroups(List<EventItem> events) {
     final byDay = <int, List<_EventWithRange>>{};
     for (final event in events) {
-      final weekDay = _safeParsePositiveInt(event.weekDay, fallback: 1);
+      final weekDay = _displayWeekday(event);
       final range = _eventRange(event);
       byDay
           .putIfAbsent(weekDay, () => <_EventWithRange>[])
@@ -712,12 +749,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       _courseColorIndexMap[key] ??
                       _fallbackIndexForKey(key);
                   final safeIndex = _safeIndex(colorIndex);
-                  final Color backgroundColor =
-                      widget.backgroundColors[safeIndex];
-                  final Color borderColor = widget.borderColors[safeIndex];
-                  final Color titleColor = widget.titleColors[safeIndex];
-                  final Color descriptionColor =
-                      widget.descriptionColors[safeIndex];
+                  final colors = _cardColors(event, safeIndex);
                   final inset = card.visualInset;
                   final rawWidth = dayWidth - inset * 2;
                   final rawHeight = duration * widget.sessionHeight - inset * 2;
@@ -731,10 +763,10 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                     height: cardHeight,
                     child: ScheduleCourseCard(
                       event: event,
-                      backgroundColor: backgroundColor,
-                      borderColor: borderColor,
-                      titleColor: titleColor,
-                      descriptionColor: descriptionColor,
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                      titleColor: colors.title,
+                      descriptionColor: colors.description,
                       conflictCount: card.conflictCount,
                       showDecoration: true,
                       showContent: false,
@@ -781,6 +813,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       _courseColorIndexMap[key] ??
                       _fallbackIndexForKey(key);
                   final safeIndex = _safeIndex(colorIndex);
+                  final colors = _cardColors(border.event, safeIndex);
                   final fillAlpha = (200 - border.priorityRank * 18).clamp(
                     95,
                     210,
@@ -793,11 +826,10 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                     1.4,
                     2.0,
                   );
-                  final fillColor = widget.backgroundColors[safeIndex]
-                      .withAlpha(
-                        (fillAlpha * widget.cardOpacity).round().clamp(0, 255),
-                      );
-                  final frameColor = widget.borderColors[safeIndex].withAlpha(
+                  final fillColor = colors.background.withAlpha(
+                    (fillAlpha * widget.cardOpacity).round().clamp(0, 255),
+                  );
+                  final frameColor = colors.border.withAlpha(
                     (frameAlpha + 8).clamp(160, 250),
                   );
                   final inset = 1.0 + border.insetLevel * 2.0;
@@ -845,12 +877,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                       _courseColorIndexMap[key] ??
                       _fallbackIndexForKey(key);
                   final safeIndex = _safeIndex(colorIndex);
-                  final Color backgroundColor =
-                      widget.backgroundColors[safeIndex];
-                  final Color borderColor = widget.borderColors[safeIndex];
-                  final Color titleColor = widget.titleColors[safeIndex];
-                  final Color descriptionColor =
-                      widget.descriptionColors[safeIndex];
+                  final colors = _cardColors(event, safeIndex);
                   final inset = card.visualInset;
                   final rawWidth = dayWidth - inset * 2;
                   final rawHeight = duration * widget.sessionHeight - inset * 2;
@@ -864,10 +891,10 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                     height: cardHeight,
                     child: ScheduleCourseCard(
                       event: event,
-                      backgroundColor: backgroundColor,
-                      borderColor: borderColor,
-                      titleColor: titleColor,
-                      descriptionColor: descriptionColor,
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                      titleColor: colors.title,
+                      descriptionColor: colors.description,
                       conflictCount: card.conflictCount,
                       showDecoration: false,
                       showContent: true,
@@ -906,6 +933,20 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
       },
     );
   }
+}
+
+class _CourseCardColors {
+  const _CourseCardColors({
+    required this.background,
+    required this.border,
+    required this.title,
+    required this.description,
+  });
+
+  final Color background;
+  final Color border;
+  final Color title;
+  final Color description;
 }
 
 class _EventRange {
