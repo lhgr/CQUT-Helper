@@ -4,6 +4,8 @@ import 'package:cqut_helper/manager/background_image_temp_manager.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/schedule_background_file_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/manager/academic_calendar_manager.dart';
+import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
@@ -47,15 +49,21 @@ class _ScheduleCoursesSettingsPageState
   String? _pickedImagePath;
   Color? _pendingExtractedThemeColor;
   int? _hiddenCourseCount;
+  AcademicCalendarSnapshot? _academicCalendar;
+  AcademicCalendarSyncState _calendarState =
+      const AcademicCalendarSyncState.idle();
+  DateTime? _calendarLastSuccessfulAt;
 
   @override
   void initState() {
     super.initState();
+    AcademicCalendarManager.instance.addListener(_onCalendarChanged);
     _load();
   }
 
   @override
   void dispose() {
+    AcademicCalendarManager.instance.removeListener(_onCalendarChanged);
     final pendingPath = _pickedImagePath;
     if (pendingPath != null) {
       unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
@@ -63,8 +71,62 @@ class _ScheduleCoursesSettingsPageState
     super.dispose();
   }
 
+  void _onCalendarChanged() {
+    if (!mounted) return;
+    setState(() {
+      _calendarState = AcademicCalendarManager.instance.stateFor(
+        widget.scope.yearTerm,
+      );
+    });
+    unawaited(_loadCalendarCache());
+  }
+
+  Future<void> _loadCalendarCache() async {
+    final term = widget.scope.yearTerm.trim();
+    if (term.isEmpty) return;
+    final manager = AcademicCalendarManager.instance;
+    final snapshot = await manager.loadCached(term);
+    final last = await manager.lastSuccessfulAtFor(term);
+    if (!mounted) return;
+    setState(() {
+      _academicCalendar = snapshot;
+      _calendarLastSuccessfulAt = last;
+      _calendarState = manager.stateFor(term);
+    });
+  }
+
+  Future<void> _refreshCalendar() async {
+    final term = widget.scope.yearTerm.trim();
+    if (term.isEmpty || _calendarState.isLoading) return;
+    setState(() {
+      _calendarState = const AcademicCalendarSyncState(
+        phase: AcademicCalendarSyncPhase.loading,
+      );
+    });
+    final result = await AcademicCalendarManager.instance.refresh(term);
+    if (!mounted) return;
+    final changedDayCount = AcademicCalendarManager.instance
+        .stateFor(term)
+        .changedDayCount;
+    if (result.error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('假期与调休刷新失败：${result.error}')));
+    } else if (result.updated) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('假期与调休已更新 $changedDayCount 天')));
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('假期与调休已是最新')));
+    }
+    await _loadCalendarCache();
+  }
+
   Future<void> _load() async {
     await _manager.load();
+    unawaited(_loadCalendarCache());
     final hiddenCourses = widget.scope.canManageCourses
         ? await ScheduleCustomizationManager.instance.hiddenCourses(
             userId: widget.scope.userId,
@@ -504,6 +566,20 @@ class _ScheduleCoursesSettingsPageState
     if (mounted) setState(() => _hiddenCourseCount = hiddenCourses.length);
   }
 
+  String _calendarSubtitle() {
+    final snapshot = _academicCalendar;
+    final state = _calendarState;
+    final last = _calendarLastSuccessfulAt;
+    final version = snapshot?.revision.trim();
+    final versionText = version == null || version.isEmpty
+        ? '尚未同步'
+        : '版本 ${version.length > 18 ? version.substring(0, 18) : version}';
+    final lastText = last == null
+        ? '上次成功未知'
+        : '上次成功 ${last.month}/${last.day} ${last.hour.toString().padLeft(2, '0')}:${last.minute.toString().padLeft(2, '0')}';
+    return '$versionText · $lastText · ${state.message}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final page = Scaffold(
@@ -596,6 +672,26 @@ class _ScheduleCoursesSettingsPageState
                                   ),
                                 ),
                               ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _sectionTitle(context, '校历'),
+                          Card(
+                            elevation: 0,
+                            child: ListTile(
+                              leading: const Icon(
+                                Icons.event_available_outlined,
+                              ),
+                              title: const Text('假期与调休'),
+                              subtitle: Text(_calendarSubtitle()),
+                              trailing: FilledButton.tonal(
+                                onPressed: _calendarState.isLoading
+                                    ? null
+                                    : _refreshCalendar,
+                                child: Text(
+                                  _calendarState.isLoading ? '刷新中…' : '刷新假期与调休',
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 16),

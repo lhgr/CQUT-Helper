@@ -30,6 +30,32 @@ void main() {
     expect(received, [true, false]);
   });
 
+  test('周末补课提示已关闭状态会在加载时恢复', () async {
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.weekendMakeupNoticeDismissedKey: true,
+    });
+
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+
+    expect(manager.weekendMakeupNoticeDismissed, isTrue);
+  });
+
+  test('关闭周末补课提示会立即更新并持久化', () async {
+    SharedPreferences.setMockInitialValues({});
+    final manager = ScheduleSettingsManager();
+
+    final dismiss = manager.dismissWeekendMakeupNotice();
+    expect(manager.weekendMakeupNoticeDismissed, isTrue);
+    await dismiss;
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getBool(ScheduleSettingsManager.weekendMakeupNoticeDismissedKey),
+      isTrue,
+    );
+  });
+
   group('ScheduleSettingsManager 调课通知增强授权', () {
     test('旧版仅开启轮询但没有新版隐私同意时会自动关闭', () async {
       SharedPreferences.setMockInitialValues({

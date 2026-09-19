@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
+import 'package:cqut_helper/manager/academic_calendar_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
@@ -8,6 +9,7 @@ import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_message_center_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_app_bar.dart';
@@ -49,6 +51,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   late final ScheduleUpdateManager _updateManager;
 
   ScheduleData? _currentScheduleData; // 当前显示的周数据
+  AcademicCalendarSnapshot? _academicCalendar;
 
   // 获取控制器属性的 Getter
   Map<int, ScheduleData> get _weekCache => _controller.weekCache;
@@ -96,6 +99,9 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     );
     ScheduleCustomizationManager.instance.addListener(_onCustomizationChanged);
     ScheduleSettingsManager.settingsEpoch.addListener(_onSettingsChanged);
+    AcademicCalendarManager.instance.epoch.addListener(
+      _onAcademicCalendarChanged,
+    );
     _loadPreferences();
     _loadInitialData();
   }
@@ -112,6 +118,9 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       _onCustomizationChanged,
     );
     ScheduleSettingsManager.settingsEpoch.removeListener(_onSettingsChanged);
+    AcademicCalendarManager.instance.epoch.removeListener(
+      _onAcademicCalendarChanged,
+    );
     _updateManager.dispose();
     _initialBackgroundSyncTimer?.cancel();
     _allWeeksPrefetchTimer?.cancel();
@@ -124,6 +133,12 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   void _setState(VoidCallback fn) {
     if (!mounted) return;
     setState(fn);
+  }
+
+  void _dismissWeekendMakeupNotice() {
+    if (_settingsManager.weekendMakeupNoticeDismissed) return;
+    unawaited(_settingsManager.dismissWeekendMakeupNotice());
+    setState(() {});
   }
 
   String? get _refreshStatusText {
@@ -218,6 +233,62 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
         }),
       );
     }
+  }
+
+  void _onAcademicCalendarChanged() {
+    final term = (_currentScheduleData?.yearTerm ?? '').trim();
+    if (term.isEmpty) return;
+    unawaited(_loadAcademicCalendar(term));
+  }
+
+  Future<void> _loadAcademicCalendar(
+    String term, {
+    bool checkDue = false,
+  }) async {
+    final manager = AcademicCalendarManager.instance;
+    final cached = await manager.loadCached(term);
+    if (!mounted || (_currentScheduleData?.yearTerm ?? '').trim() != term) {
+      return;
+    }
+    setState(() => _academicCalendar = cached);
+    if (cached != null) unawaited(_ensureCalendarSourceWeeks(cached));
+    if (checkDue) unawaited(manager.refreshIfDue(term));
+  }
+
+  Future<void> _ensureCalendarSourceWeeks(
+    AcademicCalendarSnapshot calendar,
+  ) async {
+    final current = _currentScheduleData;
+    if (current == null) return;
+    final currentRange = ScheduleDate.tryExtractWeekRange(
+      current.weekDayList,
+      reference: DateTime.now(),
+    );
+    final currentWeek = int.tryParse((current.weekNum ?? '').trim());
+    final term = (current.yearTerm ?? '').trim();
+    if (currentRange == null || currentWeek == null || term.isEmpty) return;
+    final needed = <int>{};
+    for (final day in calendar.days) {
+      if (!day.isTeachingDay || day.scheduleDate == null) continue;
+      if (day.date.isBefore(currentRange.start) ||
+          day.date.isAfter(currentRange.end)) {
+        continue;
+      }
+      final source = day.scheduleDate!;
+      final delta = source.difference(currentRange.start).inDays;
+      final sourceWeek = (delta / 7).floor();
+      needed.add(currentWeek + sourceWeek);
+    }
+    for (final week in needed) {
+      if (_weekCache.containsKey(week)) continue;
+      await _controller.ensureWeekLoaded(
+        week.toString(),
+        term,
+        updateLastViewed: false,
+      );
+      if (!mounted) return;
+    }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -366,6 +437,10 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               weekList: _weekList!,
               weekCache: _weekCache,
               showWeekend: _settingsManager.showWeekend,
+              weekendNoticeDismissed:
+                  _settingsManager.weekendMakeupNoticeDismissed,
+              onDismissWeekendNotice: _dismissWeekendMakeupNotice,
+              academicCalendar: _academicCalendar,
               onBoundaryMessage: _showBoundaryMessage,
               currentWeekIndex: _currentWeekIndex,
               timeInfoList: _settingsManager.timeInfoEnabled

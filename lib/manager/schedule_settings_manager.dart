@@ -24,6 +24,8 @@ class ScheduleSettingsManager {
   static final ValueNotifier<int> experienceEpoch = ValueNotifier<int>(0);
   static final ValueNotifier<int> settingsEpoch = ValueNotifier<int>(0);
   static const String _prefsKeyShowWeekend = 'schedule_show_weekend';
+  static const String weekendMakeupNoticeDismissedKey =
+      'schedule_weekend_makeup_notice_dismissed';
   static const String _prefsKeyTimeInfoEnabled = 'schedule_time_info_enabled';
   static const String backgroundPollingEnabledKey =
       'schedule_background_polling_enabled';
@@ -66,6 +68,7 @@ class ScheduleSettingsManager {
       'https://notice.dawndrizzle.top';
 
   bool showWeekend = false;
+  bool weekendMakeupNoticeDismissed = false;
   bool timeInfoEnabled = true;
   bool backgroundPollingEnabled = false;
   String noticeApiBaseUrl = officialNoticeApiBaseUrl;
@@ -197,6 +200,8 @@ class ScheduleSettingsManager {
       }
     }
     showWeekend = prefs.getBool(_prefsKeyShowWeekend) ?? false;
+    weekendMakeupNoticeDismissed =
+        prefs.getBool(weekendMakeupNoticeDismissedKey) ?? false;
     timeInfoEnabled = prefs.getBool(_prefsKeyTimeInfoEnabled) ?? true;
     final wasPreviouslyEnabled =
         prefs.getBool(backgroundPollingEnabledKey) ?? false;
@@ -260,6 +265,12 @@ class ScheduleSettingsManager {
     );
     _cachedLayoutSettings = layoutSettings;
     defaultHomeTab = (prefs.getInt(defaultHomeTabKey) ?? 1).clamp(0, 2);
+  }
+
+  Future<void> dismissWeekendMakeupNotice() async {
+    weekendMakeupNoticeDismissed = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(weekendMakeupNoticeDismissedKey, true);
   }
 
   Future<void> saveExperienceSettings({

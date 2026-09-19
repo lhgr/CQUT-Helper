@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,7 +27,10 @@ class CourseReminderScheduler {
     return const CourseReminderStatus.empty();
   }
 
-  static Future<void> rescheduleForUser(String userId) async {
+  static Future<void> rescheduleForUser(
+    String userId, {
+    AcademicCalendarSnapshot? calendar,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     await _cancelPrevious(prefs);
     final enabled =
@@ -116,6 +121,9 @@ class CourseReminderScheduler {
       cachedSchedules: cachedSchedules,
       now: now,
     );
+    final effectiveCalendar =
+        calendar ??
+        loadCachedCalendarForTerm(prefs: prefs, yearTerm: activeTerm);
     final schedules = <ScheduleData>[];
     for (final cached in cachedSchedules) {
       if ((cached.schedule.yearTerm ?? '').trim() != activeTerm) continue;
@@ -133,45 +141,65 @@ class CourseReminderScheduler {
     );
     final occurrences = <_ReminderOccurrence>[];
     final seen = <String>{};
-    for (final schedule in schedules) {
-      final dates = ScheduleCustomizationManager.scheduleDates(schedule);
-      for (final event in schedule.eventList ?? const <EventItem>[]) {
-        final weekday = int.tryParse((event.weekDay ?? '').trim());
-        final date = weekday == null ? null : dates[weekday];
-        if (date == null) continue;
-        final startSession = _eventStart(event);
-        final startMinute = clocks[startSession]?.start;
-        if (startMinute == null) continue;
-        final reminderMinutes = event.reminderMinutes ?? defaultMinutes;
-        if (reminderMinutes <= 0) continue;
-        final startAt = DateTime(
-          date.year,
-          date.month,
-          date.day,
-          startMinute ~/ 60,
-          startMinute % 60,
+    void addOccurrence(EventItem event, DateTime date) {
+      final startSession = _eventStart(event);
+      final startMinute = clocks[startSession]?.start;
+      if (startMinute == null) return;
+      final reminderMinutes = event.reminderMinutes ?? defaultMinutes;
+      if (reminderMinutes <= 0) return;
+      final startAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        startMinute ~/ 60,
+        startMinute % 60,
+      );
+      final notifyAt = startAt.subtract(Duration(minutes: reminderMinutes));
+      if (!notifyAt.isAfter(now) || notifyAt.isAfter(horizon)) return;
+      final name = (event.eventName ?? '').trim().isEmpty
+          ? '课程'
+          : event.eventName!.trim();
+      final identity =
+          '${event.eventID}|$name|${date.toIso8601String()}|$startSession';
+      if (!seen.add(identity)) return;
+      occurrences.add(
+        _ReminderOccurrence(
+          id: _positiveId(identity),
+          notifyAt: notifyAt,
+          title: '$reminderMinutes 分钟后上课',
+          body: [
+            name,
+            if ((event.address ?? '').trim().isNotEmpty) event.address!.trim(),
+          ].join(' · '),
+          payload: 'course_reminder|${event.eventID ?? ''}|$name',
+        ),
+      );
+    }
+
+    if (effectiveCalendar == null) {
+      for (final schedule in schedules) {
+        final dates = ScheduleCustomizationManager.scheduleDates(schedule);
+        for (final event in schedule.eventList ?? const <EventItem>[]) {
+          final weekday = int.tryParse((event.weekDay ?? '').trim());
+          final date = weekday == null ? null : dates[weekday];
+          if (date == null) continue;
+          addOccurrence(event, date);
+        }
+      }
+    } else {
+      for (
+        var date = DateTime(now.year, now.month, now.day);
+        !date.isAfter(DateTime(horizon.year, horizon.month, horizon.day));
+        date = date.add(const Duration(days: 1))
+      ) {
+        final resolved = resolveAcademicCalendarDay(
+          actualDate: date,
+          schedules: schedules,
+          calendar: effectiveCalendar,
         );
-        final notifyAt = startAt.subtract(Duration(minutes: reminderMinutes));
-        if (!notifyAt.isAfter(now) || notifyAt.isAfter(horizon)) continue;
-        final name = (event.eventName ?? '').trim().isEmpty
-            ? '课程'
-            : event.eventName!.trim();
-        final identity =
-            '${event.eventID}|$name|${date.toIso8601String()}|$startSession';
-        if (!seen.add(identity)) continue;
-        occurrences.add(
-          _ReminderOccurrence(
-            id: _positiveId(identity),
-            notifyAt: notifyAt,
-            title: '$reminderMinutes 分钟后上课',
-            body: [
-              name,
-              if ((event.address ?? '').trim().isNotEmpty)
-                event.address!.trim(),
-            ].join(' · '),
-            payload: 'course_reminder|${event.eventID ?? ''}|$name',
-          ),
-        );
+        for (final item in resolved.events) {
+          addOccurrence(item.event, date);
+        }
       }
     }
     occurrences.sort((a, b) => a.notifyAt.compareTo(b.notifyAt));
@@ -210,6 +238,28 @@ class CourseReminderScheduler {
         updatedAt: DateTime.now(),
       ),
     );
+  }
+
+  /// Reads the immutable published calendar cache without making a network
+  /// request. Normal schedule refreshes use this path so a reschedule cannot
+  /// silently discard already-published makeup-day rules.
+  static AcademicCalendarSnapshot? loadCachedCalendarForTerm({
+    required SharedPreferences prefs,
+    required String yearTerm,
+  }) {
+    final term = yearTerm.trim();
+    if (term.isEmpty) return null;
+    final raw = prefs.getString('academic_calendar_snapshot_v1_$term');
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return AcademicCalendarSnapshot.fromJson(
+          decoded.cast<String, dynamic>(),
+        );
+      }
+    } catch (_) {}
+    return null;
   }
 
   static String _selectReminderTerm({

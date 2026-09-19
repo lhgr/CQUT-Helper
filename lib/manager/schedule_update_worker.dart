@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
+import 'package:cqut_helper/manager/academic_calendar_manager.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_notice_refresh_pipeline.dart';
@@ -31,6 +32,9 @@ class ScheduleUpdateWorker {
   static const String _dailyTaskUniqueName = 'schedule_notice_poll_task_daily';
   static const String _fallbackTaskUniqueName =
       'schedule_notice_poll_task_fallback';
+  static const String _calendarTaskName = 'academic_calendar_poll_task';
+  static const String _calendarTaskUniqueName = 'academic_calendar_poll_daily';
+  static const String _triggerCalendarDaily = 'academic_calendar_daily';
   static const String _triggerImmediate = 'immediate';
   static const String _triggerWidgetManual = 'widget_manual';
   static const String _triggerDaily9am = 'daily_9am';
@@ -171,6 +175,8 @@ class ScheduleUpdateWorker {
         'hasPassword': encryptedPassword.isNotEmpty,
       },
     );
+    // Calendar polling is independent from the optional notice enhancement.
+    await _scheduleCalendarTask();
     if (!enabled) {
       await _cancelAllScheduledTasks();
       await clearScheduleUpdateWorkerState(clearEnabledAt: true);
@@ -260,6 +266,36 @@ class ScheduleUpdateWorker {
         }
         await AppLogger.I.flush();
         return true;
+      }
+
+      if (task == _calendarTaskName) {
+        final calendarPrefs = await SharedPreferences.getInstance();
+        final calendarAccount = (calendarPrefs.getString('account') ?? '')
+            .trim();
+        final term = calendarAccount.isEmpty
+            ? ''
+            : (calendarPrefs.getString('schedule_last_term_$calendarAccount') ??
+                      calendarPrefs.getString(
+                        'schedule_widget_term_$calendarAccount',
+                      ) ??
+                      '')
+                  .trim();
+        if (term.isEmpty) {
+          await _scheduleCalendarTask();
+          return done(status: 'calendar_skip_missing_term');
+        }
+        final result = await AcademicCalendarManager.instance.refreshIfDue(
+          term,
+        );
+        await _scheduleCalendarTask();
+        return done(
+          status: result.error == null
+              ? result.updated
+                    ? 'calendar_updated'
+                    : 'calendar_unchanged'
+              : 'calendar_failed',
+          fields: {if (result.error != null) 'error': result.error.toString()},
+        );
       }
 
       if (task != _taskName) {
@@ -585,6 +621,22 @@ class ScheduleUpdateWorker {
     await Workmanager().cancelByUniqueName(_dailyTaskUniqueName);
     await Workmanager().cancelByUniqueName(_fallbackTaskUniqueName);
     await Workmanager().cancelByUniqueName(_immediateTaskUniqueName);
+  }
+
+  static Future<void> _scheduleCalendarTask() async {
+    final runAtUtc = _nextDaily9amUtc();
+    await Workmanager().registerOneOffTask(
+      _calendarTaskUniqueName,
+      _calendarTaskName,
+      initialDelay: _delayUntilUtc(runAtUtc),
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+      constraints: Constraints(networkType: NetworkType.connected),
+      inputData: <String, Object>{
+        'trigger': _triggerCalendarDaily,
+        'logicalDateBjt': _logicalDateBjtForInstant(runAtUtc),
+        'scheduledAtBjt': _toBjtWallClockString(runAtUtc),
+      },
+    );
   }
 
   static Future<void> _scheduleImmediateTask({required String userId}) async {
