@@ -126,9 +126,9 @@ class _SchedulePageViewState extends State<SchedulePageView> {
                 );
                 final effectiveShowWeekend =
                     widget.showWeekend || showMappedWeekend;
-                final dayCount = effectiveShowWeekend ? 7 : 5;
+                final baseDayCount = widget.showWeekend ? 7 : 5;
                 final gridWidth = math.max(
-                  widget.layoutSettings.gridCellWidth * dayCount,
+                  widget.layoutSettings.gridCellWidth * baseDayCount,
                   constraints.maxWidth - SchedulePageView._timeColumnWidth,
                 );
                 final contentWidth =

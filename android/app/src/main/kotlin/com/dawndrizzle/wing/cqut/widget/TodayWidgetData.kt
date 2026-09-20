@@ -156,12 +156,7 @@ object TodayWidgetData {
     val projectedLabel = projectedDay?.optString("label", "").orEmpty()
     val displayWeekText = when (projectedKind) {
       "holiday" -> if (projectedLabel.isBlank()) "休" else "休 · $projectedLabel"
-      "teaching_day" -> {
-        val sourceWeekday = projectedDay?.optString("source_date", "")
-          ?.let(::weekdayFromDateKey)
-        val sourceText = sourceWeekday?.let { "按周${toChineseWeekday(it)}课表" }
-        listOf("补", sourceText).filter { !it.isNullOrBlank() }.joinToString(" · ")
-      }
+      "teaching_day" -> "调·$defaultWeekText"
       else -> defaultWeekText
     }
     return Header(
@@ -763,15 +758,6 @@ object TodayWidgetData {
     calendar.get(Calendar.MONTH) + 1,
     calendar.get(Calendar.DAY_OF_MONTH),
   )
-
-  private fun weekdayFromDateKey(raw: String): Int? {
-    val match = Regex("""^(\d{4})-(\d{2})-(\d{2})$""").matchEntire(raw.trim()) ?: return null
-    val year = match.groupValues[1].toIntOrNull() ?: return null
-    val month = match.groupValues[2].toIntOrNull() ?: return null
-    val day = match.groupValues[3].toIntOrNull() ?: return null
-    val calendar = createScheduleCalendar(year, month, day) ?: return null
-    return toMondayBasedWeekday(calendar)
-  }
 
   private fun loadScheduleJsonObjects(context: Context): List<JSONObject> =
     listOfNotNull(

@@ -100,34 +100,42 @@ class ScheduleHeader extends StatelessWidget {
                               ),
                         ),
                         SizedBox(height: 2),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              day.weekDate ?? "",
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    fontSize: 10,
-                                    color: isToday
-                                        ? colorScheme.primary
-                                        : colorScheme.onSurfaceVariant,
+                        SizedBox(
+                          width: double.infinity,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  day.weekDate ?? "",
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        fontSize: 10,
+                                        color: isToday
+                                            ? colorScheme.primary
+                                            : colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                                if (marker != null) ...[
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    marker,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: resolved?.isHoliday == true
+                                              ? colorScheme.error
+                                              : colorScheme.primary,
+                                        ),
                                   ),
+                                ],
+                              ],
                             ),
-                            if (marker != null) ...[
-                              const SizedBox(width: 3),
-                              Text(
-                                marker,
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.bold,
-                                      color: resolved?.isHoliday == true
-                                          ? colorScheme.error
-                                          : colorScheme.primary,
-                                    ),
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
                       ],
                     ),

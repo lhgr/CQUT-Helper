@@ -12,6 +12,7 @@ class AboutSettingsPage extends StatefulWidget {
 
 class _AboutSettingsPageState extends State<AboutSettingsPage> {
   String _version = '';
+  bool _isCheckingUpdate = false;
 
   @override
   void initState() {
@@ -60,12 +61,15 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.system_update),
-                  title: const Text('检查更新'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => UpdateManager().checkUpdate(
-                    context,
-                    showNoUpdateToast: true,
-                  ),
+                  title: Text(_isCheckingUpdate ? '检查中…' : '检查更新'),
+                  trailing: _isCheckingUpdate
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  onTap: _isCheckingUpdate ? null : _checkForUpdate,
                 ),
                 const Divider(height: 1),
                 ListTile(
@@ -81,5 +85,17 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (_isCheckingUpdate) return;
+    setState(() => _isCheckingUpdate = true);
+    try {
+      await UpdateManager().checkUpdate(context, showNoUpdateToast: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingUpdate = false);
+      }
+    }
   }
 }
