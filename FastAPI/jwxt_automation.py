@@ -16,8 +16,7 @@ from urllib.parse import urljoin
 
 import requests
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+
 try:
     # pydantic v2
     from pydantic import BaseModel, Field, field_validator
@@ -26,6 +25,8 @@ except ImportError:
     from pydantic import BaseModel, Field, validator as field_validator
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
+
+from service_common import ServiceError, install_service_common
 
 logger = logging.getLogger("jwxt_automation")
 
@@ -501,14 +502,6 @@ class PipelineRequest(BaseModel):
         return normalized
 
 
-class ServiceError(Exception):
-    def __init__(self, status_code: int, code: str, message: str):
-        super().__init__(message)
-        self.status_code = status_code
-        self.code = code
-        self.message = message
-
-
 class SlidingWindowRateLimiter:
     def __init__(self, limit: int, window_seconds: int):
         self.limit = max(1, limit)
@@ -676,55 +669,7 @@ _pipeline_slots = threading.BoundedSemaphore(
 )
 
 app = FastAPI(title="JWXT Automation API", version="1.1.0")
-
-
-@app.middleware("http")
-async def security_headers_and_body_limit(request: Request, call_next: Any) -> JSONResponse:
-    content_length = request.headers.get("content-length", "").strip()
-    if content_length:
-        try:
-            if int(content_length) > 65536:
-                return JSONResponse(
-                    status_code=413,
-                    content={
-                        "success": False,
-                        "error": {
-                            "code": "request_too_large",
-                            "message": "请求体过大",
-                        },
-                    },
-                    headers={"Cache-Control": "no-store"},
-                )
-        except ValueError:
-            pass
-    response = await call_next(request)
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    return response
-
-
-@app.exception_handler(ServiceError)
-async def service_error_handler(_request: Request, exc: ServiceError) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "success": False,
-            "error": {"code": exc.code, "message": exc.message},
-        },
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_error_handler(
-    _request: Request, _exc: RequestValidationError
-) -> JSONResponse:
-    return JSONResponse(
-        status_code=422,
-        content={
-            "success": False,
-            "error": {"code": "validation_error", "message": "请求参数不合法"},
-        },
-    )
+install_service_common(app, max_body_bytes=20480)
 
 
 @app.get("/health")

@@ -96,6 +96,8 @@ object TodayWidgetData {
   private val WIDGET_TIME_ZONE = java.util.TimeZone.getTimeZone(WIDGET_TIME_ZONE_ID)
   private const val KEY_WIDGET_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_widget_week_"
   private const val KEY_WIDGET_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_widget_term_"
+  private const val KEY_WIDGET_CALENDAR_PROJECTION_PREFIX =
+    "${FLUTTER_PREFIX}schedule_widget_calendar_projection_v1_"
   private const val KEY_LAST_WEEK_PREFIX = "${FLUTTER_PREFIX}schedule_last_week_"
   private const val KEY_LAST_TERM_PREFIX = "${FLUTTER_PREFIX}schedule_last_term_"
   private const val KEY_TIME_INFO_CACHE = "${FLUTTER_PREFIX}schedule_time_info_cache_v1"
@@ -138,17 +140,7 @@ object TodayWidgetData {
     }
 
   fun loadHeader(context: Context): Header {
-    val calendar = widgetCalendar()
-    val dateFormat = widgetDateFormat("M.d")
-    val defaultDateText = dateFormat.format(calendar.time)
-    val defaultWeekText = "周${toChineseWeekday(toMondayBasedWeekday(calendar))}"
-
-    val today = loadTodayWeekDayAndDate(context)
-    return Header(
-      scheduleName = "课表",
-      dateText = today?.dateText ?: defaultDateText,
-      weekText = today?.weekText ?: defaultWeekText,
-    )
+    return loadHeaderByDayOffset(context, 0)
   }
 
   fun loadHeaderByDayOffset(context: Context, dayOffset: Int): Header {
@@ -159,17 +151,28 @@ object TodayWidgetData {
     val defaultDateText = dateFormat.format(targetCal.time)
     val defaultWeekText = "周${toChineseWeekday(targetWeekDay)}"
 
+    val projectedDay = loadProjectedDay(context, targetCal)
+    val projectedKind = projectedDay?.optString("kind", "")
+    val projectedLabel = projectedDay?.optString("label", "").orEmpty()
+    val displayWeekText = when (projectedKind) {
+      "holiday" -> if (projectedLabel.isBlank()) "休" else "休 · $projectedLabel"
+      "teaching_day" -> "调·$defaultWeekText"
+      else -> defaultWeekText
+    }
     return Header(
       scheduleName = "课表",
       dateText = defaultDateText,
-      weekText = defaultWeekText,
+      weekText = displayWeekText,
     )
   }
 
   fun loadWeekCountText(context: Context, dayOffset: Int = 0): String {
     val targetDate = widgetCalendar().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
-    val data = loadScheduleJsonObjectForDate(context, targetDate) ?: return ""
-    val week = data.optString("weekNum", "")
+    val day = loadProjectedDay(context, targetDate)
+    val week = day?.optString("source_week_num", "")
+      ?.takeIf { it.isNotBlank() }
+      ?: loadScheduleJsonObjectForDate(context, targetDate)?.optString("weekNum", "")
+      ?: ""
     if (week.isBlank()) return ""
     return "第${week}周"
   }
@@ -269,12 +272,16 @@ object TodayWidgetData {
             WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
           },
         )
-    val scheduleCandidates = loadScheduleJsonObjects(context)
     val hasCoveredRequiredDate =
       offsets.any { dayOffset ->
         val targetDate = widgetCalendar().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
-        scheduleCandidates.any { scheduleContainsDate(it, targetDate) }
+        loadProjectedDay(context, targetDate) != null ||
+          loadScheduleJsonObjectForDate(context, targetDate) != null
       }
+    val projection = loadCalendarProjection(context)
+    val hasAnyScheduleCache =
+      projection?.optJSONArray("days")?.length()?.let { it > 0 } == true ||
+        loadScheduleJsonObjects(context).isNotEmpty()
     val isDebuggable =
       context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
     val lastSuccessfulAt =
@@ -285,7 +292,7 @@ object TodayWidgetData {
     val pollingEnabled = prefs.getBoolean(KEY_BACKGROUND_POLLING_ENABLED, false)
     val presentation = idleRefreshPresentation(
       hasCoveredRequiredDate = hasCoveredRequiredDate,
-      hasAnyScheduleCache = scheduleCandidates.isNotEmpty(),
+      hasAnyScheduleCache = hasAnyScheduleCache,
       isDebuggable = isDebuggable,
       pollingEnabled = pollingEnabled,
       lastSuccessfulAt = lastSuccessfulAt,
@@ -297,7 +304,7 @@ object TodayWidgetData {
     WidgetNativeLog.debug(
       context,
       "offsets=${offsets.joinToString()} covered=$hasCoveredRequiredDate " +
-        "cacheCount=${scheduleCandidates.size} polling=$pollingEnabled " +
+      "projection=${projection != null} polling=$pollingEnabled " +
         "refreshAgeMs=${refreshAgeMillis ?: -1L} state=${presentation.state}",
       tag = "WidgetScheduleState",
     )
@@ -479,15 +486,21 @@ object TodayWidgetData {
         widgetCalendar().apply {
           add(Calendar.DAY_OF_YEAR, dayOffset)
         }
-      val targetData = loadScheduleJsonObjectForDate(context, targetDate) ?: return emptyList()
-      val targetWeekDay = toMondayBasedWeekday(targetDate)
-
-      val courses =
+      val projectedDay = loadProjectedDay(context, targetDate)
+      val courses = if (projectedDay == null) {
+        // Keep existing users' basic widget usable while the first projection
+        // is being built or after its optional cache has been cleared.
+        val targetData = loadScheduleJsonObjectForDate(context, targetDate)
+          ?: return emptyList()
         loadCoursesByWeekdayFromSchedule(
           context,
           targetData,
-          targetWeekDay.coerceIn(1, 7).toString(),
+          toMondayBasedWeekday(targetDate).coerceIn(1, 7).toString(),
         )
+      } else {
+        if (projectedDay.optString("kind", "") == "holiday") return emptyList()
+        loadCoursesFromEvents(context, projectedDay.optJSONArray("events"))
+      }
       return filterStartedCourses(courses, currentMinuteOfDay(), dayOffset)
     }
   }
@@ -535,16 +548,25 @@ object TodayWidgetData {
 
   fun loadEmptyStateText(context: Context, dayOffset: Int): String {
     WidgetRenderSnapshot.withSnapshot {
+      val targetDate = widgetCalendar().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
+      val projectedDay = loadProjectedDay(context, targetDate)
+      if (projectedDay?.optString("kind", "") == "missing_source") {
+        return "补课课表加载失败"
+      }
+      if (projectedDay?.optString("kind", "") == "holiday") {
+        val label = projectedDay.optString("label", "").trim()
+        return if (label.isBlank()) "今日放假" else "今日放假 · $label"
+      }
       val availability = loadDayScheduleAvailability(context, dayOffset)
-      val todayData = if (dayOffset == 0) {
-        loadScheduleJsonObjectForDate(context, widgetCalendar())
-      } else null
-      val hadCourses = todayData != null && loadCoursesByWeekdayFromSchedule(
-        context,
-        todayData,
-        toMondayBasedWeekday(widgetCalendar()).toString(),
-      ).isNotEmpty()
-      return emptyStateTextFor(availability, dayOffset, hadCourses)
+      val hadCourses = dayOffset == 0 && loadCoursesByDayOffset(context, 0).isNotEmpty()
+      val base = emptyStateTextFor(availability, dayOffset, hadCourses)
+      return if (projectedDay?.optString("kind", "") == "teaching_day" &&
+        projectedDay.optString("label", "").isNotBlank()
+      ) {
+        "${projectedDay.optString("label")} · $base"
+      } else {
+        base
+      }
     }
   }
 
@@ -572,10 +594,12 @@ object TodayWidgetData {
       widgetCalendar().apply {
         add(Calendar.DAY_OF_YEAR, dayOffset)
       }
-    if (loadScheduleJsonObjectForDate(context, targetDate) != null) {
+    if (loadProjectedDay(context, targetDate) != null ||
+      loadScheduleJsonObjectForDate(context, targetDate) != null
+    ) {
       return DayScheduleAvailability.COVERED
     }
-    return if (loadScheduleJsonObjects(context).isEmpty()) {
+    return if (loadCalendarProjection(context) == null) {
       DayScheduleAvailability.MISSING_CACHE
     } else {
       DayScheduleAvailability.OUTSIDE_TEACHING_WEEK
@@ -703,6 +727,38 @@ object TodayWidgetData {
     return loadScheduleJsonObjects(context).firstOrNull { scheduleContainsDate(it, targetDate) }
   }
 
+  /** Returns the Flutter-resolved calendar projection for the signed-in user. */
+  private fun loadCalendarProjection(context: Context): JSONObject? {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim()
+      ?.takeIf { it.isNotEmpty() } ?: return null
+    val raw = prefs.getString("$KEY_WIDGET_CALENDAR_PROJECTION_PREFIX$account", null)
+      ?.takeIf { it.isNotBlank() } ?: return null
+    return try {
+      JSONObject(raw)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun loadProjectedDay(context: Context, targetDate: Calendar): JSONObject? {
+    val days = loadCalendarProjection(context)?.optJSONArray("days") ?: return null
+    val targetKey = widgetDateKey(targetDate)
+    for (index in 0 until days.length()) {
+      val day = days.optJSONObject(index) ?: continue
+      if (day.optString("date", "") == targetKey) return day
+    }
+    return null
+  }
+
+  private fun widgetDateKey(calendar: Calendar): String = String.format(
+    Locale.US,
+    "%04d-%02d-%02d",
+    calendar.get(Calendar.YEAR),
+    calendar.get(Calendar.MONTH) + 1,
+    calendar.get(Calendar.DAY_OF_MONTH),
+  )
+
   private fun loadScheduleJsonObjects(context: Context): List<JSONObject> =
     listOfNotNull(
       loadScheduleJsonObject(context),
@@ -742,7 +798,15 @@ object TodayWidgetData {
   }
 
   fun loadCoursesByWeekdayFromSchedule(context: Context, data: JSONObject, weekDay: String): List<CourseItem> {
-    val events = data.optJSONArray("eventList") ?: return emptyList()
+    return loadCoursesFromEvents(context, data.optJSONArray("eventList"), weekDay)
+  }
+
+  private fun loadCoursesFromEvents(
+    context: Context,
+    events: JSONArray?,
+    weekDay: String? = null,
+  ): List<CourseItem> {
+    if (events == null) return emptyList()
     val courseColorMap = loadCourseColorIndexMap(context)
     val sessionClockMap = loadSessionClockMap(context)
     val result = ArrayList<CourseItem>(events.length())
@@ -750,7 +814,7 @@ object TodayWidgetData {
     for (i in 0 until events.length()) {
       val e = events.optJSONObject(i) ?: continue
       val eWeekDay = e.optString("weekDay", "")
-      if (eWeekDay != weekDay) continue
+      if (weekDay != null && eWeekDay != weekDay) continue
 
       val rawName = e.optString("eventName", "")
       val courseKey = buildCourseColorKey(rawName)
@@ -1179,17 +1243,23 @@ object TodayWidgetData {
     nowMillis: Long,
   ): Long? {
     val nowCalendar = widgetCalendar(nowMillis)
-    val data = loadScheduleJsonObjectForDate(context, nowCalendar) ?: return null
+    val projectedDay = loadProjectedDay(context, nowCalendar)
+    if (projectedDay?.optString("kind", "") == "holiday") return null
     val sessionClockMap = loadSessionClockMap(context)
     if (sessionClockMap.isEmpty()) return null
 
-    val events = data.optJSONArray("eventList") ?: return null
-    val todayWeekDay = toMondayBasedWeekday(nowCalendar).toString()
+    val events = projectedDay?.optJSONArray("events")
+      ?: loadScheduleJsonObjectForDate(context, nowCalendar)
+        ?.optJSONArray("eventList")
+      ?: return null
+    val fallbackWeekday = toMondayBasedWeekday(nowCalendar).toString()
     val sessionGroups = ArrayList<List<Int>>()
 
     for (i in 0 until events.length()) {
       val event = events.optJSONObject(i) ?: continue
-      if (event.optString("weekDay", "") != todayWeekDay) continue
+      if (projectedDay == null && event.optString("weekDay", "") != fallbackWeekday) {
+        continue
+      }
       val sessionNums = sessionNumbersOfEvent(event)
       if (sessionNums.isNotEmpty()) sessionGroups.add(sessionNums)
     }

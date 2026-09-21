@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cqut_helper/manager/background_image_temp_manager.dart';
+import 'package:cqut_helper/manager/academic_calendar_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
@@ -37,6 +38,9 @@ Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
 
   runApp(rootBuilder());
   unawaited(ScheduleUpdateWorker.syncFromPreferences());
+  // Calendar service is deliberately slow and independent of notice
+  // enhancement. Start it after the first frame without blocking startup.
+  unawaited(AcademicCalendarManager.instance.initializeFromPreferences());
 }
 
 Future<void> _preloadScheduleBackground() async {

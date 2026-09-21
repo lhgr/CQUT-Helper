@@ -274,7 +274,7 @@ void _showScheduleActionsSheet(
                   const Divider(indent: 72),
                   _ScheduleActionTile(
                     icon: Icons.ios_share_outlined,
-                    title: '导出 ICS',
+                    title: '导出ICS',
                     onTap: () => runAction(onExportIcs),
                   ),
                   const Divider(indent: 72),

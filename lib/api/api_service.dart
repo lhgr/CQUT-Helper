@@ -1,4 +1,5 @@
 import 'auth/auth_api.dart';
+import 'calendar/calendar_api.dart';
 import 'announcement/announcement_api.dart';
 import 'course/course_api.dart';
 import 'notice/notice_api.dart';
@@ -10,6 +11,7 @@ class ApiService {
   static final ApiService _instance = ApiService._internal();
   late final AnnouncementApi announcement;
   late final AuthApi auth;
+  late final CalendarApi calendar;
   late final CourseApi course;
   late final NoticeApi notice;
   late final DailyQuoteApi dailyQuote;
@@ -21,6 +23,7 @@ class ApiService {
   ApiService._internal() {
     announcement = AnnouncementApi();
     auth = AuthApi();
+    calendar = CalendarApi();
     course = CourseApi();
     notice = NoticeApi();
     dailyQuote = DailyQuoteApi();

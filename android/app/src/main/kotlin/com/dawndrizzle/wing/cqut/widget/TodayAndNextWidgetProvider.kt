@@ -283,6 +283,18 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
       views.setTextViewText(R.id.tv_week_count, TodayWidgetData.loadWeekCountText(context))
       views.setTextViewText(R.id.empty, TodayWidgetData.loadEmptyStateText(context, 0))
       views.setTextViewText(R.id.empty_next_day, TodayWidgetData.loadEmptyStateText(context, 1))
+      WidgetCollectionVisibility.bind(
+        views,
+        listViewId = R.id.lv_course,
+        emptyViewId = R.id.empty,
+        itemCount = TodayWidgetData.loadCoursesByDayOffset(context, 0).size,
+      )
+      WidgetCollectionVisibility.bind(
+        views,
+        listViewId = R.id.lv_course_next_day,
+        emptyViewId = R.id.empty_next_day,
+        itemCount = TodayWidgetData.loadCoursesByDayOffset(context, 1).size,
+      )
 
       val refreshPresentation =
         TodayWidgetData.loadRefreshPresentation(

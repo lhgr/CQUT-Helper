@@ -1,4 +1,4 @@
-# 调课通知增强功能说明
+# 调课通知增强与调课服务说明
 
 “调课通知增强”是 CQUT Helper 的可选功能。它通过调课服务查询教务系统中的
 待阅和已阅事项，识别当前学期的调课通知，并帮助应用及时刷新受影响的课表。
@@ -115,6 +115,18 @@ Android 可能因为省电模式、后台限制、设备重启或长期未打开
 
 在应用中点击“检查服务可用性”成功后再长期启用。自建服务的隐私保护、稳定性和
 数据安全由服务运营者负责。
+
+自建调课服务只需要安装 `requirements.txt` 并运行独立的调课应用：
+
+```bash
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+uvicorn jwxt_automation:app --host 127.0.0.1 --port 8001
+```
+
+该进程只暴露 `/health` 和 `/api/jwxt/term-schedule-notices`，只使用 `JWXT_*`
+环境变量。反向代理应关闭请求体日志，并将外部 `/api/jwxt/**` 和现有 `/health`
+转发到该进程。
 
 ## 常见提示
 

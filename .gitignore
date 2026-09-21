@@ -1,29 +1,14 @@
-# Miscellaneous
+# General generated files
 *.class
 *.log
-*.pyc
 *.swp
 .DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
+# Python / FastAPI generated files
+*.pyc
+FastAPI/__pycache__/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
+# Flutter / Dart / Pub
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
@@ -32,41 +17,49 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
-
-# Local Flutter package build artifacts
 /packages/**/.gradle/
 /packages/**/build/
 
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
+# Android build outputs
 /android/app/debug
 /android/app/profile
 /android/app/release
 
-# Firebase & Secrets
-firebase.json
-android/app/google-services.json
-ios/Runner/GoogleService-Info.plist
-lib/firebase_options.dart
+# Symbolication and obfuscation outputs
+app.*.symbols
+app.*.map.json
+
+# Android Studio / IntelliJ
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to include in version control.
+#.vscode/
+
+# Other tool metadata
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# Android signing files
 android/key.properties
 android/app/upload-keystore.jks
 **/*.keystore
 **/*.jks
+
+# Local project data and environment files
 workers
 .env
 docs
-
-FastAPI/__pycache__/
-
 APIs/
-
 .claude/
-
 key/
-
 assets/dev/
+FastAPI/calendar/
