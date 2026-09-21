@@ -205,13 +205,15 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         .toList(growable: false);
   }
 
-  List<Widget> _getStackChildren({required double scheduleFabBottomOffset}) {
+  List<Widget Function()> _getStackChildren({
+    required double scheduleFabBottomOffset,
+  }) {
     return [
-      TodayScheduleView(isActive: _currentIndex == 0),
-      ClassscheduleView(
+      () => TodayScheduleView(isActive: _currentIndex == 0),
+      () => ClassscheduleView(
         floatingActionButtonBottomOffset: scheduleFabBottomOffset,
       ),
-      const MineView(),
+      () => const MineView(),
     ];
   }
 
@@ -271,9 +273,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             // Child Scaffolds own their system insets. Wrapping this stack in a
             // SafeArea would split the status bar from the AppBar surface and
             // break the schedule page's immersive top-bar treatment.
-            IndexedStack(
+            LazyIndexedStack(
               index: _currentIndex,
-              children: _getStackChildren(
+              childBuilders: _getStackChildren(
                 scheduleFabBottomOffset: scheduleFabBottomOffset,
               ),
             ),
@@ -322,6 +324,44 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
           ),
         ),
       ),
+    );
+  }
+}
+
+class LazyIndexedStack extends StatefulWidget {
+  final int index;
+  final List<Widget Function()> childBuilders;
+
+  const LazyIndexedStack({
+    super.key,
+    required this.index,
+    required this.childBuilders,
+  }) : assert(index >= 0 && index < childBuilders.length);
+
+  @override
+  State<LazyIndexedStack> createState() => _LazyIndexedStackState();
+}
+
+class _LazyIndexedStackState extends State<LazyIndexedStack> {
+  late final Set<int> _initializedIndexes = <int>{widget.index};
+
+  @override
+  void didUpdateWidget(covariant LazyIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    assert(widget.index >= 0 && widget.index < widget.childBuilders.length);
+    _initializedIndexes.add(widget.index);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IndexedStack(
+      index: widget.index,
+      children: List<Widget>.generate(widget.childBuilders.length, (index) {
+        if (!_initializedIndexes.contains(index)) {
+          return const SizedBox.shrink();
+        }
+        return widget.childBuilders[index]();
+      }),
     );
   }
 }
