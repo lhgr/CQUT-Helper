@@ -31,23 +31,14 @@ class ScheduleCoursesSettingsPage extends StatefulWidget {
 
 class _ScheduleCoursesSettingsPageState
     extends State<ScheduleCoursesSettingsPage> {
-  static const ScheduleLayoutSettings _defaultLayout = ScheduleLayoutSettings();
-
   final ScheduleSettingsManager _manager = ScheduleSettingsManager();
-  final ImagePicker _imagePicker = ImagePicker();
 
   bool _loading = true;
-  bool _saving = false;
-  bool _dirty = false;
-  bool _handlingPop = false;
-  bool _extractingThemeColor = false;
-  bool _backgroundChanged = false;
-  bool _backgroundRemoved = false;
+  Future<void> _displaySaveQueue = Future<void>.value();
+  int _displaySettingsRevision = 0;
   bool _showWeekend = false;
   bool _timeInfoEnabled = true;
   ScheduleLayoutSettings _layout = const ScheduleLayoutSettings();
-  String? _pickedImagePath;
-  Color? _pendingExtractedThemeColor;
   int? _hiddenCourseCount;
   AcademicCalendarSnapshot? _academicCalendar;
   AcademicCalendarSyncState _calendarState =
@@ -64,10 +55,6 @@ class _ScheduleCoursesSettingsPageState
   @override
   void dispose() {
     AcademicCalendarManager.instance.removeListener(_onCalendarChanged);
-    final pendingPath = _pickedImagePath;
-    if (pendingPath != null) {
-      unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
-    }
     super.dispose();
   }
 
@@ -79,6 +66,149 @@ class _ScheduleCoursesSettingsPageState
       );
     });
     unawaited(_loadCalendarCache());
+  }
+
+  Future<void> _load() async {
+    await _manager.load();
+    final hiddenCourses = widget.scope.canManageCourses
+        ? await ScheduleCustomizationManager.instance.hiddenCourses(
+            userId: widget.scope.userId,
+            yearTerm: widget.scope.yearTerm,
+          )
+        : null;
+    if (!mounted) return;
+    setState(() {
+      _showWeekend = _manager.showWeekend;
+      _timeInfoEnabled = _manager.timeInfoEnabled;
+      _layout = _manager.layoutSettings;
+      _hiddenCourseCount = hiddenCourses?.length;
+      _loading = false;
+    });
+    unawaited(_loadCalendarCache());
+  }
+
+  void _changeDisplaySettings({
+    bool? showWeekend,
+    bool? timeInfoEnabled,
+    bool? hideLocation,
+    bool? hideTeacher,
+    bool? removeCampusPrefix,
+  }) {
+    final changesGeneralDisplay =
+        showWeekend != null || timeInfoEnabled != null;
+    final previousShowWeekend = _showWeekend;
+    final previousTimeInfoEnabled = _timeInfoEnabled;
+    final previousLayout = _layout;
+    final updatedLayout = _layout.copyWith(
+      hideLocation: hideLocation,
+      hideTeacher: hideTeacher,
+      removeCampusPrefix: removeCampusPrefix,
+    );
+    setState(() {
+      _showWeekend = showWeekend ?? _showWeekend;
+      _timeInfoEnabled = timeInfoEnabled ?? _timeInfoEnabled;
+      _layout = updatedLayout;
+    });
+    final revision = ++_displaySettingsRevision;
+    _displaySaveQueue = _displaySaveQueue.then(
+      (_) => _saveDisplaySettings(
+        revision: revision,
+        changesGeneralDisplay: changesGeneralDisplay,
+        showWeekend: _showWeekend,
+        timeInfoEnabled: _timeInfoEnabled,
+        layout: updatedLayout,
+        previousShowWeekend: previousShowWeekend,
+        previousTimeInfoEnabled: previousTimeInfoEnabled,
+        previousLayout: previousLayout,
+      ),
+    );
+  }
+
+  Future<void> _saveDisplaySettings({
+    required int revision,
+    required bool changesGeneralDisplay,
+    required bool showWeekend,
+    required bool timeInfoEnabled,
+    required ScheduleLayoutSettings layout,
+    required bool previousShowWeekend,
+    required bool previousTimeInfoEnabled,
+    required ScheduleLayoutSettings previousLayout,
+  }) async {
+    try {
+      if (changesGeneralDisplay) {
+        await _manager.save(
+          showWeekend: showWeekend,
+          timeInfoEnabled: timeInfoEnabled,
+          backgroundPollingEnabled: _manager.backgroundPollingEnabled,
+          noticeApiBaseUrl: _manager.noticeApiBaseUrl,
+        );
+      } else {
+        await _manager.saveLayoutSettings(layout);
+      }
+    } catch (error) {
+      // A completed newer request owns the visible state. An older failed
+      // request must not roll it back, but it still reports its failure.
+      final isLatest = revision == _displaySettingsRevision;
+      if (isLatest) {
+        _manager.showWeekend = previousShowWeekend;
+        _manager.timeInfoEnabled = previousTimeInfoEnabled;
+        _manager.layoutSettings = previousLayout;
+        if (mounted) {
+          setState(() {
+            _showWeekend = previousShowWeekend;
+            _timeInfoEnabled = previousTimeInfoEnabled;
+            _layout = previousLayout;
+          });
+        }
+        // A storage write may have partially completed. Restore the latest
+        // known-good snapshot on a best-effort basis.
+        try {
+          if (changesGeneralDisplay) {
+            await _manager.save(
+              showWeekend: previousShowWeekend,
+              timeInfoEnabled: previousTimeInfoEnabled,
+              backgroundPollingEnabled: _manager.backgroundPollingEnabled,
+              noticeApiBaseUrl: _manager.noticeApiBaseUrl,
+            );
+          } else {
+            await _manager.saveLayoutSettings(previousLayout);
+          }
+        } catch (_) {
+          // The failed write and its rollback are both best effort.
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('课表显示设置保存失败：$error')));
+      }
+    }
+  }
+
+  Future<void> _openLayoutSettings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const _ScheduleLayoutSettingsPage()),
+    );
+    if (mounted) await _load();
+  }
+
+  Future<void> _openHiddenCourses() async {
+    if (!widget.scope.canManageCourses) return;
+    await showHiddenCoursesSheet(
+      context,
+      userId: widget.scope.userId,
+      yearTerm: widget.scope.yearTerm,
+    );
+    if (mounted) await _loadHiddenCourseCount();
+  }
+
+  Future<void> _loadHiddenCourseCount() async {
+    final hiddenCourses = await ScheduleCustomizationManager.instance
+        .hiddenCourses(
+          userId: widget.scope.userId,
+          yearTerm: widget.scope.yearTerm,
+        );
+    if (mounted) setState(() => _hiddenCourseCount = hiddenCourses.length);
   }
 
   Future<void> _loadCalendarCache() async {
@@ -124,21 +254,184 @@ class _ScheduleCoursesSettingsPageState
     await _loadCalendarCache();
   }
 
+  String _calendarSubtitle() {
+    final snapshot = _academicCalendar;
+    final state = _calendarState;
+    final last = _calendarLastSuccessfulAt;
+    final version = snapshot?.revision.trim();
+    final versionText = version == null || version.isEmpty
+        ? '尚未同步'
+        : '版本 ${version.length > 18 ? version.substring(0, 18) : version}';
+    final lastText = last == null
+        ? '上次成功未知'
+        : '上次成功 ${last.month}/${last.day} ${last.hour.toString().padLeft(2, '0')}:${last.minute.toString().padLeft(2, '0')}';
+    return '$versionText · $lastText · ${state.message}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('课表设置')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+              children: [
+                _sectionTitle(context, '课表显示'),
+                Card(
+                  elevation: 0,
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        title: const Text('显示节次时间'),
+                        subtitle: const Text('关闭后仅保留节次数字'),
+                        value: _timeInfoEnabled,
+                        onChanged: (value) =>
+                            _changeDisplaySettings(timeInfoEnabled: value),
+                      ),
+                      SwitchListTile(
+                        title: const Text('显示周末'),
+                        subtitle: const Text('关闭后仅显示周一到周五'),
+                        value: _showWeekend,
+                        onChanged: (value) =>
+                            _changeDisplaySettings(showWeekend: value),
+                      ),
+                      SwitchListTile(
+                        title: const Text('隐藏上课地点'),
+                        value: _layout.hideLocation,
+                        onChanged: (value) =>
+                            _changeDisplaySettings(hideLocation: value),
+                      ),
+                      SwitchListTile(
+                        title: const Text('隐藏授课老师'),
+                        value: _layout.hideTeacher,
+                        onChanged: (value) =>
+                            _changeDisplaySettings(hideTeacher: value),
+                      ),
+                      SwitchListTile(
+                        title: const Text('移除地点前的校区标识'),
+                        subtitle: const Text('仅移除“花溪校区”和“两江校区”'),
+                        value: _layout.removeCampusPrefix,
+                        onChanged: (value) =>
+                            _changeDisplaySettings(removeCampusPrefix: value),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _sectionTitle(context, '布局与外观'),
+                Card(
+                  elevation: 0,
+                  child: ListTile(
+                    key: const ValueKey('schedule-layout-settings-entry'),
+                    leading: const Icon(Icons.dashboard_customize_outlined),
+                    title: const Text('布局与外观'),
+                    subtitle: const Text('背景、网格和课程卡片样式'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _openLayoutSettings,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _sectionTitle(context, '课程管理'),
+                Card(
+                  elevation: 0,
+                  child: ListTile(
+                    leading: const Icon(Icons.visibility_off_outlined),
+                    title: const Text('已隐藏课程'),
+                    subtitle: Text(
+                      !widget.scope.canManageCourses
+                          ? '请先打开一次课表以确定当前学期'
+                          : _hiddenCourseCount == 0
+                          ? '${widget.scope.yearTerm} 学期 · 暂无隐藏课程'
+                          : '${widget.scope.yearTerm} 学期 · $_hiddenCourseCount 门',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: widget.scope.canManageCourses
+                        ? _openHiddenCourses
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _sectionTitle(context, '校历'),
+                Card(
+                  elevation: 0,
+                  child: ListTile(
+                    leading: const Icon(Icons.event_available_outlined),
+                    title: const Text('假期与调休'),
+                    subtitle: Text(_calendarSubtitle()),
+                    trailing: FilledButton.tonal(
+                      onPressed: _calendarState.isLoading
+                          ? null
+                          : _refreshCalendar,
+                      child: Text(
+                        _calendarState.isLoading ? '刷新中…' : '刷新假期与调休',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(text, style: Theme.of(context).textTheme.titleSmall),
+    );
+  }
+}
+
+class _ScheduleLayoutSettingsPage extends StatefulWidget {
+  const _ScheduleLayoutSettingsPage();
+
+  @override
+  State<_ScheduleLayoutSettingsPage> createState() =>
+      _ScheduleLayoutSettingsPageState();
+}
+
+class _ScheduleLayoutSettingsPageState
+    extends State<_ScheduleLayoutSettingsPage> {
+  static const ScheduleLayoutSettings _defaultLayout = ScheduleLayoutSettings();
+
+  final ScheduleSettingsManager _manager = ScheduleSettingsManager();
+  final ImagePicker _imagePicker = ImagePicker();
+
+  bool _loading = true;
+  bool _saving = false;
+  bool _dirty = false;
+  bool _handlingPop = false;
+  bool _extractingThemeColor = false;
+  bool _backgroundChanged = false;
+  bool _backgroundRemoved = false;
+  bool _showWeekend = false;
+  bool _timeInfoEnabled = true;
+  ScheduleLayoutSettings _layout = const ScheduleLayoutSettings();
+  String? _pickedImagePath;
+  Color? _pendingExtractedThemeColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    final pendingPath = _pickedImagePath;
+    if (pendingPath != null) {
+      unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
+    }
+    super.dispose();
+  }
+
   Future<void> _load() async {
     await _manager.load();
-    unawaited(_loadCalendarCache());
-    final hiddenCourses = widget.scope.canManageCourses
-        ? await ScheduleCustomizationManager.instance.hiddenCourses(
-            userId: widget.scope.userId,
-            yearTerm: widget.scope.yearTerm,
-          )
-        : null;
     if (!mounted) return;
     setState(() {
       _showWeekend = _manager.showWeekend;
       _timeInfoEnabled = _manager.timeInfoEnabled;
       _layout = _manager.layoutSettings;
-      _hiddenCourseCount = hiddenCourses?.length;
       _loading = false;
       _dirty = false;
       _backgroundChanged = false;
@@ -152,22 +445,6 @@ class _ScheduleCoursesSettingsPageState
       update();
       _dirty = true;
     });
-  }
-
-  Future<void> _changeDisplaySettings({
-    bool? showWeekend,
-    bool? timeInfoEnabled,
-  }) async {
-    setState(() {
-      _showWeekend = showWeekend ?? _showWeekend;
-      _timeInfoEnabled = timeInfoEnabled ?? _timeInfoEnabled;
-    });
-    await _manager.save(
-      showWeekend: _showWeekend,
-      timeInfoEnabled: _timeInfoEnabled,
-      backgroundPollingEnabled: _manager.backgroundPollingEnabled,
-      noticeApiBaseUrl: _manager.noticeApiBaseUrl,
-    );
   }
 
   Future<void> _pickBackground() async {
@@ -251,7 +528,7 @@ class _ScheduleCoursesSettingsPageState
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('从背景图片取色？'),
-          content: const Text('可以提取背景图片的代表色，保存课表设置后将其作为应用主题色。'),
+          content: const Text('可以提取背景图片的代表色，保存后将其作为应用全局主题色。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
@@ -311,7 +588,7 @@ class _ScheduleCoursesSettingsPageState
       _change(() => _pendingExtractedThemeColor = color);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已完成取色，保存课表设置后应用')));
+      ).showSnackBar(const SnackBar(content: Text('已完成取色，保存后将作为应用全局主题色')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -425,13 +702,6 @@ class _ScheduleCoursesSettingsPageState
         await ScheduleBackground.precacheFile(context, backgroundPath);
         if (!mounted) return false;
       }
-      await _manager.save(
-        showWeekend: _showWeekend,
-        timeInfoEnabled: _timeInfoEnabled,
-        backgroundPollingEnabled: _manager.backgroundPollingEnabled,
-        noticeApiBaseUrl: _manager.noticeApiBaseUrl,
-        notify: false,
-      );
       await _manager.saveLayoutSettings(layout);
       final themeManager = ThemeManager();
       if (layout.backgroundImagePath == null || _backgroundRemoved) {
@@ -460,7 +730,7 @@ class _ScheduleCoursesSettingsPageState
       }
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('课表布局已保存')));
+      ).showSnackBar(const SnackBar(content: Text('布局与外观已保存')));
       return true;
     } catch (error) {
       if (!mounted) return false;
@@ -480,7 +750,7 @@ class _ScheduleCoursesSettingsPageState
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('修改尚未保存'),
-        content: const Text('离开前是否保存“课表布局自定义”的修改？'),
+        content: const Text('离开前是否保存“布局与外观”的修改？'),
         actions: [
           TextButton(
             onPressed: () =>
@@ -512,10 +782,13 @@ class _ScheduleCoursesSettingsPageState
 
   void _reset() {
     final pendingPath = _pickedImagePath;
+    final currentLayout = _layout;
     _change(() {
-      _showWeekend = false;
-      _timeInfoEnabled = true;
-      _layout = const ScheduleLayoutSettings();
+      _layout = const ScheduleLayoutSettings().copyWith(
+        hideLocation: currentLayout.hideLocation,
+        hideTeacher: currentLayout.hideTeacher,
+        removeCampusPrefix: currentLayout.removeCampusPrefix,
+      );
       _pickedImagePath = null;
       _pendingExtractedThemeColor = null;
       _backgroundChanged = true;
@@ -530,8 +803,8 @@ class _ScheduleCoursesSettingsPageState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('重置课表设置？'),
-        content: const Text('界面显示与课程卡片设置将恢复默认值，自定义背景图片也会被移除。确认后仍需保存才能生效。'),
+        title: const Text('重置布局与外观？'),
+        content: const Text('背景、网格与课程卡片样式将恢复默认值。课表显示设置不会改变，确认后仍需保存才能生效。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -547,44 +820,11 @@ class _ScheduleCoursesSettingsPageState
     if (confirmed == true && mounted) _reset();
   }
 
-  Future<void> _openHiddenCourses() async {
-    if (!widget.scope.canManageCourses) return;
-    await showHiddenCoursesSheet(
-      context,
-      userId: widget.scope.userId,
-      yearTerm: widget.scope.yearTerm,
-    );
-    if (mounted) await _loadHiddenCourseCount();
-  }
-
-  Future<void> _loadHiddenCourseCount() async {
-    final hiddenCourses = await ScheduleCustomizationManager.instance
-        .hiddenCourses(
-          userId: widget.scope.userId,
-          yearTerm: widget.scope.yearTerm,
-        );
-    if (mounted) setState(() => _hiddenCourseCount = hiddenCourses.length);
-  }
-
-  String _calendarSubtitle() {
-    final snapshot = _academicCalendar;
-    final state = _calendarState;
-    final last = _calendarLastSuccessfulAt;
-    final version = snapshot?.revision.trim();
-    final versionText = version == null || version.isEmpty
-        ? '尚未同步'
-        : '版本 ${version.length > 18 ? version.substring(0, 18) : version}';
-    final lastText = last == null
-        ? '上次成功未知'
-        : '上次成功 ${last.month}/${last.day} ${last.hour.toString().padLeft(2, '0')}:${last.minute.toString().padLeft(2, '0')}';
-    return '$versionText · $lastText · ${state.message}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final page = Scaffold(
       appBar: AppBar(
-        title: const Text('课表布局自定义'),
+        title: const Text('布局与外观'),
         actions: [
           TextButton(
             onPressed: _loading ? null : _confirmReset,
@@ -646,56 +886,7 @@ class _ScheduleCoursesSettingsPageState
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                         children: [
-                          Text(
-                            '功能设置',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          Card(
-                            elevation: 0,
-                            child: Column(
-                              children: [
-                                SwitchListTile(
-                                  title: const Text('显示节次时间'),
-                                  subtitle: const Text('关闭后仅保留节次数字'),
-                                  value: _timeInfoEnabled,
-                                  onChanged: (value) => _changeDisplaySettings(
-                                    timeInfoEnabled: value,
-                                  ),
-                                ),
-                                SwitchListTile(
-                                  title: const Text('显示周末'),
-                                  subtitle: const Text('关闭后仅显示周一到周五'),
-                                  value: _showWeekend,
-                                  onChanged: (value) => _changeDisplaySettings(
-                                    showWeekend: value,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _sectionTitle(context, '校历'),
-                          Card(
-                            elevation: 0,
-                            child: ListTile(
-                              leading: const Icon(
-                                Icons.event_available_outlined,
-                              ),
-                              title: const Text('假期与调休'),
-                              subtitle: Text(_calendarSubtitle()),
-                              trailing: FilledButton.tonal(
-                                onPressed: _calendarState.isLoading
-                                    ? null
-                                    : _refreshCalendar,
-                                child: Text(
-                                  _calendarState.isLoading ? '刷新中…' : '刷新假期与调休',
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _sectionTitle(context, '界面显示'),
+                          _sectionTitle(context, '背景'),
                           Card(
                             elevation: 0,
                             child: Column(
@@ -746,13 +937,13 @@ class _ScheduleCoursesSettingsPageState
                                       _extractingThemeColor
                                           ? '正在分析背景图片…'
                                           : _pendingExtractedThemeColor != null
-                                          ? '已提取颜色，保存后将作为主题色'
+                                          ? '已提取颜色，保存后将作为应用全局主题色'
                                           : !_backgroundChanged &&
                                                 ThemeManager().colorSource ==
                                                     ThemeColorSource
                                                         .scheduleBackground
-                                          ? '当前正在使用背景图片主题色'
-                                          : '提取代表色并应用为全局主题色',
+                                          ? '当前背景图片颜色正在作为应用全局主题色'
+                                          : '提取代表色并作为应用全局主题色',
                                     ),
                                     trailing: FilledButton.tonal(
                                       onPressed: _extractingThemeColor
@@ -810,6 +1001,15 @@ class _ScheduleCoursesSettingsPageState
                                     onTap: _chooseColorMode,
                                   ),
                                 ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          _sectionTitle(context, '网格'),
+                          Card(
+                            elevation: 0,
+                            child: Column(
+                              children: [
                                 _slider(
                                   context,
                                   label: '网格宽度',
@@ -879,34 +1079,6 @@ class _ScheduleCoursesSettingsPageState
                             child: Column(
                               children: [
                                 SwitchListTile(
-                                  title: const Text('隐藏上课地点'),
-                                  value: _layout.hideLocation,
-                                  onChanged: (value) => _change(
-                                    () => _layout = _layout.copyWith(
-                                      hideLocation: value,
-                                    ),
-                                  ),
-                                ),
-                                SwitchListTile(
-                                  title: const Text('隐藏授课老师'),
-                                  value: _layout.hideTeacher,
-                                  onChanged: (value) => _change(
-                                    () => _layout = _layout.copyWith(
-                                      hideTeacher: value,
-                                    ),
-                                  ),
-                                ),
-                                SwitchListTile(
-                                  title: const Text('移除地点前的校区标识'),
-                                  subtitle: const Text('仅移除“花溪校区”和“两江校区”'),
-                                  value: _layout.removeCampusPrefix,
-                                  onChanged: (value) => _change(
-                                    () => _layout = _layout.copyWith(
-                                      removeCampusPrefix: value,
-                                    ),
-                                  ),
-                                ),
-                                SwitchListTile(
                                   title: const Text('文字水平居中'),
                                   value: _layout.horizontalCenter,
                                   onChanged: (value) => _change(
@@ -973,28 +1145,6 @@ class _ScheduleCoursesSettingsPageState
                                   ),
                                 ),
                               ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          _sectionTitle(context, '课程管理'),
-                          Card(
-                            elevation: 0,
-                            child: ListTile(
-                              leading: const Icon(
-                                Icons.visibility_off_outlined,
-                              ),
-                              title: const Text('已隐藏课程'),
-                              subtitle: Text(
-                                !widget.scope.canManageCourses
-                                    ? '请先打开一次课表以确定当前学期'
-                                    : _hiddenCourseCount == 0
-                                    ? '${widget.scope.yearTerm} 学期 · 暂无隐藏课程'
-                                    : '${widget.scope.yearTerm} 学期 · $_hiddenCourseCount 门',
-                              ),
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: widget.scope.canManageCourses
-                                  ? _openHiddenCourses
-                                  : null,
                             ),
                           ),
                         ],

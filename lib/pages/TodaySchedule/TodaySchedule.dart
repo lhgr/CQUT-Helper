@@ -28,7 +28,6 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
 
   ScheduleData? _scheduleData;
   bool _loading = true;
-  bool _refreshing = false;
   String? _error;
   DateTime? _lastSuccessfulRefreshAt;
   String _dataSource = '缓存';
@@ -184,7 +183,6 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     if (!mounted) return;
     setState(() {
       if (forceRefresh) {
-        _refreshing = true;
         _quoteRefreshToken++;
       } else {
         _loading = true;
@@ -240,7 +238,6 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _refreshing = false;
         });
       }
     }
@@ -550,25 +547,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     final moment = events.isEmpty ? null : _courseMoment(events);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('今日课表'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            tooltip: '刷新课表',
-            onPressed: _refreshing
-                ? null
-                : () => _loadSchedule(forceRefresh: true),
-            icon: _refreshing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('今日课表'), centerTitle: true),
       body: RefreshIndicator(
         onRefresh: () => _loadSchedule(forceRefresh: true),
         child: ListView(
