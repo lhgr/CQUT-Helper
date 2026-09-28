@@ -18,12 +18,10 @@ class WidgetCalendarProjection {
     AcademicCalendarSnapshot? calendar,
     DateTime? generatedAt,
   }) {
-    final scheduleList = schedules.toList(growable: false);
+    final scheduleIndex = academicCalendarScheduleIndex(schedules);
     final dates = <String, DateTime>{};
-    for (final schedule in scheduleList) {
-      for (final date in academicCalendarScheduleDates(schedule).values) {
-        dates[academicCalendarDateKey(date)] = date;
-      }
+    for (final date in scheduleIndex.keys) {
+      dates[academicCalendarDateKey(date)] = date;
     }
     for (final day in calendar?.days ?? const <AcademicCalendarDay>[]) {
       dates[academicCalendarDateKey(day.date)] = day.date;
@@ -41,8 +39,9 @@ class WidgetCalendarProjection {
           _resolvedDayToJson(
             resolveAcademicCalendarDay(
               actualDate: date,
-              schedules: scheduleList,
+              schedules: const <ScheduleData>[],
               calendar: calendar,
+              scheduleIndex: scheduleIndex,
             ),
           ),
       ],

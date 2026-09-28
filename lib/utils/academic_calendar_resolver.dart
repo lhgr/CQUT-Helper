@@ -82,6 +82,7 @@ AcademicCalendarResolvedDay resolveAcademicCalendarDay({
   required Iterable<ScheduleData> schedules,
   AcademicCalendarSnapshot? calendar,
   bool includeHolidayEvents = false,
+  Map<DateTime, ScheduleData>? scheduleIndex,
 }) {
   final actual = DateTime(actualDate.year, actualDate.month, actualDate.day);
   final rule = calendar?.dayAt(actual);
@@ -97,7 +98,13 @@ AcademicCalendarResolvedDay resolveAcademicCalendarDay({
   }
 
   final sourceDate = rule?.scheduleDate ?? actual;
-  final source = _findScheduleContaining(schedules, sourceDate);
+  final source = scheduleIndex == null
+      ? _findScheduleContaining(schedules, sourceDate)
+      : scheduleIndex[DateTime(
+          sourceDate.year,
+          sourceDate.month,
+          sourceDate.day,
+        )];
   if (source == null) {
     return AcademicCalendarResolvedDay(
       actualDate: actual,
@@ -154,6 +161,20 @@ ScheduleData? _findScheduleContaining(
 
 Map<int, DateTime> academicCalendarScheduleDates(ScheduleData schedule) =>
     _scheduleDates(schedule);
+
+/// Indexes each date once. The first schedule containing a date wins, matching
+/// the single-day resolver's lookup order when cached weeks overlap.
+Map<DateTime, ScheduleData> academicCalendarScheduleIndex(
+  Iterable<ScheduleData> schedules,
+) {
+  final index = <DateTime, ScheduleData>{};
+  for (final schedule in schedules) {
+    for (final date in _scheduleDates(schedule).values) {
+      index.putIfAbsent(date, () => schedule);
+    }
+  }
+  return index;
+}
 
 Map<int, DateTime> _scheduleDates(ScheduleData schedule) {
   final result = <int, DateTime>{};

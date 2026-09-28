@@ -89,4 +89,44 @@ void main() {
     expect(day['kind'], 'missing_source');
     expect(day['events'], isEmpty);
   });
+
+  test(
+    'uses the first cached week for overlapping dates across a makeup day',
+    () {
+      ScheduleData week(String number, String name) => ScheduleData(
+        yearTerm: '2026-2027-1',
+        weekNum: number,
+        weekDayList: [WeekDayItem(weekDay: '2', weekDate: '2026-09-29')],
+        eventList: [EventItem(eventName: name, weekDay: '2')],
+      );
+      final calendar = AcademicCalendarSnapshot(
+        schemaVersion: 1,
+        yearTerm: '2026-2027-1',
+        revision: 'sha256:overlap',
+        generatedAt: DateTime(2026, 9, 19),
+        complete: true,
+        days: [
+          AcademicCalendarDay(
+            date: DateTime(2026, 10, 10),
+            kind: AcademicCalendarDayKind.teachingDay,
+            scheduleDate: DateTime(2026, 9, 29),
+            label: '调休补课',
+          ),
+        ],
+      );
+
+      final projection = WidgetCalendarProjection.build(
+        yearTerm: calendar.yearTerm,
+        schedules: [week('5', '首个课表'), week('6', '重复课表')],
+        calendar: calendar,
+      );
+      final days = {
+        for (final day in projection['days'] as List)
+          day['date'] as String: day,
+      };
+      final makeup = days['2026-10-10'] as Map;
+      expect(makeup['source_week_num'], '5');
+      expect((makeup['events'] as List).single['eventName'], '首个课表');
+    },
+  );
 }

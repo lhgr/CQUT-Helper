@@ -485,6 +485,7 @@ class ScheduleApi {
     required ScheduleData currentSchedule,
   }) async {
     final schedules = <ScheduleData>[currentSchedule];
+    final adjacentSchedules = <ScheduleData>[];
     final seenWeeks = <String>{_norm(currentSchedule.weekNum)};
     for (final week in _projectionWeeks(centerWeek)) {
       if (!seenWeeks.add(week)) continue;
@@ -498,16 +499,21 @@ class ScheduleApi {
         final decoded = json.decode(entry.rawJson);
         if (decoded is! Map) continue;
         final source = ScheduleData.fromJson(decoded.cast<String, dynamic>());
-        schedules.add(
-          await ScheduleCustomizationManager.instance.applyToSchedule(
-            userId: userId,
-            schedule: source,
-          ),
-        );
+        adjacentSchedules.add(source);
       } catch (_) {
         // A corrupt adjacent week must not prevent the visible projection
         // from being refreshed from the valid week we just saved.
       }
+    }
+    try {
+      schedules.addAll(
+        await ScheduleCustomizationManager.instance.applyToSchedules(
+          userId: userId,
+          schedules: adjacentSchedules,
+        ),
+      );
+    } catch (_) {
+      // The current week is already customized and can still be projected.
     }
     final calendar = _readCachedAcademicCalendar(prefs, yearTerm);
     await _storeCalendarProjection(
@@ -550,7 +556,7 @@ class ScheduleApi {
         .map((day) => academicCalendarDateKey(day.scheduleDate!))
         .toSet();
     final visibleWeeks = _projectionWeeks(centerWeek);
-    final schedules = <ScheduleData>[];
+    final sourceSchedules = <ScheduleData>[];
     final entries = await ScheduleCacheDatabase.instance.loadAllForUser(
       account,
       yearTerm: term,
@@ -562,23 +568,16 @@ class ScheduleApi {
             !_scheduleContainsAnyDate(schedule, sourceDates)) {
           continue;
         }
-        schedules.add(
-          await ScheduleCustomizationManager.instance.applyToSchedule(
-            userId: account,
-            schedule: schedule,
-          ),
-        );
+        sourceSchedules.add(schedule);
         continue;
       }
       final schedule = _decodeCachedSchedule(entry.rawJson);
       if (schedule == null) continue;
-      schedules.add(
-        await ScheduleCustomizationManager.instance.applyToSchedule(
-          userId: account,
-          schedule: schedule,
-        ),
-      );
+      sourceSchedules.add(schedule);
     }
+
+    final schedules = await ScheduleCustomizationManager.instance
+        .applyToSchedules(userId: account, schedules: sourceSchedules);
 
     await _storeCalendarProjection(
       prefs: prefs,

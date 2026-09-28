@@ -164,6 +164,35 @@ CREATE TABLE course_preferences (
       return schedule;
     }
     final preferences = await preferenceMap(userId: userId, yearTerm: term);
+    return _applyPreferences(schedule, preferences);
+  }
+
+  /// Loads preferences once per term when projecting several cached weeks.
+  Future<List<ScheduleData>> applyToSchedules({
+    required String userId,
+    required Iterable<ScheduleData> schedules,
+  }) async {
+    final results = <ScheduleData>[];
+    final preferencesByTerm = <String, Map<String, CoursePreference>>{};
+    for (final schedule in schedules) {
+      final term = (schedule.yearTerm ?? '').trim();
+      if (userId.trim().isEmpty || term.isEmpty) {
+        results.add(schedule);
+        continue;
+      }
+      final preferences = preferencesByTerm[term] ??= await preferenceMap(
+        userId: userId,
+        yearTerm: term,
+      );
+      results.add(_applyPreferences(schedule, preferences));
+    }
+    return results;
+  }
+
+  ScheduleData _applyPreferences(
+    ScheduleData schedule,
+    Map<String, CoursePreference> preferences,
+  ) {
     final merged = <EventItem>[];
 
     for (final event in schedule.eventList ?? const <EventItem>[]) {
