@@ -32,6 +32,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   DateTime? _lastSuccessfulRefreshAt;
   String _dataSource = '缓存';
   AcademicCalendarSnapshot? _academicCalendar;
+  String? _academicCalendarTerm;
   int _lastHandledWidgetNavigationToken = 0;
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
@@ -78,6 +79,13 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     String term, {
     bool checkDue = false,
   }) async {
+    if (!mounted) return;
+    if (_academicCalendarTerm != term) {
+      _academicCalendarTerm = term;
+      if (_academicCalendar != null) {
+        setState(() => _academicCalendar = null);
+      }
+    }
     final manager = AcademicCalendarManager.instance;
     final cached = await manager.loadCached(term);
     if (!mounted || (_scheduleData?.yearTerm ?? '').trim() != term) return;
@@ -196,10 +204,17 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         cached = await _controller.loadFromCache();
         if (cached != null && mounted) {
           setState(() {
+            final term = (cached!.yearTerm ?? '').trim();
+            if (_academicCalendarTerm != term) {
+              _academicCalendarTerm = term;
+              _academicCalendar = null;
+            }
             _scheduleData = cached;
             _loading = false;
             _dataSource = '缓存';
           });
+          final term = (cached.yearTerm ?? '').trim();
+          if (term.isNotEmpty) await _loadAcademicCalendar(term);
           await _loadRefreshSnapshot();
         }
       }
@@ -219,6 +234,11 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         _controller.processLoadedData(networkData);
         if (!mounted) return;
         setState(() {
+          final term = (networkData.yearTerm ?? '').trim();
+          if (_academicCalendarTerm != term) {
+            _academicCalendarTerm = term;
+            _academicCalendar = null;
+          }
           _scheduleData = networkData;
           _error = null;
           _dataSource = '在线';
@@ -231,6 +251,10 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       }
     } catch (e) {
       if (!mounted) return;
+      final term = (_scheduleData?.yearTerm ?? '').trim();
+      if (term.isNotEmpty) {
+        unawaited(AcademicCalendarManager.instance.refreshIfDue(term));
+      }
       setState(() {
         _error = _mapError(e);
       });
