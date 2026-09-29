@@ -315,25 +315,6 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     await _loadSchedule(forceRefresh: true);
   }
 
-  WeekDayItem? _todayWeekDayItem(ScheduleData data) {
-    final weekDayList = data.weekDayList ?? const <WeekDayItem>[];
-    for (final item in weekDayList) {
-      if (item.today == true) return item;
-    }
-    final todayWeekDay = DateTime.now().weekday.toString();
-    for (final item in weekDayList) {
-      if ((item.weekDay ?? '').trim() == todayWeekDay) return item;
-    }
-    return null;
-  }
-
-  int _todayWeekDayNum(ScheduleData data) {
-    final item = _todayWeekDayItem(data);
-    final parsed = int.tryParse((item?.weekDay ?? '').trim());
-    if (parsed != null && parsed >= 1 && parsed <= 7) return parsed;
-    return DateTime.now().weekday;
-  }
-
   List<EventItem> _todayEvents(ScheduleData data) {
     final resolved = _resolvedToday(data);
     if (resolved != null && _academicCalendar != null) {
@@ -358,7 +339,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       });
       return events;
     }
-    final weekDay = _todayWeekDayNum(data).toString();
+    final weekDay = DateTime.now().weekday.toString();
     final events = (data.eventList ?? const <EventItem>[])
         .where((event) => (event.weekDay ?? '').trim() == weekDay)
         .toList(growable: false);
@@ -554,8 +535,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     }
 
     final now = DateTime.now();
-    final weekDayNum = _todayWeekDayNum(data);
-    final weekDayItem = _todayWeekDayItem(data);
+    final weekDayNum = now.weekday;
     final coveredToday = _isTodayCovered(data);
     final resolvedToday = _academicCalendar == null
         ? null
@@ -581,10 +561,12 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
             _SummaryCard(
               title: calendarHoliday
                   ? '今日放假'
-                  : resolvedToday?.isTeachingDay == true
+                  : resolvedToday?.isTeachingDay == true ||
+                        calendarMissingSource
                   ? '今日调休上课'
                   : _weekDayLabel(weekDayNum),
-              dateText: weekDayItem?.weekDate ?? '${now.month}-${now.day}',
+              dateText:
+                  '${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}',
               termText: data.yearTerm?.trim().isNotEmpty == true
                   ? data.yearTerm!.trim()
                   : '当前学期',
@@ -600,6 +582,14 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                     ? '今天没有课程安排。'
                     : '${resolvedToday.label}，今天没有课程安排。',
               ),
+            if (!calendarHoliday && resolvedToday?.isTeachingDay == true)
+              _InfoBanner(
+                icon: Icons.event_available_outlined,
+                message: [
+                  if (resolvedToday!.label.isNotEmpty) resolvedToday.label,
+                  '按原课表${academicCalendarDateKey(resolvedToday.scheduleDate!)}上课',
+                ].join(' · '),
+              ),
             if (calendarMissingSource)
               const _InfoBanner(
                 icon: Icons.sync_problem_outlined,
@@ -611,12 +601,18 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
             ],
             if (_error != null) ...[
               const SizedBox(height: 12),
-              _InfoBanner(icon: Icons.wifi_off_outlined, message: _error!),
+              _InfoBanner(
+                icon: Icons.wifi_off_outlined,
+                message: _error!,
+                isError: true,
+              ),
             ],
             const SizedBox(height: 16),
             if (calendarHoliday)
               const SizedBox.shrink()
-            else if (!coveredToday)
+            else if (calendarMissingSource)
+              const SizedBox.shrink()
+            else if (!coveredToday && resolvedToday?.isTeachingDay != true)
               const _EmptyState(
                 icon: Icons.event_note_outlined,
                 title: '当前不在教学周',
@@ -861,29 +857,36 @@ class _MetaChip extends StatelessWidget {
 class _InfoBanner extends StatelessWidget {
   final IconData icon;
   final String message;
+  final bool isError;
 
-  const _InfoBanner({required this.icon, required this.message});
+  const _InfoBanner({
+    required this.icon,
+    required this.message,
+    this.isError = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final background = isError
+        ? colors.errorContainer
+        : colors.secondaryContainer;
+    final foreground = isError
+        ? colors.onErrorContainer
+        : colors.onSecondaryContainer;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.errorContainer,
+        color: background,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: Theme.of(context).colorScheme.onErrorContainer),
+          Icon(icon, color: foreground),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onErrorContainer,
-              ),
-            ),
+            child: Text(message, style: TextStyle(color: foreground)),
           ),
         ],
       ),
