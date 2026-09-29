@@ -83,6 +83,10 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   Timer? _initialBackgroundSyncTimer;
   Timer? _allWeeksPrefetchTimer;
   Timer? _reminderRebuildTimer;
+  Timer? _deviceDateTimer;
+  bool _followDeviceWeek = true;
+  DateTime? _schoolTodayDate;
+  DateTime? _schoolTodayReceivedAt;
 
   DateTime? _lastMessageTime;
   List<String> _inlineNoticeMessages = const <String>[];
@@ -104,6 +108,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     );
     _loadPreferences();
     _loadInitialData();
+    _scheduleDeviceDateCheck();
   }
 
   @override
@@ -125,6 +130,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     _initialBackgroundSyncTimer?.cancel();
     _allWeeksPrefetchTimer?.cancel();
     _reminderRebuildTimer?.cancel();
+    _deviceDateTimer?.cancel();
     _controller.dispose();
     _pageController?.dispose();
     super.dispose();
@@ -172,6 +178,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     if (epoch == _lastTimetableCacheEpoch) return;
     _lastTimetableCacheEpoch = epoch;
     _controller.reset();
+    _schoolTodayDate = null;
+    _schoolTodayReceivedAt = null;
     if (!mounted) return;
     final pc = _pageController;
     setState(() {
@@ -294,6 +302,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(_syncToDeviceDate());
+      _scheduleDeviceDateCheck();
       _consumePendingChangesIfAny();
     }
   }
@@ -378,6 +388,10 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     }
 
     final displayedWeek = _weekList![_currentWeekIndex];
+    final deviceDate = DateTime.now();
+    final todayDate = DateUtils.isSameDay(_schoolTodayReceivedAt, deviceDate)
+        ? _schoolTodayDate ?? deviceDate
+        : deviceDate;
     final showFab = shouldShowScheduleReturnWeekButton(
       displayedWeek: displayedWeek,
       displayedTerm: _currentScheduleData?.yearTerm,
@@ -436,6 +450,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               onScrollActivityChanged: _onWeekPageScrollActivityChanged,
               weekList: _weekList!,
               weekCache: _weekCache,
+              todayDate: todayDate,
               showWeekend: _settingsManager.showWeekend,
               weekendNoticeDismissed:
                   _settingsManager.weekendMakeupNoticeDismissed,

@@ -7,6 +7,7 @@ import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 
 class ScheduleHeader extends StatelessWidget {
   final ScheduleData scheduleData;
+  final DateTime todayDate;
   final double height;
   final double timeColumnWidth;
   final bool showWeekend;
@@ -18,6 +19,7 @@ class ScheduleHeader extends StatelessWidget {
   const ScheduleHeader({
     super.key,
     required this.scheduleData,
+    required this.todayDate,
     this.height = 50.0,
     this.timeColumnWidth = 30.0,
     this.showWeekend = true,
@@ -64,8 +66,15 @@ class ScheduleHeader extends StatelessWidget {
           Expanded(
             child: Row(
               children: weekDayList.map((day) {
-                final isToday = day.today == true;
-                final date = ScheduleDate.tryParseWeekDate(day.weekDate);
+                final date = ScheduleDate.tryParseWeekDate(
+                  day.weekDate,
+                  reference: todayDate,
+                );
+                final isToday =
+                    date != null &&
+                    date.year == todayDate.year &&
+                    date.month == todayDate.month &&
+                    date.day == todayDate.day;
                 final resolved = date == null
                     ? null
                     : resolvedDays[academicCalendarDateKey(date)];

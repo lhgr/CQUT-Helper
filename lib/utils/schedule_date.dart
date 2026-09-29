@@ -74,4 +74,12 @@ class ScheduleDate {
     final d = DateTime(date.year, date.month, date.day);
     return !d.isBefore(range.start) && !d.isAfter(range.end);
   }
+
+  static int? weekNumberForDate(ScheduleData anchor, DateTime date) {
+    final week = int.tryParse(anchor.weekNum ?? '');
+    final range = tryExtractWeekRange(anchor.weekDayList, reference: date);
+    if (week == null || range == null) return null;
+    final day = DateTime(date.year, date.month, date.day);
+    return week + (day.difference(range.start).inDays / 7).floor();
+  }
 }

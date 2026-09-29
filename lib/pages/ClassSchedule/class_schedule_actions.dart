@@ -2,7 +2,9 @@ part of 'ClassSchedule.dart';
 
 extension _ClassScheduleActions on _ClassscheduleViewState {
   void _onPageChanged(int index) {
-    if (_initialBootRequestPending) {
+    final userChangedWeek = index != _currentWeekIndex;
+    if (userChangedWeek) _followDeviceWeek = false;
+    if (_initialBootRequestPending && userChangedWeek) {
       _userChangedWeekDuringInitialBoot = true;
     }
 
@@ -373,6 +375,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
   }
 
   void _returnToCurrentWeek() {
+    _followDeviceWeek = true;
     if (_actualCurrentWeekStr == null) {
       _loadFromNetwork();
       return;

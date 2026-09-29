@@ -22,14 +22,16 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     var currentWeekScheduledPrefetch = false;
     if (cachedData != null) {
       _processLoadedData(cachedData, isInitial: true);
+      await _syncToDeviceDate();
       await _loadRefreshSnapshot();
+      final visibleData = _currentScheduleData ?? cachedData;
       final coversToday = ScheduleDate.dataCoversDate(
-        cachedData,
+        visibleData,
         DateTime.now(),
       );
-      final fresh = coversToday && await _controller.isFresh(cachedData);
+      final fresh = coversToday && await _controller.isFresh(visibleData);
       if (fresh) {
-        _controller.hydrateCurrentStatusFromCache(cachedData);
+        _controller.hydrateCurrentStatusFromCache(visibleData);
         shouldRefreshCurrentWeek = false;
         _setState(() {
           _loading = false;
@@ -59,6 +61,64 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       _scheduleDeferredInitialWork(currentData);
     }
     await _maybeShowBackgroundPollingGuide();
+  }
+
+  void _scheduleDeviceDateCheck() {
+    _deviceDateTimer?.cancel();
+    final now = DateTime.now();
+    final nextDay = DateTime(now.year, now.month, now.day + 1);
+    _deviceDateTimer = Timer(nextDay.difference(now), () {
+      unawaited(_syncToDeviceDate());
+      _scheduleDeviceDateCheck();
+    });
+  }
+
+  Future<void> _syncToDeviceDate() async {
+    final anchor = _currentScheduleData;
+    final weeks = _weekList;
+    if (!mounted || anchor == null || weeks == null) return;
+    final now = DateTime.now();
+    final targetWeek = ScheduleDate.weekNumberForDate(anchor, now);
+    final term = anchor.yearTerm;
+    if (targetWeek == null || term == null) {
+      _setState(() {});
+      return;
+    }
+    final today = DateTime(now.year, now.month, now.day);
+    final targetIndex = weeks.indexOf(targetWeek.toString());
+    if (targetIndex < 0) {
+      _setState(() {});
+      return;
+    }
+    var target = _weekCache[targetWeek];
+    target ??= await _controller.loadFromCache(
+      weekNum: targetWeek.toString(),
+      yearTerm: term,
+    );
+    if (!mounted || _currentTerm != term) return;
+    if (target == null || !ScheduleDate.dataCoversDate(target, today)) {
+      _setState(() {});
+      return;
+    }
+    _weekCache[targetWeek] = target;
+    _controller.hydrateCurrentStatusFromCache(target);
+    if (_followDeviceWeek) {
+      _setState(() {
+        _currentScheduleData = target;
+        _currentWeekIndex = targetIndex;
+        final controller = _pageController;
+        if (controller == null || !controller.hasClients) {
+          controller?.dispose();
+          _pageController = PageController(initialPage: targetIndex);
+        }
+      });
+      final controller = _pageController;
+      if (controller != null && controller.hasClients) {
+        controller.jumpToPage(targetIndex);
+      }
+    } else {
+      _setState(() {});
+    }
   }
 
   void _scheduleDeferredInitialWork(
@@ -288,6 +348,18 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         yearTerm: yearTerm,
         updateWidgetPins: updateWidgetPins,
       );
+
+      final receivedAt = DateTime.now();
+      _schoolTodayReceivedAt = receivedAt;
+      _schoolTodayDate = null;
+      for (final day in data.weekDayList ?? const <WeekDayItem>[]) {
+        if (day.today != true) continue;
+        _schoolTodayDate = ScheduleDate.tryParseWeekDate(
+          day.weekDate,
+          reference: receivedAt,
+        );
+        if (_schoolTodayDate != null) break;
+      }
 
       _processLoadedData(
         data,

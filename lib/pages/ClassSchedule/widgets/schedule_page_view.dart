@@ -17,6 +17,7 @@ class SchedulePageView extends StatefulWidget {
   final ValueChanged<bool> onScrollActivityChanged;
   final List<String> weekList;
   final Map<int, ScheduleData> weekCache;
+  final DateTime todayDate;
   final bool showWeekend;
   final bool weekendNoticeDismissed;
   final VoidCallback onDismissWeekendNotice;
@@ -40,6 +41,7 @@ class SchedulePageView extends StatefulWidget {
     required this.onScrollActivityChanged,
     required this.weekList,
     required this.weekCache,
+    required this.todayDate,
     required this.showWeekend,
     required this.weekendNoticeDismissed,
     required this.onDismissWeekendNotice,
@@ -142,6 +144,7 @@ class _SchedulePageViewState extends State<SchedulePageView> {
                       children: [
                         ScheduleHeader(
                           scheduleData: data,
+                          todayDate: widget.todayDate,
                           height: SchedulePageView._headerHeight,
                           timeColumnWidth: SchedulePageView._timeColumnWidth,
                           showWeekend: effectiveShowWeekend,

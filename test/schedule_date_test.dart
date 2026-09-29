@@ -75,4 +75,18 @@ void main() {
       );
     });
   });
+
+  test('cached week identifies the device date across week and year', () {
+    final anchor = ScheduleData(
+      weekNum: '18',
+      weekDayList: [
+        WeekDayItem(weekDate: '2025-12-29', today: true),
+        WeekDayItem(weekDate: '2026-01-04'),
+      ],
+    );
+
+    expect(ScheduleDate.weekNumberForDate(anchor, DateTime(2026, 1, 4)), 18);
+    expect(ScheduleDate.weekNumberForDate(anchor, DateTime(2026, 1, 5)), 19);
+    expect(ScheduleDate.weekNumberForDate(anchor, DateTime(2025, 12, 28)), 17);
+  });
 }
