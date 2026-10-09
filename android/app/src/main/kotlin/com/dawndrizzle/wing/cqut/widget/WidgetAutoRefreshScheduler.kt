@@ -78,7 +78,7 @@ object WidgetAutoRefreshScheduler {
         WidgetNativeLog.warn(
           context,
           "event=alarm_fallback reason=$reason triggerAt=$triggerAt " +
-            "targetKind=${target.kind} mode=$fallbackMode",
+            "targetKind=${target.kind} mode=$fallbackMode outcome=recovered",
           error,
         )
         true

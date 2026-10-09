@@ -30,7 +30,7 @@ class WidgetRefreshHeartbeatJobService : JobService() {
   }
 
   override fun onStopJob(params: JobParameters): Boolean {
-    WidgetNativeLog.warn(
+    WidgetNativeLog.info(
       applicationContext,
       "event=legacy_heartbeat_stopped at=${System.currentTimeMillis()}",
     )

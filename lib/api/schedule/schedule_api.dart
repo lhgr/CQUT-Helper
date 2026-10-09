@@ -10,6 +10,7 @@ import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/diagnostic_operation.dart';
 import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:cqut_helper/utils/widget_calendar_projection.dart';
@@ -39,6 +40,17 @@ class ScheduleApi {
       'schedule_fetch_at_${userId.trim()}_${yearTerm.trim()}_${weekNum.trim()}';
 
   Future<ScheduleData?> loadFromCache({
+    required String userId,
+    String? weekNum,
+    String? yearTerm,
+  }) => runDiagnosticOperation(
+    'ScheduleApi',
+    'cache_read',
+    () => _loadFromCache(userId: userId, weekNum: weekNum, yearTerm: yearTerm),
+    fields: {'week': weekNum, 'term': yearTerm},
+  );
+
+  Future<ScheduleData?> _loadFromCache({
     required String userId,
     String? weekNum,
     String? yearTerm,
@@ -81,12 +93,52 @@ class ScheduleApi {
         }
         return merged;
       }
-    } catch (_) {}
+      throw FormatException('课表缓存不是对象');
+    } catch (error, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'ScheduleApi',
+        'cached schedule decode failed',
+        error: error,
+        stackTrace: stackTrace,
+        level: LogLevel.warn,
+        fields: {
+          'stage': 'cache_decode',
+          'outcome': 'cache_ignored',
+          'week': weekNum,
+          'term': yearTerm,
+        },
+      );
+    }
 
     return null;
   }
 
   Future<ScheduleData> loadFromNetwork({
+    required String userId,
+    required String encryptedPassword,
+    String? weekNum,
+    String? yearTerm,
+    bool persistLastViewed = true,
+    bool updateWidgetPins = false,
+    bool notifyWidget = true,
+    String? refreshId,
+  }) => runDiagnosticOperation(
+    'ScheduleApi',
+    'load_schedule',
+    () => _loadFromNetwork(
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+      weekNum: weekNum,
+      yearTerm: yearTerm,
+      persistLastViewed: persistLastViewed,
+      updateWidgetPins: updateWidgetPins,
+      notifyWidget: notifyWidget,
+      refreshId: refreshId,
+    ),
+    fields: {'week': weekNum, 'term': yearTerm},
+  );
+
+  Future<ScheduleData> _loadFromNetwork({
     required String userId,
     required String encryptedPassword,
     String? weekNum,
@@ -114,7 +166,7 @@ class ScheduleApi {
       if (raw.isEmpty) jsonMap['yearTerm'] = reqTerm;
     }
 
-    final data = ScheduleData.fromJson(jsonMap);
+    final data = _decodeNetworkSchedule(jsonMap);
 
     final dataWeek = _norm(data.weekNum);
     final dataTerm = _norm(data.yearTerm);
@@ -181,6 +233,21 @@ class ScheduleApi {
       userId: userId,
       schedule: data,
     );
+  }
+
+  ScheduleData _decodeNetworkSchedule(Map<String, dynamic> data) {
+    try {
+      return ScheduleData.fromJson(data);
+    } catch (error, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'ScheduleApi',
+        'schedule response decode failed',
+        error: error,
+        stackTrace: stackTrace,
+        fields: const {'stage': 'response_decode', 'outcome': 'failed'},
+      );
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> fetchRawWeekEvents({
@@ -500,9 +567,22 @@ class ScheduleApi {
         if (decoded is! Map) continue;
         final source = ScheduleData.fromJson(decoded.cast<String, dynamic>());
         adjacentSchedules.add(source);
-      } catch (_) {
+      } catch (error, stackTrace) {
         // A corrupt adjacent week must not prevent the visible projection
         // from being refreshed from the valid week we just saved.
+        AppLogger.I.logOperationFailure(
+          'ScheduleApi',
+          'adjacent cache decode failed',
+          error: error,
+          stackTrace: stackTrace,
+          level: LogLevel.warn,
+          fields: {
+            'stage': 'widget_projection_cache_decode',
+            'outcome': 'adjacent_week_ignored',
+            'week': week,
+            'term': yearTerm,
+          },
+        );
       }
     }
     try {
@@ -512,8 +592,19 @@ class ScheduleApi {
           schedules: adjacentSchedules,
         ),
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
       // The current week is already customized and can still be projected.
+      AppLogger.I.logOperationFailure(
+        'ScheduleApi',
+        'adjacent customization failed',
+        error: error,
+        stackTrace: stackTrace,
+        level: LogLevel.warn,
+        fields: const {
+          'stage': 'widget_projection_customize',
+          'outcome': 'current_week_preserved',
+        },
+      );
     }
     final calendar = _readCachedAcademicCalendar(prefs, yearTerm);
     await _storeCalendarProjection(

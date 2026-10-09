@@ -26,8 +26,8 @@ class UpdateApi {
       if (response.statusCode == 200) {
         return UpdateModel.fromJson(response.data);
       }
-    } catch (e) {
-      AppLogger.I.warn(_tag, 'Check update failed', error: e);
+    } catch (e, st) {
+      AppLogger.I.warn(_tag, 'Check update failed', error: e, stackTrace: st);
     }
     return null;
   }

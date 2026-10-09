@@ -17,22 +17,24 @@ object WidgetRefreshCoordinator {
     context: Context,
     reason: String,
   ) {
-    synchronized(refreshLock) {
-      WidgetRenderSnapshot.withSnapshot {
-        val current = WidgetRefreshRenderStateStore.capture(context)
-        val previous = WidgetRefreshRenderStateStore.load(context)
-        if (
-          WidgetRefreshRenderStateStore.shouldCoalesce(
-            previous,
-            current,
-            REFRESH_COALESCE_WINDOW_MILLIS,
-          )
-        ) {
-          WidgetNativeLog.debug(context, "event=refresh_coalesced reason=$reason")
-          ensureScheduled(context, reason)
-          return
+    WidgetNativeLog.withOperation("widget_refresh") {
+      synchronized(refreshLock) {
+        WidgetRenderSnapshot.withSnapshot {
+          val current = WidgetRefreshRenderStateStore.capture(context)
+          val previous = WidgetRefreshRenderStateStore.load(context)
+          if (
+            WidgetRefreshRenderStateStore.shouldCoalesce(
+              previous,
+              current,
+              REFRESH_COALESCE_WINDOW_MILLIS,
+            )
+          ) {
+            WidgetNativeLog.debug(context, "event=refresh_coalesced reason=$reason")
+            ensureScheduled(context, reason)
+            return@withOperation
+          }
+          refreshAndRepair(context, reason, current, previous)
         }
-        refreshAndRepair(context, reason, current, previous)
       }
     }
   }
@@ -45,9 +47,9 @@ object WidgetRefreshCoordinator {
   fun forceRebind(
     context: Context,
     reason: String,
-  ): Boolean {
+  ): Boolean = WidgetNativeLog.withOperation("widget_rebind") {
     synchronized(refreshLock) {
-      if (!hasActiveWidgets(context)) return false
+      if (!hasActiveWidgets(context)) return@withOperation false
       WidgetRenderSnapshot.withSnapshot {
         val current = WidgetRefreshRenderStateStore.capture(context)
         val previous = WidgetRefreshRenderStateStore.load(context)
@@ -59,7 +61,7 @@ object WidgetRefreshCoordinator {
           forceFullUpdate = true,
         )
       }
-      return true
+      true
     }
   }
 
@@ -70,25 +72,25 @@ object WidgetRefreshCoordinator {
   fun repairIfDue(
     context: Context,
     reason: String,
-  ): Boolean {
+  ): Boolean = WidgetNativeLog.withOperation("widget_repair") {
     synchronized(refreshLock) {
       if (!hasActiveWidgets(context)) {
         cancelAll(context, reason)
-        return false
+        return@withOperation false
       }
       WidgetRenderSnapshot.withSnapshot {
         val current = WidgetRefreshRenderStateStore.capture(context)
         val previous = WidgetRefreshRenderStateStore.load(context)
         if (WidgetRefreshRenderStateStore.shouldRefresh(previous, current)) {
           refreshAndRepair(context, reason, current, previous)
-          return true
+          return@withOperation true
         }
         WidgetNativeLog.debug(
           context,
           "event=repair_not_due reason=$reason logicalDate=${current.logicalDate}",
         )
         ensureScheduled(context, reason)
-        return false
+        false
       }
     }
   }

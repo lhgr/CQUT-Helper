@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:asn1lib/asn1lib.dart';
+import 'package:cqut_helper/utils/diagnostic_operation.dart';
 import 'package:pointycastle/asymmetric/api.dart';
 import 'package:pointycastle/asymmetric/pkcs1.dart';
 import 'package:pointycastle/asymmetric/rsa.dart';
@@ -32,13 +33,14 @@ iZU1vc9gKRcG/pGjZ/DJkI4HmoUE2r/o6SfB5az3s+H5JDzmOMVQ63hD7LZQGR4k
 Y/akVmYNtghKZzz6jwIDAQAB
 -----END PUBLIC KEY-----''';
 
-  Future<void> login({
-    required String account,
-    required String password,
-  }) async {
-    final encryptedPwd = encryptPassword(password);
-    await loginWithEncrypted(account: account, encryptedPassword: encryptedPwd);
-  }
+  Future<void> login({required String account, required String password}) =>
+      runDiagnosticOperation('AuthApi', 'encrypt_credentials', () async {
+        final encryptedPwd = encryptPassword(password);
+        await loginWithEncrypted(
+          account: account,
+          encryptedPassword: encryptedPwd,
+        );
+      });
 
   Future<void> resetLoginContext({String? account}) async {
     if (account == null || account.trim().isEmpty) {
@@ -96,6 +98,18 @@ Y/akVmYNtghKZzz6jwIDAQAB
   }
 
   Future<void> loginWithEncrypted({
+    required String account,
+    required String encryptedPassword,
+  }) => runDiagnosticOperation(
+    'AuthApi',
+    'login',
+    () => _loginWithEncrypted(
+      account: account,
+      encryptedPassword: encryptedPassword,
+    ),
+  );
+
+  Future<void> _loginWithEncrypted({
     required String account,
     required String encryptedPassword,
   }) async {

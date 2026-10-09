@@ -106,8 +106,17 @@ class BasicCookieFixInterceptor extends Interceptor {
           AppLogger.I.debug(_tag, 'Fixed ${setCookieHeaders.length} cookies');
         }
       }
-    } catch (e) {
-      AppLogger.I.warn(_tag, 'Interceptor error', error: e);
+    } catch (e, st) {
+      AppLogger.I.warn(
+        _tag,
+        'Interceptor error',
+        error: e,
+        stackTrace: st,
+        fields: const {
+          'stage': 'cookie_normalization',
+          'outcome': 'continue_response',
+        },
+      );
       // 不要抛出异常，继续处理
     }
 

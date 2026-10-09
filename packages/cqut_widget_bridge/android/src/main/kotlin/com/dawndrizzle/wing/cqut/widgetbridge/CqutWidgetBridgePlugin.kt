@@ -8,15 +8,47 @@ import android.util.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.StandardMethodCodec
 
 class CqutWidgetBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
   private lateinit var applicationContext: Context
   private lateinit var channel: MethodChannel
+  private lateinit var diagnosticChannel: MethodChannel
 
   override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     applicationContext = binding.applicationContext
     channel = MethodChannel(binding.binaryMessenger, CHANNEL_NAME)
     channel.setMethodCallHandler(this)
+    try { CqutDiagnostics.initialize(applicationContext) } catch (_: Exception) {}
+    diagnosticChannel = MethodChannel(
+      binding.binaryMessenger, "cqut/diagnostics", StandardMethodCodec.INSTANCE,
+      binding.binaryMessenger.makeBackgroundTaskQueue(),
+    )
+    diagnosticChannel.setMethodCallHandler { call, result ->
+      try {
+        CqutDiagnostics.initialize(applicationContext)
+        when (call.method) {
+          "init" -> result.success(CqutDiagnostics.stats())
+          "write" -> {
+            val source = call.argument<String>("source") ?: "foreground"
+            val event = call.argument<Map<String, Any?>>("event")
+            result.success(event != null && CqutDiagnostics.persist(source, event))
+          }
+          "snapshot" -> result.success(CqutDiagnostics.snapshot())
+          "stats" -> result.success(CqutDiagnostics.stats())
+          "clear" -> result.success(CqutDiagnostics.clear())
+          "prune" -> result.success(CqutDiagnostics.prune())
+          "publishExport" -> result.success(CqutDiagnostics.publishExport(
+            call.argument<String>("fileName") ?: throw IllegalArgumentException("fileName is required"),
+            call.argument<String>("content") ?: throw IllegalArgumentException("content is required"),
+          ))
+          "exportStats" -> result.success(CqutDiagnostics.exportStats())
+          "pruneExports" -> result.success(CqutDiagnostics.pruneExports())
+          "clearExports" -> result.success(CqutDiagnostics.clearExports())
+          else -> result.notImplemented()
+        }
+      } catch (error: Exception) { result.error("DIAGNOSTIC_IO", error.message, null) }
+    }
   }
 
   override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -40,7 +72,9 @@ class CqutWidgetBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         }
       }
 
-      dispatch(WidgetBridgeDispatchPlans.from(themeMode, trigger))
+      CqutDiagnostics.withOperation("widget_bridge", call.argument<String>("operationId")) {
+        dispatch(WidgetBridgeDispatchPlans.from(themeMode, trigger))
+      }
       result.success(null)
     } catch (error: RuntimeException) {
       Log.e(TAG, "widget update bridge failed", error)
@@ -50,6 +84,7 @@ class CqutWidgetBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+    diagnosticChannel.setMethodCallHandler(null)
   }
 
   private fun dispatch(plan: WidgetBridgeDispatchPlan) {
@@ -60,7 +95,7 @@ class CqutWidgetBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
       )
     if (isReceiverAvailable(receiver)) {
       applicationContext.sendBroadcast(
-        Intent(plan.primaryAction).setComponent(receiver),
+        Intent(plan.primaryAction).setComponent(receiver).putExtra("diagnosticOperationId", CqutDiagnostics.operationId()),
       )
       return
     }
@@ -68,7 +103,7 @@ class CqutWidgetBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     Log.w(TAG, "central widget receiver unavailable; using provider fallback")
     for (target in plan.fallbackTargets) {
       applicationContext.sendBroadcast(
-        Intent(target.action).setComponent(
+        Intent(target.action).putExtra("diagnosticOperationId", CqutDiagnostics.operationId()).setComponent(
           ComponentName(applicationContext.packageName, target.receiverClassName),
         ),
       )

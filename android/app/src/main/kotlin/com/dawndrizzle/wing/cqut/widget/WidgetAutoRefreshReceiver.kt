@@ -6,6 +6,12 @@ import android.content.Intent
 
 class WidgetAutoRefreshReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
+    WidgetNativeLog.withOperation("widget_broadcast", intent.getStringExtra("diagnosticOperationId")) {
+      receive(context, intent)
+    }
+  }
+
+  private fun receive(context: Context, intent: Intent) {
     val action = intent.action ?: return
     val receivedAt = System.currentTimeMillis()
     val scheduledAt = intent.getLongExtra(WidgetAutoRefreshScheduler.EXTRA_TRIGGER_AT, 0L)

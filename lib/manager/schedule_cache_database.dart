@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/diagnostic_operation.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -88,6 +89,13 @@ class ScheduleCacheDatabase {
       return opened;
     } catch (error, stackTrace) {
       if (!_isCorruption(error)) {
+        AppLogger.I.logOperationFailure(
+          'ScheduleCache',
+          'cache database open failed',
+          error: error,
+          stackTrace: stackTrace,
+          fields: const {'stage': 'cache_open', 'outcome': 'failed'},
+        );
         await opened?.close();
         rethrow;
       }
@@ -96,7 +104,11 @@ class ScheduleCacheDatabase {
         'schedule cache database is corrupt; recreating it',
         error: error,
         stackTrace: stackTrace,
-        fields: const {'event': 'schedule_cache_database_recovery'},
+        fields: const {
+          'event': 'schedule_cache_database_recovery',
+          'stage': 'cache_recovery',
+          'outcome': 'recreating_database',
+        },
       );
       await opened?.close();
       await _database?.close();
@@ -167,6 +179,25 @@ CREATE TABLE cache_meta (
     required String weekNum,
     required String rawJson,
     DateTime? fetchedAt,
+  }) => runDiagnosticOperation(
+    'ScheduleCache',
+    'cache_write',
+    () => _upsert(
+      userId: userId,
+      yearTerm: yearTerm,
+      weekNum: weekNum,
+      rawJson: rawJson,
+      fetchedAt: fetchedAt,
+    ),
+    fields: {'term': yearTerm, 'week': weekNum},
+  );
+
+  Future<void> _upsert({
+    required String userId,
+    required String yearTerm,
+    required String weekNum,
+    required String rawJson,
+    DateTime? fetchedAt,
   }) async {
     final normalizedUser = userId.trim();
     final normalizedTerm = yearTerm.trim();
@@ -174,7 +205,7 @@ CREATE TABLE cache_meta (
     if (normalizedUser.isEmpty ||
         normalizedTerm.isEmpty ||
         normalizedWeek.isEmpty) {
-      throw const FormatException('课表缓存缺少用户、学期或周次');
+      throw FormatException('课表缓存缺少用户、学期或周次');
     }
     final canonical = canonicalizeAndValidate(
       rawJson,
@@ -200,7 +231,21 @@ CREATE TABLE cache_meta (
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     } catch (error, stackTrace) {
-      if (!await _recoverCorruptDatabase(error, stackTrace)) rethrow;
+      if (!await _recoverCorruptDatabase(error, stackTrace)) {
+        AppLogger.I.logOperationFailure(
+          'ScheduleCache',
+          'cache write failed',
+          error: error,
+          stackTrace: stackTrace,
+          fields: {
+            'stage': 'cache_write',
+            'outcome': 'failed',
+            'term': normalizedTerm,
+            'week': normalizedWeek,
+          },
+        );
+        rethrow;
+      }
       await (await _db).insert(
         'schedule_weeks',
         values,
@@ -210,6 +255,17 @@ CREATE TABLE cache_meta (
   }
 
   Future<ScheduleCacheEntry?> load({
+    required String userId,
+    required String yearTerm,
+    required String weekNum,
+  }) => runDiagnosticOperation(
+    'ScheduleCache',
+    'cache_read',
+    () => _load(userId: userId, yearTerm: yearTerm, weekNum: weekNum),
+    fields: {'term': yearTerm, 'week': weekNum},
+  );
+
+  Future<ScheduleCacheEntry?> _load({
     required String userId,
     required String yearTerm,
     required String weekNum,
@@ -267,6 +323,8 @@ CREATE TABLE cache_meta (
     final raw = (row['raw_json'] ?? '').toString();
     final storedChecksum = (row['checksum'] ?? '').toString();
     String? reason;
+    Object? validationError;
+    StackTrace? validationStack;
     if ((row['data_version'] as num?)?.toInt() != dataVersion) {
       reason = 'unsupported_data_version';
     } else if (!checksumMatches(raw, storedChecksum)) {
@@ -278,8 +336,10 @@ CREATE TABLE cache_meta (
           expectedYearTerm: term,
           expectedWeekNum: week,
         );
-      } catch (_) {
+      } catch (error, stackTrace) {
         reason = 'invalid_json_structure';
+        validationError = error;
+        validationStack = stackTrace;
       }
     }
     if (reason != null) {
@@ -291,11 +351,15 @@ CREATE TABLE cache_meta (
       AppLogger.I.warn(
         'ScheduleCache',
         'discarded invalid week cache',
+        error: validationError,
+        stackTrace: validationStack,
         fields: {
           'event': 'schedule_cache_row_recovery',
           'reason': reason,
           'year_term': term,
           'week_num': week,
+          'stage': 'cache_validate',
+          'outcome': 'discarded_invalid_cache',
         },
       );
       return null;
@@ -538,17 +602,17 @@ CREATE TABLE cache_meta (
   }) {
     final decoded = jsonDecode(rawJson);
     if (decoded is! Map) {
-      throw const FormatException('课表缓存根节点不是对象');
+      throw FormatException('课表缓存根节点不是对象');
     }
     final map = decoded.cast<String, dynamic>();
     if (map.containsKey('eventList') && map['eventList'] is! List) {
-      throw const FormatException('课表缓存 eventList 类型错误');
+      throw FormatException('课表缓存 eventList 类型错误');
     }
     if (map.containsKey('weekDayList') && map['weekDayList'] is! List) {
-      throw const FormatException('课表缓存 weekDayList 类型错误');
+      throw FormatException('课表缓存 weekDayList 类型错误');
     }
     if (map['eventList'] is! List && map['weekDayList'] is! List) {
-      throw const FormatException('课表缓存缺少课程与日期列表');
+      throw FormatException('课表缓存缺少课程与日期列表');
     }
     for (final field in const ['yearTermList', 'weekList']) {
       if (map.containsKey(field) && map[field] is! List) {
@@ -557,7 +621,7 @@ CREATE TABLE cache_meta (
     }
     for (final event in (map['eventList'] as List?) ?? const <Object?>[]) {
       if (event is! Map) {
-        throw const FormatException('课表缓存包含无效课程');
+        throw FormatException('课表缓存包含无效课程');
       }
       for (final field in const ['weekList', 'sessionList']) {
         if (event.containsKey(field) && event[field] is! List) {
@@ -567,16 +631,16 @@ CREATE TABLE cache_meta (
     }
     for (final day in (map['weekDayList'] as List?) ?? const <Object?>[]) {
       if (day is! Map) {
-        throw const FormatException('课表缓存包含无效日期');
+        throw FormatException('课表缓存包含无效日期');
       }
     }
     final actualTerm = (map['yearTerm'] ?? '').toString().trim();
     final actualWeek = (map['weekNum'] ?? '').toString().trim();
     if (actualTerm.isNotEmpty && actualTerm != expectedYearTerm) {
-      throw const FormatException('课表缓存学期不匹配');
+      throw FormatException('课表缓存学期不匹配');
     }
     if (actualWeek.isNotEmpty && actualWeek != expectedWeekNum) {
-      throw const FormatException('课表缓存周次不匹配');
+      throw FormatException('课表缓存周次不匹配');
     }
     map['yearTerm'] = expectedYearTerm;
     map['weekNum'] = expectedWeekNum;
@@ -613,7 +677,11 @@ CREATE TABLE cache_meta (
       'schedule cache operation detected corruption; rebuilding database',
       error: error,
       stackTrace: stackTrace,
-      fields: const {'event': 'schedule_cache_database_recovery'},
+      fields: const {
+        'event': 'schedule_cache_database_recovery',
+        'stage': 'cache_recovery',
+        'outcome': 'recreating_database',
+      },
     );
     await _database?.close();
     _database = null;

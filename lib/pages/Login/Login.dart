@@ -1,6 +1,7 @@
 import 'package:cqut_helper/api/auth/auth_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
+import 'package:cqut_helper/utils/diagnostic_operation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -86,39 +87,43 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      await _authApi.resetLoginContext();
-      if (useSavedPassword) {
-        await _authApi.loginWithEncrypted(
-          account: account,
-          encryptedPassword: _savedEncryptedPassword!,
-        );
-      } else {
-        await _authApi.login(account: account, password: password);
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('account', account);
-      await prefs.setInt(
-        'schedule_notice_login_marker_$account',
-        DateTime.now().millisecondsSinceEpoch,
-      );
-      if (useSavedPassword) {
-        await _credentialStore.writeEncryptedPassword(_savedEncryptedPassword!);
-      } else {
-        final encrypted = _authApi.encryptPassword(password);
-        await _credentialStore.writeEncryptedPassword(encrypted);
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('登录成功')));
-        if (widget.reauthenticate) {
-          Navigator.of(context).pop(true);
+      await runDiagnosticOperation('Login', 'sign_in', () async {
+        await _authApi.resetLoginContext();
+        if (useSavedPassword) {
+          await _authApi.loginWithEncrypted(
+            account: account,
+            encryptedPassword: _savedEncryptedPassword!,
+          );
         } else {
-          Navigator.of(context).pushReplacementNamed('/');
+          await _authApi.login(account: account, password: password);
         }
-      }
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('account', account);
+        await prefs.setInt(
+          'schedule_notice_login_marker_$account',
+          DateTime.now().millisecondsSinceEpoch,
+        );
+        if (useSavedPassword) {
+          await _credentialStore.writeEncryptedPassword(
+            _savedEncryptedPassword!,
+          );
+        } else {
+          final encrypted = _authApi.encryptPassword(password);
+          await _credentialStore.writeEncryptedPassword(encrypted);
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('登录成功')));
+          if (widget.reauthenticate) {
+            Navigator.of(context).pop(true);
+          } else {
+            Navigator.of(context).pushReplacementNamed('/');
+          }
+        }
+      });
     } catch (e) {
       if (mounted) {
         String errorMessage = e.toString();

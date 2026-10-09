@@ -11,17 +11,19 @@ import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
-  final staleBackgroundCleanup = BackgroundImageTempManager.cleanup();
-  final logDate = DateTime.now().toIso8601String().split('T').first;
+  AppLogger.I.installGlobalErrorHandlers();
   await AppLogger.I.init(
     minLevel: kDebugMode ? LogLevel.debug : LogLevel.info,
     enableConsole: true,
     enableFile: true,
-    fileName: 'cqut_$logDate.log',
+    source: 'foreground',
   );
-  AppLogger.I.installGlobalErrorHandlers();
+  WidgetsBinding.instance.addObserver(_DiagnosticLifecycleObserver());
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  final staleBackgroundCleanup = BackgroundImageTempManager.cleanup();
   AppLogger.I.info(
     'App',
     'startup',
@@ -41,6 +43,19 @@ Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
   // Calendar service is deliberately slow and independent of notice
   // enhancement. Start it after the first frame without blocking startup.
   unawaited(AcademicCalendarManager.instance.initializeFromPreferences());
+}
+
+class _DiagnosticLifecycleObserver extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(AppLogger.I.pruneLogs());
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(AppLogger.I.flush());
+    }
+  }
 }
 
 Future<void> _preloadScheduleBackground() async {

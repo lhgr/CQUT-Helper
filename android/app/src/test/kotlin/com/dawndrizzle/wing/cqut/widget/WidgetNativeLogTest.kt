@@ -1,35 +1,22 @@
 package com.dawndrizzle.wing.cqut.widget
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import com.dawndrizzle.wing.cqut.widgetbridge.NativeDiagnosticPolicy
+import org.junit.Assert.*
 import org.junit.Test
 
 class WidgetNativeLogTest {
   @Test
-  fun `native log line is export friendly and single line`() {
-    val line =
-      WidgetNativeLog.formatLine(
-        timestampMillis = 0L,
-        level = WidgetNativeLogLevel.ERROR,
-        tag = "WidgetRefresh",
-        message = "event=test\nnext",
-        error = IllegalStateException("boom\nagain"),
-      )
-
-    assertTrue(line.startsWith("1970-01-01T00:00:00.000Z [ERROR] WidgetRefresh - "))
-    assertTrue(line.contains("event=test\\nnext"))
-    assertTrue(line.contains("error=IllegalStateException:boom\\nagain"))
-    assertFalse(line.contains('\n'))
-    assertFalse(line.contains('\r'))
-  }
-
-  @Test
-  fun `rotation keeps bounded export-compatible names`() {
-    assertFalse(WidgetNativeLog.shouldRotate(0L, 20L, 10L))
-    assertFalse(WidgetNativeLog.shouldRotate(80L, 20L, 100L))
-    assertTrue(WidgetNativeLog.shouldRotate(81L, 20L, 100L))
-    assertEquals("cqut_widget_1.log", WidgetNativeLog.archiveFileName(1))
-    assertEquals("cqut_widget_2.log", WidgetNativeLog.archiveFileName(2))
+  fun `normal widget refresh remains memory only while a failure includes recent context`() {
+    val written = mutableListOf<Map<String, Any?>>()
+    val policy = NativeDiagnosticPolicy({ written.add(it) }) { 1_000L }
+    policy.withOperation("widget_refresh") {
+      policy.record("info", "WidgetRefresh", "event=render_started widgets=2")
+      assertTrue(written.isEmpty())
+      policy.record("error", "WidgetRefresh", "event=render_failed", IllegalStateException("launcher failed"))
+    }
+    assertEquals(1, written.size)
+    assertTrue(written.single()["stackTrace"].toString().contains("IllegalStateException"))
+    val breadcrumb = (written.single()["context"] as List<*>).single() as Map<*, *>
+    assertEquals(breadcrumb["operationId"], written.single()["operationId"])
   }
 }

@@ -35,8 +35,13 @@ class AnnouncementApi {
         if (item == null) return null;
         return AnnouncementModel.fromJson(item as Map<String, dynamic>);
       }
-    } catch (e) {
-      AppLogger.I.warn(_tag, 'Get latest announcement failed', error: e);
+    } catch (e, st) {
+      AppLogger.I.warn(
+        _tag,
+        'Get latest announcement failed',
+        error: e,
+        stackTrace: st,
+      );
     }
     return null;
   }
@@ -51,13 +56,8 @@ class AnnouncementApi {
         }
       }
       return false;
-    } on DioException catch (e) {
-      AppLogger.I.warn(
-        _tag,
-        'Health check failed',
-        error: e,
-        stackTrace: e.stackTrace,
-      );
+    } on DioException catch (e, st) {
+      AppLogger.I.warn(_tag, 'Health check failed', error: e, stackTrace: st);
       rethrow;
     }
   }
@@ -84,12 +84,12 @@ class AnnouncementApi {
             .map((e) => AnnouncementModel.fromJson(e as Map<String, dynamic>))
             .toList();
       }
-    } on DioException catch (e) {
+    } on DioException catch (e, st) {
       AppLogger.I.warn(
         _tag,
         'Get announcements failed',
         error: e,
-        stackTrace: e.stackTrace,
+        stackTrace: st,
       );
       rethrow;
     }
@@ -106,12 +106,12 @@ class AnnouncementApi {
         return AnnouncementModel.fromJson(item as Map<String, dynamic>);
       }
       return null;
-    } on DioException catch (e) {
+    } on DioException catch (e, st) {
       AppLogger.I.warn(
         _tag,
         'Get announcement detail failed',
         error: e,
-        stackTrace: e.stackTrace,
+        stackTrace: st,
       );
       rethrow;
     }

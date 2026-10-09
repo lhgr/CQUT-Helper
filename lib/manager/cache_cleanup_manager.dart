@@ -86,7 +86,7 @@ class CacheCleanupManager {
       AppCacheUsage(
         type: AppCacheType.logs,
         title: titleOf(AppCacheType.logs),
-        description: '包含调试、错误、网络请求与小组件原生日志文件',
+        description: '包含最近异常诊断、小组件原生日志及已导出的诊断文件',
         bytes: logBytes,
         supported: true,
       ),

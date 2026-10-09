@@ -4,6 +4,8 @@ import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_week_loader.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,6 +13,7 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
   ScheduleData? cacheResult;
   final Map<String, ScheduleData> cacheResults = <String, ScheduleData>{};
   ScheduleData? networkResult;
+  Object? networkError;
   Completer<ScheduleData>? networkCompleter;
   int cacheCalls = 0;
   int networkCalls = 0;
@@ -38,6 +41,7 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
     String? refreshId,
   }) async {
     networkCalls++;
+    if (networkError != null) throw networkError!;
     lastEncryptedPassword = encryptedPassword;
     final pending = networkCompleter;
     if (pending != null) return pending.future;
@@ -46,15 +50,17 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
 }
 
 class _FakeWeekLoaderCredentialStore extends CredentialStore {
-  _FakeWeekLoaderCredentialStore({this.value})
+  _FakeWeekLoaderCredentialStore({this.value, this.readError})
     : super(secureStore: _NoopSecureSecretStore());
 
   final String? value;
+  final Object? readError;
   int readCalls = 0;
 
   @override
   Future<String?> readEncryptedPassword() async {
     readCalls++;
+    if (readError != null) throw readError!;
     return value;
   }
 }
@@ -124,6 +130,136 @@ void main() {
       expect(weekCache.keys, [2]);
       expect(weekList, ['1', '2', '3']);
     });
+
+    for (final signedIn in [false, true]) {
+      test(
+        'prefetch skips ${signedIn ? 'missing credentials' : 'signed out'} without warning',
+        () async {
+          SharedPreferences.setMockInitialValues({
+            if (signedIn) 'account': 'u1',
+          });
+          final logger = AppLogger.I;
+          await logger.init(enableFile: false, enableConsole: false);
+          addTearDown(logger.dispose);
+          final previous = logger.recent.isEmpty
+              ? 0
+              : logger.recent.last.sequence;
+          final api = _FakeWeekLoaderScheduleApi();
+          final loader = buildLoader(
+            api,
+            credentialStore: _FakeWeekLoaderCredentialStore(),
+          );
+
+          expect(await loader.ensureWeekLoaded('2', '2024-2025-2'), isFalse);
+          expect(api.networkCalls, 0);
+          expect(
+            logger.recent
+                .where((event) => event.sequence > previous)
+                .any((event) => event.level.priority >= LogLevel.warn.priority),
+            isFalse,
+          );
+        },
+      );
+    }
+
+    test(
+      'prefetch cancellation remains a breadcrumb and returns false',
+      () async {
+        SharedPreferences.setMockInitialValues({'account': 'u1'});
+        final logger = AppLogger.I;
+        await logger.init(enableFile: false, enableConsole: false);
+        addTearDown(logger.dispose);
+        final previous = logger.recent.isEmpty
+            ? 0
+            : logger.recent.last.sequence;
+        final api = _FakeWeekLoaderScheduleApi()
+          ..networkError = DioException(
+            requestOptions: RequestOptions(path: '/schedule'),
+            type: DioExceptionType.cancel,
+          );
+        final loader = buildLoader(
+          api,
+          credentialStore: _FakeWeekLoaderCredentialStore(value: 'secure-p1'),
+        );
+
+        expect(await loader.ensureWeekLoaded('2', '2024-2025-2'), isFalse);
+        final events = logger.recent
+            .where((event) => event.sequence > previous)
+            .toList();
+        expect(
+          events.any((event) => event.level.priority >= LogLevel.warn.priority),
+          isFalse,
+        );
+        expect(events.last.fields?['outcome'], 'cancelled');
+      },
+    );
+
+    test(
+      'foreground missing week metadata logs cause and keeps UI error',
+      () async {
+        SharedPreferences.setMockInitialValues({'account': 'u1'});
+        final logger = AppLogger.I;
+        await logger.init(enableFile: false, enableConsole: false);
+        addTearDown(logger.dispose);
+        final previous = logger.recent.isEmpty
+            ? 0
+            : logger.recent.last.sequence;
+        final api = _FakeWeekLoaderScheduleApi()
+          ..networkResult = ScheduleData(weekNum: '', weekList: []);
+        final loader = buildLoader(
+          api,
+          credentialStore: _FakeWeekLoaderCredentialStore(value: 'secure-p1'),
+        );
+
+        await expectLater(
+          loader.loadFromNetwork(),
+          throwsA(
+            predicate<Object>(
+              (error) => error.toString() == 'Exception: 课表鉴权失败，请重新登录',
+            ),
+          ),
+        );
+        final failure = logger.recent.singleWhere(
+          (event) =>
+              event.sequence > previous &&
+              event.fields?['stage'] == 'validate_schedule',
+        );
+        expect(failure.fields?['stage'], 'validate_schedule');
+        expect(failure.fields?['trace_id'], isNotEmpty);
+        expect(failure.stackTrace.toString(), contains('_loadFromNetwork'));
+      },
+    );
+
+    test(
+      'credential storage read error is diagnosed before requesting a week',
+      () async {
+        SharedPreferences.setMockInitialValues({'account': 'u1'});
+        final logger = AppLogger.I;
+        await logger.init(enableFile: false, enableConsole: false);
+        addTearDown(logger.dispose);
+        final previous = logger.recent.isEmpty
+            ? 0
+            : logger.recent.last.sequence;
+        final error = StateError('credential storage unavailable');
+        final api = _FakeWeekLoaderScheduleApi();
+        final loader = buildLoader(
+          api,
+          credentialStore: _FakeWeekLoaderCredentialStore(readError: error),
+        );
+
+        await expectLater(loader.loadFromNetwork(), throwsA(same(error)));
+        expect(api.networkCalls, 0);
+        final failure = logger.recent.singleWhere(
+          (event) => event.sequence > previous && event.level == LogLevel.error,
+        );
+        expect(failure.fields?['stage'], 'load_week');
+        expect(
+          failure.stackTrace.toString(),
+          contains('readEncryptedPassword'),
+        );
+        expect(failure.fields?['trace_id'], isNotEmpty);
+      },
+    );
 
     test('ensureWeekLoaded 优先命中内存缓存', () async {
       SharedPreferences.setMockInitialValues({

@@ -10,6 +10,7 @@ import android.os.Looper
 import com.dawndrizzle.wing.cqut.widget.WidgetRefreshCoordinator
 import com.dawndrizzle.wing.cqut.widget.WidgetNativeLog
 import com.dawndrizzle.wing.cqut.widget.WidgetRuntimeRecoveryReceiver
+import com.dawndrizzle.wing.cqut.widgetbridge.CqutDiagnostics
 
 /**
  * Makes any legitimate process start an opportunity to repair stale widgets.
@@ -21,6 +22,7 @@ class CqutApplication : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    try { CqutDiagnostics.initialize(applicationContext) } catch (_: Exception) {}
     WidgetNativeLog.info(
       applicationContext,
       "event=process_started at=${System.currentTimeMillis()}",

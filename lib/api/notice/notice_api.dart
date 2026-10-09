@@ -148,13 +148,27 @@ class NoticeApi {
       );
     } on DioException catch (e, st) {
       stopwatch.stop();
-      AppLogger.I.warn(
-        _tag,
-        'availability test failed',
-        error: e,
-        stackTrace: st,
-        fields: {'baseUrl': normalizedBaseUrl},
-      );
+      if (e.response?.statusCode == 403 || e.type == DioExceptionType.cancel) {
+        AppLogger.I.info(
+          _tag,
+          'availability check skipped',
+          fields: {
+            'stage': 'availability_check',
+            'outcome': e.type == DioExceptionType.cancel
+                ? 'cancelled'
+                : 'api_closed',
+            'baseUrl': normalizedBaseUrl,
+          },
+        );
+      } else {
+        AppLogger.I.warn(
+          _tag,
+          'availability test failed',
+          error: e,
+          stackTrace: st,
+          fields: {'baseUrl': normalizedBaseUrl},
+        );
+      }
       return NoticeApiAvailabilityResult(
         success: false,
         elapsedMs: stopwatch.elapsedMilliseconds,
@@ -198,6 +212,11 @@ class NoticeApi {
     }
     final response = await _dioFactory(baseUrl).post(
       _path,
+      options: Options(
+        extra: const {
+          'diagnostic_expected_statuses': [403],
+        },
+      ),
       data: {
         'username': username,
         'encrypted_password': encryptedPassword,

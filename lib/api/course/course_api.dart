@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/diagnostic_operation.dart';
 import '../core/api_client.dart';
 import '../auth/auth_api.dart';
 
@@ -48,6 +50,14 @@ class CourseApi {
       'https://timetable-cfc.cqut.edu.cn/api/courseSchedule/getCampusTimeInfo';
 
   Future<List<dynamic>> fetchCampusTimeInfo(String campusName) async {
+    return runDiagnosticOperation(
+      'CourseApi',
+      'campus_time_info',
+      () => _fetchCampusTimeInfo(campusName),
+    );
+  }
+
+  Future<List<dynamic>> _fetchCampusTimeInfo(String campusName) async {
     final body = <String, dynamic>{'campusName': campusName};
     final resp = await _client.dio.post(_campusTimeInfoApi, data: body);
     final items = parseCampusTimeInfoResponse(resp.data);
@@ -166,6 +176,25 @@ class CourseApi {
     String? yearTerm,
     String? password,
     String? encryptedPassword,
+  }) => runDiagnosticOperation(
+    'CourseApi',
+    'fetch_week',
+    () => _fetchWeekEvents(
+      userId: userId,
+      weekNum: weekNum,
+      yearTerm: yearTerm,
+      password: password,
+      encryptedPassword: encryptedPassword,
+    ),
+    fields: {'week': weekNum, 'term': yearTerm},
+  );
+
+  Future<Map<String, dynamic>> _fetchWeekEvents({
+    required String userId,
+    String? weekNum,
+    String? yearTerm,
+    String? password,
+    String? encryptedPassword,
   }) async {
     try {
       await _authApi.ensureTimetableLogin(
@@ -262,6 +291,22 @@ class CourseApi {
   }
 
   Future<void> _mutateCustomEvent({
+    required String url,
+    required String userId,
+    required String encryptedPassword,
+    required Map<String, dynamic> body,
+  }) => runDiagnosticOperation(
+    'CourseApi',
+    'mutate_custom_event',
+    () => _mutateCustomEventImpl(
+      url: url,
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+      body: body,
+    ),
+  );
+
+  Future<void> _mutateCustomEventImpl({
     required String url,
     required String userId,
     required String encryptedPassword,
@@ -437,7 +482,7 @@ class CourseApi {
         if (decoded is Map<String, dynamic>) return decoded;
       } catch (_) {}
     }
-    throw const CourseApiException(
+    throw CourseApiException(
       CourseApiErrorKind.invalidResponse,
       '课表接口返回格式异常，请稍后重试',
     );
@@ -461,6 +506,13 @@ class CourseApi {
       statusCode == 401 || statusCode == 403;
 
   CourseApiException _mapDioException(DioException error) {
+    if (error.type == DioExceptionType.cancel) throw error;
+    final mapped = _createMappedDioException(error);
+    AppLogger.I.linkFailure(mapped, error);
+    return mapped;
+  }
+
+  CourseApiException _createMappedDioException(DioException error) {
     final statusCode = error.response?.statusCode;
     if (_isAuthenticationStatus(statusCode)) {
       return CourseApiException(
@@ -472,16 +524,10 @@ class CourseApi {
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.sendTimeout ||
         error.type == DioExceptionType.receiveTimeout) {
-      return const CourseApiException(
-        CourseApiErrorKind.timeout,
-        '课表服务响应超时，请稍后重试',
-      );
+      return CourseApiException(CourseApiErrorKind.timeout, '课表服务响应超时，请稍后重试');
     }
     if (error.type == DioExceptionType.connectionError) {
-      return const CourseApiException(
-        CourseApiErrorKind.network,
-        '网络连接失败，请检查网络后重试',
-      );
+      return CourseApiException(CourseApiErrorKind.network, '网络连接失败，请检查网络后重试');
     }
     if (statusCode != null && statusCode >= 500) {
       return CourseApiException(

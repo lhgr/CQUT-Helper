@@ -20,7 +20,13 @@ class WidgetUpdater {
   @visibleForTesting
   static Future<void> Function(Duration delay)? debugDelay;
 
-  static Future<void> updateTodayWidget({
+  static Future<void> updateTodayWidget({String? themeMode, String? trigger}) =>
+      AppLogger.I.runWithTraceIdAsync(
+        AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+        () => _updateTodayWidget(themeMode: themeMode, trigger: trigger),
+      );
+
+  static Future<void> _updateTodayWidget({
     String? themeMode,
     String? trigger,
   }) async {
@@ -28,12 +34,27 @@ class WidgetUpdater {
     final arguments = <String, Object?>{
       'themeMode': ?themeMode,
       'trigger': ?trigger,
+      'operationId': ?AppLogger.I.currentTraceId,
     };
     final invoke = debugMethodInvoker ?? _invokePlatformMethod;
+    AppLogger.I.info(
+      'WidgetUpdater',
+      'widget update started',
+      fields: {'stage': 'widget_bridge', 'trigger': trigger},
+    );
 
     for (var attempt = 1; attempt <= 2; attempt++) {
       try {
         await invoke('updateTodayWidget', arguments);
+        AppLogger.I.info(
+          'WidgetUpdater',
+          'widget update completed',
+          fields: {
+            'stage': 'widget_bridge',
+            'outcome': 'succeeded',
+            'trigger': trigger,
+          },
+        );
         return;
       } catch (error, stackTrace) {
         final isFinalAttempt = attempt == 2;
@@ -49,6 +70,8 @@ class WidgetUpdater {
             'attempt': attempt,
             'trigger': trigger ?? '',
             'hasThemeMode': themeMode != null && themeMode.isNotEmpty,
+            'stage': 'widget_bridge',
+            'outcome': isFinalAttempt ? 'failed' : 'retrying',
           },
         );
         if (isFinalAttempt) return;

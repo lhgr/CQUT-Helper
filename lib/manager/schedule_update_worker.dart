@@ -216,404 +216,451 @@ class ScheduleUpdateWorker {
   static void callbackDispatcher() {
     Workmanager().executeTask((task, inputData) async {
       WidgetsFlutterBinding.ensureInitialized();
+      AppLogger.I.installGlobalErrorHandlers();
       await _ensureLoggerReady();
-      final trigger = ((inputData?['trigger'] ?? 'unknown').toString()).trim();
-      final isWidgetManual = trigger == _triggerWidgetManual;
-      final refreshId = ((inputData?['refreshId'] ?? '').toString()).trim();
-      final logicalDateBjt = ((inputData?['logicalDateBjt'] ?? '').toString())
-          .trim();
-      await recordScheduleUpdateWorkerState(
-        status: 'started',
-        trigger: trigger,
-        task: task,
-        fields: {if (refreshId.isNotEmpty) 'refreshId': refreshId},
-      );
-      Future<bool> done({
-        required String status,
-        Map<String, Object?> fields = const {},
-        bool scheduleFollowUp = false,
-      }) async {
-        if (isWidgetManual && status != 'widget_manual_success') {
-          final widgetPrefs = await SharedPreferences.getInstance();
-          final widgetUserId = (widgetPrefs.getString('account') ?? '').trim();
-          if (widgetUserId.isNotEmpty) {
-            final errorText = (fields['error'] ?? '').toString();
-            final failure =
-                status == 'skip_missing_credentials' ||
-                    ScheduleRefreshState.looksLikeCredentialFailure(errorText)
-                ? ScheduleWidgetRefreshFailure.credentialInvalid
-                : ScheduleWidgetRefreshFailure.generic;
-            await ScheduleRefreshState.markFailure(
-              widgetUserId,
-              failure: failure,
-              refreshId: refreshId,
+      try {
+        final refreshId = (inputData?['refreshId']?.toString() ?? '').trim();
+        return await AppLogger.I.runWithTraceIdAsync(
+          refreshId.isEmpty ? AppLogger.I.newTraceId() : refreshId,
+          () async {
+            AppLogger.I.info(
+              'ScheduleUpdateWorker',
+              'background task started',
+              fields: {
+                'stage': 'background_refresh',
+                'task': task,
+                'trigger': inputData?['trigger'],
+              },
             );
-          }
-        }
-        await recordScheduleUpdateWorkerState(
-          status: status,
-          trigger: trigger,
-          task: task,
-          fields: {...fields, if (refreshId.isNotEmpty) 'refreshId': refreshId},
+            try {
+              return await _executeTask(task, inputData);
+            } catch (error, stackTrace) {
+              AppLogger.I.logOperationFailure(
+                'ScheduleUpdateWorker',
+                'background task failed',
+                error: error,
+                stackTrace: stackTrace,
+                fields: {
+                  'stage': 'background_refresh',
+                  'outcome': 'failed',
+                  'task': task,
+                },
+              );
+              rethrow;
+            }
+          },
         );
-        if (scheduleFollowUp) {
-          await _handleFollowUpScheduling(
-            trigger: trigger,
-            status: status,
-            logicalDateBjt: logicalDateBjt,
-            inputData: inputData,
-          );
-        }
+      } finally {
         await AppLogger.I.flush();
-        return true;
       }
+    });
+  }
 
-      if (task == _calendarTaskName) {
-        final calendarPrefs = await SharedPreferences.getInstance();
-        final calendarAccount = (calendarPrefs.getString('account') ?? '')
-            .trim();
-        final term = calendarAccount.isEmpty
-            ? ''
-            : (calendarPrefs.getString('schedule_last_term_$calendarAccount') ??
-                      calendarPrefs.getString(
-                        'schedule_widget_term_$calendarAccount',
-                      ) ??
-                      '')
-                  .trim();
-        if (term.isEmpty) {
-          await _scheduleCalendarTask();
-          return done(status: 'calendar_skip_missing_term');
-        }
-        final result = await AcademicCalendarManager.instance.refreshIfDue(
-          term,
-        );
-        await _scheduleCalendarTask();
-        return done(
-          status: result.error == null
-              ? result.updated
-                    ? 'calendar_updated'
-                    : 'calendar_unchanged'
-              : 'calendar_failed',
-          fields: {if (result.error != null) 'error': result.error.toString()},
-        );
-      }
-
-      if (task != _taskName) {
-        AppLogger.I.event(
-          LogLevel.warn,
-          'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_unknown_task',
-          messageZh: '后台轮询跳过未知任务',
-          message: 'skip unknown task',
-          module: 'schedule_notice_poll',
-          action: 'validate_task',
-          status: 'skip',
-          reason: 'unknown_task',
-          fields: {'task': task},
-        );
-        return done(status: 'skip_unknown_task');
-      }
-      final prefs = await SharedPreferences.getInstance();
-      if (!isWidgetManual &&
-          !ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs)) {
-        return done(status: 'skip_disabled');
-      }
-      if (_isDeepNight() && trigger != _triggerWidgetManual) {
-        return done(status: 'skip_deep_night', scheduleFollowUp: true);
-      }
-      final scheduledUserId = ((inputData?['userId'] ?? '').toString()).trim();
-      final userId = (prefs.getString('account') ?? '').trim();
-      if (!isWidgetManual &&
-          scheduledUserId.isNotEmpty &&
-          scheduledUserId != userId) {
-        return done(
-          status: 'skip_stale_account',
-          fields: {'scheduledUserId': scheduledUserId},
-        );
-      }
-      final encryptedPassword =
-          ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
-      if (userId.isEmpty || encryptedPassword.isEmpty) {
-        if (isWidgetManual && userId.isNotEmpty) {
-          await ScheduleRefreshState.markFailure(
-            userId,
-            failure: ScheduleWidgetRefreshFailure.credentialInvalid,
-            refreshId: refreshId,
-          );
-        }
-        AppLogger.I.event(
-          LogLevel.warn,
-          'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_missing_credentials',
-          messageZh: '后台轮询跳过缺失凭证任务',
-          message: 'skip missing task credentials',
-          module: 'schedule_notice_poll',
-          action: 'validate_credentials',
-          status: 'skip',
-          reason: 'missing_credentials',
-          fields: {'trigger': trigger},
-        );
-        return done(status: 'skip_missing_credentials', scheduleFollowUp: true);
-      }
-
-      final scheduleApi = ScheduleApi();
-      if (isWidgetManual) {
-        try {
-          await loadCurrentWeekAndUpdateWidgetPin(
-            scheduleApi: scheduleApi,
-            userId: userId,
-            encryptedPassword: encryptedPassword,
-            notifyWidget: false,
-            refreshId: refreshId,
-          );
-          await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
-          return await done(status: 'widget_manual_success');
-        } catch (e, st) {
-          final failure = ScheduleRefreshState.looksLikeCredentialFailure(e)
+  static Future<bool> _executeTask(
+    String task,
+    Map<String, dynamic>? inputData,
+  ) async {
+    final trigger = ((inputData?['trigger'] ?? 'unknown').toString()).trim();
+    final isWidgetManual = trigger == _triggerWidgetManual;
+    final refreshId = ((inputData?['refreshId'] ?? '').toString()).trim();
+    final logicalDateBjt = ((inputData?['logicalDateBjt'] ?? '').toString())
+        .trim();
+    await recordScheduleUpdateWorkerState(
+      status: 'started',
+      trigger: trigger,
+      task: task,
+      fields: {if (refreshId.isNotEmpty) 'refreshId': refreshId},
+    );
+    Future<bool> done({
+      required String status,
+      Map<String, Object?> fields = const {},
+      bool scheduleFollowUp = false,
+    }) async {
+      if (isWidgetManual && status != 'widget_manual_success') {
+        final widgetPrefs = await SharedPreferences.getInstance();
+        final widgetUserId = (widgetPrefs.getString('account') ?? '').trim();
+        if (widgetUserId.isNotEmpty) {
+          final errorText = (fields['error'] ?? '').toString();
+          final failure =
+              status == 'skip_missing_credentials' ||
+                  ScheduleRefreshState.looksLikeCredentialFailure(errorText)
               ? ScheduleWidgetRefreshFailure.credentialInvalid
               : ScheduleWidgetRefreshFailure.generic;
           await ScheduleRefreshState.markFailure(
-            userId,
+            widgetUserId,
             failure: failure,
             refreshId: refreshId,
           );
-          AppLogger.I.event(
-            LogLevel.error,
-            'ScheduleUpdateWorker',
-            event: 'schedule_widget_manual_refresh_fail',
-            messageZh: '小组件手动刷新课表失败',
-            message: 'widget manual refresh failed',
-            module: 'schedule',
-            action: 'widget_manual_refresh',
-            status: 'fail',
-            reason: failure.name,
-            error: e,
-            stackTrace: st,
-          );
-          return done(
-            status: 'widget_manual_failed',
-            fields: {'error': e.toString(), 'failure': failure.name},
-          );
         }
       }
+      await recordScheduleUpdateWorkerState(
+        status: status,
+        trigger: trigger,
+        task: task,
+        fields: {...fields, if (refreshId.isNotEmpty) 'refreshId': refreshId},
+      );
+      if (scheduleFollowUp) {
+        await _handleFollowUpScheduling(
+          trigger: trigger,
+          status: status,
+          logicalDateBjt: logicalDateBjt,
+          inputData: inputData,
+        );
+      }
+      await AppLogger.I.flush();
+      return true;
+    }
 
-      ScheduleData? currentData;
-      ScheduleData? pollingTargetData;
-      final pollingTarget = resolvePollingTarget(prefs: prefs, userId: userId);
-      final preferredTerm = (pollingTarget.yearTerm ?? '').trim();
-      final preferredWeek = pollingTarget.weekNum.trim();
+    if (task == _calendarTaskName) {
+      final calendarPrefs = await SharedPreferences.getInstance();
+      final calendarAccount = (calendarPrefs.getString('account') ?? '').trim();
+      final term = calendarAccount.isEmpty
+          ? ''
+          : (calendarPrefs.getString('schedule_last_term_$calendarAccount') ??
+                    calendarPrefs.getString(
+                      'schedule_widget_term_$calendarAccount',
+                    ) ??
+                    '')
+                .trim();
+      if (term.isEmpty) {
+        await _scheduleCalendarTask();
+        return done(status: 'calendar_skip_missing_term');
+      }
+      final result = await AcademicCalendarManager.instance.refreshIfDue(term);
+      await _scheduleCalendarTask();
+      return done(
+        status: result.error == null
+            ? result.updated
+                  ? 'calendar_updated'
+                  : 'calendar_unchanged'
+            : 'calendar_failed',
+        fields: {if (result.error != null) 'error': result.error.toString()},
+      );
+    }
+
+    if (task != _taskName) {
+      AppLogger.I.event(
+        LogLevel.info,
+        'ScheduleUpdateWorker',
+        event: 'schedule_notice_poll_unknown_task',
+        messageZh: '后台轮询跳过未知任务',
+        message: 'skip unknown task',
+        module: 'schedule_notice_poll',
+        action: 'validate_task',
+        status: 'skip',
+        reason: 'unknown_task',
+        fields: {'task': task},
+      );
+      return done(status: 'skip_unknown_task');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (!isWidgetManual &&
+        !ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs)) {
+      return done(status: 'skip_disabled');
+    }
+    if (_isDeepNight() && trigger != _triggerWidgetManual) {
+      return done(status: 'skip_deep_night', scheduleFollowUp: true);
+    }
+    final scheduledUserId = ((inputData?['userId'] ?? '').toString()).trim();
+    final userId = (prefs.getString('account') ?? '').trim();
+    if (!isWidgetManual &&
+        scheduledUserId.isNotEmpty &&
+        scheduledUserId != userId) {
+      return done(
+        status: 'skip_stale_account',
+        fields: {'scheduledUserId': scheduledUserId},
+      );
+    }
+    final encryptedPassword =
+        ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
+    if (userId.isEmpty || encryptedPassword.isEmpty) {
+      if (isWidgetManual && userId.isNotEmpty) {
+        await ScheduleRefreshState.markFailure(
+          userId,
+          failure: ScheduleWidgetRefreshFailure.credentialInvalid,
+          refreshId: refreshId,
+        );
+      }
+      AppLogger.I.event(
+        LogLevel.info,
+        'ScheduleUpdateWorker',
+        event: 'schedule_notice_poll_missing_credentials',
+        messageZh: '后台轮询跳过缺失凭证任务',
+        message: 'skip missing task credentials',
+        module: 'schedule_notice_poll',
+        action: 'validate_credentials',
+        status: 'skip',
+        reason: 'missing_credentials',
+        fields: {'trigger': trigger},
+      );
+      return done(status: 'skip_missing_credentials', scheduleFollowUp: true);
+    }
+
+    final scheduleApi = ScheduleApi();
+    if (isWidgetManual) {
       try {
-        if (preferredTerm.isNotEmpty) {
-          pollingTargetData = await scheduleApi.loadFromCache(
-            userId: userId,
-            weekNum: preferredWeek,
-            yearTerm: preferredTerm,
-          );
-        }
-        currentData = pollingTargetData;
-        currentData ??= await scheduleApi.loadFromCache(userId: userId);
+        await loadCurrentWeekAndUpdateWidgetPin(
+          scheduleApi: scheduleApi,
+          userId: userId,
+          encryptedPassword: encryptedPassword,
+          notifyWidget: false,
+          refreshId: refreshId,
+        );
+        await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
+        return await done(status: 'widget_manual_success');
       } catch (e, st) {
+        final failure = ScheduleRefreshState.looksLikeCredentialFailure(e)
+            ? ScheduleWidgetRefreshFailure.credentialInvalid
+            : ScheduleWidgetRefreshFailure.generic;
+        await ScheduleRefreshState.markFailure(
+          userId,
+          failure: failure,
+          refreshId: refreshId,
+        );
         AppLogger.I.event(
-          LogLevel.warn,
+          LogLevel.error,
           'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_cache_load_fail',
-          messageZh: '后台轮询读取缓存失败',
-          message: 'load cache failed',
-          module: 'schedule_notice_poll',
-          action: 'load_cache',
+          event: 'schedule_widget_manual_refresh_fail',
+          messageZh: '小组件手动刷新课表失败',
+          message: 'widget manual refresh failed',
+          module: 'schedule',
+          action: 'widget_manual_refresh',
           status: 'fail',
-          reason: 'cache_read_failed',
+          reason: failure.name,
           error: e,
           stackTrace: st,
-          fields: {'trigger': trigger},
-        );
-      }
-      final targetToValidate = preferredTerm.isNotEmpty
-          ? pollingTargetData
-          : currentData;
-      final coverageDateBjt = pollingCoverageDateBjt();
-      var reanchoredPollingTarget = false;
-      if (shouldReanchorPollingTarget(targetToValidate, now: coverageDateBjt)) {
-        AppLogger.I.info(
-          'ScheduleUpdateWorker',
-          'polling target does not cover today; reanchor to current week',
-          fields: {
-            'trigger': trigger,
-            'preferredTerm': preferredTerm,
-            'preferredWeek': preferredWeek,
-            'cacheMissing': targetToValidate == null,
-          },
-        );
-        try {
-          currentData = await loadCurrentWeekAndUpdateWidgetPin(
-            scheduleApi: scheduleApi,
-            userId: userId,
-            encryptedPassword: encryptedPassword,
-            notifyWidget: true,
-          );
-          reanchoredPollingTarget = true;
-        } catch (e, st) {
-          AppLogger.I.event(
-            LogLevel.error,
-            'ScheduleUpdateWorker',
-            event: 'schedule_notice_poll_network_load_fail',
-            messageZh: '后台轮询拉取课表失败',
-            message: 'load network failed',
-            module: 'schedule_notice_poll',
-            action: 'load_network',
-            status: 'fail',
-            reason: 'network_load_failed',
-            error: e,
-            stackTrace: st,
-            fields: {
-              'trigger': trigger,
-              'preferredTerm': preferredTerm,
-              'preferredWeek': preferredWeek,
-            },
-          );
-          return done(
-            status: 'load_network_failed',
-            fields: {'error': e.toString()},
-            scheduleFollowUp: true,
-          );
-        }
-      }
-      if (currentData == null) {
-        return done(
-          status: 'load_network_failed',
-          fields: const {'error': 'current schedule unavailable'},
-          scheduleFollowUp: true,
-        );
-      }
-      if (currentData.yearTerm == null ||
-          currentData.yearTerm!.trim().isEmpty ||
-          currentData.weekList == null ||
-          currentData.weekList!.isEmpty) {
-        AppLogger.I.event(
-          LogLevel.warn,
-          'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_invalid_schedule_data',
-          messageZh: '后台轮询跳过无效课表数据',
-          message: 'skip invalid schedule data',
-          module: 'schedule_notice_poll',
-          action: 'validate_schedule',
-          status: 'skip',
-          reason: 'invalid_schedule_data',
-          fields: {'trigger': trigger},
         );
         return done(
-          status: 'skip_invalid_schedule_data',
-          scheduleFollowUp: true,
+          status: 'widget_manual_failed',
+          fields: {'error': e.toString(), 'failure': failure.name},
         );
       }
-      if (!reanchoredPollingTarget &&
-          preferredTerm.isNotEmpty &&
-          currentData.yearTerm!.trim() != preferredTerm) {
-        AppLogger.I.event(
-          LogLevel.warn,
-          'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_term_mismatch',
-          messageZh: '后台轮询跳过学期不匹配数据',
-          message: 'polling term mismatch',
-          module: 'schedule_notice_poll',
-          action: 'validate_term',
-          status: 'skip',
-          reason: 'term_mismatch',
-          fields: {
-            'trigger': trigger,
-            'preferredTerm': preferredTerm,
-            'currentTerm': currentData.yearTerm!.trim(),
-          },
-        );
-        return done(
-          status: 'skip_term_mismatch',
-          fields: {
-            'preferredTerm': preferredTerm,
-            'currentTerm': currentData.yearTerm!.trim(),
-          },
-          scheduleFollowUp: true,
-        );
-      }
+    }
 
-      final pipeline = ScheduleNoticeRefreshPipeline(
-        refreshWeek: (weekNum, yearTerm) async {
-          final raw = await scheduleApi.fetchRawWeekEvents(
-            userId: userId,
-            encryptedPassword: encryptedPassword,
-            weekNum: weekNum,
-            yearTerm: yearTerm,
-          );
-          await scheduleApi.saveScheduleJson(
-            userId: userId,
-            yearTerm: yearTerm,
-            weekNum: weekNum,
-            jsonStr: json.encode(raw),
-          );
+    ScheduleData? currentData;
+    ScheduleData? pollingTargetData;
+    final pollingTarget = resolvePollingTarget(prefs: prefs, userId: userId);
+    final preferredTerm = (pollingTarget.yearTerm ?? '').trim();
+    final preferredWeek = pollingTarget.weekNum.trim();
+    try {
+      if (preferredTerm.isNotEmpty) {
+        pollingTargetData = await scheduleApi.loadFromCache(
+          userId: userId,
+          weekNum: preferredWeek,
+          yearTerm: preferredTerm,
+        );
+      }
+      currentData = pollingTargetData;
+      currentData ??= await scheduleApi.loadFromCache(userId: userId);
+    } catch (e, st) {
+      AppLogger.I.event(
+        LogLevel.warn,
+        'ScheduleUpdateWorker',
+        event: 'schedule_notice_poll_cache_load_fail',
+        messageZh: '后台轮询读取缓存失败',
+        message: 'load cache failed',
+        module: 'schedule_notice_poll',
+        action: 'load_cache',
+        status: 'fail',
+        reason: 'cache_read_failed',
+        error: e,
+        stackTrace: st,
+        fields: {'trigger': trigger},
+      );
+    }
+    final targetToValidate = preferredTerm.isNotEmpty
+        ? pollingTargetData
+        : currentData;
+    final coverageDateBjt = pollingCoverageDateBjt();
+    var reanchoredPollingTarget = false;
+    if (shouldReanchorPollingTarget(targetToValidate, now: coverageDateBjt)) {
+      AppLogger.I.info(
+        'ScheduleUpdateWorker',
+        'polling target does not cover today; reanchor to current week',
+        fields: {
+          'trigger': trigger,
+          'preferredTerm': preferredTerm,
+          'preferredWeek': preferredWeek,
+          'cacheMissing': targetToValidate == null,
         },
       );
-
-      ScheduleNoticeRefreshResult result;
       try {
-        result = await pipeline.run(currentData: currentData, headless: true);
+        currentData = await loadCurrentWeekAndUpdateWidgetPin(
+          scheduleApi: scheduleApi,
+          userId: userId,
+          encryptedPassword: encryptedPassword,
+          notifyWidget: true,
+        );
+        reanchoredPollingTarget = true;
       } catch (e, st) {
         AppLogger.I.event(
           LogLevel.error,
           'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_pipeline_fail',
-          messageZh: '后台轮询处理流程失败',
-          message: 'pipeline run failed',
+          event: 'schedule_notice_poll_network_load_fail',
+          messageZh: '后台轮询拉取课表失败',
+          message: 'load network failed',
           module: 'schedule_notice_poll',
-          action: 'run_pipeline',
+          action: 'load_network',
           status: 'fail',
-          reason: 'pipeline_failed',
+          reason: 'network_load_failed',
           error: e,
           stackTrace: st,
-          fields: {'trigger': trigger},
+          fields: {
+            'trigger': trigger,
+            'preferredTerm': preferredTerm,
+            'preferredWeek': preferredWeek,
+          },
         );
         return done(
-          status: 'pipeline_failed',
+          status: 'load_network_failed',
           fields: {'error': e.toString()},
           scheduleFollowUp: true,
         );
       }
-
-      if (result.apiClosed || result.changes.isEmpty) {
-        await recordScheduleUpdateWorkerSuccessfulRun();
-        return done(
-          status: result.apiClosed ? 'api_closed' : 'no_changes',
-          fields: {
-            'apiClosed': result.apiClosed,
-            'changes': result.changes.length,
-          },
-          scheduleFollowUp: true,
-        );
-      }
-
-      await writeScheduleUpdateWorkerPendingChanges(
-        prefs: prefs,
-        userId: userId,
-        yearTerm: currentData.yearTerm!.trim(),
-        changes: result.changes,
-      );
-      final title = '课表更新提醒';
-      final body = '检测到 ${result.changes.length} 周存在调课变更';
-      await LocalNotifications.showScheduleUpdate(
-        title: title,
-        body: body,
-        payload: LocalNotifications.payloadScheduleUpdate,
-      );
-      await recordScheduleUpdateWorkerSuccessfulRun();
-      AppLogger.I.info(
+    }
+    if (currentData == null) {
+      final error = StateError('current schedule unavailable after refresh');
+      AppLogger.I.logOperationFailure(
         'ScheduleUpdateWorker',
-        'heartbeat task detected schedule changes',
-        fields: {'trigger': trigger, 'changes': result.changes.length},
+        'background refresh returned no schedule',
+        error: error,
+        stackTrace: StackTrace.current,
+        fields: const {
+          'stage': 'validate_schedule',
+          'outcome': 'load_network_failed',
+        },
       );
       return done(
-        status: 'changes_detected',
-        fields: {'changes': result.changes.length},
+        status: 'load_network_failed',
+        fields: const {'error': 'current schedule unavailable'},
         scheduleFollowUp: true,
       );
-    });
+    }
+    if (currentData.yearTerm == null ||
+        currentData.yearTerm!.trim().isEmpty ||
+        currentData.weekList == null ||
+        currentData.weekList!.isEmpty) {
+      AppLogger.I.event(
+        LogLevel.warn,
+        'ScheduleUpdateWorker',
+        event: 'schedule_notice_poll_invalid_schedule_data',
+        messageZh: '后台轮询跳过无效课表数据',
+        message: 'skip invalid schedule data',
+        module: 'schedule_notice_poll',
+        action: 'validate_schedule',
+        status: 'skip',
+        reason: 'invalid_schedule_data',
+        fields: {'trigger': trigger},
+      );
+      return done(status: 'skip_invalid_schedule_data', scheduleFollowUp: true);
+    }
+    if (!reanchoredPollingTarget &&
+        preferredTerm.isNotEmpty &&
+        currentData.yearTerm!.trim() != preferredTerm) {
+      AppLogger.I.event(
+        LogLevel.warn,
+        'ScheduleUpdateWorker',
+        event: 'schedule_notice_poll_term_mismatch',
+        messageZh: '后台轮询跳过学期不匹配数据',
+        message: 'polling term mismatch',
+        module: 'schedule_notice_poll',
+        action: 'validate_term',
+        status: 'skip',
+        reason: 'term_mismatch',
+        fields: {
+          'trigger': trigger,
+          'preferredTerm': preferredTerm,
+          'currentTerm': currentData.yearTerm!.trim(),
+        },
+      );
+      return done(
+        status: 'skip_term_mismatch',
+        fields: {
+          'preferredTerm': preferredTerm,
+          'currentTerm': currentData.yearTerm!.trim(),
+        },
+        scheduleFollowUp: true,
+      );
+    }
+
+    final pipeline = ScheduleNoticeRefreshPipeline(
+      refreshWeek: (weekNum, yearTerm) async {
+        final raw = await scheduleApi.fetchRawWeekEvents(
+          userId: userId,
+          encryptedPassword: encryptedPassword,
+          weekNum: weekNum,
+          yearTerm: yearTerm,
+        );
+        await scheduleApi.saveScheduleJson(
+          userId: userId,
+          yearTerm: yearTerm,
+          weekNum: weekNum,
+          jsonStr: json.encode(raw),
+        );
+      },
+    );
+
+    ScheduleNoticeRefreshResult result;
+    try {
+      result = await pipeline.run(currentData: currentData, headless: true);
+    } catch (e, st) {
+      AppLogger.I.event(
+        LogLevel.error,
+        'ScheduleUpdateWorker',
+        event: 'schedule_notice_poll_pipeline_fail',
+        messageZh: '后台轮询处理流程失败',
+        message: 'pipeline run failed',
+        module: 'schedule_notice_poll',
+        action: 'run_pipeline',
+        status: 'fail',
+        reason: 'pipeline_failed',
+        error: e,
+        stackTrace: st,
+        fields: {'trigger': trigger},
+      );
+      return done(
+        status: 'pipeline_failed',
+        fields: {'error': e.toString()},
+        scheduleFollowUp: true,
+      );
+    }
+
+    if (result.apiClosed || result.changes.isEmpty) {
+      await recordScheduleUpdateWorkerSuccessfulRun();
+      return done(
+        status: result.apiClosed ? 'api_closed' : 'no_changes',
+        fields: {
+          'apiClosed': result.apiClosed,
+          'changes': result.changes.length,
+        },
+        scheduleFollowUp: true,
+      );
+    }
+
+    await writeScheduleUpdateWorkerPendingChanges(
+      prefs: prefs,
+      userId: userId,
+      yearTerm: currentData.yearTerm!.trim(),
+      changes: result.changes,
+    );
+    final title = '课表更新提醒';
+    final body = '检测到 ${result.changes.length} 周存在调课变更';
+    await LocalNotifications.showScheduleUpdate(
+      title: title,
+      body: body,
+      payload: LocalNotifications.payloadScheduleUpdate,
+    );
+    await recordScheduleUpdateWorkerSuccessfulRun();
+    AppLogger.I.info(
+      'ScheduleUpdateWorker',
+      'heartbeat task detected schedule changes',
+      fields: {'trigger': trigger, 'changes': result.changes.length},
+    );
+    return done(
+      status: 'changes_detected',
+      fields: {'changes': result.changes.length},
+      scheduleFollowUp: true,
+    );
   }
 
   static Future<void> _cancelAllScheduledTasks() async {
@@ -874,12 +921,11 @@ class ScheduleUpdateWorker {
   static Future<void> _ensureLoggerReady() async {
     if (_loggerReady) return;
     try {
-      final logDate = DateTime.now().toIso8601String().split('T').first;
       await AppLogger.I.init(
         minLevel: LogLevel.info,
         enableConsole: true,
         enableFile: true,
-        fileName: 'cqut_$logDate.log',
+        source: 'background',
       );
       _loggerReady = true;
     } catch (_) {}

@@ -34,7 +34,14 @@ class _ClearCachePageState extends State<ClearCachePage> {
         );
         _loading = false;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'StorageDiagnostic',
+        'cache usage read failed',
+        error: error,
+        stackTrace: stackTrace,
+        fields: const {'stage': 'usage_read', 'outcome': 'empty_usage_shown'},
+      );
       if (!mounted) return;
       setState(() {
         _usages = const [];
@@ -99,7 +106,14 @@ class _ClearCachePageState extends State<ClearCachePage> {
       );
       setState(() => _selected.clear());
       await _refresh();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'StorageDiagnostic',
+        'cache cleanup failed',
+        error: e,
+        stackTrace: stackTrace,
+        fields: const {'stage': 'cache_clear', 'outcome': 'failed'},
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -113,38 +127,19 @@ class _ClearCachePageState extends State<ClearCachePage> {
     if (_exporting || _clearing) return;
     setState(() => _exporting = true);
     try {
-      final kind = await showModalBottomSheet<LogExportKind>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) {
-          return SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  title: Text('网络日志'),
-                  onTap: () => Navigator.pop(context, LogExportKind.network),
-                ),
-                ListTile(
-                  title: Text('其他日志'),
-                  onTap: () => Navigator.pop(context, LogExportKind.other),
-                ),
-                ListTile(
-                  title: Text('全部日志'),
-                  onTap: () => Navigator.pop(context, LogExportKind.all),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-      if (kind == null) return;
-      await AppLogger.I.exportLogsWithKind(kind: kind);
+      final path = await AppLogger.I.exportLogs();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('日志已保存在/Download/CQUT-Helper/log文件夹中')),
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('诊断文件已保存：$path')));
+    } catch (e, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'StorageDiagnostic',
+        'diagnostic export failed',
+        error: e,
+        stackTrace: stackTrace,
+        fields: const {'stage': 'diagnostic_export', 'outcome': 'failed'},
       );
-    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -183,7 +178,7 @@ class _ClearCachePageState extends State<ClearCachePage> {
                   child: ListTile(
                     leading: Icon(Icons.upload_file_outlined),
                     title: Text('导出日志'),
-                    subtitle: Text('选择网络日志、其他日志或全部日志'),
+                    subtitle: Text('一键导出最近异常、错误原因与相关操作上下文'),
                     trailing: _exporting
                         ? SizedBox(
                             width: 20,

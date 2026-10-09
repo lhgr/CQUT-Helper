@@ -8,6 +8,14 @@ import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/utils/schedule_fingerprint_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
+
+class _ScheduleCredentialsUnavailable implements Exception {
+  _ScheduleCredentialsUnavailable(this.message);
+  final String message;
+  @override
+  String toString() => 'Exception: $message';
+}
 
 class ScheduleWeekLoader {
   final ScheduleApi service;
@@ -128,14 +136,66 @@ class ScheduleWeekLoader {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+  }) => AppLogger.I.runWithTraceIdAsync(
+    AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+    () async {
+      try {
+        return await _loadFromNetwork(
+          weekNum: weekNum,
+          yearTerm: yearTerm,
+          persistLastViewed: persistLastViewed,
+          updateWidgetPins: updateWidgetPins,
+        );
+      } catch (error, stackTrace) {
+        if (error is! _ScheduleCredentialsUnavailable &&
+            !(error is DioException && error.type == DioExceptionType.cancel)) {
+          AppLogger.I.logOperationFailure(
+            'ScheduleWeekLoader',
+            'week load failed',
+            error: error,
+            stackTrace: stackTrace,
+            fields: {
+              'stage': 'load_week',
+              'outcome': 'failed',
+              'week': weekNum,
+              'term': yearTerm,
+            },
+          );
+        }
+        rethrow;
+      }
+    },
+  );
+
+  Future<ScheduleData> _loadFromNetwork({
+    String? weekNum,
+    String? yearTerm,
+    bool persistLastViewed = true,
+    bool updateWidgetPins = false,
   }) async {
     await loadCredentials();
 
     if (_userId == null || _userId!.isEmpty) {
-      throw Exception('未登录');
+      AppLogger.I.info(
+        'ScheduleWeekLoader',
+        'schedule load skipped while signed out',
+        fields: const {
+          'stage': 'validate_credentials',
+          'outcome': 'skip_not_logged_in',
+        },
+      );
+      throw _ScheduleCredentialsUnavailable('未登录');
     }
     if (_encryptedPassword == null || _encryptedPassword!.isEmpty) {
-      throw Exception('凭证已过期，请重新登录');
+      AppLogger.I.info(
+        'ScheduleWeekLoader',
+        'schedule load requires credentials',
+        fields: const {
+          'stage': 'validate_credentials',
+          'outcome': 'skip_missing_credentials',
+        },
+      );
+      throw _ScheduleCredentialsUnavailable('凭证已过期，请重新登录');
     }
 
     final shouldPinWidget =
@@ -153,7 +213,23 @@ class ScheduleWeekLoader {
     final loadedWeek = (data.weekNum ?? '').trim();
     final loadedWeeks = data.weekList;
     if (loadedWeek.isEmpty || loadedWeeks == null || loadedWeeks.isEmpty) {
-      throw Exception('课表鉴权失败，请重新登录');
+      final error = Exception('课表鉴权失败，请重新登录');
+      AppLogger.I.logOperationFailure(
+        'ScheduleWeekLoader',
+        'schedule week metadata is invalid',
+        error: error,
+        stackTrace: StackTrace.current,
+        fields: {
+          'stage': 'validate_schedule',
+          'outcome': 'rejected',
+          'reason': 'missing_week_metadata',
+          'week': weekNum,
+          'term': yearTerm,
+          'weekMissing': loadedWeek.isEmpty,
+          'weekListMissing': loadedWeeks == null || loadedWeeks.isEmpty,
+        },
+      );
+      throw error;
     }
 
     if (weekNum == null && yearTerm == null) {
@@ -298,8 +374,24 @@ class ScheduleWeekLoader {
       }
       return true;
     } catch (e, st) {
+      if (e is _ScheduleCredentialsUnavailable ||
+          (e is DioException && e.type == DioExceptionType.cancel)) {
+        AppLogger.I.info(
+          'ScheduleController',
+          'prefetch skipped',
+          fields: {
+            'stage': 'prefetch_week',
+            'outcome': e is DioException
+                ? 'cancelled'
+                : 'skip_missing_credentials',
+            'week': weekNum,
+            'term': yearTerm,
+          },
+        );
+        return false;
+      }
       AppLogger.I.event(
-        LogLevel.debug,
+        LogLevel.warn,
         'ScheduleController',
         event: 'schedule_week_prefetch_fail',
         messageZh: '预取周课表失败，已忽略',
