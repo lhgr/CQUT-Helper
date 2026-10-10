@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import java.io.File
 import java.io.IOException
 
@@ -85,6 +86,7 @@ class DiagnosticExportStore(private val context: Context, private val clock: () 
     return entries.size
   }
 
+  @RequiresApi(Build.VERSION_CODES.Q)
   private fun publishMediaStore(fileName: String, bytes: ByteArray): String {
     val values = ContentValues().apply {
       put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)

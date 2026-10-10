@@ -638,7 +638,10 @@ void main() {
           case 'publishExport':
             final args = call.arguments as Map;
             content = args['content'] as String;
-            expect(args['fileName'], matches(RegExp(r'^cqut_diagnostic_.*\.log$')));
+            expect(
+              args['fileName'],
+              matches(RegExp(r'^cqut_diagnostic_.*\.log$')),
+            );
             return '/storage/emulated/0/Download/CQUT-Helper/log/${args['fileName']}';
           case 'exportStats':
             return {'bytes': 1234, 'files': 1};

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/api/course/course_api.dart';
+import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/academic_calendar_model.dart';
@@ -18,9 +19,11 @@ import 'package:cqut_helper/utils/widget_calendar_projection.dart';
 class ScheduleApi {
   final ApiService _apiService = ApiService();
   final CourseApi _courseApi;
+  final CredentialStore _credentialStore;
 
-  ScheduleApi({CourseApi? courseApi})
-    : _courseApi = courseApi ?? ApiService().course;
+  ScheduleApi({CourseApi? courseApi, CredentialStore? credentialStore})
+    : _courseApi = courseApi ?? ApiService().course,
+      _credentialStore = credentialStore ?? CredentialStore();
 
   String _norm(String? s) => (s ?? '').trim();
 
@@ -396,7 +399,26 @@ class ScheduleApi {
   }
 
   Future<List<CampusTimeInfo>> fetchCampusTimeInfo(String campusName) async {
-    final list = await _courseApi.fetchCampusTimeInfo(campusName);
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('account')?.trim();
+    if (userId == null || userId.isEmpty) {
+      throw const CourseApiException(
+        CourseApiErrorKind.authentication,
+        '未登录，无法获取课表时间信息',
+      );
+    }
+    final encryptedPassword = await _credentialStore.readEncryptedPassword();
+    if (encryptedPassword == null || encryptedPassword.trim().isEmpty) {
+      throw const CourseApiException(
+        CourseApiErrorKind.authentication,
+        '凭证已过期，请重新登录',
+      );
+    }
+    final list = await _courseApi.fetchCampusTimeInfo(
+      campusName,
+      userId: userId,
+      encryptedPassword: encryptedPassword,
+    );
     return list.map((e) => CampusTimeInfo.fromJson(e)).toList();
   }
 

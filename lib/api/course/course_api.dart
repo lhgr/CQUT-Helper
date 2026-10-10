@@ -49,15 +49,35 @@ class CourseApi {
   static const String _campusTimeInfoApi =
       'https://timetable-cfc.cqut.edu.cn/api/courseSchedule/getCampusTimeInfo';
 
-  Future<List<dynamic>> fetchCampusTimeInfo(String campusName) async {
+  Future<List<dynamic>> fetchCampusTimeInfo(
+    String campusName, {
+    required String userId,
+    required String encryptedPassword,
+  }) async {
     return runDiagnosticOperation(
       'CourseApi',
       'campus_time_info',
-      () => _fetchCampusTimeInfo(campusName),
+      () => _fetchCampusTimeInfo(
+        campusName,
+        userId: userId,
+        encryptedPassword: encryptedPassword,
+      ),
     );
   }
 
-  Future<List<dynamic>> _fetchCampusTimeInfo(String campusName) async {
+  Future<List<dynamic>> _fetchCampusTimeInfo(
+    String campusName, {
+    required String userId,
+    required String encryptedPassword,
+  }) async {
+    try {
+      await _authApi.ensureTimetableLogin(
+        account: userId,
+        encryptedPassword: encryptedPassword,
+      );
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
     final body = <String, dynamic>{'campusName': campusName};
     final resp = await _client.dio.post(_campusTimeInfoApi, data: body);
     final items = parseCampusTimeInfoResponse(resp.data);
