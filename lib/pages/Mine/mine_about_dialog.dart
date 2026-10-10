@@ -75,6 +75,8 @@ Future<void> showMineAboutDialog(BuildContext context) async {
         width: 48,
         height: 48,
         fit: BoxFit.cover,
+        color: Theme.of(context).colorScheme.primary,
+        colorBlendMode: BlendMode.srcIn,
       ),
     ),
     children: [

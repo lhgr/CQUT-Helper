@@ -37,6 +37,8 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
                 width: 64,
                 height: 64,
                 fit: BoxFit.cover,
+                color: Theme.of(context).colorScheme.primary,
+                colorBlendMode: BlendMode.srcIn,
               ),
             ),
           ),
