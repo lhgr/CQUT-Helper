@@ -1,3 +1,4 @@
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/api/auth/auth_api.dart';
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
 import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
@@ -46,6 +47,10 @@ class AccountSessionManager {
     await runCleanupStep(
       'disable_notice_enhancement',
       ScheduleSettingsManager.disableNoticeEnhancementForLogout,
+    );
+    await runCleanupStep(
+      'cancel_course_reminders',
+      CourseReminderScheduler.cancelAll,
     );
     await runCleanupStep('remove_account', () async {
       await prefs.remove('account');

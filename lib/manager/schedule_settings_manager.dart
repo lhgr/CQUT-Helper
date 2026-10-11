@@ -14,6 +14,8 @@ enum ScheduleDisplayDensity {
 
 enum ScheduleColorMode { auto, light, dark, followApp }
 
+enum CourseAutoMode { off, dnd, silent }
+
 class ScheduleSettingsManager {
   static ScheduleLayoutSettings _cachedLayoutSettings =
       const ScheduleLayoutSettings();
@@ -40,6 +42,9 @@ class ScheduleSettingsManager {
   static const String remindersEnabledKey = 'schedule_course_reminders_enabled';
   static const String defaultReminderMinutesKey =
       'schedule_default_reminder_minutes';
+  static const String defaultReminderAtStartKey =
+      'schedule_default_reminder_at_start';
+  static const String courseAutoModeKey = 'schedule_course_auto_mode';
   static const String displayDensityKey = 'schedule_display_density';
   static const String defaultHomeTabKey = 'schedule_default_home_tab';
   static const String _gridCellWidthKey = 'schedule_grid_cell_width';
@@ -74,6 +79,8 @@ class ScheduleSettingsManager {
   String noticeApiBaseUrl = officialNoticeApiBaseUrl;
   bool remindersEnabled = false;
   int defaultReminderMinutes = 10;
+  bool defaultReminderAtStart = false;
+  CourseAutoMode courseAutoMode = CourseAutoMode.off;
   ScheduleDisplayDensity displayDensity = ScheduleDisplayDensity.comfortable;
   ScheduleLayoutSettings layoutSettings = _cachedLayoutSettings;
   int defaultHomeTab = 1;
@@ -215,7 +222,13 @@ class ScheduleSettingsManager {
         : officialNoticeApiBaseUrl;
     remindersEnabled = prefs.getBool(remindersEnabledKey) ?? false;
     defaultReminderMinutes = (prefs.getInt(defaultReminderMinutesKey) ?? 10)
-        .clamp(0, 120);
+        .clamp(1, 120);
+    defaultReminderAtStart = prefs.getBool(defaultReminderAtStartKey) ?? false;
+    final savedAutoMode = prefs.getString(courseAutoModeKey);
+    courseAutoMode = CourseAutoMode.values.firstWhere(
+      (mode) => mode.name == savedAutoMode,
+      orElse: () => CourseAutoMode.off,
+    );
     final densityName = prefs.getString(displayDensityKey);
     displayDensity = ScheduleDisplayDensity.values.firstWhere(
       (value) => value.name == densityName,
@@ -288,6 +301,32 @@ class ScheduleSettingsManager {
     await prefs.setInt(defaultReminderMinutesKey, this.defaultReminderMinutes);
     await prefs.setString(displayDensityKey, displayDensity.name);
     await prefs.setInt(defaultHomeTabKey, this.defaultHomeTab);
+    experienceEpoch.value++;
+    settingsEpoch.value++;
+  }
+
+  Future<void> saveReminderSettings({
+    required bool remindersEnabled,
+    required int defaultReminderMinutes,
+    required bool defaultReminderAtStart,
+    required CourseAutoMode courseAutoMode,
+  }) async {
+    if (defaultReminderMinutes < 1 || defaultReminderMinutes > 120) {
+      throw ArgumentError.value(
+        defaultReminderMinutes,
+        'defaultReminderMinutes',
+        'must be between 1 and 120',
+      );
+    }
+    final prefs = await SharedPreferences.getInstance();
+    this.remindersEnabled = remindersEnabled;
+    this.defaultReminderMinutes = defaultReminderMinutes;
+    this.defaultReminderAtStart = defaultReminderAtStart;
+    this.courseAutoMode = courseAutoMode;
+    await prefs.setBool(remindersEnabledKey, remindersEnabled);
+    await prefs.setInt(defaultReminderMinutesKey, defaultReminderMinutes);
+    await prefs.setBool(defaultReminderAtStartKey, defaultReminderAtStart);
+    await prefs.setString(courseAutoModeKey, courseAutoMode.name);
     experienceEpoch.value++;
     settingsEpoch.value++;
   }

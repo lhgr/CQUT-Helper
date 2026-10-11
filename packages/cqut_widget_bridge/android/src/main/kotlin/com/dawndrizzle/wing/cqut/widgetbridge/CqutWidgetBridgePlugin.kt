@@ -14,12 +14,41 @@ class CqutWidgetBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
   private lateinit var applicationContext: Context
   private lateinit var channel: MethodChannel
   private lateinit var diagnosticChannel: MethodChannel
+  private lateinit var courseReminderChannel: MethodChannel
 
   override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     applicationContext = binding.applicationContext
     channel = MethodChannel(binding.binaryMessenger, CHANNEL_NAME)
     channel.setMethodCallHandler(this)
     try { CqutDiagnostics.initialize(applicationContext) } catch (_: Exception) {}
+    try { CourseAutoMode.initialize(applicationContext) } catch (error: Exception) {
+      CqutDiagnostics.record(applicationContext, "error", "CourseAutoMode", "event=initialize", error)
+    }
+    courseReminderChannel = MethodChannel(binding.binaryMessenger, "cqut/course_reminders")
+    courseReminderChannel.setMethodCallHandler { call, result ->
+      try {
+        when (call.method) {
+          "getStatus" -> result.success(CourseAutoMode.status(applicationContext))
+          "openSettings" -> result.success(CourseAutoMode.openSettings(applicationContext, call.argument<String>("kind") ?: ""))
+          "replaceSchedule" -> {
+            val mode = call.argument<String>("mode") ?: throw IllegalArgumentException("mode is required")
+            val intervals = (call.argument<List<Map<String, Any?>>>("intervals") ?: emptyList()).map { interval ->
+              CourseModeInterval(
+                (interval["startMillis"] as? Number)?.toLong() ?: throw IllegalArgumentException("startMillis is required"),
+                (interval["endMillis"] as? Number)?.toLong() ?: throw IllegalArgumentException("endMillis is required"),
+              )
+            }
+            CourseAutoMode.replace(applicationContext, mode, intervals)
+            result.success(null)
+          }
+          "cancelAndRestore" -> { CourseAutoMode.cancel(applicationContext); result.success(null) }
+          else -> result.notImplemented()
+        }
+      } catch (error: Exception) {
+        CqutDiagnostics.record(applicationContext, "error", "CourseAutoMode", "event=channel method=${call.method}", error)
+        result.error("COURSE_AUTO_MODE", error.message, null)
+      }
+    }
     diagnosticChannel = MethodChannel(
       binding.binaryMessenger, "cqut/diagnostics", StandardMethodCodec.INSTANCE,
       binding.binaryMessenger.makeBackgroundTaskQueue(),
@@ -85,6 +114,7 @@ class CqutWidgetBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
     diagnosticChannel.setMethodCallHandler(null)
+    courseReminderChannel.setMethodCallHandler(null)
   }
 
   private fun dispatch(plan: WidgetBridgeDispatchPlan) {

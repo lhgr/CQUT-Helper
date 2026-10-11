@@ -43,6 +43,8 @@ class AppBackupService {
     'schedule_time_info_enabled',
     'schedule_course_reminders_enabled',
     'schedule_default_reminder_minutes',
+    'schedule_default_reminder_at_start',
+    'schedule_course_auto_mode',
     'schedule_display_density',
     'schedule_default_home_tab',
     'schedule_grid_cell_width',

@@ -56,6 +56,87 @@ void main() {
     );
   });
 
+  test('课程提醒设置按默认值加载并持久化', () async {
+    SharedPreferences.setMockInitialValues({});
+    final manager = ScheduleSettingsManager();
+    await manager.load();
+
+    expect(manager.defaultReminderAtStart, isFalse);
+    expect(manager.courseAutoMode, CourseAutoMode.off);
+
+    await manager.saveReminderSettings(
+      remindersEnabled: true,
+      defaultReminderMinutes: 15,
+      defaultReminderAtStart: true,
+      courseAutoMode: CourseAutoMode.dnd,
+    );
+    final reloaded = ScheduleSettingsManager();
+    await reloaded.load();
+
+    expect(reloaded.remindersEnabled, isTrue);
+    expect(reloaded.defaultReminderMinutes, 15);
+    expect(reloaded.defaultReminderAtStart, isTrue);
+    expect(reloaded.courseAutoMode, CourseAutoMode.dnd);
+  });
+
+  test('经验设置保存不会覆盖新增课程提醒字段', () async {
+    SharedPreferences.setMockInitialValues({});
+    final manager = ScheduleSettingsManager();
+    await manager.saveReminderSettings(
+      remindersEnabled: true,
+      defaultReminderMinutes: 30,
+      defaultReminderAtStart: true,
+      courseAutoMode: CourseAutoMode.silent,
+    );
+
+    await manager.saveExperienceSettings(
+      remindersEnabled: manager.remindersEnabled,
+      defaultReminderMinutes: manager.defaultReminderMinutes,
+      displayDensity: ScheduleDisplayDensity.compact,
+      defaultHomeTab: 2,
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getBool(ScheduleSettingsManager.defaultReminderAtStartKey),
+      isTrue,
+    );
+    expect(
+      prefs.getString(ScheduleSettingsManager.courseAutoModeKey),
+      CourseAutoMode.silent.name,
+    );
+  });
+
+  test('无效提前分钟拒绝保存并保留原设置', () async {
+    SharedPreferences.setMockInitialValues({});
+    final manager = ScheduleSettingsManager();
+    await manager.saveReminderSettings(
+      remindersEnabled: true,
+      defaultReminderMinutes: 10,
+      defaultReminderAtStart: false,
+      courseAutoMode: CourseAutoMode.off,
+    );
+
+    await expectLater(
+      manager.saveReminderSettings(
+        remindersEnabled: false,
+        defaultReminderMinutes: 121,
+        defaultReminderAtStart: true,
+        courseAutoMode: CourseAutoMode.dnd,
+      ),
+      throwsArgumentError,
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(ScheduleSettingsManager.remindersEnabledKey), isTrue);
+    expect(prefs.getInt(ScheduleSettingsManager.defaultReminderMinutesKey), 10);
+    expect(
+      prefs.getBool(ScheduleSettingsManager.defaultReminderAtStartKey),
+      isFalse,
+    );
+    expect(prefs.getString(ScheduleSettingsManager.courseAutoModeKey), 'off');
+  });
+
   group('ScheduleSettingsManager 调课通知增强授权', () {
     test('旧版仅开启轮询但没有新版隐私同意时会自动关闭', () async {
       SharedPreferences.setMockInitialValues({

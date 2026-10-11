@@ -137,4 +137,48 @@ void main() {
     await manager.load();
     expect(manager.layoutSettings.backgroundOpacity, 0.65);
   });
+
+  test('提醒偏好会备份恢复，系统授权状态保持设备本地', () async {
+    SharedPreferences.setMockInitialValues({
+      'account': 'source-account',
+      ScheduleSettingsManager.defaultReminderAtStartKey: true,
+      ScheduleSettingsManager.courseAutoModeKey: 'dnd',
+      'course_reminder_permission_granted': true,
+    });
+    final sourcePreferences = await SharedPreferences.getInstance();
+    final settings = AppBackupService.collectSettingsForTesting(
+      sourcePreferences,
+      'source-account',
+    );
+
+    expect(settings[ScheduleSettingsManager.defaultReminderAtStartKey], isTrue);
+    expect(settings[ScheduleSettingsManager.courseAutoModeKey], 'dnd');
+    expect(settings, isNot(contains('course_reminder_permission_granted')));
+
+    SharedPreferences.setMockInitialValues({'account': 'target-account'});
+    final targetPreferences = await SharedPreferences.getInstance();
+    final restoredCount = await AppBackupService.restoreSettingsForTesting(
+      prefs: targetPreferences,
+      settings: (jsonDecode(jsonEncode(settings)) as Map)
+          .cast<String, dynamic>(),
+      sourceAccount: 'source-account',
+      account: 'target-account',
+    );
+
+    expect(restoredCount, 2);
+    expect(
+      targetPreferences.getBool(
+        ScheduleSettingsManager.defaultReminderAtStartKey,
+      ),
+      isTrue,
+    );
+    expect(
+      targetPreferences.getString(ScheduleSettingsManager.courseAutoModeKey),
+      'dnd',
+    );
+    expect(
+      targetPreferences.getBool('course_reminder_permission_granted'),
+      isNull,
+    );
+  });
 }

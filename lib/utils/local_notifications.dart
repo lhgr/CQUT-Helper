@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
@@ -29,8 +30,16 @@ class LocalNotifications {
   static bool _initialized = false;
   static bool _timezoneInitialized = false;
 
+  @visibleForTesting
+  static bool? debugIsAndroidOverride;
+
+  @visibleForTesting
+  static void debugResetInitialization() => _initialized = false;
+
+  static bool get _isAndroid => debugIsAndroidOverride ?? Platform.isAndroid;
+
   static Future<void> initialize() async {
-    if (!Platform.isAndroid) return;
+    if (!_isAndroid) return;
     if (_initialized) return;
     if (!_timezoneInitialized) {
       tz_data.initializeTimeZones();
@@ -91,7 +100,7 @@ class LocalNotifications {
   }
 
   static Future<bool> ensurePermission() async {
-    if (!Platform.isAndroid) return false;
+    if (!_isAndroid) return false;
     await initialize();
     final android = _plugin
         .resolvePlatformSpecificImplementation<
@@ -103,7 +112,7 @@ class LocalNotifications {
   }
 
   static Future<bool> areNotificationsEnabled() async {
-    if (!Platform.isAndroid) return false;
+    if (!_isAndroid) return false;
     await initialize();
     final android = _plugin
         .resolvePlatformSpecificImplementation<
@@ -114,26 +123,35 @@ class LocalNotifications {
   }
 
   static Future<bool> canScheduleExactNotifications() async {
-    if (!Platform.isAndroid) return false;
+    if (!_isAndroid) return false;
     await initialize();
     final android = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
     if (android == null) return false;
-    return await android.canScheduleExactNotifications() ?? true;
+    return await android.canScheduleExactNotifications() ?? false;
   }
 
   static Future<bool> ensureCourseReminderPermissions() async {
-    if (!await ensurePermission()) return false;
-    if (await canScheduleExactNotifications()) return true;
+    if (!_isAndroid) return false;
+    await initialize();
     final android = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
     if (android == null) return false;
-    final granted = await android.requestExactAlarmsPermission() ?? false;
-    return granted && await canScheduleExactNotifications();
+    if (!await areNotificationsEnabled()) {
+      await android.requestNotificationsPermission();
+      if (!await areNotificationsEnabled()) return false;
+    }
+    if (!await canScheduleExactNotifications()) {
+      await android.requestExactAlarmsPermission();
+    }
+    // Settings activity results are advisory. Gate on the actual current
+    // permissions, including notification permission changed while away.
+    return await areNotificationsEnabled() &&
+        await canScheduleExactNotifications();
   }
 
   static Future<bool> consumeOpenScheduleUpdateFlag() async {
@@ -153,7 +171,7 @@ class LocalNotifications {
   }
 
   static Future<void> cancelAll() async {
-    if (!Platform.isAndroid) return;
+    if (!_isAndroid) return;
     await initialize();
     await _plugin.cancelAll();
     final prefs = await SharedPreferences.getInstance();
@@ -179,7 +197,7 @@ class LocalNotifications {
     String? payload,
     int? id,
   }) async {
-    if (!Platform.isAndroid) return;
+    if (!_isAndroid) return;
     await initialize();
 
     final details = NotificationDetails(
@@ -208,7 +226,7 @@ class LocalNotifications {
     String? payload,
     int? id,
   }) async {
-    if (!Platform.isAndroid) return;
+    if (!_isAndroid) return;
     await initialize();
 
     final details = NotificationDetails(
@@ -238,9 +256,9 @@ class LocalNotifications {
     required DateTime scheduledAt,
     String? payload,
   }) async {
-    if (!Platform.isAndroid || !scheduledAt.isAfter(DateTime.now())) return;
+    if (!_isAndroid || !scheduledAt.isAfter(DateTime.now())) return;
     await initialize();
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _courseChannelId,
         _courseChannelName,
@@ -248,6 +266,8 @@ class LocalNotifications {
         importance: Importance.high,
         priority: Priority.high,
         category: AndroidNotificationCategory.reminder,
+        autoCancel: true,
+        ongoing: false,
       ),
     );
     await _plugin.zonedSchedule(
@@ -262,7 +282,7 @@ class LocalNotifications {
   }
 
   static Future<void> cancelIds(Iterable<int> ids) async {
-    if (!Platform.isAndroid) return;
+    if (!_isAndroid) return;
     await initialize();
     for (final id in ids) {
       await _plugin.cancel(id: id);
