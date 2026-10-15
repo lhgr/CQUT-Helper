@@ -78,7 +78,11 @@ class ScheduleUpdateManager {
     } catch (e, st) {
       error = e;
       stackTrace = st;
-      await appendScheduleUpdateFailure(runType: runType, error: e);
+      await appendScheduleUpdateFailure(
+        runType: runType,
+        error: e,
+        stackTrace: st,
+      );
     } finally {
       finalized = await finalizeScheduleUpdateRun(
         runType: runType,

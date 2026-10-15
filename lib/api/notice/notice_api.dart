@@ -138,6 +138,8 @@ class NoticeApi {
         yearTerm: yearTerm,
         env: env,
         headless: headless,
+        attempt: 1,
+        maxAttempts: 1,
       );
       stopwatch.stop();
       return NoticeApiAvailabilityResult(
@@ -202,6 +204,8 @@ class NoticeApi {
     required String yearTerm,
     required String env,
     required bool headless,
+    int? attempt,
+    int? maxAttempts,
   }) async {
     if (!await _accessEnabled()) {
       throw NoticeApiForbiddenException('调课通知增强未开启，禁止访问调课服务');
@@ -213,8 +217,10 @@ class NoticeApi {
     final response = await _dioFactory(baseUrl).post(
       _path,
       options: Options(
-        extra: const {
+        extra: {
           'diagnostic_expected_statuses': [403],
+          'diagnostic_attempt': ?attempt,
+          'diagnostic_max_attempts': ?maxAttempts,
         },
       ),
       data: {
@@ -305,6 +311,8 @@ class NoticeApi {
             yearTerm: normalizedYearTerm,
             env: env,
             headless: headless,
+            attempt: attempt,
+            maxAttempts: _maxRetryPerDomain,
           );
         } on DioException catch (e, st) {
           final code = e.response?.statusCode;

@@ -11,6 +11,7 @@ import 'package:cqut_helper/manager/schedule_update_worker_state_store.dart';
 import 'package:cqut_helper/manager/schedule_update_worker_target.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/diagnostic_error.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
@@ -334,7 +335,10 @@ class ScheduleUpdateWorker {
                   ? 'calendar_updated'
                   : 'calendar_unchanged'
             : 'calendar_failed',
-        fields: {if (result.error != null) 'error': result.error.toString()},
+        fields: {
+          if (result.error != null)
+            'error': safeDiagnosticErrorSummary(result.error),
+        },
       );
     }
 
@@ -432,7 +436,10 @@ class ScheduleUpdateWorker {
         );
         return done(
           status: 'widget_manual_failed',
-          fields: {'error': e.toString(), 'failure': failure.name},
+          fields: {
+            'error': safeDiagnosticErrorSummary(e),
+            'failure': failure.name,
+          },
         );
       }
     }
@@ -513,7 +520,7 @@ class ScheduleUpdateWorker {
         );
         return done(
           status: 'load_network_failed',
-          fields: {'error': e.toString()},
+          fields: {'error': safeDiagnosticErrorSummary(e)},
           scheduleFollowUp: true,
         );
       }
@@ -620,7 +627,7 @@ class ScheduleUpdateWorker {
       );
       return done(
         status: 'pipeline_failed',
-        fields: {'error': e.toString()},
+        fields: {'error': safeDiagnosticErrorSummary(e)},
         scheduleFollowUp: true,
       );
     }

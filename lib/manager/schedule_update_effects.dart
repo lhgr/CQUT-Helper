@@ -18,12 +18,13 @@ void requestScheduleUpdatedIfNeeded(List<ScheduleWeekChange> changes) {
 Future<void> appendScheduleUpdateFailure({
   required String runType,
   required Object error,
+  StackTrace? stackTrace,
 }) {
-  return ScheduleUpdateLog.appendFailure({
-    'at': DateTime.now().millisecondsSinceEpoch,
-    'scope': runType,
-    'error': error.toString(),
-  });
+  return ScheduleUpdateLog.appendFailure(
+    {'at': DateTime.now().millisecondsSinceEpoch, 'scope': runType},
+    error: error,
+    stackTrace: stackTrace,
+  );
 }
 
 Future<ScheduleUpdateRunResult> finalizeScheduleUpdateRun({
@@ -66,14 +67,6 @@ Future<ScheduleUpdateRunResult> finalizeScheduleUpdateRun({
     'hadFailures': result.hadFailures,
     'failureDelta': result.failureDelta,
   });
-  if (stackTrace != null) {
-    await ScheduleUpdateLog.appendRun({
-      'at': DateTime.now().millisecondsSinceEpoch,
-      'type': '${runType}_exception',
-      'error': error.toString(),
-      'stack': stackTrace.toString(),
-    });
-  }
   return result;
 }
 

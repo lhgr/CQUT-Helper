@@ -1,16 +1,17 @@
-import 'dart:convert';
-
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ScheduleUpdateLog {
-  static const String _runsKey = 'schedule_update_runs';
-  static const String _failuresKey = 'schedule_update_failures';
   static const String _failureCounterKey = 'schedule_update_failure_counter_v1';
 
   static Future<int> failureCounter() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_failureCounterKey) ?? 0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      return prefs.getInt(_failureCounterKey) ?? 0;
+    } catch (_) {
+      return 0;
+    }
   }
 
   static Map<String, Object?> _sanitizeForRuntime(Map<String, dynamic> item) {
@@ -23,7 +24,9 @@ class ScheduleUpdateLog {
           k == 'password' ||
           k == 'encryptedPassword' ||
           k == 'token' ||
-          k == 'cookie') {
+          k == 'cookie' ||
+          k == 'error' ||
+          k == 'stack') {
         continue;
       }
       out[k] = e.value;
@@ -31,66 +34,54 @@ class ScheduleUpdateLog {
     return out;
   }
 
-  static Future<void> appendRun(
-    Map<String, dynamic> item, {
-    int max = 80,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_runsKey);
-
-    final list = <dynamic>[];
-    if (raw != null && raw.trim().isNotEmpty) {
-      try {
-        final decoded = json.decode(raw);
-        if (decoded is List) list.addAll(decoded);
-      } catch (_) {}
-    }
-
-    list.add(item);
-    if (list.length > max) {
-      list.removeRange(0, list.length - max);
-    }
-
-    await prefs.setString(_runsKey, json.encode(list));
-
+  static Future<void> appendRun(Map<String, dynamic> item) async {
     final fields = _sanitizeForRuntime(item);
-    if (fields.isNotEmpty) {
-      AppLogger.I.info('ScheduleUpdate', 'run', fields: fields);
-    } else {
-      AppLogger.I.info('ScheduleUpdate', 'run');
-    }
+    AppLogger.I.info(
+      'ScheduleUpdate',
+      'run',
+      fields: {
+        ...fields,
+        'stage': 'schedule_update',
+        'diagnostic_kind': 'operation',
+        'outcome': item['hadFailures'] == true ? 'failed' : 'completed',
+      },
+    );
   }
 
   static Future<void> appendFailure(
     Map<String, dynamic> item, {
-    int max = 120,
+    Object? error,
+    StackTrace? stackTrace,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_failuresKey);
-
-    final list = <dynamic>[];
-    if (raw != null && raw.trim().isNotEmpty) {
-      try {
-        final decoded = json.decode(raw);
-        if (decoded is List) list.addAll(decoded);
-      } catch (_) {}
-    }
-
-    list.add(item);
-    if (list.length > max) {
-      list.removeRange(0, list.length - max);
-    }
-
-    await prefs.setString(_failuresKey, json.encode(list));
-
-    final counter = (prefs.getInt(_failureCounterKey) ?? 0) + 1;
-    await prefs.setInt(_failureCounterKey, counter);
-
+    // This counter is a business signal used by the run result. Historical
+    // diagnostic payloads belong only to the bounded diagnostic store.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final counter = (prefs.getInt(_failureCounterKey) ?? 0) + 1;
+      await prefs.setInt(_failureCounterKey, counter);
+    } catch (_) {}
     final fields = _sanitizeForRuntime(item);
-    if (fields.isNotEmpty) {
-      AppLogger.I.warn('ScheduleUpdate', 'failure', fields: fields);
-    } else {
-      AppLogger.I.warn('ScheduleUpdate', 'failure');
+    if (error != null) {
+      AppLogger.I.logOperationFailure(
+        'ScheduleUpdate',
+        'update failed',
+        error: error,
+        stackTrace: stackTrace,
+        fields: {...fields, 'stage': 'schedule_update', 'outcome': 'failed'},
+      );
+      return;
     }
+    AppLogger.I.info(
+      'ScheduleUpdate',
+      'update outcome',
+      fields: {
+        ...fields,
+        'stage': 'schedule_update',
+        'diagnostic_kind': 'operation',
+        'outcome': 'failed',
+        if (item['error'] is String) 'reason': item['error'],
+      },
+    );
   }
 }

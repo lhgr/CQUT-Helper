@@ -123,7 +123,6 @@ class ScheduleRecentChangeDetector {
       }
 
       Map<String, dynamic>? afterJson;
-      Object? lastError;
       var lastAttempt = 0;
       try {
         afterJson = await retryWithExponentialBackoff<Map<String, dynamic>>(
@@ -136,19 +135,21 @@ class ScheduleRecentChangeDetector {
           maxAttempts: 3,
           onError: (attempt, error) {
             lastAttempt = attempt;
-            lastError = error;
           },
         );
-      } catch (_) {
-        await ScheduleUpdateLog.appendFailure({
-          'at': DateTime.now().millisecondsSinceEpoch,
-          'scope': 'silent_check',
-          'userId': userId,
-          'yearTerm': cTerm,
-          'weekNum': week,
-          'attempt': lastAttempt,
-          'error': (lastError ?? 'unknown').toString(),
-        });
+      } catch (error, stackTrace) {
+        await ScheduleUpdateLog.appendFailure(
+          {
+            'at': DateTime.now().millisecondsSinceEpoch,
+            'scope': 'silent_check',
+            'userId': userId,
+            'yearTerm': cTerm,
+            'weekNum': week,
+            'attempt': lastAttempt,
+          },
+          error: error,
+          stackTrace: stackTrace,
+        );
         continue;
       }
 

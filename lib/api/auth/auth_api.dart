@@ -9,6 +9,7 @@ import 'package:pointycastle/asymmetric/pkcs1.dart';
 import 'package:pointycastle/asymmetric/rsa.dart';
 import 'package:pointycastle/api.dart' show PublicKeyParameter;
 import '../core/api_client.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 
 class _TimetableLoginState {
   DateTime? lastSuccessAt;
@@ -132,7 +133,18 @@ Y/akVmYNtghKZzz6jwIDAQAB
     final code = data['code'];
     final msg = data['msg']?.toString();
     if (code != 200 || msg != '登录成功！') {
-      throw Exception(msg ?? '登录失败');
+      final error = Exception(msg ?? '登录失败');
+      AppLogger.I.logOperationFailure(
+        'AuthApi',
+        'login rejected',
+        error: error,
+        fields: {
+          'action': 'login',
+          'error_category': 'AUTH_FAILED',
+          if (res1.statusCode != null) 'status_code': res1.statusCode,
+        },
+      );
+      throw error;
     }
 
     if (res1.statusCode == null || res1.statusCode! >= 400) {

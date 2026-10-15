@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
@@ -12,6 +13,10 @@ import 'package:path_provider/path_provider.dart';
 
 import 'diagnostics_storage.dart';
 import 'diagnostics_export.dart';
+import 'diagnostic_error.dart';
+import 'diagnostic_report.dart';
+import 'dio_log_interceptor.dart';
+export 'dio_log_interceptor.dart';
 
 enum LogLevel {
   debug(10),
@@ -74,8 +79,10 @@ class _QueuedRecord {
 }
 
 class _RootLink {
-  _RootLink(this.eventId);
+  _RootLink(this.eventId, {required this.operationId, this.errorCategory});
   final String eventId;
+  final String operationId;
+  final String? errorCategory;
   bool valid = true;
 }
 
@@ -102,7 +109,8 @@ class AppLogger {
   final ListQueue<LogEvent> _recent = ListQueue();
   final ListQueue<_QueuedRecord> _queue = ListQueue();
   final LinkedHashMap<String, _RepeatedIssue> _issues = LinkedHashMap();
-  Expando<_RootLink> _rootEvents = Expando<_RootLink>();
+  Expando<Map<String, _RootLink>> _rootEvents = Expando();
+  final LinkedHashMap<String, _RepeatedIssue> _templates = LinkedHashMap();
   DiagnosticStorage? _storage;
   Directory? _exportDirectory;
   DiagnosticExport? _exportStorage;
@@ -316,8 +324,13 @@ class AppLogger {
   /// already recorded root stack at the next layer.
   void linkFailure(Object mapped, Object cause) {
     if (!_expandoKey(mapped) || !_expandoKey(cause)) return;
-    final id = _rootEvents[cause];
-    if (id != null) _rootEvents[mapped] = id;
+    final links = _rootEvents[cause];
+    if (links == null || links.isEmpty) return;
+    final scope = currentTraceId ?? sessionId;
+    final link = links[scope] ?? links['*'] ?? links.values.last;
+    // An explicit causal mapping may bridge operations. Automatic identity
+    // matching below remains strictly scoped to its operation.
+    _rootEvents[mapped] = {...links, '*': link};
   }
 
   void logOperationFailure(
@@ -336,7 +349,62 @@ class AppLogger {
     fields: fields,
   );
 
+  /// A retry knows its causal exception explicitly; success in unrelated work
+  /// cannot create a recovery merely because its stage happens to match.
+  void logRecovery(
+    String tag,
+    String message, {
+    required Object cause,
+    Map<String, Object?>? fields,
+  }) {
+    try {
+      if (!_expandoKey(cause)) return;
+      final links = _rootEvents[cause];
+      if (links == null || links.isEmpty) return;
+      final link =
+          links[currentTraceId ?? sessionId] ?? links['*'] ?? links.values.last;
+      if (!link.valid) return;
+      info(
+        tag,
+        message,
+        fields: {
+          ...?fields,
+          'operation_id': currentTraceId ?? link.operationId,
+          'diagnostic_kind': 'recovery',
+          'outcome': 'succeeded',
+          'related_root_event_id': link.eventId,
+        },
+      );
+    } catch (_) {
+      _writeErrors++;
+    }
+  }
+
   void log(
+    LogLevel level,
+    String tag,
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, Object?>? fields,
+  }) {
+    try {
+      _log(
+        level,
+        tag,
+        message,
+        error: error,
+        stackTrace: stackTrace,
+        fields: fields,
+      );
+    } catch (_) {
+      // Diagnostics must never change the result of the business operation,
+      // including when a supplied object's toString throws.
+      _writeErrors++;
+    }
+  }
+
+  void _log(
     LogLevel level,
     String tag,
     String message, {
@@ -352,21 +420,64 @@ class AppLogger {
     final safeFields = _sanitize(fields ?? {});
     final operation =
         currentTraceId ?? safeFields['operation_id'] ?? safeFields['trace_id'];
+    final scope = (operation ?? sessionId).toString();
     if (error is DioException && error.type == DioExceptionType.cancel) {
       level = LogLevel.info;
     }
-    final previousRoot = error != null && _expandoKey(error)
+    final failure = level.priority >= LogLevel.warn.priority;
+    final links = error != null && _expandoKey(error)
         ? _rootEvents[error]
         : null;
+    final previousRoot = error != null && _expandoKey(error)
+        ? (links?[scope] ?? links?['*'])
+        : null;
     final root = previousRoot?.valid == true ? previousRoot!.eventId : null;
-    final effectiveStack =
-        level.priority >= LogLevel.warn.priority && root == null
+    final actualFailure =
+        failure &&
+        (error != null ||
+            (safeFields['status_code'] is int &&
+                (safeFields['status_code'] as int) >= 400) ||
+            safeFields['error_category'] != null);
+    final effectiveStack = actualFailure && root == null
         ? stackTrace ?? StackTrace.current
         : null;
     final stack = root == null
         ? _clip(_redact(effectiveStack?.toString() ?? ''), maxStackBytes)
         : '';
+    final stage =
+        (safeFields['action'] ??
+                safeFields['stage'] ??
+                safeFields['event'] ??
+                'unspecified')
+            .toString();
+    final recordOperation = (operation ?? previousRoot?.operationId ?? eventId)
+        .toString();
+    var kind = failure
+        ? (actualFailure ? (root == null ? 'error' : 'outcome') : 'diagnostic')
+        : 'breadcrumb';
+    if (!failure &&
+        safeFields['diagnostic_kind'] == 'recovery' &&
+        safeFields['related_root_event_id'] != null) {
+      kind = 'recovery';
+    }
+    if (!failure && safeFields['diagnostic_kind'] == 'operation') {
+      kind = 'operation';
+    }
+    final category =
+        previousRoot?.errorCategory ??
+        safeFields['error_category'] ??
+        (failure
+            ? classifyDiagnosticError(
+                error,
+                stage: stage,
+                module: tag,
+                statusCode: safeFields['status_code'] is int
+                    ? safeFields['status_code'] as int
+                    : null,
+              )
+            : null);
     final record = <String, Object?>{
+      'schema': 4,
       'timestamp': at.toUtc().toIso8601String(),
       'level': level.name,
       'version': _version,
@@ -383,30 +494,55 @@ class AppLogger {
       'sessionId': sessionId,
       'eventId': eventId,
       'sequence': sequence,
-      'operationId': _clip((operation ?? eventId).toString(), 256),
-      'errorType': _clip(
-        (error?.runtimeType ?? safeFields['error_type'] ?? 'DiagnosticFailure')
+      'operationId': _clip(recordOperation, 256),
+      if (operation == null) 'operationInferred': true,
+      if (failure && error != null)
+        'errorType': _clip(error.runtimeType.toString(), 256),
+      'errorCategory': ?category,
+      'message': _clip(_redact(message), 2048),
+      if (failure)
+        'reason': _clip(
+          _redact(
+            (safeFields['reason'] ??
+                    (error == null
+                        ? message
+                        : safeDiagnosticErrorSummary(error)))
+                .toString(),
+          ),
+          2048,
+        ),
+      'stackTrace': stack,
+      'outcome': _clip(
+        (safeFields['outcome'] ??
+                safeFields['status'] ??
+                (failure ? 'failed' : 'observed'))
             .toString(),
         256,
       ),
-      'message': _clip(_redact(message), 2048),
-      'reason': _clip(
-        _redact((safeFields['reason'] ?? error ?? message).toString()),
-        2048,
-      ),
-      'stackTrace': stack,
-      'outcome': _clip(
-        (safeFields['outcome'] ?? safeFields['status'] ?? 'failed').toString(),
-        256,
-      ),
-      'kind': root == null ? 'error' : 'outcome',
-      'fields': safeFields,
-      'rootEventId': ?root,
-      if (level.priority >= LogLevel.warn.priority && root == null)
+      'kind': kind,
+      'fields': {
+        for (final entry in safeFields.entries)
+          if (!{
+            'module',
+            'action',
+            'stage',
+            'status',
+            'outcome',
+            'reason',
+            'diagnostic_kind',
+            'error_category',
+            'error_type',
+            'trace_id',
+            'operation_id',
+          }.contains(entry.key))
+            entry.key: entry.value,
+      },
+      if (actualFailure) 'rootEventId': root ?? eventId,
+      if (actualFailure && root == null)
         'context': _recent
             .where((e) => e.level.priority < LogLevel.warn.priority)
             .where(
-              (e) => operation == null || e.fields?['trace_id'] == operation,
+              (e) => operation != null && e.fields?['trace_id'] == operation,
             )
             .map(_breadcrumb)
             .toList(),
@@ -420,15 +556,16 @@ class AppLogger {
     // of the small in-memory ring, while the on-disk schema uses camelCase.
     final recentFields = <String, Object?>{
       ...safeFields,
-      'schema': 3,
+      'schema': 4,
       'session_id': sessionId,
       'event_id': eventId,
       'sequence': sequence,
       'trace_id': ?operation,
       'root_event_id': ?root,
-      'error_type': record['errorType'],
+      if (record['errorType'] != null) 'error_type': record['errorType'],
       if (level.priority >= LogLevel.warn.priority) 'fingerprint': fingerprint,
     };
+    if (!failure || error == null) recentFields.remove('error_type');
     final entry = LogEvent(
       at: at,
       level: level,
@@ -444,22 +581,54 @@ class AppLogger {
     _recent.add(entry);
     _recentBytes += _recentSize(entry);
     _pruneRecent();
-    if (level.priority < LogLevel.warn.priority) return;
-    final issue = _issues[fingerprint];
-    if (issue != null) {
-      issue.repeated++;
-      issue.last = at;
-      // Associate duplicate instances with the persisted first failure too.
-      if (root == null && error != null && _expandoKey(error)) {
-        _rootEvents[error] = issue.rootLink;
+    if (!failure) {
+      if (kind == 'recovery' ||
+          (kind == 'operation' && safeFields['outcome'] == 'failed')) {
+        _enqueue(record);
       }
       return;
     }
+    final issueKey = root == null
+        ? null
+        : '$recordOperation|$root|$fingerprint|${record['outcome']}';
+    final issue = issueKey == null ? null : _issues[issueKey];
+    if (issue != null) {
+      issue.repeated++;
+      issue.last = at;
+      return;
+    }
     if (_issues.length >= 128) _flushIssue(_issues.keys.first);
-    final rootLink = root == null ? _RootLink(eventId) : previousRoot;
-    _issues[fingerprint] = _RepeatedIssue(record, at, rootLink);
+    final rootLink = root == null
+        ? _RootLink(
+            eventId,
+            operationId: recordOperation,
+            errorCategory: category?.toString(),
+          )
+        : previousRoot;
+    if (issueKey != null) {
+      _issues[issueKey] = _RepeatedIssue(record, at, rootLink);
+    }
     if (root == null && error != null && _expandoKey(error)) {
-      _rootEvents[error] = rootLink;
+      final scoped = {...?links, scope: rootLink!};
+      while (scoped.length > 8) {
+        scoped.remove(scoped.keys.first);
+      }
+      _rootEvents[error] = scoped;
+    }
+    if (root == null && actualFailure) {
+      final template = _templates[fingerprint];
+      if (template != null &&
+          template.rootLink?.valid == true &&
+          at.difference(template.first) < _repeatWindow) {
+        record['stackReferenceEventId'] = template.record['eventId'];
+        record['stackTrace'] = '';
+        record['context'] = <Object?>[];
+      } else {
+        _templates[fingerprint] = _RepeatedIssue(record, at, rootLink);
+      }
+      while (_templates.length > 128) {
+        _templates.remove(_templates.keys.first);
+      }
     }
     _enqueue(record, rootLink: rootLink);
   }
@@ -500,6 +669,7 @@ class AppLogger {
       'timestamp': issue.last.toUtc().toIso8601String(),
       'eventId': '${issue.record['eventId']}-summary',
       'kind': 'summary',
+      'summarizedKind': issue.record['kind'],
       'rootEventId': issue.record['rootEventId'] ?? issue.record['eventId'],
       'message': '重复错误汇总',
       'stackTrace': '',
@@ -515,9 +685,10 @@ class AppLogger {
     if (item.event['eventId'] == item.rootLink?.eventId) {
       item.rootLink?.valid = false;
     }
-    final fingerprint = item.event['fingerprint'];
-    if (_issues[fingerprint]?.record['eventId'] == item.event['eventId']) {
-      _issues.remove(fingerprint);
+    for (final key in _issues.keys.toList()) {
+      if (_issues[key]?.record['eventId'] == item.event['eventId']) {
+        _issues.remove(key);
+      }
     }
   }
 
@@ -610,7 +781,7 @@ class AppLogger {
     idle?.complete();
   }
 
-  Future<void> flush({Duration timeout = const Duration(seconds: 2)}) async {
+  Future<void> flush() async {
     for (final key in _issues.keys.toList()) {
       _flushIssue(key);
     }
@@ -647,7 +818,8 @@ class AppLogger {
     _queue.clear();
     _queueBytes = 0;
     _issues.clear();
-    _rootEvents = Expando<_RootLink>();
+    _rootEvents = Expando();
+    _templates.clear();
     _sessionId = '';
     _sequence = 0;
     _enqueued = _emitted = _dropped = _reportedDrops = _writeErrors = 0;
@@ -681,7 +853,8 @@ class AppLogger {
     }
     _recent.clear();
     _recentBytes = 0;
-    _rootEvents = Expando<_RootLink>();
+    _rootEvents = Expando();
+    _templates.clear();
     if (failure != null) {
       _writeErrors++;
       throw FileSystemException('诊断文件未全部清理: ${_redact(failure.toString())}');
@@ -700,131 +873,19 @@ class AppLogger {
   }
 
   Future<String> _renderExport(int budget) async {
-    if (budget < 1024) throw ArgumentError('诊断导出上限至少需要 1 KiB');
-    final cutoff = _now().subtract(diagnosticRetention);
-    final records = (await _storage?.snapshot() ?? <Map<String, Object?>>[])
-        .where(
-          (e) =>
-              DateTime.tryParse(
-                e['timestamp']?.toString() ?? '',
-              )?.isBefore(cutoff) ==
-              false,
-        )
-        .toList();
-    records.sort(_compareRecords);
-    var warnings = 0, errors = 0, fatals = 0;
-    for (final row in records) {
-      if (row['kind'] == 'outcome') continue;
-      final count = row['kind'] == 'summary'
-          ? (row['repeatCount'] as num?)?.toInt() ?? 0
-          : 1;
-      switch (row['level']) {
-        case 'warn':
-          warnings += count;
-        case 'error':
-          errors += count;
-        case 'fatal':
-          fatals += count;
-      }
-    }
-    final header =
-        'CQUT 完整诊断\n导出时间: ${_now().toIso8601String()}\n版本: $_version\n'
-        '设备: ${Platform.operatingSystem} ${_clip(Platform.operatingSystemVersion, 512)}\n'
-        '会话: $sessionId\n保留期限: 3 天\n'
-        '错误汇总: warning=$warnings error=$errors fatal=$fatals\n'
-        '队列丢弃: $_dropped 写入失败: $_writeErrors\n'
-        '记录按时间排列；搜索 operationId 可查找操作关联，rootEventId 指向根因。\n\n';
-    final omission = '\n[截断] 体积达到上限，已优先保留最近完整异常记录。\n';
-    var used = utf8.encode(header).length + utf8.encode(omission).length;
-    final roots = {
-      for (final row in records)
-        if (row['eventId'] is String) row['eventId'] as String: row,
-    };
-    final selected = <Map<String, Object?>>[];
-    final included = <Map<String, Object?>>{};
-    for (final row in records.reversed) {
-      if (included.contains(row)) continue;
-      final root = roots[row['rootEventId']];
-      final group = [
-        if (root != null && !included.contains(root) && !identical(root, row))
-          root,
-        row,
-      ];
-      final bytes = group.fold<int>(
-        0,
-        (sum, entry) =>
-            sum + utf8.encode(_readableWithRoot(entry, roots)).length,
-      );
-      if (used + bytes > budget) continue;
-      selected.addAll(group);
-      included.addAll(group);
-      used += bytes;
-    }
-    selected.sort(_compareRecords);
-    final truncated = selected.length < records.length;
-    final text =
-        '$header${selected.map((row) => _readableWithRoot(row, roots)).join()}${truncated ? omission : ''}';
-    return text;
-  }
-
-  int _compareRecords(Map<String, Object?> a, Map<String, Object?> b) {
-    final order = DateTime.parse(
-      a['timestamp'].toString(),
-    ).compareTo(DateTime.parse(b['timestamp'].toString()));
-    return order != 0
-        ? order
-        : (a['eventId'] ?? '').toString().compareTo(
-            (b['eventId'] ?? '').toString(),
-          );
-  }
-
-  String _readableWithRoot(
-    Map<String, Object?> row,
-    Map<String, Map<String, Object?>> roots,
-  ) => _readable({
-    ...row,
-    if (row['rootEventId'] != null && !roots.containsKey(row['rootEventId']))
-      'rootMissing': '根因已超出运行日志保留范围',
-  });
-
-  String _readable(Map<String, Object?> row) {
-    final out = StringBuffer(
-      '[${row['timestamp']}] ${row['level']} ${row['module']} / ${row['stage']}\n',
+    final records = await _storage?.snapshot() ?? <Map<String, Object?>>[];
+    final request = DiagnosticReportInput(
+      records: records,
+      budget: budget,
+      now: _now(),
+      version: _version,
+      device:
+          '${Platform.operatingSystem} ${_clip(Platform.operatingSystemVersion, 512)}',
+      sessionId: sessionId,
+      dropped: _dropped,
+      writeErrors: _writeErrors,
     );
-    for (final key in [
-      'version',
-      'source',
-      'sessionId',
-      'eventId',
-      'operationId',
-      'kind',
-      'errorType',
-      'message',
-      'reason',
-      'outcome',
-      'rootEventId',
-      'rootMissing',
-      'fingerprint',
-      'repeatCount',
-      'totalCount',
-      'firstSeen',
-      'lastSeen',
-      'droppedCount',
-    ]) {
-      if (row[key] != null) out.writeln('$key: ${row[key]}');
-    }
-    if (row['fields'] != null) {
-      out.writeln('fields: ${jsonEncode(row['fields'])}');
-    }
-    if (row['context'] != null) {
-      out.writeln('context: ${jsonEncode(row['context'])}');
-    }
-    if ((row['stackTrace']?.toString() ?? '').isNotEmpty) {
-      out.writeln('stackTrace:\n${row['stackTrace']}');
-    }
-    if (row['truncated'] != null) out.writeln('truncated: ${row['truncated']}');
-    out.writeln();
-    return out.toString();
+    return Isolate.run(() => renderDiagnosticReport(request));
   }
 
   Future<DiagnosticExport> _resolveExportStorage() async {
@@ -911,99 +972,12 @@ class AppLogger {
     };
   }
 
-  DioLogInterceptor dioInterceptor({
-    String tag = 'HTTP',
-    int maxBodyChars = 0,
-  }) => DioLogInterceptor(logger: this, tag: tag);
-  void attachToDio(Dio dio, {String tag = 'HTTP', int maxBodyChars = 0}) {
+  DioLogInterceptor dioInterceptor({String tag = 'HTTP'}) =>
+      DioLogInterceptor(logger: this, tag: tag);
+  void attachToDio(Dio dio, {String tag = 'HTTP'}) {
     if (!dio.interceptors.any((i) => i is DioLogInterceptor)) {
       dio.interceptors.add(dioInterceptor(tag: tag));
     }
-  }
-}
-
-class DioLogInterceptor extends Interceptor {
-  DioLogInterceptor({required this.logger, this.tag = 'HTTP'});
-  final AppLogger logger;
-  final String tag;
-  static const _startKey = '__diagnostic_start';
-  static const _traceKey = '__diagnostic_operation';
-  @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    options.extra[_startKey] = Stopwatch()..start();
-    options.extra[_traceKey] = logger.currentTraceId ?? logger.newTraceId();
-    logger.runWithTraceId(
-      options.extra[_traceKey] as String,
-      () => logger.debug(tag, '请求开始', fields: _fields(options)),
-    );
-    handler.next(options);
-  }
-
-  Map<String, Object?> _fields(RequestOptions options, {int? status}) => {
-    'net': true,
-    'method': options.method,
-    'uri': sanitizeUriForLogging(options.uri),
-    'duration_ms':
-        (options.extra[_startKey] as Stopwatch?)?.elapsedMilliseconds,
-    'trace_id': options.extra[_traceKey],
-    'status_code': ?status,
-    'action': 'request',
-  };
-  @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
-    final options = response.requestOptions;
-    final status = response.statusCode ?? 0;
-    if (status >= 400 && !_expectedStatus(options, status)) {
-      logger.warn(
-        tag,
-        'HTTP 请求失败',
-        fields: {
-          ..._fields(options, status: status),
-          'reason': 'HTTP $status',
-        },
-      );
-    } else {
-      logger.debug(
-        tag,
-        '请求完成',
-        fields: {
-          ..._fields(options, status: status),
-          'status': 'success',
-        },
-      );
-    }
-    handler.next(response);
-  }
-
-  @override
-  void onError(DioException err, ErrorInterceptorHandler handler) {
-    final fields = {
-      ..._fields(err.requestOptions, status: err.response?.statusCode),
-      'error_type': err.type.name,
-      'status': err.type == DioExceptionType.cancel ? 'cancelled' : 'failed',
-    };
-    if (err.type == DioExceptionType.cancel ||
-        _expectedStatus(err.requestOptions, err.response?.statusCode)) {
-      logger.info(
-        tag,
-        err.type == DioExceptionType.cancel ? '请求取消' : '服务处于预期关闭状态',
-        fields: fields,
-      );
-    } else {
-      logger.logOperationFailure(
-        tag,
-        '网络请求失败',
-        error: err,
-        stackTrace: err.stackTrace,
-        fields: {...fields, 'reason': err.message ?? err.type.name},
-      );
-    }
-    handler.next(err);
-  }
-
-  bool _expectedStatus(RequestOptions options, int? status) {
-    final expected = options.extra['diagnostic_expected_statuses'];
-    return status != null && expected is List && expected.contains(status);
   }
 }
 
@@ -1017,30 +991,10 @@ String sanitizeUriForLogging(Uri uri) {
 
 bool _expandoKey(Object value) =>
     value is! String && value is! num && value is! bool && value is! Record;
-String _redact(String value) => value
-    .replaceAll(
-      RegExp(r'Bearer\s+[^\s,;]+', caseSensitive: false),
-      'Bearer <redacted>',
-    )
-    .replaceAll(
-      RegExp(r'eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'),
-      '<jwt:redacted>',
-    )
-    .replaceAllMapped(
-      RegExp(r'([?&][A-Za-z0-9_.~-]+)=([^&#\s]*)'),
-      (m) => '${m[1]}=<redacted>',
-    )
-    .replaceAllMapped(
-      RegExp(r'(https?://)[^\s/@]+@', caseSensitive: false),
-      (m) => '${m[1]}<redacted>@',
-    )
-    .replaceAllMapped(
-      RegExp(
-        r'((?:password|passwd|pwd|pass|token|secret|cookie|authorization|csrf)[\w-]*\s*[:=]\s*)[^\s,;&]+',
-        caseSensitive: false,
-      ),
-      (m) => '${m[1]}<redacted>',
-    );
+String _redact(String value) => sanitizeDiagnosticText(value).replaceAll(
+  RegExp(r'eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'),
+  '<jwt:redacted>',
+);
 String _clip(String value, int maxBytes) {
   if (utf8.encode(value).length <= maxBytes) return value;
   const marker = '…[截断]';
@@ -1088,8 +1042,30 @@ Map<String, Object?> _sanitize(Map<String, Object?> fields) {
     return _clip(_redact(value.toString()), 1024);
   }
 
+  const essential = {
+    'stage',
+    'action',
+    'event',
+    'outcome',
+    'status',
+    'reason',
+    'diagnostic_kind',
+    'error_category',
+    'error_type',
+    'operation_id',
+    'trace_id',
+    'status_code',
+    'method',
+    'uri',
+    'dio_type',
+    'request_id',
+  };
+  final ordered = [
+    ...fields.entries.where((e) => essential.contains(e.key)),
+    ...fields.entries.where((e) => !essential.contains(e.key)),
+  ];
   return {
-    for (final entry in fields.entries.take(32))
+    for (final entry in ordered.take(32))
       _clip(entry.key, 128): walk(entry.value, entry.key, 0),
   };
 }
@@ -1204,10 +1180,14 @@ String _fingerprint(Map<String, Object?> record) {
             record['stage'],
             record['kind'],
             record['errorType'],
+            record['errorCategory'],
             fields['status_code'],
             fields['method'],
             fields['uri'],
             fields['error_type'],
+            fields['dio_type'],
+            fields['cause_type'],
+            fields['os_error_code'],
             record['reason'].toString().replaceAll(
               RegExp(r'\b\d{4,}\b'),
               '<number>',

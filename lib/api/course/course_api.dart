@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/diagnostic_operation.dart';
+import 'package:cqut_helper/utils/diagnostic_error.dart';
 import '../core/api_client.dart';
 import '../auth/auth_api.dart';
 
@@ -358,7 +359,16 @@ class CourseApi {
     required bool allowReloginRetry,
   }) async {
     try {
-      final response = await _client.dio.post(url, data: body);
+      final response = await _client.dio.post(
+        url,
+        data: body,
+        options: Options(
+          extra: {
+            'diagnostic_auth_attempt': allowReloginRetry ? 1 : 2,
+            'diagnostic_auth_max_attempts': 2,
+          },
+        ),
+      );
       final parsed = _parseCourseResponse(response.data);
       if (_isCustomEventMutationSuccess(parsed)) return;
       if (allowReloginRetry && _looksLikeMutationAuthError(parsed)) {
@@ -432,7 +442,16 @@ class CourseApi {
     required bool allowReloginRetry,
   }) async {
     try {
-      final resp = await _client.dio.post(_timeTableApi, data: body);
+      final resp = await _client.dio.post(
+        _timeTableApi,
+        data: body,
+        options: Options(
+          extra: {
+            'diagnostic_auth_attempt': allowReloginRetry ? 1 : 2,
+            'diagnostic_auth_max_attempts': 2,
+          },
+        ),
+      );
       final parsed = _parseCourseResponse(resp.data);
       if (_looksLikeAuthError(parsed) && allowReloginRetry) {
         await _forceRelogin(
@@ -534,32 +553,48 @@ class CourseApi {
 
   CourseApiException _createMappedDioException(DioException error) {
     final statusCode = error.response?.statusCode;
+    final diagnostics = <String, Object?>{
+      ...diagnosticErrorDetails(error),
+      if (classifyDiagnosticError(error) != null)
+        'error_category': classifyDiagnosticError(error),
+    };
     if (_isAuthenticationStatus(statusCode)) {
       return CourseApiException(
         CourseApiErrorKind.authentication,
         '登录凭证已失效，请重新登录',
         statusCode: statusCode,
+        diagnostics: diagnostics,
       );
     }
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.sendTimeout ||
         error.type == DioExceptionType.receiveTimeout) {
-      return CourseApiException(CourseApiErrorKind.timeout, '课表服务响应超时，请稍后重试');
+      return CourseApiException(
+        CourseApiErrorKind.timeout,
+        '课表服务响应超时，请稍后重试',
+        diagnostics: diagnostics,
+      );
     }
     if (error.type == DioExceptionType.connectionError) {
-      return CourseApiException(CourseApiErrorKind.network, '网络连接失败，请检查网络后重试');
+      return CourseApiException(
+        CourseApiErrorKind.network,
+        '网络连接失败，请检查网络后重试',
+        diagnostics: diagnostics,
+      );
     }
     if (statusCode != null && statusCode >= 500) {
       return CourseApiException(
         CourseApiErrorKind.server,
         '课表服务暂时不可用，请稍后重试',
         statusCode: statusCode,
+        diagnostics: diagnostics,
       );
     }
     return CourseApiException(
       CourseApiErrorKind.network,
       '课表获取失败，请稍后重试',
       statusCode: statusCode,
+      diagnostics: diagnostics,
     );
   }
 }

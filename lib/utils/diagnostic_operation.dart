@@ -15,7 +15,13 @@ Future<T> runDiagnosticOperation<T>(
       logger.info(
         module,
         '$stage started',
-        fields: {'module': module, 'stage': stage, ...fields},
+        fields: {
+          'module': module,
+          'stage': stage,
+          'diagnostic_kind': 'operation',
+          'outcome': 'started',
+          ...fields,
+        },
       );
       try {
         final result = await action();
@@ -26,6 +32,7 @@ Future<T> runDiagnosticOperation<T>(
             'module': module,
             'stage': stage,
             'outcome': 'succeeded',
+            'diagnostic_kind': 'operation',
             ...fields,
           },
         );
@@ -35,7 +42,12 @@ Future<T> runDiagnosticOperation<T>(
           logger.info(
             module,
             '$stage cancelled',
-            fields: {'stage': stage, 'outcome': 'cancelled', ...fields},
+            fields: {
+              'stage': stage,
+              'outcome': 'cancelled',
+              'diagnostic_kind': 'operation',
+              ...fields,
+            },
           );
         } else {
           logger.logOperationFailure(

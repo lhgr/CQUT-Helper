@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/services.dart';
 
@@ -55,10 +56,7 @@ class AndroidDiagnosticStorage extends DiagnosticStorage {
             .invokeListMethod<Object?>('snapshot')
             .timeout(const Duration(seconds: 5)) ??
         [];
-    return rows.map((row) {
-      final decoded = row is String ? jsonDecode(row) : row;
-      return Map<String, Object?>.from(decoded as Map);
-    }).toList();
+    return Isolate.run(() => _decodeSnapshotRows(rows));
   }
 
   @override
@@ -167,9 +165,9 @@ class FileDiagnosticStorage extends DiagnosticStorage {
   @override
   Future<List<Map<String, Object?>>> snapshot() => _serial(() async {
     await _prune();
-    final rows = <Map<String, Object?>>[];
-    if (!await directory.exists()) return rows;
+    if (!await directory.exists()) return <Map<String, Object?>>[];
     final cutoff = _now().subtract(diagnosticRetention);
+    final paths = <String>[];
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is! File ||
           !RegExp(
@@ -177,21 +175,11 @@ class FileDiagnosticStorage extends DiagnosticStorage {
           ).hasMatch(entity.uri.pathSegments.last)) {
         continue;
       }
-      await for (final line
-          in entity
-              .openRead()
-              .transform(utf8.decoder)
-              .transform(const LineSplitter())) {
-        try {
-          final event = Map<String, Object?>.from(jsonDecode(line) as Map);
-          final at = DateTime.tryParse(event['timestamp']?.toString() ?? '');
-          if (at != null && !at.isBefore(cutoff)) rows.add(event);
-        } catch (_) {
-          /* Ignore only an incomplete/corrupt individual record. */
-        }
-      }
+      paths.add(entity.path);
     }
-    return rows;
+    // Await the worker inside the serial action, so writers/rotation cannot
+    // change the selected files while their snapshot is being read.
+    return Isolate.run(() => _readSnapshotFiles(paths, cutoff));
   });
   @override
   Future<int> bytes() => _serial(() async {
@@ -222,4 +210,38 @@ class FileDiagnosticStorage extends DiagnosticStorage {
     }
     return count;
   });
+}
+
+List<Map<String, Object?>> _decodeSnapshotRows(List<Object?> rows) {
+  final decoded = <Map<String, Object?>>[];
+  for (final row in rows) {
+    try {
+      final value = row is String ? jsonDecode(row) : row;
+      decoded.add(Map<String, Object?>.from(value as Map));
+    } catch (_) {
+      // A malformed individual native record must not discard the snapshot.
+    }
+  }
+  return decoded;
+}
+
+Future<List<Map<String, Object?>>> _readSnapshotFiles(
+  List<String> paths,
+  DateTime cutoff,
+) async {
+  final rows = <Map<String, Object?>>[];
+  for (final path in paths) {
+    await for (final line in File(
+      path,
+    ).openRead().transform(utf8.decoder).transform(const LineSplitter())) {
+      try {
+        final event = Map<String, Object?>.from(jsonDecode(line) as Map);
+        final at = DateTime.tryParse(event['timestamp']?.toString() ?? '');
+        if (at != null && !at.isBefore(cutoff)) rows.add(event);
+      } catch (_) {
+        // Ignore only an incomplete/corrupt individual record.
+      }
+    }
+  }
+  return rows;
 }

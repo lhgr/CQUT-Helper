@@ -223,8 +223,10 @@ void main() {
         exportDirectory: Directory('${root.path}/exports'),
         clock: () => now,
       );
-      logger.debug('Worker', '正常上下文');
-      logger.error('Worker', '失败', error: StateError('later'));
+      logger.runWithTraceId('background-startup', () {
+        logger.debug('Worker', '正常上下文');
+        logger.error('Worker', '失败', error: StateError('later'));
+      });
       await logger.flush();
       expect(storage.rows.first['source'], 'background');
       expect((storage.rows.last['context'] as List).single['message'], '正常上下文');
@@ -232,7 +234,7 @@ void main() {
   );
 
   test(
-    '60 second duplicates summarize accurately on flush and expiry',
+    'independent occurrences retain unique roots while only sharing stack templates',
     () async {
       void report() => logger.warn(
         'HTTP',
@@ -244,17 +246,20 @@ void main() {
       report();
       report();
       await logger.flush();
-      expect(storage.rows.length, 2);
-      expect(storage.rows.last['repeatCount'], 2);
-      expect(storage.rows.last['totalCount'], 3);
-      expect(storage.rows.last['firstSeen'], storage.rows.first['timestamp']);
+      expect(storage.rows.length, 3);
+      expect(storage.rows.map((row) => row['rootEventId']).toSet().length, 3);
+      expect(
+        storage.rows.last['stackReferenceEventId'],
+        storage.rows.first['eventId'],
+      );
       report();
       report();
       now = now.add(const Duration(seconds: 61));
       report();
       await logger.flush();
-      expect(storage.rows.where((r) => r['kind'] == 'summary').length, 2);
+      expect(storage.rows.where((r) => r['kind'] == 'summary'), isEmpty);
       expect(storage.rows.last['kind'], 'error');
+      expect(storage.rows.last['stackTrace'], isNotEmpty);
     },
   );
 
@@ -384,7 +389,8 @@ void main() {
       expect(fields['uri'], 'https://example.test/data');
       expect(fields['method'], 'GET');
       expect(fields['duration_ms'], isA<int>());
-      expect(fields['error_type'], 'connectionTimeout');
+      expect(storage.rows.single['errorType'], 'DioException');
+      expect(fields['dio_type'], 'connectionTimeout');
       expect(jsonEncode(storage.rows), isNot(contains('sensitive')));
     },
   );
@@ -396,6 +402,7 @@ void main() {
         logger.error(
           '故障',
           '异常编号 $i',
+          error: StateError('failure $i'),
           stackTrace: StackTrace.fromString('#0 source $i\n${'中文' * 2000}'),
         );
       }
@@ -413,7 +420,7 @@ void main() {
       expect(text, contains('异常编号 159'));
       expect(text, contains('[截断]'));
       expect(text, isNot(contains('EXPIRED_MARKER')));
-      expect(text, contains('stackTrace:\n#0 source 159'));
+      expect(text, contains('"stackTrace":"#0 source 159\\n'));
       for (var i = 0; i < 4; i++) {
         await logger.exportLogs();
       }
@@ -482,8 +489,9 @@ void main() {
       );
       expect(
         full,
-        contains('error=3'),
-      ); // one root plus two repeats, no duplicate outcome.
+        contains('error=1'),
+      ); // Legacy summary lacks summarizedKind and remains explicitly unknown.
+      expect(full, contains('"unknownEventCount":2'));
       final bounded = File(await logger.exportLogs(maxTotalBytes: 1024));
       expect(await bounded.length(), lessThanOrEqualTo(1024));
       final text = await bounded.readAsString();
@@ -570,7 +578,10 @@ void main() {
         storage.rows.single['stackTrace'],
         contains('original_throw_site'),
       );
-      expect(storage.rows.single['rootEventId'], isNull);
+      expect(
+        storage.rows.single['rootEventId'],
+        storage.rows.single['eventId'],
+      );
     },
   );
 
