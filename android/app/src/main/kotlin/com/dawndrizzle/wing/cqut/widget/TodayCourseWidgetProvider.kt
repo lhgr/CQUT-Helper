@@ -541,16 +541,35 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
     }
 
     private fun toggleDayOffset(context: Context, appWidgetId: Int) {
-      val current = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
-      val next = if (current == 0) 1 else 0
-      WidgetInstanceConfigStore.saveDayOffset(context, appWidgetId, next)
-
-      // Rebinding the legacy ListView in a full update lets launchers deliver
-      // rapid toggles out of order. Patch the header/action immediately and
-      // make the existing factory reload the latest persisted day instead.
-      updateRefreshPresentation(context, intArrayOf(appWidgetId), refreshData = true)
-      WidgetRefreshCoordinator.recordRenderedState(context, persistLog = false)
-      WidgetRefreshCoordinator.ensureScheduled(context, "today_course_toggle")
+      WidgetRefreshCoordinator.withRefreshLock {
+        WidgetRenderSnapshot.withSnapshot {
+          val previous = WidgetRefreshRenderStateStore.load(context)
+          val beforeToggle = WidgetRefreshRenderStateStore.capture(context)
+          val currentOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
+          val nextOffset = if (currentOffset == 0) 1 else 0
+          WidgetRefreshCoordinator.applyDayToggleRender(
+            previous = previous,
+            current = beforeToggle,
+            saveDayOffset = {
+              WidgetInstanceConfigStore.saveDayOffset(context, appWidgetId, nextOffset)
+            },
+            fullUpdate = {
+              // Date or other widget state drift must rebind adapters before the
+              // coordinator records the current logical date as rendered.
+              WidgetRefreshCoordinator.forceRebind(context, "today_course_toggle_repair")
+            },
+            partialUpdate = {
+              // Both day-specific immutable adapters are already bound. On an
+              // otherwise current render, only switch visibility and refresh rows.
+              updateRefreshPresentation(context, intArrayOf(appWidgetId), refreshData = true)
+            },
+            recordRenderedState = {
+              WidgetRefreshCoordinator.recordRenderedState(context, persistLog = false)
+            },
+          )
+          WidgetRefreshCoordinator.ensureScheduled(context, "today_course_toggle")
+        }
+      }
     }
   }
 }

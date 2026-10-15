@@ -13,6 +13,36 @@ object WidgetRefreshCoordinator {
   internal const val REFRESH_COALESCE_WINDOW_MILLIS = 2_000L
   private val refreshLock = Any()
 
+  /**
+   * Serializes day navigation with date-driven widget repairs. A navigation
+   * action may be the first component to start the process after midnight.
+   */
+  internal fun <T> withRefreshLock(block: () -> T): T = synchronized(refreshLock, block)
+
+  /**
+   * Applies a day change without marking an outstanding global refresh as
+   * rendered. [current] is captured before the target widget's day offset is
+   * changed, so any date, presentation, or content drift still selects the
+   * full repair path after the new offset has been saved.
+   */
+  internal fun applyDayToggleRender(
+    previous: WidgetRefreshRenderState?,
+    current: WidgetRefreshRenderState,
+    saveDayOffset: () -> Unit,
+    fullUpdate: () -> Unit,
+    partialUpdate: () -> Unit,
+    recordRenderedState: () -> Unit,
+  ) {
+    val needsFullUpdate = WidgetRefreshRenderStateStore.shouldRefresh(previous, current)
+    saveDayOffset()
+    if (needsFullUpdate) {
+      fullUpdate()
+    } else {
+      partialUpdate()
+      recordRenderedState()
+    }
+  }
+
   fun refreshAndRepair(
     context: Context,
     reason: String,

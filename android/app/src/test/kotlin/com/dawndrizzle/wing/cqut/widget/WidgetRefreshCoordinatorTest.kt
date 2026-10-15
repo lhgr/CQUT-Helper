@@ -120,4 +120,89 @@ class WidgetRefreshCoordinatorTest {
     assertEquals("2026-08-28", WidgetRefreshRenderStateStore.logicalDateAtMillis(beforeMidnight))
     assertEquals("2026-08-29", WidgetRefreshRenderStateStore.logicalDateAtMillis(atMidnight))
   }
+
+  @Test
+  fun `day toggle saves either target before full rebind when refresh is pending`() {
+    val previous = WidgetRefreshRenderState("2026-08-28", "course:7:NORMAL", "today")
+    val current = previous.copy(logicalDate = "2026-08-29")
+    listOf(previous, null).forEach { storedState ->
+      listOf(0, 1).forEach { currentOffset ->
+        val events = mutableListOf<String>()
+        var dayOffset = currentOffset
+        val nextOffset = 1 - currentOffset
+
+        WidgetRefreshCoordinator.applyDayToggleRender(
+          previous = storedState,
+          current = current,
+          saveDayOffset = {
+            dayOffset = nextOffset
+            events += "saved:$dayOffset"
+          },
+          fullUpdate = { events += "full:$dayOffset" },
+          partialUpdate = { events += "partial:$dayOffset" },
+          recordRenderedState = { events += "record:$dayOffset" },
+        )
+
+        assertEquals(listOf("saved:$nextOffset", "full:$nextOffset"), events)
+      }
+    }
+  }
+
+  @Test
+  fun `current same-day toggle stays partial in either direction and records after rendering`() {
+    val current = WidgetRefreshRenderState("2026-08-28", "course:7:NORMAL", "today")
+    listOf(0, 1).forEach { currentOffset ->
+      val events = mutableListOf<String>()
+      var dayOffset = currentOffset
+      val nextOffset = 1 - currentOffset
+
+      WidgetRefreshCoordinator.applyDayToggleRender(
+        previous = current,
+        current = current.copy(),
+        saveDayOffset = {
+          dayOffset = nextOffset
+          events += "saved:$dayOffset"
+        },
+        fullUpdate = { events += "full:$dayOffset" },
+        partialUpdate = { events += "partial:$dayOffset" },
+        recordRenderedState = { events += "record:$dayOffset" },
+      )
+
+      assertEquals(
+        listOf("saved:$nextOffset", "partial:$nextOffset", "record:$nextOffset"),
+        events,
+      )
+    }
+  }
+
+  @Test
+  fun `day toggle preserves pending refresh changes outside the selected widget`() {
+    val previous =
+      WidgetRefreshRenderState(
+        logicalDate = "2026-08-28",
+        presentationSignature = "course:7:NORMAL|list:9:NORMAL",
+        contentSignature = "course:7:today|list:9:course-a",
+      )
+    val current =
+      previous.copy(
+        presentationSignature = "course:7:NORMAL|list:9:STALE",
+        contentSignature = "course:7:today|list:9:course-b",
+      )
+    val events = mutableListOf<String>()
+    val offsets = mutableMapOf(7 to 0, 9 to 1)
+
+    WidgetRefreshCoordinator.applyDayToggleRender(
+      previous = previous,
+      current = current,
+      saveDayOffset = {
+        offsets[7] = 1
+        events += "saved:${offsets[7]}:${offsets[9]}"
+      },
+      fullUpdate = { events += "full:${offsets[7]}:${offsets[9]}" },
+      partialUpdate = { events += "partial:${offsets[7]}:${offsets[9]}" },
+      recordRenderedState = { events += "record:${offsets[7]}:${offsets[9]}" },
+    )
+
+    assertEquals(listOf("saved:1:1", "full:1:1"), events)
+  }
 }
