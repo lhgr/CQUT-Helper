@@ -1,5 +1,5 @@
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 Future<bool> confirmCustomNoticeServiceRisk(BuildContext context) async {
   if (!await ScheduleSettingsManager.shouldShowCustomServiceRiskWarning()) {

@@ -3,7 +3,7 @@ import 'package:cqut_helper/pages/Settings/settings_schedule_scope.dart';
 import 'package:cqut_helper/utils/course_reminder_mode.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

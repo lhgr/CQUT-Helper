@@ -1,5 +1,5 @@
 import 'package:cqut_helper/manager/account_session_manager.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 Future<void> showMineLogoutDialog(BuildContext context) async {
   await showDialog<void>(

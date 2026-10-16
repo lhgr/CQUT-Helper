@@ -1,5 +1,5 @@
 import 'package:cqut_helper/api/auth/forget_password_api.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ForgetPasswordPage extends StatefulWidget {
   const ForgetPasswordPage({super.key});
@@ -33,9 +33,8 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _cleanException(Object e) {
@@ -81,9 +80,8 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
         _ticket = ticket;
         _step = 1;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('验证码已发送')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('验证码已发送')));
     } catch (e) {
       if (!mounted) return;
       _showError(_cleanException(e));
@@ -115,9 +113,8 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
       setState(() {
         _step = 2;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('验证码验证成功')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('验证码验证成功')));
     } catch (e) {
       if (!mounted) return;
       _showError(_cleanException(e));
@@ -151,9 +148,8 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
     try {
       await _api.setNewPassword(ticket: ticket, password: pwd1);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('密码已重置，请用新密码登录')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('密码已重置，请用新密码登录')));
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
@@ -331,9 +327,8 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
                 SizedBox(height: 12),
                 Text(
                   '密码必须包含:大写字母、小写字母、数字、字符中任意三种以上组合，长度为8-20个字符。',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.outline),
                 ),
                 SizedBox(height: 16),
                 Row(

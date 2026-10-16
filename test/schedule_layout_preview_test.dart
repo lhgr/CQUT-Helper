@@ -5,7 +5,7 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
 import 'package:cqut_helper/pages/Settings/schedule_layout_preview.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

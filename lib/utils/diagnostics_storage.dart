@@ -146,9 +146,8 @@ class FileDiagnosticStorage extends DiagnosticStorage {
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is! File) continue;
       final name = entity.uri.pathSegments.last;
-      final match = RegExp(
-        r'^(foreground|background|native)-(\d+)\.jsonl$',
-      ).firstMatch(name);
+      final match = RegExp(r'^(foreground|background|native)-(\d+)\.jsonl$')
+          .firstMatch(name);
       if (match == null) continue;
       final count = match[1] == 'foreground' ? 4 : 2;
       final stat = await entity.stat();
@@ -170,9 +169,8 @@ class FileDiagnosticStorage extends DiagnosticStorage {
     final paths = <String>[];
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is! File ||
-          !RegExp(
-            r'^(foreground|background|native)-[0-3]\.jsonl$',
-          ).hasMatch(entity.uri.pathSegments.last)) {
+          !RegExp(r'^(foreground|background|native)-[0-3]\.jsonl$')
+              .hasMatch(entity.uri.pathSegments.last)) {
         continue;
       }
       paths.add(entity.path);
@@ -187,9 +185,8 @@ class FileDiagnosticStorage extends DiagnosticStorage {
     if (!await directory.exists()) return total;
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is File &&
-          RegExp(
-            r'^(foreground|background|native)-[0-3]\.jsonl$',
-          ).hasMatch(entity.uri.pathSegments.last)) {
+          RegExp(r'^(foreground|background|native)-[0-3]\.jsonl$')
+              .hasMatch(entity.uri.pathSegments.last)) {
         total += await entity.length();
       }
     }
@@ -201,9 +198,8 @@ class FileDiagnosticStorage extends DiagnosticStorage {
     if (!await directory.exists()) return count;
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is File &&
-          RegExp(
-            r'^(foreground|background|native)-\d+\.jsonl$',
-          ).hasMatch(entity.uri.pathSegments.last)) {
+          RegExp(r'^(foreground|background|native)-\d+\.jsonl$')
+              .hasMatch(entity.uri.pathSegments.last)) {
         await entity.delete();
         count++;
       }

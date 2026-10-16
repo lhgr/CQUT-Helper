@@ -131,6 +131,17 @@ CQUT Helper 不接入 Firebase，也不包含遥测或用户行为统计服务�
 [GitHub Issues](https://github.com/lhgr/CQUT-Helper/issues) 提交问题或建议，也可以发送
 邮件至 <dawndrizzle0104@gmail.com>。
 
+### 本地开发与构建
+
+开发环境使用 Flutter 3.47.7（Dart 3.13.5）。首次获取依赖并构建 Release APK：
+
+```bash
+flutter pub get
+flutter build apk --release
+```
+
+CI 与发布 workflow 均固定使用 Flutter 3.47.7。
+
 有关课表数据接口的分析可参阅
 [课表 API 相关文章](https://blog.dawndrizzle.top/blog/reverse-timetable)。
 

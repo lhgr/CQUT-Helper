@@ -165,9 +165,8 @@ void main() {
     ApiClient().dio.httpClientAdapter = adapter;
 
     await expectLater(
-      ScheduleApi(
-        credentialStore: _CredentialStore('test-encrypted-password'),
-      ).fetchCampusTimeInfo('两江校区'),
+      ScheduleApi(credentialStore: _CredentialStore('test-encrypted-password'))
+          .fetchCampusTimeInfo('两江校区'),
       throwsException,
     );
     expect(

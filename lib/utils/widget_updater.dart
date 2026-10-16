@@ -4,8 +4,10 @@ import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-typedef WidgetMethodInvoker =
-    Future<void> Function(String method, Map<String, Object?> arguments);
+typedef WidgetMethodInvoker = Future<void> Function(
+  String method,
+  Map<String, Object?> arguments,
+);
 
 class WidgetUpdater {
   static const MethodChannel _channel = MethodChannel('cqut/widget');

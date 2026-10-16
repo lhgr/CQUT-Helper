@@ -8,7 +8,9 @@ import 'package:pointycastle/asymmetric/api.dart';
 import 'package:pointycastle/asymmetric/pkcs1.dart';
 import 'package:pointycastle/asymmetric/rsa.dart';
 import 'package:pointycastle/api.dart' show PublicKeyParameter;
+
 import '../core/api_client.dart';
+
 import 'package:cqut_helper/utils/app_logger.dart';
 
 class _TimetableLoginState {

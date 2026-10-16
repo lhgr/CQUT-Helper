@@ -4,12 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('course reminders declare and use exact alarm scheduling', () {
-    final manifest = File(
-      'android/app/src/main/AndroidManifest.xml',
-    ).readAsStringSync();
-    final notifications = File(
-      'lib/utils/local_notifications.dart',
-    ).readAsStringSync();
+    final manifest = File('android/app/src/main/AndroidManifest.xml')
+        .readAsStringSync();
+    final notifications = File('lib/utils/local_notifications.dart')
+        .readAsStringSync();
 
     expect(manifest, contains('android.permission.SCHEDULE_EXACT_ALARM'));
     expect(manifest, contains('android.permission.RECEIVE_BOOT_COMPLETED'));

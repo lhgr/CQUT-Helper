@@ -1,5 +1,5 @@
 import 'package:cqut_helper/manager/theme_manager.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 Future<void> showThemeSettingsSheet(BuildContext context) {
   return showModalBottomSheet<void>(
@@ -100,9 +100,9 @@ class ThemeSettingsSheet extends StatelessWidget {
                               shape: BoxShape.circle,
                               border: ThemeManager().customColor == color
                                   ? Border.all(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface,
                                       width: 3,
                                     )
                                   : null,

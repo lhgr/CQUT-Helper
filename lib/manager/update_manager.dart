@@ -1,7 +1,7 @@
 import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/model/update_model.dart';
 import 'package:cqut_helper/widgets/release_notes_markdown.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:cqut_helper/utils/github_proxy.dart';
 
@@ -28,9 +28,8 @@ class UpdateManager {
 
     if (updateInfo == null) {
       if (showNoUpdateToast && context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('检查更新失败，请稍后重试')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('检查更新失败，请稍后重试')));
       }
       return;
     }
@@ -170,9 +169,8 @@ class UpdateManager {
   Future<void> _launchExternalUrl(BuildContext context, String url) async {
     if (!await GithubProxy.launchExternalUrlString(url)) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('无法打开链接')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('无法打开链接')));
       }
     }
   }

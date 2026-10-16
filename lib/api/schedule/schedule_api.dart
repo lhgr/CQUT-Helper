@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/api/course/course_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
@@ -714,9 +715,8 @@ class ScheduleApi {
 
   bool _scheduleContainsAnyDate(ScheduleData schedule, Set<String> dates) {
     if (dates.isEmpty) return false;
-    return academicCalendarScheduleDates(
-      schedule,
-    ).values.any((date) => dates.contains(academicCalendarDateKey(date)));
+    return academicCalendarScheduleDates(schedule).values
+        .any((date) => dates.contains(academicCalendarDateKey(date)));
   }
 
   Future<void> _storeCalendarProjection({

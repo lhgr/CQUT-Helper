@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import 'app_logger.dart';
 import 'diagnostic_error.dart';
+
 import 'dart:async';
 
 class DioLogInterceptor extends Interceptor {

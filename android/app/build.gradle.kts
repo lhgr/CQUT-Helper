@@ -1,5 +1,7 @@
 import java.io.FileInputStream
 import java.util.Properties
+import com.android.build.api.dsl.ApplicationExtension
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -29,7 +31,7 @@ if (requestsReleaseBuild && !hasReleaseSigning) {
     )
 }
 
-android {
+extensions.configure<ApplicationExtension>("android") {
     namespace = "com.dawndrizzle.wing.cqut"
     // flutter_secure_storage 11 requires Android API 37.
     compileSdk = maxOf(flutter.compileSdkVersion, 37)
@@ -39,10 +41,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
         isCoreLibraryDesugaringEnabled = true
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
     defaultConfig {
@@ -70,6 +68,12 @@ android {
         release {
             signingConfig = signingConfigs.findByName("release")
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_11)
     }
 }
 

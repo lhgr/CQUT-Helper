@@ -1,5 +1,5 @@
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Makes both fully-built application themes available below [MaterialApp].
 ///

@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/course_reminder_mode.dart';
 
@@ -288,9 +289,8 @@ class CourseReminderScheduler {
 
     final today = DateTime(now.year, now.month, now.day);
     final coveringToday = cachedSchedules.where((cached) {
-      final dates = ScheduleCustomizationManager.scheduleDates(
-        cached.schedule,
-      ).values;
+      final dates = ScheduleCustomizationManager.scheduleDates(cached.schedule)
+          .values;
       if (dates.isEmpty) return false;
       final first = dates.reduce((a, b) => a.isBefore(b) ? a : b);
       final last = dates.reduce((a, b) => a.isAfter(b) ? a : b);

@@ -2,7 +2,7 @@ import 'package:cqut_helper/api/auth/auth_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
 import 'package:cqut_helper/utils/diagnostic_operation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
@@ -64,9 +64,8 @@ class _LoginPageState extends State<LoginPage> {
     final password = _passwordController.text;
 
     if (account.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('请输入账号')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('请输入账号')));
       return;
     }
 
@@ -77,9 +76,8 @@ class _LoginPageState extends State<LoginPage> {
           account == _savedAccount) {
         useSavedPassword = true;
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('请输入密码')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('请输入密码')));
         return;
       }
     }
@@ -114,9 +112,8 @@ class _LoginPageState extends State<LoginPage> {
         }
 
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('登录成功')));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('登录成功')));
           if (widget.reauthenticate) {
             Navigator.of(context).pop(true);
           } else {
@@ -132,9 +129,8 @@ class _LoginPageState extends State<LoginPage> {
           errorMessage = errorMessage.substring(11);
         }
 
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('登录失败: $errorMessage')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('登录失败: $errorMessage')));
       }
     } finally {
       if (mounted) {

@@ -1,9 +1,7 @@
 import 'package:cqut_helper/theme/app_theme.dart';
-import 'package:cqut_helper/theme/dynamic_color_scheme.dart';
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_ui/material_ui.dart' as material_ui;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -14,9 +12,9 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
-    test('conversion preserves system palette roles in $brightness', () {
+    test('harmonized theme preserves system palette roles in $brightness', () {
       final source =
-          material_ui.ColorScheme.fromSeed(
+          ColorScheme.fromSeed(
             seedColor: Colors.teal,
             brightness: brightness,
           ).copyWith(
@@ -25,7 +23,10 @@ void main() {
             outlineVariant: const Color(0xFF789ABC),
           );
       final harmonized = source.harmonized();
-      final converted = harmonized.toFlutterColorScheme();
+      final theme = brightness == Brightness.light
+          ? AppTheme.light(harmonized)
+          : AppTheme.dark(harmonized);
+      final converted = theme.colorScheme;
 
       expect(converted.brightness, brightness);
       expect(converted.primary, source.primary);
@@ -60,7 +61,7 @@ void main() {
                   ? light
                   : dark;
               final scheme =
-                  dynamicScheme?.harmonized().toFlutterColorScheme() ??
+                  dynamicScheme?.harmonized() ??
                   ColorScheme.fromSeed(
                     seedColor: Colors.blue,
                     brightness: brightness,
@@ -77,7 +78,7 @@ void main() {
         await tester.pumpAndSettle();
 
         final theme = Theme.of(tester.element(find.text('Dynamic theme')));
-        final expected = material_ui.ColorScheme.fromSeed(
+        final expected = ColorScheme.fromSeed(
           seedColor: Colors.teal,
           brightness: brightness,
         ).harmonized();

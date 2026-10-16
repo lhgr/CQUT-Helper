@@ -509,9 +509,8 @@ CREATE TABLE cache_meta (
     final keys = prefs.getKeys().toList(growable: false);
     for (final key in keys) {
       final isRemote = key.startsWith('schedule_remote_');
-      final looksLikeDisplayWeek = RegExp(
-        r'^schedule_.+_\d{4}-\d{4}-\d+_\d+$',
-      ).hasMatch(key);
+      final looksLikeDisplayWeek = RegExp(r'^schedule_.+_\d{4}-\d{4}-\d+_\d+$')
+          .hasMatch(key);
       if (!isRemote && !looksLikeDisplayWeek) continue;
       final raw = prefs.get(key);
       final record = raw is String ? parseLegacyRecord(key, raw) : null;
@@ -565,9 +564,8 @@ CREATE TABLE cache_meta (
       var week = (map['weekNum'] ?? '').toString().trim();
       final body = key.substring(prefix.length);
       if (term.isEmpty || week.isEmpty) {
-        final inferred = RegExp(
-          r'^(.*)_(\d{4}-\d{4}-\d+)_(\d+)$',
-        ).firstMatch(body);
+        final inferred = RegExp(r'^(.*)_(\d{4}-\d{4}-\d+)_(\d+)$')
+            .firstMatch(body);
         if (inferred == null) return null;
         term = inferred.group(2)!;
         week = inferred.group(3)!;

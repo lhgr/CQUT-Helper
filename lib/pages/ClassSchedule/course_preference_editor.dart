@@ -1,7 +1,7 @@
 import 'package:cqut_helper/model/course_preference_model.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 Future<CoursePreference?> showCoursePreferenceEditor(
   BuildContext context, {

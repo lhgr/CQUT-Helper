@@ -1,7 +1,7 @@
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class AppearanceStartupSettingsPage extends StatefulWidget {
   const AppearanceStartupSettingsPage({super.key});
@@ -185,9 +185,9 @@ class _AppearanceStartupSettingsPageState
                                         shape: BoxShape.circle,
                                         border: selected
                                             ? Border.all(
-                                                color: Theme.of(
-                                                  context,
-                                                ).colorScheme.onSurface,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurface,
                                                 width: 3,
                                               )
                                             : null,

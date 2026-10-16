@@ -1014,9 +1014,8 @@ String _clip(String value, int maxBytes) {
 Map<String, Object?> _sanitize(Map<String, Object?> fields) {
   Object? walk(Object? value, String key, int depth) {
     final lower = key.toLowerCase();
-    if (RegExp(
-      r'password|token|secret|cookie|authorization|csrf|^pwd$|^pass$',
-    ).hasMatch(lower)) {
+    if (RegExp(r'password|token|secret|cookie|authorization|csrf|^pwd$|^pass$')
+        .hasMatch(lower)) {
       return '<redacted>';
     }
     if (RegExp(

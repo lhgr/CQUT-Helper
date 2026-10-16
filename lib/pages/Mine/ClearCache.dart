@@ -1,6 +1,6 @@
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ClearCachePage extends StatefulWidget {
   const ClearCachePage({super.key});
@@ -115,9 +115,8 @@ class _ClearCachePageState extends State<ClearCachePage> {
         fields: const {'stage': 'cache_clear', 'outcome': 'failed'},
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('清理失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('清理失败: $e')));
     } finally {
       if (mounted) setState(() => _clearing = false);
     }
@@ -129,9 +128,8 @@ class _ClearCachePageState extends State<ClearCachePage> {
     try {
       final path = await AppLogger.I.exportLogs();
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('诊断文件已保存：$path')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('诊断文件已保存：$path')));
     } catch (e, stackTrace) {
       AppLogger.I.logOperationFailure(
         'StorageDiagnostic',
@@ -141,9 +139,8 @@ class _ClearCachePageState extends State<ClearCachePage> {
         fields: const {'stage': 'diagnostic_export', 'outcome': 'failed'},
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('导出失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('导出失败: $e')));
     } finally {
       if (mounted) setState(() => _exporting = false);
     }

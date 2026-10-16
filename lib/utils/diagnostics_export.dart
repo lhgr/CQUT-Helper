@@ -95,9 +95,8 @@ class FileDiagnosticExport extends DiagnosticExport {
         .where(
           (entry) =>
               entry is File &&
-              RegExp(
-                r'^cqut_diagnostic_.*\.log$',
-              ).hasMatch(entry.uri.pathSegments.last),
+              RegExp(r'^cqut_diagnostic_.*\.log$')
+                  .hasMatch(entry.uri.pathSegments.last),
         )
         .cast<File>()
         .toList();

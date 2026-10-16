@@ -9,9 +9,8 @@ class ScheduleDate {
     if (raw.isEmpty) return null;
 
     final normalized = raw.replaceAll('/', '-').replaceAll('.', '-');
-    final fullDate = RegExp(
-      r'^(\d{4})-(\d{1,2})-(\d{1,2})$',
-    ).firstMatch(normalized);
+    final fullDate = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})$')
+        .firstMatch(normalized);
     final monthDay = RegExp(r'^(\d{1,2})-(\d{1,2})$').firstMatch(normalized);
     final year = int.tryParse(fullDate?.group(1) ?? '');
     final month = int.tryParse(fullDate?.group(2) ?? monthDay?.group(1) ?? '');

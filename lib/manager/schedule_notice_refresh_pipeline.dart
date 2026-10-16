@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';

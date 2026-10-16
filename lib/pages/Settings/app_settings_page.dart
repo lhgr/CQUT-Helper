@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/Mine/ClearCache.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'about_settings_page.dart';
@@ -46,9 +46,8 @@ Future<void> openAppSettings(
     AppSettingsSection.about => const AboutSettingsPage(),
     null => AppSettingsPage(initialScope: scope),
   };
-  await Navigator.of(
-    context,
-  ).push(MaterialPageRoute<void>(builder: (_) => page));
+  await Navigator.of(context)
+      .push(MaterialPageRoute<void>(builder: (_) => page));
 }
 
 class AppSettingsPage extends StatefulWidget {

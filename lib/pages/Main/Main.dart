@@ -15,7 +15,7 @@ import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class MainPage extends StatefulWidget {
@@ -290,22 +290,23 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withAlpha(120),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.shadow.withAlpha(
-                      effectiveTheme.brightness == Brightness.dark ? 50 : 20,
-                    ),
-                    blurRadius: 20,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
+                borderRadius: BorderRadius.circular(32),
+                boxShadow: showScheduleBackground
+                    ? const []
+                    : [
+                        BoxShadow(
+                          color: colorScheme.shadow.withAlpha(
+                            effectiveTheme.brightness == Brightness.dark
+                                ? 50
+                                : 20,
+                          ),
+                          blurRadius: 20,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(32),
                 child: NavigationBar(
                   backgroundColor: showScheduleBackground
                       ? Colors.transparent

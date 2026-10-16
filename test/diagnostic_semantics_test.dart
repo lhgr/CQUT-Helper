@@ -92,33 +92,26 @@ void main() {
     },
   );
 
-  test(
-    'same root preserves first stage outcome and summarizes only repeated propagation',
-    () async {
-      final error = StateError('offline');
-      logger.runWithTraceId('A', () {
-        failure(error);
-        failure(error, stage: 'load');
-        failure(error, stage: 'load');
-      });
-      await logger.flush();
-      expect(storage.rows.map((r) => r['kind']), [
-        'error',
-        'outcome',
-        'summary',
-      ]);
-      final summary = storage.rows.last;
-      expect(summary['summarizedKind'], 'outcome');
-      expect(summary['repeatCount'], 1);
-      expect(summary['totalCount'], 2);
-      expect(summary['rootEventId'], storage.rows.first['eventId']);
-      final stats = diagnosticReportStatistics(storage.rows);
-      expect(stats['originalEventCount'], 3);
-      expect(stats['rootErrorCount'], 1);
-      expect(stats['error'], 1);
-      expect(stats['allEventErrorCount'], 3);
-    },
-  );
+  test('same root preserves first stage outcome and summarizes only repeated propagation', () async {
+    final error = StateError('offline');
+    logger.runWithTraceId('A', () {
+      failure(error);
+      failure(error, stage: 'load');
+      failure(error, stage: 'load');
+    });
+    await logger.flush();
+    expect(storage.rows.map((r) => r['kind']), ['error', 'outcome', 'summary']);
+    final summary = storage.rows.last;
+    expect(summary['summarizedKind'], 'outcome');
+    expect(summary['repeatCount'], 1);
+    expect(summary['totalCount'], 2);
+    expect(summary['rootEventId'], storage.rows.first['eventId']);
+    final stats = diagnosticReportStatistics(storage.rows);
+    expect(stats['originalEventCount'], 3);
+    expect(stats['rootErrorCount'], 1);
+    expect(stats['error'], 1);
+    expect(stats['allEventErrorCount'], 3);
+  });
 
   test('automatic Throwable identity is isolated by operation', () async {
     final error = StateError('reused');
@@ -157,24 +150,21 @@ void main() {
     },
   );
 
-  test(
-    'unscoped propagation shares inferred operation without merging independent roots',
-    () async {
-      final error = StateError('offline');
-      failure(error);
-      failure(error, stage: 'load');
-      failure(StateError('offline'));
-      await logger.flush();
-      expect(storage.rows[1]['operationId'], storage.rows[0]['operationId']);
-      expect(
-        storage.rows[2]['operationId'],
-        isNot(storage.rows[0]['operationId']),
-      );
-      final stats = diagnosticReportStatistics(storage.rows);
-      expect(stats['affectedOperationCount'], 0);
-      expect(stats['inferredOperationCount'], 2);
-    },
-  );
+  test('unscoped propagation shares inferred operation without merging independent roots', () async {
+    final error = StateError('offline');
+    failure(error);
+    failure(error, stage: 'load');
+    failure(StateError('offline'));
+    await logger.flush();
+    expect(storage.rows[1]['operationId'], storage.rows[0]['operationId']);
+    expect(
+      storage.rows[2]['operationId'],
+      isNot(storage.rows[0]['operationId']),
+    );
+    final stats = diagnosticReportStatistics(storage.rows);
+    expect(stats['affectedOperationCount'], 0);
+    expect(stats['inferredOperationCount'], 2);
+  });
 
   test(
     'explicit mapped cause inherits classification across business layers',
@@ -331,46 +321,43 @@ void main() {
     );
   });
 
-  test(
-    'JSONL export retains unknown fields and atomically includes recovery cause',
-    () {
-      final rows = <Map<String, Object?>>[
-        {
-          'timestamp': now.toIso8601String(),
-          'kind': 'error',
-          'level': 'error',
-          'eventId': 'root',
-          'message': 'ROOT_MARKER',
-          'stackTrace': '中' * 1400,
-          'customFutureField': {'retained': true},
-        },
-        {
-          'timestamp': now.add(const Duration(seconds: 1)).toIso8601String(),
-          'kind': 'recovery',
-          'level': 'info',
-          'eventId': 'recovered',
-          'message': 'RECOVERY_MARKER',
-          'fields': {'related_root_event_id': 'root'},
-        },
-      ];
-      String render(int budget) => renderDiagnosticReport(
-        DiagnosticReportInput(
-          records: rows,
-          budget: budget,
-          now: now,
-          version: 'test',
-          device: 'test',
-          sessionId: 'test',
-          dropped: 0,
-          writeErrors: 0,
-        ),
-      );
-      final full = render(1024 * 1024);
-      expect(full, contains('"customFutureField":{"retained":true}'));
-      final bounded = render(1024), raw = bounded.split('三、原始数据（JSONL）').last;
-      expect(utf8.encode(bounded).length, lessThanOrEqualTo(1024));
-      expect(raw.contains('RECOVERY_MARKER'), raw.contains('ROOT_MARKER'));
-      expect(bounded, contains('[截断]'));
-    },
-  );
+  test('JSONL export retains unknown fields and atomically includes recovery cause', () {
+    final rows = <Map<String, Object?>>[
+      {
+        'timestamp': now.toIso8601String(),
+        'kind': 'error',
+        'level': 'error',
+        'eventId': 'root',
+        'message': 'ROOT_MARKER',
+        'stackTrace': '中' * 1400,
+        'customFutureField': {'retained': true},
+      },
+      {
+        'timestamp': now.add(const Duration(seconds: 1)).toIso8601String(),
+        'kind': 'recovery',
+        'level': 'info',
+        'eventId': 'recovered',
+        'message': 'RECOVERY_MARKER',
+        'fields': {'related_root_event_id': 'root'},
+      },
+    ];
+    String render(int budget) => renderDiagnosticReport(
+      DiagnosticReportInput(
+        records: rows,
+        budget: budget,
+        now: now,
+        version: 'test',
+        device: 'test',
+        sessionId: 'test',
+        dropped: 0,
+        writeErrors: 0,
+      ),
+    );
+    final full = render(1024 * 1024);
+    expect(full, contains('"customFutureField":{"retained":true}'));
+    final bounded = render(1024), raw = bounded.split('三、原始数据（JSONL）').last;
+    expect(utf8.encode(bounded).length, lessThanOrEqualTo(1024));
+    expect(raw.contains('RECOVERY_MARKER'), raw.contains('ROOT_MARKER'));
+    expect(bounded, contains('[截断]'));
+  });
 }

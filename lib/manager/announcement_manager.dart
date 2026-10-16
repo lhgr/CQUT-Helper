@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/model/announcement_model.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -296,13 +296,16 @@ class AnnouncementManager {
         return AlertDialog(
           title: Text(item.title),
           content: SingleChildScrollView(
-            child: MarkdownBody(
-              data: _formatMarkdown(item.contentMarkdown),
-              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
-              onTapLink: (text, href, title) {
-                if (href == null || href.isEmpty) return;
-                _launchExternalUrl(context, href);
-              },
+            // flutter_markdown_plus consumes Flutter Material theme/localizations.
+            // ignore: deprecated_member_use
+            child: MaterialUiCompatibilityBridge(
+              child: MarkdownBody(
+                data: _formatMarkdown(item.contentMarkdown),
+                onTapLink: (text, href, title) {
+                  if (href == null || href.isEmpty) return;
+                  _launchExternalUrl(context, href);
+                },
+              ),
             ),
           ),
           actions: [
@@ -320,9 +323,8 @@ class AnnouncementManager {
     final Uri uri = Uri.parse(url);
     if (!await launchUrl(uri)) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('无法打开链接')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('无法打开链接')));
       }
     }
   }

@@ -1,6 +1,6 @@
 import 'package:cqut_helper/model/course_preference_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

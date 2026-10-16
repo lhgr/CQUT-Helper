@@ -18,7 +18,8 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 version: 1.2.1+2015
 environment:
-  sdk: ^3.9.2
+  sdk: ^3.13.0
+  flutter: '>=3.47.0'
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -42,7 +43,7 @@ dependencies:
   flutter_secure_storage: ^11.0.0
   url_launcher: ^6.3.2
   dynamic_color: ^2.1.0
-  material_ui: ^1.1.1
+  material_ui: ^1.7.0
   cached_network_image: ^4.0.0
   flutter_cache_manager: ^3.4.2
   flutter_markdown_plus: ^1.0.7

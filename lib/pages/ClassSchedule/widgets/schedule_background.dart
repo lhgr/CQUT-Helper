@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ScheduleBackground extends StatelessWidget {
   final ScheduleLayoutSettings settings;

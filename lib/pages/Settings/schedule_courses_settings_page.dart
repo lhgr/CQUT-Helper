@@ -11,7 +11,7 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dar
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/utils/background_color_extractor.dart';
 import 'package:cqut_helper/utils/schedule_background_brightness_analyzer.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -178,9 +178,8 @@ class _ScheduleCoursesSettingsPageState
         }
       }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('课表显示设置保存失败：$error')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('课表显示设置保存失败：$error')));
       }
     }
   }
@@ -239,17 +238,14 @@ class _ScheduleCoursesSettingsPageState
         .stateFor(term)
         .changedDayCount;
     if (result.error != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('假期与调休刷新失败：${result.error}')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('假期与调休刷新失败：${result.error}')));
     } else if (result.updated) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('假期与调休已更新 $changedDayCount 天')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('假期与调休已更新 $changedDayCount 天')));
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('假期与调休已是最新')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('假期与调休已是最新')));
     }
     await _loadCalendarCache();
   }
@@ -546,9 +542,8 @@ class _ScheduleLayoutSettingsPageState
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('无法读取图片：$error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('无法读取图片：$error')));
     }
   }
 
@@ -567,9 +562,8 @@ class _ScheduleLayoutSettingsPageState
     if (pendingPath != null) {
       unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('保存后将删除背景图，并切换为系统自动取色')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('保存后将删除背景图，并切换为系统自动取色')));
   }
 
   Future<void> _extractThemeColor([String? sourcePath]) async {
@@ -580,20 +574,17 @@ class _ScheduleLayoutSettingsPageState
       final color = await BackgroundColorExtractor.extractFromPath(path);
       if (!mounted) return;
       if (color == null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('未能从这张图片提取合适的主题色')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('未能从这张图片提取合适的主题色')));
         return;
       }
       _change(() => _pendingExtractedThemeColor = color);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('已完成取色，保存后将作为应用全局主题色')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已完成取色，保存后将作为应用全局主题色')));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('背景取色失败：$error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('背景取色失败：$error')));
     } finally {
       if (mounted) setState(() => _extractingThemeColor = false);
     }
@@ -728,15 +719,13 @@ class _ScheduleLayoutSettingsPageState
       if (pendingPath != null) {
         unawaited(BackgroundImageTempManager.deleteTemporaryPath(pendingPath));
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('布局与外观已保存')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('布局与外观已保存')));
       return true;
     } catch (error) {
       if (!mounted) return false;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('保存失败：$error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('保存失败：$error')));
       return false;
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -861,9 +850,9 @@ class _ScheduleLayoutSettingsPageState
                             '可横向、纵向滑动',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
                           ),
                         ],

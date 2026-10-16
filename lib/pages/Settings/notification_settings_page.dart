@@ -10,7 +10,7 @@ import 'package:cqut_helper/widgets/app_select_field.dart';
 import 'package:cqut_helper/widgets/background_polling_setup_dialog.dart';
 import 'package:cqut_helper/widgets/marquee_text.dart';
 import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'settings_schedule_scope.dart';
 
@@ -236,9 +236,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _persistReminderSettings({

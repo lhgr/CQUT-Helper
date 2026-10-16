@@ -8,7 +8,7 @@ import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ScheduleLayoutPreview extends StatelessWidget {
   final ScheduleLayoutSettings settings;
@@ -55,9 +55,8 @@ class ScheduleLayoutPreview extends StatelessWidget {
       data: previewTheme,
       child: Builder(
         builder: (context) {
-          final cardTheme = Theme.of(
-            context,
-          ).extension<ScheduleCourseCardTheme>()!;
+          final cardTheme = Theme.of(context)
+              .extension<ScheduleCourseCardTheme>()!;
           final dayCount = showWeekend ? 7 : 5;
           return LayoutBuilder(
             builder: (context, constraints) {

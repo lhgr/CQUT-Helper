@@ -134,9 +134,8 @@ class AcademicCalendarSnapshot {
 DateTime? _parseDate(Object? value) {
   final raw = (value ?? '').toString().trim();
   if (raw.isEmpty) return null;
-  final match = RegExp(
-    r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$',
-  ).firstMatch(raw);
+  final match = RegExp(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$')
+      .firstMatch(raw);
   if (match == null) return null;
   final year = int.tryParse(match.group(1)!);
   final month = int.tryParse(match.group(2)!);

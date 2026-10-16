@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 
@@ -143,19 +143,23 @@ class ReleaseNotesMarkdown extends StatelessWidget {
   }
 
   Widget _buildMarkdown(BuildContext context, String markdown) {
-    return MarkdownBody(
-      data: formatReleaseNotesMarkdown(markdown),
-      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
-      inlineSyntaxes: [_ReleaseHighlightSyntax(), _ReleaseTagSyntax()],
-      builders: {
-        'release-highlight': _ReleaseHighlightBuilder(),
-        'release-tag': _ReleaseTagBuilder(),
-      },
-      imageBuilder: (uri, title, alt) =>
-          _ReleaseImage(uri: uri, title: title, alt: alt),
-      onTapLink: (text, href, title) {
-        if (href != null && href.isNotEmpty) onTapLink?.call(href);
-      },
+    // flutter_markdown_plus reads Flutter's Material theme and builds legacy
+    // selection controls. Keep its theme/localizations boundary at this subtree.
+    // ignore: deprecated_member_use
+    return MaterialUiCompatibilityBridge(
+      child: MarkdownBody(
+        data: formatReleaseNotesMarkdown(markdown),
+        inlineSyntaxes: [_ReleaseHighlightSyntax(), _ReleaseTagSyntax()],
+        builders: {
+          'release-highlight': _ReleaseHighlightBuilder(),
+          'release-tag': _ReleaseTagBuilder(),
+        },
+        imageBuilder: (uri, title, alt) =>
+            _ReleaseImage(uri: uri, title: title, alt: alt),
+        onTapLink: (text, href, title) {
+          if (href != null && href.isNotEmpty) onTapLink?.call(href);
+        },
+      ),
     );
   }
 }
@@ -308,10 +312,8 @@ class _ReleaseCallout extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: Theme.of(context).textTheme.labelLarge
+                    ?.copyWith(color: color, fontWeight: FontWeight.w800),
               ),
             ],
           ),

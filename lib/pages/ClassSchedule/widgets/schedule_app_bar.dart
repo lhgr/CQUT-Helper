@@ -1,10 +1,10 @@
 import 'package:cqut_helper/model/class_schedule_model.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 void _noopScheduleAction() {}
 
 class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
-  static const double _appBarHeight = 76;
+  static const double _appBarHeight = 112;
 
   final bool loading;
   final List<String>? weekList;
@@ -44,8 +44,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double sideSlotWidth = 120;
-    const double sideHorizontalPadding = 12;
+    const double sideSlotWidth = 60;
     const double pickerButtonGap = 2;
 
     Widget buildPickerButton({
@@ -53,20 +52,21 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       required VoidCallback onTap,
       required TextStyle? textStyle,
     }) {
-      return TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          minimumSize: const Size(0, 24),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        child: Text(
-          label,
-          style: textStyle,
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+      return Tooltip(
+        message: label,
+        child: TextButton(
+          onPressed: onTap,
+          style: TextButton.styleFrom(
+            minimumSize: const Size(0, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+          ),
+          child: Text(
+            label,
+            style: textStyle,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       );
     }
@@ -74,41 +74,35 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     Widget buildRefreshAction() {
       final status = refreshStatusText;
       final color = Theme.of(context).colorScheme.onSurfaceVariant;
-      return Tooltip(
-        message: status == null ? '刷新课表' : '最后更新：$status',
-        child: Semantics(
-          button: true,
-          label: status == null ? '刷新课表' : '刷新课表，最后更新$status',
-          child: InkWell(
-            onTap: loading ? null : onRefresh,
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              width: 36,
-              height: 54,
-              child: Center(
-                child: loading
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: color,
-                        ),
-                      )
-                    : Icon(Icons.refresh, color: color),
-              ),
-            ),
+      return Semantics(
+        button: true,
+        label: status == null ? '刷新课表' : '刷新课表，最后更新$status',
+        child: IconButton(
+          onPressed: loading ? null : onRefresh,
+          tooltip: status == null ? '刷新课表' : '最后更新：$status',
+          style: IconButton.styleFrom(
+            sizeVariant: ButtonSizeVariant.small,
+            iconButtonWidth: IconButtonWidthVariant.narrow,
+            minimumSize: const Size(48, 48),
           ),
+          icon: loading
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: color,
+                  ),
+                )
+              : const Icon(Icons.refresh),
         ),
       );
     }
 
-    final titleTextStyle = Theme.of(
-      context,
-    ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold);
-    final termTextStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: Theme.of(context).colorScheme.outline,
-    );
+    final titleTextStyle = Theme.of(context).textTheme.titleMedium
+        ?.copyWith(fontWeight: FontWeight.bold);
+    final termTextStyle = Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
     final weekLabel =
         (nowInTeachingWeek == false &&
             nowStatusLabel != null &&
@@ -124,71 +118,49 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       toolbarHeight: _appBarHeight,
       titleSpacing: 0,
       leadingWidth: sideSlotWidth,
-      leading: const SizedBox.shrink(),
+      automaticallyImplyLeading: false,
       scrolledUnderElevation: 0,
       backgroundColor: transparentBackground
           ? Colors.transparent
           : Theme.of(context).colorScheme.surface,
       surfaceTintColor: Colors.transparent,
+      leading: Center(child: buildRefreshAction()),
       actions: [
         SizedBox(
           width: sideSlotWidth,
-          child: Padding(
-            padding: const EdgeInsets.only(right: sideHorizontalPadding),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                buildRefreshAction(),
-                SizedBox(
-                  width: 40,
-                  height: 44,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    tooltip: '更多课表操作',
-                    icon: const Icon(Icons.more_vert_rounded),
-                    onPressed: () => _showScheduleActionsSheet(
-                      context,
-                      onAddCourse: onAddCourse,
-                      onExportIcs: onExportIcs,
-                      onSettings: onSettings,
-                    ),
-                  ),
-                ),
-              ],
+          child: Center(
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              tooltip: '更多课表操作',
+              icon: const Icon(Icons.more_vert_rounded),
+              onPressed: () => _showScheduleActionsSheet(
+                context,
+                onAddCourse: onAddCourse,
+                onExportIcs: onExportIcs,
+                onSettings: onSettings,
+              ),
             ),
           ),
         ),
       ],
-      title: LayoutBuilder(
-        builder: (context, constraints) {
-          final centerButtons = <Widget>[
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          buildPickerButton(
+            label: weekLabel,
+            onTap: onWeekPicker,
+            textStyle: titleTextStyle,
+          ),
+          if (currentScheduleData != null) ...[
+            const SizedBox(height: pickerButtonGap),
             buildPickerButton(
-              label: weekLabel,
-              onTap: onWeekPicker,
-              textStyle: titleTextStyle,
+              label: "${currentScheduleData!.yearTerm}学期",
+              onTap: onTermPicker,
+              textStyle: termTextStyle,
             ),
-          ];
-          if (currentScheduleData != null) {
-            centerButtons.add(const SizedBox(height: pickerButtonGap));
-            centerButtons.add(
-              buildPickerButton(
-                label: "${currentScheduleData!.yearTerm}学期",
-                onTap: onTermPicker,
-                textStyle: termTextStyle,
-              ),
-            );
-          }
-          return Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: constraints.maxWidth),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: centerButtons,
-              ),
-            ),
-          );
-        },
+          ],
+        ],
       ),
       centerTitle: true,
     );

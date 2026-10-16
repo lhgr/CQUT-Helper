@@ -25,8 +25,7 @@ class ApiClient {
       sendTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 20),
       headers: const {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
         'Accept': 'application/json',
       },
       contentType: Headers.jsonContentType,

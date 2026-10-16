@@ -1,11 +1,12 @@
 import 'dart:async';
+
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:cqut_helper/widgets/background_polling_setup_dialog.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/widgets/marquee_text.dart';

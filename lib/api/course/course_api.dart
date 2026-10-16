@@ -1,8 +1,10 @@
 import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/diagnostic_operation.dart';
 import 'package:cqut_helper/utils/diagnostic_error.dart';
+
 import '../core/api_client.dart';
 import '../auth/auth_api.dart';
 

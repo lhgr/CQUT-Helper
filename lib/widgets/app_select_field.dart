@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 @immutable
 class AppSelectOption<T> {
@@ -216,9 +216,9 @@ class _AppSelectSheet<T> extends StatelessWidget {
                             )
                           : null,
                       selected: selected,
-                      onTap: () => Navigator.of(
-                        context,
-                      ).pop(_AppSelectResult(option.value)),
+                      onTap: () =>
+                          Navigator.of(context)
+                              .pop(_AppSelectResult(option.value)),
                     ),
                   );
                 },

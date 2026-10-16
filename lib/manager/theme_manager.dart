@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'schedule_settings_manager.dart';
 import '../utils/app_logger.dart';
 import '../utils/widget_updater.dart';

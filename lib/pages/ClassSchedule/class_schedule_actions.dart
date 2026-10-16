@@ -358,14 +358,12 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       final suffix = failedWeeks.isEmpty
           ? ''
           : '（第${failedWeeks.join('、')}周读取失败）';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('ICS 已导出到 $path$suffix')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('ICS 已导出到 $path$suffix')));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('ICS 导出失败：$error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('ICS 导出失败：$error')));
     } finally {
       final dialogContext = loadingContext;
       if (dialogContext != null && dialogContext.mounted) {

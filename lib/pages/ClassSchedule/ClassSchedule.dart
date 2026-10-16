@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
 import 'package:cqut_helper/manager/academic_calendar_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
@@ -22,7 +23,7 @@ import 'package:cqut_helper/pages/ClassSchedule/custom_course_editor_page.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/term_picker_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/week_picker_sheet.dart';
 import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cqut_helper/utils/schedule_ics_service.dart';

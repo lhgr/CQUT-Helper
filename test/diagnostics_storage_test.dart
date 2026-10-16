@@ -27,15 +27,18 @@ void main() {
   test(
     'snapshot stays between queued writes while worker reads files',
     () async {
+      // This test exercises queue boundaries, not day rotation. Match the
+      // filesystem's real local write date used by FileDiagnosticStorage.
+      final writeTime = DateTime.now();
       final storage = FileDiagnosticStorage(
         directory,
         'foreground',
-        now: () => now,
+        now: () => writeTime,
       );
       await storage.initialize();
-      final before = storage.write(event('before'));
+      final before = storage.write(event('before', at: writeTime));
       final snapshot = storage.snapshot();
-      final after = storage.write(event('after'));
+      final after = storage.write(event('after', at: writeTime));
       await before;
       expect((await snapshot).map((row) => row['eventId']), ['before']);
       await after;
@@ -71,30 +74,27 @@ void main() {
     },
   );
 
-  test(
-    'snapshot skips bad JSON records and expired timestamps individually',
-    () async {
-      final storage = FileDiagnosticStorage(
-        directory,
-        'foreground',
-        now: () => now,
-      );
-      await storage.initialize();
-      await storage.write(event('valid'));
-      final file = File('${directory.path}/foreground-0.jsonl');
-      await file.writeAsString(
-        '{incomplete\n'
-        '[]\n'
-        '${jsonEncode(event('expired', at: now.subtract(const Duration(days: 4))))}\n'
-        '${jsonEncode(event('later-valid'))}\n',
-        mode: FileMode.append,
-      );
-      expect((await storage.snapshot()).map((row) => row['eventId']), [
-        'valid',
-        'later-valid',
-      ]);
-    },
-  );
+  test('snapshot skips bad JSON records and expired timestamps individually', () async {
+    final storage = FileDiagnosticStorage(
+      directory,
+      'foreground',
+      now: () => now,
+    );
+    await storage.initialize();
+    await storage.write(event('valid'));
+    final file = File('${directory.path}/foreground-0.jsonl');
+    await file.writeAsString(
+      '{incomplete\n'
+      '[]\n'
+      '${jsonEncode(event('expired', at: now.subtract(const Duration(days: 4))))}\n'
+      '${jsonEncode(event('later-valid'))}\n',
+      mode: FileMode.append,
+    );
+    expect((await storage.snapshot()).map((row) => row['eventId']), [
+      'valid',
+      'later-valid',
+    ]);
+  });
 
   test(
     'Android snapshot decodes JSON and maps while ignoring one corrupt row',

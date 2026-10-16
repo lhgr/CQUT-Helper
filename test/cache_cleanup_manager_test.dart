@@ -87,34 +87,29 @@ void main() {
       }
     });
 
-    final cacheDirs = CacheCleanupManager.imageCacheDirectoriesIn(
-      tempDir,
-    ).toList(growable: false);
+    final cacheDirs = CacheCleanupManager.imageCacheDirectoriesIn(tempDir)
+        .toList(growable: false);
     expect(cacheDirs, hasLength(2));
     await cacheDirs[0].create(recursive: true);
     await cacheDirs[1].create(recursive: true);
-    await File(
-      '${cacheDirs[0].path}${Platform.pathSeparator}default.img',
-    ).writeAsBytes(<int>[1, 2, 3]);
-    await File(
-      '${cacheDirs[1].path}${Platform.pathSeparator}avatar.img',
-    ).writeAsBytes(<int>[4, 5, 6, 7, 8]);
+    await File('${cacheDirs[0].path}${Platform.pathSeparator}default.img')
+        .writeAsBytes(<int>[1, 2, 3]);
+    await File('${cacheDirs[1].path}${Platform.pathSeparator}avatar.img')
+        .writeAsBytes(<int>[4, 5, 6, 7, 8]);
 
     await File(
       '${tempDir.path}${Platform.pathSeparator}'
       '${BackgroundImageTempManager.legacyCropFilePrefix}old.png',
     ).writeAsBytes(List<int>.filled(7, 1));
-    await File(
-      '${tempDir.path}${Platform.pathSeparator}scaled_selected.jpg',
-    ).writeAsBytes(List<int>.filled(11, 2));
+    await File('${tempDir.path}${Platform.pathSeparator}scaled_selected.jpg')
+        .writeAsBytes(List<int>.filled(11, 2));
     final pickerDir = Directory(
       '${tempDir.path}${Platform.pathSeparator}'
       '123e4567-e89b-12d3-a456-426614174000',
     );
     await pickerDir.create();
-    await File(
-      '${pickerDir.path}${Platform.pathSeparator}selected.jpg',
-    ).writeAsBytes(List<int>.filled(13, 3));
+    await File('${pickerDir.path}${Platform.pathSeparator}selected.jpg')
+        .writeAsBytes(List<int>.filled(13, 3));
     final cropDir = Directory(
       '${tempDir.path}${Platform.pathSeparator}'
       '${BackgroundImageTempManager.directoryName}',
@@ -157,9 +152,8 @@ void main() {
     await legacyCrop.writeAsBytes([1]);
     await scaled.writeAsBytes([2]);
     await pickerDir.create();
-    await File(
-      '${pickerDir.path}${Platform.pathSeparator}picked.jpg',
-    ).writeAsBytes([3]);
+    await File('${pickerDir.path}${Platform.pathSeparator}picked.jpg')
+        .writeAsBytes([3]);
     await unrelated.writeAsBytes([4]);
 
     expect(await BackgroundImageTempManager.cleanupIn(tempDir), 3);

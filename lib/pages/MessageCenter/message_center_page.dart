@@ -2,7 +2,7 @@ import 'package:cqut_helper/manager/schedule_message_center_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/pages/Announcement/Announcement.dart';
 import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class MessageCenterPage extends StatefulWidget {
@@ -125,9 +125,9 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
                   const SizedBox(height: 20),
                   if (!_noticeEnhancementEnabled) ...[
                     Card(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
                       child: ListTile(
                         leading: const Icon(Icons.privacy_tip_outlined),
                         title: const Text('调课通知增强未开启'),
@@ -191,9 +191,9 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
                                   children: [
                                     Text(
                                       '第${change.weekNum}周',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.labelLarge,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge,
                                     ),
                                     const SizedBox(height: 4),
                                     for (final line

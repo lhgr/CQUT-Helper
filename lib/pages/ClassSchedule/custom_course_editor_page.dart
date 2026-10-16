@@ -1,7 +1,7 @@
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class CustomCourseEditorPage extends StatefulWidget {
   final String userId;
@@ -75,15 +75,13 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
   Future<void> _save() async {
     final title = _title.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请输入课程或事件名称')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请输入课程或事件名称')));
       return;
     }
     if (_weeks.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请至少选择一个教学周')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请至少选择一个教学周')));
       return;
     }
 

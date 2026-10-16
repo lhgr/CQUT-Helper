@@ -1,5 +1,5 @@
 import 'package:cqut_helper/model/class_schedule_model.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ScheduleCourseCard extends StatelessWidget {
   final EventItem event;

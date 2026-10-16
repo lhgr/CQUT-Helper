@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:cqut_helper/manager/background_image_temp_manager.dart';
 import 'package:cqut_helper/utils/schedule_background_image_processing.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ScheduleBackgroundCropPage extends StatefulWidget {
   final String imagePath;
@@ -157,9 +157,8 @@ class _ScheduleBackgroundCropPageState
     } catch (error) {
       if (!mounted) return;
       setState(() => _cropping = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('裁切失败：$error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('裁切失败：$error')));
     }
   }
 

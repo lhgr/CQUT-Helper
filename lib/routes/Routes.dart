@@ -3,10 +3,8 @@ import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Main/Main.dart';
 import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:cqut_helper/theme/app_theme_catalog.dart';
-import 'package:cqut_helper/theme/dynamic_color_scheme.dart';
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -29,7 +27,7 @@ class MyApp extends StatelessWidget {
             final usesDarkDynamicColor = usesSystemColor && darkDynamic != null;
             ColorScheme lightScheme;
             if (usesSystemColor && lightDynamic != null) {
-              lightScheme = lightDynamic.harmonized().toFlutterColorScheme();
+              lightScheme = lightDynamic.harmonized();
             } else if (usesSystemColor) {
               lightScheme = ColorScheme.fromSeed(seedColor: defaultSeedColor);
             } else {
@@ -40,7 +38,7 @@ class MyApp extends StatelessWidget {
 
             ColorScheme darkScheme;
             if (usesSystemColor && darkDynamic != null) {
-              darkScheme = darkDynamic.harmonized().toFlutterColorScheme();
+              darkScheme = darkDynamic.harmonized();
             } else if (usesSystemColor) {
               darkScheme = ColorScheme.fromSeed(
                 seedColor: defaultSeedColor,
@@ -71,11 +69,7 @@ class MyApp extends StatelessWidget {
               onUnknownRoute: buildUnknownRoute,
               locale: const Locale('zh', 'CN'),
               supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
-              localizationsDelegates: const [
-                GlobalMaterialLocalizations.delegate,
-                GlobalWidgetsLocalizations.delegate,
-                GlobalCupertinoLocalizations.delegate,
-              ],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
               builder: (context, child) => AppThemeCatalog(
                 lightTheme: lightTheme,
                 darkTheme: darkTheme,

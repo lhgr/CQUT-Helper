@@ -2,7 +2,7 @@ import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> showScheduleExperienceSettingsSheet(BuildContext context) async {
@@ -84,9 +84,8 @@ class _ScheduleExperienceSettingsSheetState
         _saving = false;
         _exactAlarmGranted = false;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先允许通知和“闹钟与提醒”权限')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请先允许通知和“闹钟与提醒”权限')));
       return;
     }
     await _manager.saveExperienceSettings(

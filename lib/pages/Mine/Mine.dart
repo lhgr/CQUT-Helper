@@ -1,6 +1,6 @@
 import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'mine_menu_section.dart';
 import 'mine_user_info_card.dart';
@@ -119,16 +119,11 @@ class _MineViewState extends State<MineView> {
     final user = MineUserInfoViewModel.fromApi(_userInfo);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text("我的"),
-        centerTitle: true,
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        scrolledUnderElevation: 0,
-      ),
+      appBar: AppBar(title: Text("我的"), centerTitle: true),
       body: RefreshIndicator(
         onRefresh: () => _loadUserInfo(forceRefresh: true),
         child: ListView(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
           children: [
             MineUserInfoCard(
               realName: user.realName,

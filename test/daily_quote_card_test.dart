@@ -1,7 +1,7 @@
 import 'package:cqut_helper/manager/daily_quote_manager.dart';
 import 'package:cqut_helper/model/daily_quote_model.dart';
 import 'package:cqut_helper/pages/TodaySchedule/widgets/daily_quote_card.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

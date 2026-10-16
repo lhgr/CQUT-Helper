@@ -1,6 +1,6 @@
 import 'package:cqut_helper/manager/announcement_manager.dart';
 import 'package:cqut_helper/model/announcement_model.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -63,9 +63,8 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
     final Uri uri = Uri.parse(url);
     if (!await launchUrl(uri)) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('无法打开链接')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('无法打开链接')));
       }
     }
   }
@@ -116,13 +115,16 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
             return AlertDialog(
               title: Row(children: [Expanded(child: Text(detail.title))]),
               content: SingleChildScrollView(
-                child: MarkdownBody(
-                  data: _formatMarkdown(detail.contentMarkdown),
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
-                  onTapLink: (text, href, title) {
-                    if (href == null || href.isEmpty) return;
-                    _launchExternalUrl(context, href);
-                  },
+                // flutter_markdown_plus consumes Flutter Material theme/localizations.
+                // ignore: deprecated_member_use
+                child: MaterialUiCompatibilityBridge(
+                  child: MarkdownBody(
+                    data: _formatMarkdown(detail.contentMarkdown),
+                    onTapLink: (text, href, title) {
+                      if (href == null || href.isEmpty) return;
+                      _launchExternalUrl(context, href);
+                    },
+                  ),
                 ),
               ),
               actions: [
@@ -196,9 +198,9 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
                   final text = announcementFailureDisplayText(failure);
                   return Card(
                     elevation: 0,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -229,9 +231,9 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
                         children: [
                           Icon(
                             Icons.campaign_outlined,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -240,18 +242,18 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
                               children: [
                                 Text(
                                   item.title,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium,
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
                                   _formatTime(item.updatedAt),
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
                                       ),
                                 ),
                               ],

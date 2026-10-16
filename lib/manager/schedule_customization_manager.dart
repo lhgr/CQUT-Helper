@@ -391,9 +391,10 @@ CREATE TABLE course_preferences (
   static DateTime? parseScheduleDate(String? raw, {DateTime? around}) {
     final value = (raw ?? '').trim();
     if (value.isEmpty) return null;
-    final numbers = RegExp(
-      r'\d+',
-    ).allMatches(value).map((m) => m.group(0)!).toList();
+    final numbers = RegExp(r'\d+')
+        .allMatches(value)
+        .map((m) => m.group(0)!)
+        .toList();
     if (numbers.length < 2) return null;
     if (numbers.first.length == 4 && numbers.length >= 3) {
       final year = int.tryParse(numbers[0]);

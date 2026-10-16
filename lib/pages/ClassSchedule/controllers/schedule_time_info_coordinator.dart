@@ -39,9 +39,8 @@ class ScheduleTimeInfoCoordinator {
   static const int _forcedRefreshBurstCooldownMs = 2 * 1000;
 
   static bool _validClock(String? value) {
-    final match = RegExp(
-      r'^(\d{1,2})[:：](\d{2})(?::\d{2})?$',
-    ).firstMatch(value?.trim() ?? '');
+    final match = RegExp(r'^(\d{1,2})[:：](\d{2})(?::\d{2})?$')
+        .firstMatch(value?.trim() ?? '');
     return match != null &&
         int.parse(match[1]!) < 24 &&
         int.parse(match[2]!) < 60;
@@ -250,9 +249,9 @@ class ScheduleTimeInfoCoordinator {
     );
     List<CampusTimeInfo> fetched;
     try {
-      fetched = (await service.fetchCampusTimeInfo(
-        campusName,
-      )).where(_validTimeInfo).toList();
+      fetched = (await service.fetchCampusTimeInfo(campusName))
+          .where(_validTimeInfo)
+          .toList();
     } catch (e, st) {
       final failureCount = consecutiveFailures + 1;
       await prefs.setInt(_prefsKeyTimeInfoConsecutiveFailures, failureCount);

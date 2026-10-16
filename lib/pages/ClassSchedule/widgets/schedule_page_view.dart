@@ -9,7 +9,7 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_time_column.dar
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class SchedulePageView extends StatefulWidget {
   final PageController? pageController;
@@ -164,17 +164,18 @@ class _SchedulePageViewState extends State<SchedulePageView> {
                               horizontal: 10,
                               vertical: 4,
                             ),
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primaryContainer.withAlpha(150),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primaryContainer
+                                .withAlpha(150),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: Text(
                                     '本周有周末补课，已临时显示周末课表',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.labelSmall,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall,
                                     textAlign: TextAlign.center,
                                   ),
                                 ),

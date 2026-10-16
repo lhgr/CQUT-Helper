@@ -1,5 +1,5 @@
 import 'package:cqut_helper/model/class_schedule_model.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 void showCourseDetailDialog(
   BuildContext context, {
@@ -141,9 +141,8 @@ Widget _buildDetailRow(
             children: [
               Text(
                 label,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
+                style: Theme.of(context).textTheme.labelSmall
+                    ?.copyWith(color: Theme.of(context).colorScheme.outline),
               ),
               Text(
                 value.isEmpty ? "未知" : value,

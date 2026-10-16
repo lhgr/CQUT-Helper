@@ -12,7 +12,7 @@ import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class TodayScheduleView extends StatefulWidget {
   final bool isActive;
@@ -556,7 +556,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         onRefresh: () => _loadSchedule(forceRefresh: true),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
           children: [
             _SummaryCard(
               title: calendarHoliday
@@ -648,12 +648,8 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: () {
           showCourseDetailDialog(
             context,
@@ -703,9 +699,8 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                       (event.eventName ?? '').trim().isEmpty
                           ? '未命名课程'
                           : event.eventName!.trim(),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -784,7 +779,7 @@ class _SummaryCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(28),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -796,8 +791,7 @@ class _SummaryCard extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+                style: theme.textTheme.headlineSmall?.copyWith(
                   color: colors.onSurface,
                 ),
               ),
@@ -846,9 +840,8 @@ class _MetaChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
       ),
     );
   }
@@ -958,20 +951,28 @@ class _NowNextCard extends StatelessWidget {
     _CourseMomentKind.finished => '今日课程已结束',
   };
 
-  String get _countdown {
-    if (moment.kind == _CourseMomentKind.finished) return '辛苦了';
+  String get _countdownDuration {
     final hours = moment.minutes ~/ 60;
     final minutes = moment.minutes % 60;
-    final duration = hours > 0 ? '$hours小时$minutes分钟' : '$minutes分钟';
+    return hours > 0 ? '$hours小时$minutes分钟' : '$minutes分钟';
+  }
+
+  String get _countdown {
+    if (moment.kind == _CourseMomentKind.finished) return '辛苦了';
     return moment.kind == _CourseMomentKind.ongoing
-        ? '距离下课 $duration'
-        : '$duration 后开始';
+        ? '距离下课 $_countdownDuration'
+        : '$_countdownDuration 后开始';
   }
 
   @override
   Widget build(BuildContext context) {
     final name = (moment.event.eventName ?? '').trim();
     final location = (moment.event.address ?? '').trim();
+    final stackCountdown =
+        MediaQuery.sizeOf(context).width < 360 ||
+        MediaQuery.textScalerOf(context).scale(1) > 1.3;
+    final countdownStyle = Theme.of(context).textTheme.labelLarge
+        ?.copyWith(color: Theme.of(context).colorScheme.onTertiaryContainer);
     return Card(
       elevation: 0,
       color: Theme.of(context).colorScheme.tertiaryContainer,
@@ -1005,9 +1006,9 @@ class _NowNextCard extends StatelessWidget {
                       name.isEmpty ? '未命名课程' : name,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onTertiaryContainer,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onTertiaryContainer,
                       ),
                     ),
                   if (location.isNotEmpty &&
@@ -1017,18 +1018,42 @@ class _NowNextCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  if (stackCountdown) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 0,
+                      children: [
+                        if (moment.kind == _CourseMomentKind.ongoing)
+                          Text('距离下课', style: countdownStyle),
+                        if (moment.kind != _CourseMomentKind.finished)
+                          Text(
+                            _countdownDuration,
+                            maxLines: 1,
+                            softWrap: false,
+                            style: countdownStyle,
+                          ),
+                        if (moment.kind == _CourseMomentKind.next)
+                          Text('后开始', style: countdownStyle),
+                        if (moment.kind == _CourseMomentKind.finished)
+                          Text('辛苦了', style: countdownStyle),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              _countdown,
-              textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: Theme.of(context).colorScheme.onTertiaryContainer,
+            if (!stackCountdown) ...[
+              const SizedBox(width: 8),
+              Text(
+                _countdown,
+                textAlign: TextAlign.end,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

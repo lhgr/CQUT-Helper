@@ -1,6 +1,6 @@
 import 'package:cqut_helper/manager/update_manager.dart';
 import 'package:cqut_helper/pages/Mine/mine_about_dialog.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class AboutSettingsPage extends StatefulWidget {

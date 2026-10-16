@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class MineMenuItem extends StatelessWidget {
   final IconData icon;
@@ -21,21 +21,22 @@ class MineMenuItem extends StatelessWidget {
     return Card(
       elevation: 0,
       margin: EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: Theme.of(context).colorScheme.outlineVariant,
-          width: 1,
-        ),
-      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           child: Row(
             children: [
-              Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              CircleAvatar(
+                backgroundColor: Theme.of(context)
+                    .colorScheme
+                    .secondaryContainer,
+                foregroundColor: Theme.of(context)
+                    .colorScheme
+                    .onSecondaryContainer,
+                child: Icon(icon),
+              ),
               SizedBox(width: 16),
               Expanded(
                 child: Column(

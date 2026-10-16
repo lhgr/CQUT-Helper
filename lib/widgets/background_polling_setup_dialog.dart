@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 Future<bool> showBackgroundPollingSetupDialog(BuildContext context) async {
   if (!Platform.isAndroid) return true;

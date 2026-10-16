@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Scrolls a single line back and forth only when it exceeds the available
 /// width. This keeps helper text readable without increasing form height.

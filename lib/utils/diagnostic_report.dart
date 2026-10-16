@@ -242,9 +242,8 @@ String renderDiagnosticReport(DiagnosticReportInput input) {
 
 int _bytes(String value) => utf8.encode(value).length;
 int _compare(Map<String, Object?> a, Map<String, Object?> b) {
-  final order = DateTime.parse(
-    a['timestamp'].toString(),
-  ).compareTo(DateTime.parse(b['timestamp'].toString()));
+  final order = DateTime.parse(a['timestamp'].toString())
+      .compareTo(DateTime.parse(b['timestamp'].toString()));
   return order != 0
       ? order
       : (a['eventId'] ?? '').toString().compareTo(

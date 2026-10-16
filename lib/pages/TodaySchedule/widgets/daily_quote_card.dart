@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:cqut_helper/manager/daily_quote_manager.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class DailyQuoteCard extends StatefulWidget {
   final bool active;
@@ -129,15 +129,11 @@ class _DailyQuoteCardState extends State<DailyQuoteCard>
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 72),
+      padding: const EdgeInsets.only(top: 20),
       child: Card(
         margin: EdgeInsets.zero,
         elevation: 0,
         color: colors.surfaceContainerLow,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: colors.outlineVariant.withAlpha(150)),
-        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           child: Column(

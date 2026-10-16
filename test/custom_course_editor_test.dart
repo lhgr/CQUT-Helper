@@ -1,7 +1,7 @@
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/custom_course_editor_page.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _RecordingScheduleApi extends ScheduleApi {
