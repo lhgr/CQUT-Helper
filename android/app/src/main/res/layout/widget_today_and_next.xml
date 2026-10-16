@@ -27,7 +27,7 @@
                     android:id="@+id/tv_schedule_name"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="12dp"
+                    android:textSize="15sp"
                     android:textColor="@color/widget_primary_text"
                     android:maxLines="1"
                     android:ellipsize="end"
@@ -40,7 +40,7 @@
                         android:id="@+id/tv_date"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="11dp"
+                        android:textSize="11sp"
                         android:textColor="@color/widget_secondary_text"
                         android:maxLines="1"
                         android:ellipsize="end" />
@@ -48,7 +48,7 @@
                         android:id="@+id/tv_week"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="11dp"
+                        android:textSize="11sp"
                         android:textColor="@color/widget_accent"
                         android:maxLines="1"
                         android:ellipsize="end"
@@ -57,7 +57,7 @@
                         android:id="@+id/tv_week_count"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="11dp"
+                        android:textSize="11sp"
                         android:textColor="@color/widget_secondary_text"
                         android:maxLines="1"
                         android:ellipsize="end"
@@ -67,7 +67,7 @@
                     android:id="@+id/tv_sync_status"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textSize="10dp"
+                    android:textSize="10sp"
                     android:textColor="@color/widget_secondary_text"
                     android:maxLines="2"
                     android:ellipsize="end"
@@ -75,9 +75,9 @@
             </LinearLayout>
             <ImageView
                 android:id="@+id/iv_refresh"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:padding="14dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:padding="11dp"
                 android:contentDescription="刷新课表"
                 android:src="@drawable/ic_widget_refresh"
                 android:visibility="gone" />
@@ -87,24 +87,26 @@
             android:id="@+id/ll_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="5dp"
             android:layout_below="@+id/rl_title">
             <TextView
-                android:textSize="12dp"
-                android:textColor="@color/widget_secondary_text"
+                android:textSize="12sp"
+                android:textColor="@color/widget_primary_text"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:text="今天"
+                android:textStyle="bold"
                 android:layout_weight="1"
-                android:layout_marginEnd="8dp" />
+                android:layout_marginEnd="5dp" />
             <TextView
-                android:textSize="12dp"
-                android:textColor="@color/widget_secondary_text"
+                android:textSize="12sp"
+                android:textColor="@color/widget_primary_text"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:text="明天"
+                android:textStyle="bold"
                 android:layout_weight="1"
-                android:layout_marginStart="8dp" />
+                android:layout_marginStart="5dp" />
         </LinearLayout>
         <LinearLayout
             android:orientation="horizontal"
@@ -123,9 +125,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:divider="@android:color/transparent"
-                    android:dividerHeight="8dp" />
+                    android:dividerHeight="7dp" />
                 <TextView
-                    android:textSize="14dp"
+                    android:textSize="12sp"
                     android:gravity="center"
                     android:id="@+id/empty"
                     android:paddingStart="12dp"
@@ -143,8 +145,8 @@
                 android:layout_height="match_parent"
                 android:orientation="vertical"
                 android:alpha="0.5"
-                android:layout_marginStart="8dp"
-                android:layout_marginEnd="8dp"
+                android:layout_marginStart="5dp"
+                android:layout_marginEnd="5dp"
                 android:background="@color/widget_divider" />
             <FrameLayout
                 android:layout_width="0dp"
@@ -156,9 +158,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:divider="@android:color/transparent"
-                    android:dividerHeight="8dp" />
+                    android:dividerHeight="7dp" />
                 <TextView
-                    android:textSize="14dp"
+                    android:textSize="12sp"
                     android:gravity="center"
                     android:id="@+id/empty_next_day"
                     android:paddingStart="12dp"

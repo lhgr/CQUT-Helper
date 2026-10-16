@@ -72,7 +72,7 @@ object TodayWidgetData {
     val classroom: String,
     val teacher: String,
     val periods: String,
-    val indicatorColor: Int,
+    val colorIndex: Int,
     val sortOrder: Int,
     val startTime: String = "",
     val endTime: String = "",
@@ -112,21 +112,6 @@ object TodayWidgetData {
     "${FLUTTER_PREFIX}schedule_widget_refresh_failure_"
   private const val MILLIS_PER_DAY = 24L * 60 * 60 * 1000
   private const val ANONYMOUS_SCOPE = "anonymous"
-  private val COURSE_TITLE_COLORS =
-    intArrayOf(
-      0xFF1473A3.toInt(),
-      0xFFAC3E15.toInt(),
-      0xFF0F7B78.toInt(),
-      0xFF621EA4.toInt(),
-      0xFF915D12.toInt(),
-      0xFFAC1522.toInt(),
-      0xFFAC152C.toInt(),
-      0xFF0F7A7B.toInt(),
-      0xFF846C10.toInt(),
-      0xFF781CA6.toInt(),
-      0xFF3215AC.toInt(),
-    )
-
   private fun widgetCalendar(
     timeInMillis: Long = WidgetRenderSnapshot.nowMillis(),
   ): Calendar =
@@ -534,7 +519,7 @@ object TodayWidgetData {
               course.classroom,
               course.teacher,
               course.periods,
-              course.indicatorColor.toString(),
+              course.colorIndex.toString(),
               course.sortOrder.toString(),
               course.startTime,
               course.endTime,
@@ -844,7 +829,11 @@ object TodayWidgetData {
         }
 
       val eventId = e.optString("eventID", "").ifBlank { null }
-      val colorIndex = courseColorMap[courseKey] ?: fallbackColorIndex(courseKey)
+      val colorIndex = resolveColorIndex(
+        (e.opt("colorIndex") as? Number)?.toInt(),
+        courseColorMap[courseKey],
+        courseKey,
+      )
       val clockRange = formatSessionClockRange(sessionNumbersOfEvent(e), sessionClockMap)
       result.add(
         CourseItem(
@@ -855,7 +844,7 @@ object TodayWidgetData {
           classroom = classroom,
           teacher = teacher,
           periods = periods,
-          indicatorColor = colorByIndex(colorIndex),
+          colorIndex = colorIndex,
           sortOrder = sortOrder,
           startTime = clockRange?.first.orEmpty(),
           endTime = clockRange?.second.orEmpty(),
@@ -1195,14 +1184,16 @@ object TodayWidgetData {
       prefs.getString("$KEY_WIDGET_TERM_PREFIX$account", null)?.takeIf { it.isNotBlank() }
         ?: prefs.getString("$KEY_LAST_TERM_PREFIX$account", null)?.takeIf { it.isNotBlank() }
         ?: return emptyMap()
-    val raw = prefs.getString("$KEY_COURSE_COLOR_MAP_PREFIX$account|$term", null) ?: return emptyMap()
+    val raw = prefs.getString("$KEY_COURSE_COLOR_MAP_PREFIX$account|${term.trim()}", null)
+      ?: return emptyMap()
     return try {
       val obj = JSONObject(raw)
       val result = HashMap<String, Int>(obj.length())
       val keys = obj.keys()
       while (keys.hasNext()) {
         val key = keys.next()
-        result[key] = obj.optInt(key, 0)
+        val index = obj.opt(key) as? Number ?: continue
+        result[key] = index.toInt()
       }
       result
     } catch (_: Exception) {
@@ -1215,16 +1206,14 @@ object TodayWidgetData {
     return if (normalized.isEmpty()) "未命名课程" else normalized
   }
 
-  private fun fallbackColorIndex(courseKey: String): Int {
-    if (COURSE_TITLE_COLORS.isEmpty()) return 0
-    return (courseKey.hashCode().ushr(1)) % COURSE_TITLE_COLORS.size
-  }
+  internal fun resolveColorIndex(
+    eventColorIndex: Int?,
+    assignedColorIndex: Int?,
+    courseKey: String,
+  ): Int = eventColorIndex ?: assignedColorIndex ?: fallbackColorIndex(courseKey)
 
-  private fun colorByIndex(index: Int): Int {
-    if (COURSE_TITLE_COLORS.isEmpty()) return 0xFF3F51B5.toInt()
-    val safeIndex = ((index % COURSE_TITLE_COLORS.size) + COURSE_TITLE_COLORS.size) % COURSE_TITLE_COLORS.size
-    return COURSE_TITLE_COLORS[safeIndex]
-  }
+  private fun fallbackColorIndex(courseKey: String): Int =
+    (buildCourseColorKey(courseKey).hashCode() and Int.MAX_VALUE) % WidgetCoursePalette.size
 
   internal fun filterStartedCourses(
     courses: List<CourseItem>,

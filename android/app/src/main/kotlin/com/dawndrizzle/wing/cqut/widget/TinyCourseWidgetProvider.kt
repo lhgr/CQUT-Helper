@@ -171,6 +171,12 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
 
       val courses = TodayWidgetData.loadTodayCourses(context)
       val nextCourse = TodayWidgetData.selectNextCourse(courses)
+      val nextCourseColors = nextCourse?.let { WidgetCoursePalette.colorsAt(it.colorIndex, theme.dark) }
+      views.setInt(
+        R.id.iv_course_background,
+        "setColorFilter",
+        nextCourseColors?.background ?: palette.backgroundColor,
+      )
       val refresh =
         TodayWidgetData.loadRefreshPresentation(
           context,
@@ -190,7 +196,7 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
 
       val rootIntent =
         if (nextCourse != null) {
-          bindCourse(views, nextCourse, courses.size)
+          bindCourse(views, nextCourse, courses.size, checkNotNull(nextCourseColors))
           WidgetNavigationPendingIntent.createForCourse(
             context,
             appWidgetId,
@@ -238,6 +244,7 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
       views: RemoteViews,
       course: TodayWidgetData.CourseItem,
       visibleCourseCount: Int,
+      courseColors: WidgetCoursePalette.Colors,
     ) {
       views.setViewVisibility(R.id.course_content, View.VISIBLE)
       views.setViewVisibility(R.id.iv_indicator, View.VISIBLE)
@@ -257,7 +264,7 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
         R.id.tv_course_location,
         location,
       )
-      views.setInt(R.id.iv_indicator, "setColorFilter", course.indicatorColor)
+      views.setInt(R.id.iv_indicator, "setColorFilter", courseColors.accent)
     }
 
     internal fun courseProgressText(visibleCourseCount: Int): String {

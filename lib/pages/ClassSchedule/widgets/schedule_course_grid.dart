@@ -172,10 +172,10 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
   }
 
   int _fallbackIndexForKey(String key) {
-    if (widget.backgroundColors.isEmpty) {
-      return 0;
-    }
-    return key.hashCode.abs() % widget.backgroundColors.length;
+    return CourseColorAssignmentManager.fallbackIndexForCourseKey(
+      key,
+      widget.backgroundColors.length,
+    );
   }
 
   Future<void> _warmupCourseColorMap() async {

@@ -62,24 +62,13 @@ private class CourseListRemoteViewsFactory(
     val views = RemoteViews(context.packageName, R.layout.widget_today_list_item)
     val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId)
     val palette = theme.palette
-    views.setInt(
-      R.id.ll_content,
-      "setBackgroundResource",
-      palette.itemBackgroundRes,
-    )
     WidgetRemoteViewsTheme.setColor(views, R.id.tv_course_name, "setTextColor", theme) {
       it.primaryText
     }
-    WidgetRemoteViewsTheme.setColor(views, R.id.tv_campus, "setTextColor", theme) {
+    WidgetRemoteViewsTheme.setColor(views, R.id.tv_course_location, "setTextColor", theme) {
       it.secondaryText
     }
-    WidgetRemoteViewsTheme.setColor(views, R.id.tv_classroom, "setTextColor", theme) {
-      it.secondaryText
-    }
-    WidgetRemoteViewsTheme.setColor(views, R.id.tv_teacher, "setTextColor", theme) {
-      it.secondaryText
-    }
-    WidgetRemoteViewsTheme.setColor(views, R.id.tv_periods, "setTextColor", theme) {
+    WidgetRemoteViewsTheme.setColor(views, R.id.tv_course_meta, "setTextColor", theme) {
       it.secondaryText
     }
     val topSpacingPx =
@@ -92,20 +81,31 @@ private class CourseListRemoteViewsFactory(
 
     if (item == null) {
       views.setTextViewText(R.id.tv_course_name, "")
-      views.setTextViewText(R.id.tv_campus, "")
-      views.setTextViewText(R.id.tv_classroom, "")
-      views.setTextViewText(R.id.tv_teacher, "")
-      views.setTextViewText(R.id.tv_periods, "")
+      views.setTextViewText(R.id.tv_course_location, "")
+      views.setTextViewText(R.id.tv_course_meta, "")
       views.setInt(R.id.iv_indicator, "setColorFilter", 0x00000000)
+      views.setInt(R.id.iv_course_background, "setColorFilter", palette.backgroundColor)
       return views
     }
 
+    val courseColors = WidgetCoursePalette.colorsAt(item.colorIndex, theme.dark)
+    views.setInt(R.id.iv_course_background, "setColorFilter", courseColors.background)
     views.setTextViewText(R.id.tv_course_name, item.name)
-    views.setTextViewText(R.id.tv_campus, item.campus)
-    views.setTextViewText(R.id.tv_classroom, item.classroom)
-    views.setTextViewText(R.id.tv_teacher, item.teacher)
-    views.setTextViewText(R.id.tv_periods, item.periods)
-    views.setInt(R.id.iv_indicator, "setColorFilter", item.indicatorColor)
+    views.setTextViewText(
+      R.id.tv_course_location,
+      listOf(item.campus, item.classroom)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString(" · "),
+    )
+    views.setTextViewText(
+      R.id.tv_course_meta,
+      listOf(item.periods, item.teacher)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString(" · "),
+    )
+    views.setInt(R.id.iv_indicator, "setColorFilter", courseColors.accent)
 
     val fillInIntent = Intent().apply {
       putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME, item.name)

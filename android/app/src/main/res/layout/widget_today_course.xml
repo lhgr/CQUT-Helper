@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
-    android:background="@drawable/appwidget_bg"
+    android:background="@drawable/widget_bg"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
     <FrameLayout
         android:id="@+id/widget_card"
         android:layout_gravity="center"
-        android:background="@drawable/appwidget_bg"
+        android:background="@drawable/widget_bg"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
         <RelativeLayout
@@ -32,7 +32,7 @@
                         android:id="@+id/tv_date"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="16dp"
+                        android:textSize="18sp"
                         android:textStyle="bold"
                         android:textColor="@color/widget_primary_text"
                         android:layout_marginBottom="2dp"
@@ -44,17 +44,17 @@
                             android:id="@+id/tv_schedule_name"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:textSize="12dp"
+                            android:textSize="11sp"
                             android:textStyle="bold"
                             android:textColor="@color/widget_primary_text"
                             android:maxLines="1"
-                            android:maxLength="12"
+                            android:ellipsize="end"
                             android:text="课表" />
                         <TextView
                             android:id="@+id/tv_week_count"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:textSize="12dp"
+                            android:textSize="11sp"
                             android:textStyle="bold"
                             android:textColor="@color/widget_secondary_text"
                             android:text=" | 第1周    " />
@@ -62,7 +62,7 @@
                             android:id="@+id/tv_week"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:textSize="12dp"
+                            android:textSize="11sp"
                             android:textStyle="bold"
                             android:textColor="@color/widget_accent"
                             android:text="周四" />
@@ -73,15 +73,15 @@
                         android:layout_height="wrap_content"
                         android:maxLines="1"
                         android:ellipsize="end"
-                        android:textSize="10dp"
+                        android:textSize="10sp"
                         android:textColor="@color/widget_secondary_text"
                         android:visibility="gone" />
                 </LinearLayout>
                 <ImageView
                     android:id="@+id/iv_next"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:padding="12dp"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:padding="10dp"
                     android:src="@drawable/ic_back"
                     android:layout_centerVertical="true"
                     android:rotation="180"
@@ -101,7 +101,9 @@
                         android:id="@+id/lv_course"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
-                        android:divider="@null" />
+                        android:divider="@android:color/transparent"
+                        android:dividerHeight="7dp"
+                        android:scrollbars="none" />
                 </FrameLayout>
                 <FrameLayout
                     android:id="@+id/tomorrow_course_list_container"
@@ -112,7 +114,9 @@
                         android:id="@+id/lv_course_next_day"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
-                        android:divider="@null" />
+                        android:divider="@android:color/transparent"
+                        android:dividerHeight="7dp"
+                        android:scrollbars="none" />
                 </FrameLayout>
                 <LinearLayout
                     android:id="@android:id/empty"
@@ -126,7 +130,7 @@
                         android:id="@+id/empty_text"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="12dp"
+                        android:textSize="13sp"
                         android:textColor="@color/widget_secondary_text"
                         android:text="暂无课程"
                         android:lineSpacingExtra="8dp"

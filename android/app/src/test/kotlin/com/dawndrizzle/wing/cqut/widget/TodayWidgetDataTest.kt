@@ -524,7 +524,7 @@ class TodayWidgetDataTest {
       classroom = "A101",
       teacher = "教师",
       periods = "第1-2节",
-      indicatorColor = 0,
+      colorIndex = 0,
       sortOrder = sortOrder,
     )
   }

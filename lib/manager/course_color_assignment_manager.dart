@@ -16,6 +16,16 @@ class CourseColorAssignmentManager {
     return normalized.isEmpty ? '未命名课程' : normalized;
   }
 
+  /// Matches Java String.hashCode on UTF-16 units for the widget's map-missing fallback.
+  static int fallbackIndexForCourseKey(String courseKey, int paletteSize) {
+    if (paletteSize <= 0) return 0;
+    var hash = 0;
+    for (final codeUnit in buildCourseNameKey(courseKey).codeUnits) {
+      hash = (hash * 31 + codeUnit) & 0xffffffff;
+    }
+    return (hash & 0x7fffffff) % paletteSize;
+  }
+
   final Map<String, Map<String, int>> _cacheByScope = {};
   final Set<String> _loadedScopes = {};
   String? _accountCache;

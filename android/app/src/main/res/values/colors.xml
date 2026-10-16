@@ -3,8 +3,8 @@
     <color name="md_theme_primary">#3F51B5</color>
     <color name="nodeIndex">#00000000</color>
 
-    <color name="widget_primary_text">#FF111111</color>
-    <color name="widget_secondary_text">#FF666666</color>
-    <color name="widget_accent">#FF3F51B5</color>
-    <color name="widget_divider">#1A111111</color>
+    <color name="widget_primary_text">#FF172238</color>
+    <color name="widget_secondary_text">#FF5D6B82</color>
+    <color name="widget_accent">#FF3856A6</color>
+    <color name="widget_divider">#FFDCE3ED</color>
 </resources>

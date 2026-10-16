@@ -1,15 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="540" height="340" viewBox="0 0 540 340">
-  <rect x="8" y="8" width="524" height="324" rx="30" fill="#1E1E1E" />
-  <text x="32" y="54" fill="#F2F2F2" font-family="Microsoft YaHei, sans-serif" font-size="25" font-weight="600">9月1日</text>
-  <text x="32" y="85" fill="#F2F2F2" font-family="Microsoft YaHei, sans-serif" font-size="17" font-weight="600">课表</text>
-  <text x="75" y="85" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17" font-weight="600">| 第3周</text>
-  <text x="154" y="85" fill="#8AA8FF" font-family="Microsoft YaHei, sans-serif" font-size="17" font-weight="600">周二</text>
-  <path d="M463 49h33m-12-12 12 12-12 12" fill="none" stroke="#B0B0B0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-
-  <rect x="32" y="112" width="6" height="190" rx="3" fill="#8AA8FF" />
-  <rect x="48" y="112" width="460" height="190" rx="18" fill="#2A2A2A" />
-  <text x="72" y="158" fill="#F2F2F2" font-family="Microsoft YaHei, sans-serif" font-size="23" font-weight="600">软件工程</text>
-  <text x="72" y="197" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17">两江校区</text>
-  <text x="72" y="229" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17">A101 · 张老师</text>
-  <text x="72" y="261" fill="#B0B0B0" font-family="Microsoft YaHei, sans-serif" font-size="17">第1-2节</text>
+<rect x="8" y="8" width="524" height="324" rx="30" fill="#232A35"/>
+<text x="32" y="53" fill="#F4F6FA" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="600">10月15日</text>
+<text x="32" y="81" fill="#B7C1D0" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="16" font-weight="400">我的课表 · 第7周 · 周四</text>
+<path d="M482 44 l12 12 -12 12" fill="none" stroke="#B7C1D0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="32" y="108" width="476" height="91" rx="18" fill="#1E3648"/>
+<rect x="42" y="119" width="5" height="69" rx="3" fill="#AED6EA"/>
+<text x="60" y="139" fill="#F4F6FA" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="600">数据结构与算法</text>
+<text x="60" y="164" fill="#B7C1D0" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="15" font-weight="400">花溪校区 · 二教 A306</text>
+<text x="60" y="186" fill="#B7C1D0" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="15" font-weight="400">第3–4节 · 陈老师</text>
+<rect x="32" y="210" width="476" height="91" rx="18" fill="#1E4843"/>
+<rect x="42" y="221" width="5" height="69" rx="3" fill="#AEEAE8"/>
+<text x="60" y="241" fill="#F4F6FA" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="600">大学英语</text>
+<text x="60" y="266" fill="#B7C1D0" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="15" font-weight="400">花溪校区 · 一教 B204</text>
+<text x="60" y="288" fill="#B7C1D0" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="15" font-weight="400">第5–6节 · 李老师</text>
 </svg>
