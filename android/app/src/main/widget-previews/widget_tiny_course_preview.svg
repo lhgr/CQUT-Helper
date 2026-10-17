@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="432" height="180" viewBox="0 0 432 180">
-<rect x="8" y="8" width="416" height="164" rx="30" fill="#E6F4FF"/>
+<rect x="8" y="8" width="416" height="164" rx="30" fill="#FFFFFF"/>
 <rect x="28" y="41" width="5" height="98" rx="3" fill="#1473A3"/>
 <text x="50" y="66" fill="#172238" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="600">数据结构与算法</text>
-<text x="50" y="101" fill="#5D6B82" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="18" font-weight="400">10:15–11:50 · 进行中</text>
-<text x="50" y="132" fill="#5D6B82" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="18" font-weight="400">二教 A306</text>
+<text x="50" y="101" fill="#5D6B82" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="18" font-weight="400">10:15–11:50 · 后续2节</text>
+<text x="50" y="132" fill="#5D6B82" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="18" font-weight="400">花溪 · 二教 A306</text>
 <path d="M396 85 A10 10 0 1 0 396 94 M396 79 v7 h-7" fill="none" stroke="#5D6B82" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

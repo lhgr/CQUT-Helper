@@ -125,7 +125,6 @@
             android:name="com.dawndrizzle.wing.cqut.widget.WidgetThemeChangedReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
                 <action android:name="android.intent.action.UI_MODE_CHANGED" />
             </intent-filter>
         </receiver>

@@ -53,7 +53,6 @@ private class VerticalCourseListRemoteViewsFactory(
     val item = items.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_vertical_schedule_item)
     val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId)
-    val palette = theme.palette
 
     WidgetRemoteViewsTheme.setColor(views, R.id.tv_course_start_time, "setTextColor", theme) {
       it.primaryText
@@ -81,12 +80,15 @@ private class VerticalCourseListRemoteViewsFactory(
       views.setTextViewText(R.id.tv_course_location, "")
       views.setTextViewText(R.id.tv_course_meta, "")
       views.setInt(R.id.iv_indicator, "setColorFilter", 0x00000000)
-      views.setInt(R.id.iv_course_background, "setColorFilter", palette.backgroundColor)
+      WidgetRemoteViewsTheme.setColor(views, R.id.iv_course_background, "setColorFilter", theme) {
+        it.backgroundColor
+      }
       return views
     }
 
-    val courseColors = WidgetCoursePalette.colorsAt(item.colorIndex, theme.dark)
-    views.setInt(R.id.iv_course_background, "setColorFilter", courseColors.background)
+    WidgetRemoteViewsTheme.setColor(views, R.id.iv_course_background, "setColorFilter", theme) {
+      WidgetCoursePalette.colorsAt(item.colorIndex, it.dark).background
+    }
     val hasClock = item.startTime.isNotBlank() && item.endTime.isNotBlank()
     views.setTextViewText(
       R.id.tv_course_start_time,
@@ -103,7 +105,9 @@ private class VerticalCourseListRemoteViewsFactory(
         item.periods.takeIf { hasClock && it.isNotBlank() },
       ).joinToString(" · "),
     )
-    views.setInt(R.id.iv_indicator, "setColorFilter", courseColors.accent)
+    WidgetRemoteViewsTheme.setColor(views, R.id.iv_indicator, "setColorFilter", theme) {
+      WidgetCoursePalette.colorsAt(item.colorIndex, it.dark).accent
+    }
 
     val fillInIntent = Intent().apply {
       putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME, item.name)

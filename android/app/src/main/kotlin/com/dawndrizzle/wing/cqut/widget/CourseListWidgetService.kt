@@ -61,7 +61,6 @@ private class CourseListRemoteViewsFactory(
     val item = items.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_today_list_item)
     val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId)
-    val palette = theme.palette
     WidgetRemoteViewsTheme.setColor(views, R.id.tv_course_name, "setTextColor", theme) {
       it.primaryText
     }
@@ -84,12 +83,15 @@ private class CourseListRemoteViewsFactory(
       views.setTextViewText(R.id.tv_course_location, "")
       views.setTextViewText(R.id.tv_course_meta, "")
       views.setInt(R.id.iv_indicator, "setColorFilter", 0x00000000)
-      views.setInt(R.id.iv_course_background, "setColorFilter", palette.backgroundColor)
+      WidgetRemoteViewsTheme.setColor(views, R.id.iv_course_background, "setColorFilter", theme) {
+        it.backgroundColor
+      }
       return views
     }
 
-    val courseColors = WidgetCoursePalette.colorsAt(item.colorIndex, theme.dark)
-    views.setInt(R.id.iv_course_background, "setColorFilter", courseColors.background)
+    WidgetRemoteViewsTheme.setColor(views, R.id.iv_course_background, "setColorFilter", theme) {
+      WidgetCoursePalette.colorsAt(item.colorIndex, it.dark).background
+    }
     views.setTextViewText(R.id.tv_course_name, item.name)
     views.setTextViewText(
       R.id.tv_course_location,
@@ -105,7 +107,9 @@ private class CourseListRemoteViewsFactory(
         .filter { it.isNotEmpty() }
         .joinToString(" · "),
     )
-    views.setInt(R.id.iv_indicator, "setColorFilter", courseColors.accent)
+    WidgetRemoteViewsTheme.setColor(views, R.id.iv_indicator, "setColorFilter", theme) {
+      WidgetCoursePalette.colorsAt(item.colorIndex, it.dark).accent
+    }
 
     val fillInIntent = Intent().apply {
       putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME, item.name)

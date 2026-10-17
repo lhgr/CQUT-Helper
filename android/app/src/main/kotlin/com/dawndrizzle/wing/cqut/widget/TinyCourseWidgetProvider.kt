@@ -172,11 +172,6 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
       val courses = TodayWidgetData.loadTodayCourses(context)
       val nextCourse = TodayWidgetData.selectNextCourse(courses)
       val nextCourseColors = nextCourse?.let { WidgetCoursePalette.colorsAt(it.colorIndex, theme.dark) }
-      views.setInt(
-        R.id.iv_course_background,
-        "setColorFilter",
-        nextCourseColors?.background ?: palette.backgroundColor,
-      )
       val refresh =
         TodayWidgetData.loadRefreshPresentation(
           context,
