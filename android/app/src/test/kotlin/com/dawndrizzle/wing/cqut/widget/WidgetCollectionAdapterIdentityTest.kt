@@ -13,8 +13,8 @@ class WidgetCollectionAdapterIdentityTest {
     val evening = Instant.parse("2026-08-28T15:59:59Z").toEpochMilli()
 
     assertEquals(
-      WidgetCollectionAdapterIdentity.dataUri("today-list", 7, 0, morning),
-      WidgetCollectionAdapterIdentity.dataUri("today-list", 7, 0, evening),
+      WidgetCollectionAdapterIdentity.dataUri("today-list", 7, 0, "LIGHT|false", morning),
+      WidgetCollectionAdapterIdentity.dataUri("today-list", 7, 0, "LIGHT|false", evening),
     )
   }
 
@@ -27,6 +27,7 @@ class WidgetCollectionAdapterIdentityTest {
         "today-list",
         7,
         0,
+        "LIGHT|false",
         contentFingerprint = "courses-before",
         nowMillis = now,
       )
@@ -35,6 +36,7 @@ class WidgetCollectionAdapterIdentityTest {
         "today-list",
         7,
         0,
+        "LIGHT|false",
         contentFingerprint = "courses-after",
         nowMillis = now,
       )
@@ -45,16 +47,40 @@ class WidgetCollectionAdapterIdentityTest {
   }
 
   @Test
+  fun `adapter identity changes with app and system theme but stays stable otherwise`() {
+    val now = Instant.parse("2026-08-28T08:00:00Z").toEpochMilli()
+    val light = WidgetCollectionAdapterIdentity.dataUri(
+      "today-list", 7, 0, "LIGHT|false", now, "same-courses",
+    )
+    val dark = WidgetCollectionAdapterIdentity.dataUri(
+      "today-list", 7, 0, "DARK|true", now, "same-courses",
+    )
+    val systemLight = WidgetCollectionAdapterIdentity.dataUri(
+      "today-list", 7, 0, "SYSTEM|false", now, "same-courses",
+    )
+    val systemDark = WidgetCollectionAdapterIdentity.dataUri(
+      "today-list", 7, 0, "SYSTEM|true", now, "same-courses",
+    )
+
+    assertNotEquals(light, dark)
+    assertNotEquals(systemLight, systemDark)
+    assertEquals(light, WidgetCollectionAdapterIdentity.dataUri(
+      "today-list", 7, 0, "LIGHT|false", now, "same-courses",
+    ))
+    assertTrue(dark.contains("/DARK-true/same-courses/"))
+  }
+
+  @Test
   fun `adapter identity changes at Beijing midnight`() {
     val beforeMidnight = Instant.parse("2026-08-28T15:59:59Z").toEpochMilli()
     val atMidnight = Instant.parse("2026-08-28T16:00:00Z").toEpochMilli()
 
-    val before = WidgetCollectionAdapterIdentity.dataUri("today-course", 7, 0, beforeMidnight)
-    val after = WidgetCollectionAdapterIdentity.dataUri("today-course", 7, 0, atMidnight)
+    val before = WidgetCollectionAdapterIdentity.dataUri("today-course", 7, 0, "LIGHT|false", beforeMidnight)
+    val after = WidgetCollectionAdapterIdentity.dataUri("today-course", 7, 0, "LIGHT|false", atMidnight)
 
     assertNotEquals(before, after)
-    assertTrue(before.endsWith("/empty/2026-08-28"))
-    assertTrue(after.endsWith("/empty/2026-08-29"))
+    assertTrue(before.endsWith("/LIGHT-false/empty/2026-08-28"))
+    assertTrue(after.endsWith("/LIGHT-false/empty/2026-08-29"))
   }
 
   @Test
@@ -63,8 +89,8 @@ class WidgetCollectionAdapterIdentityTest {
 
     assertTrue(
       WidgetCollectionAdapterIdentity
-        .dataUri("today-and-next", 11, 1, now)
-        .endsWith("/1/empty/2026-08-29"),
+        .dataUri("today-and-next", 11, 1, "LIGHT|false", now)
+        .endsWith("/1/LIGHT-false/empty/2026-08-29"),
     )
   }
 }

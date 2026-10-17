@@ -21,8 +21,7 @@ class WidgetAutoRefreshReceiver : BroadcastReceiver() {
         "delayMs=${if (scheduledAt > 0L) receivedAt - scheduledAt else -1L}",
     )
     if (action == ACTION_APP_THEME_REFRESH) {
-      WidgetForceUpdatePusher.pushTheme(context)
-      WidgetRefreshCoordinator.ensureScheduled(context, "app_theme_refresh")
+      WidgetThemeSyncDispatcher.dispatch(context, WidgetThemeTrigger.APP_THEME_CHANGED)
       return
     }
     if (action == ACTION_MANUAL_REFRESH_WATCHDOG) {

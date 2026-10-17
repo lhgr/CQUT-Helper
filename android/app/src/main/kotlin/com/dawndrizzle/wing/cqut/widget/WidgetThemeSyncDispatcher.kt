@@ -8,13 +8,14 @@ import android.util.Log
 object WidgetThemeSyncDispatcher {
   private const val TRANSITION_DURATION_MS = 180L
   private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+  private var dispatchGeneration = 0L
 
   internal fun dispatch(
     context: Context,
     trigger: WidgetThemeTrigger,
     forceFullUpdate: Boolean = false,
     renderedState: WidgetRefreshRenderState? = null,
-  ) {
+  ) = WidgetRefreshCoordinator.withRefreshLock {
     WidgetRenderSnapshot.withSnapshot {
       val resolution = WidgetTheme.resolve(context, trigger)
       Log.d(
@@ -23,8 +24,9 @@ object WidgetThemeSyncDispatcher {
       )
       if (trigger == WidgetThemeTrigger.SYSTEM_THEME_CHANGED && resolution.mode != WidgetThemeMode.SYSTEM) {
         Log.d("WidgetTheme", "skip system changed because mode=${resolution.mode}")
-        return
+        return@withRefreshLock
       }
+      val generation = ++dispatchGeneration
       val fullUpdate = forceFullUpdate || requiresFullUpdate(trigger)
       WidgetNativeLog.info(
         context,
@@ -37,17 +39,20 @@ object WidgetThemeSyncDispatcher {
       if (resolution.shouldAnimate) {
         mainHandler.postDelayed(
           {
-            WidgetRenderSnapshot.withSnapshot {
-              WidgetTheme.commitTransition(context)
-              val commitResolution = WidgetTheme.resolve(context, WidgetThemeTrigger.TRANSITION_COMMIT)
-              updateWidgets(
-                context,
-                commitResolution,
-                WidgetThemeTrigger.TRANSITION_COMMIT,
-                fullUpdate = true,
-              )
-              WidgetRefreshCoordinator.recordRenderedState(context)
-              WidgetRefreshCoordinator.ensureScheduled(context, "theme_commit")
+            WidgetRefreshCoordinator.withRefreshLock {
+              if (generation != dispatchGeneration) return@withRefreshLock
+              WidgetRenderSnapshot.withSnapshot {
+                WidgetTheme.commitTransition(context)
+                val commitResolution = WidgetTheme.resolve(context, WidgetThemeTrigger.TRANSITION_COMMIT)
+                updateWidgets(
+                  context,
+                  commitResolution,
+                  WidgetThemeTrigger.TRANSITION_COMMIT,
+                  fullUpdate = true,
+                )
+                WidgetRefreshCoordinator.recordRenderedState(context)
+                WidgetRefreshCoordinator.ensureScheduled(context, "theme_commit")
+              }
             }
           },
           TRANSITION_DURATION_MS,
@@ -67,7 +72,7 @@ object WidgetThemeSyncDispatcher {
     fullUpdate: Boolean,
   ) {
     WidgetRenderSnapshot.withSnapshot {
-      if (!fullUpdate || trigger == WidgetThemeTrigger.DATA_REFRESH) {
+      if (!fullUpdate || trigger != WidgetThemeTrigger.TRANSITION_COMMIT) {
         // A provider-only partial payload is delivered synchronously by
         // launchers that defer full RemoteViews containing collection
         // adapters. Apply list/empty visibility before a possible rebind so a

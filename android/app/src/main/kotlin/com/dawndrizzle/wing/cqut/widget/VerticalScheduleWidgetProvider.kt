@@ -167,6 +167,7 @@ class VerticalScheduleWidgetProvider : AppWidgetProvider() {
                 kind = "vertical",
                 appWidgetId = appWidgetId,
                 dayOffset = dayOffset,
+                themeSignature = theme.signature,
                 contentFingerprint =
                   TodayWidgetData.loadVisibleCoursesFingerprint(
                     context,

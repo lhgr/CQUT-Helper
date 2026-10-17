@@ -182,6 +182,7 @@ class TodayListWidgetProvider : AppWidgetProvider() {
                 kind = "today-list",
                 appWidgetId = appWidgetId,
                 dayOffset = dayOffset,
+                themeSignature = theme.signature,
                 contentFingerprint =
                   TodayWidgetData.loadVisibleCoursesFingerprint(
                     context,

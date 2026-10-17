@@ -297,11 +297,11 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
         // Switching container visibility makes such callbacks independent.
         views.setRemoteAdapter(
           R.id.lv_course,
-          courseServiceIntent(context, appWidgetId, dayOffset = 0),
+          courseServiceIntent(context, appWidgetId, dayOffset = 0, theme = theme),
         )
         views.setRemoteAdapter(
           R.id.lv_course_next_day,
-          courseServiceIntent(context, appWidgetId, dayOffset = 1),
+          courseServiceIntent(context, appWidgetId, dayOffset = 1, theme = theme),
         )
 
         views.setFloat(R.id.iv_next, "setRotation", if (dayOffset == 0) 180f else 0f)
@@ -352,6 +352,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
       context: Context,
       appWidgetId: Int,
       dayOffset: Int,
+      theme: WidgetThemeResolution,
     ): Intent =
       Intent(context, CourseListWidgetService::class.java).apply {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -363,6 +364,7 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
               kind = "today-course",
               appWidgetId = appWidgetId,
               dayOffset = dayOffset,
+              themeSignature = theme.signature,
               contentFingerprint =
                 TodayWidgetData.loadVisibleCoursesFingerprint(
                   context,

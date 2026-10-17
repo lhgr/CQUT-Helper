@@ -11,6 +11,7 @@ import java.util.TimeZone
  * Including the visible-content fingerprint also replaces a factory when a
  * course starts or synchronized schedule data changes. Some launchers ignore
  * notifyAppWidgetViewDataChanged() for only a subset of widget instances.
+ * The theme signature replaces cached rows when their colors change.
  */
 internal object WidgetCollectionAdapterIdentity {
   private val widgetTimeZone = TimeZone.getTimeZone(TodayWidgetData.WIDGET_TIME_ZONE_ID)
@@ -19,6 +20,7 @@ internal object WidgetCollectionAdapterIdentity {
     kind: String,
     appWidgetId: Int,
     dayOffset: Int,
+    themeSignature: String,
     nowMillis: Long = WidgetRenderSnapshot.nowMillis(),
     contentFingerprint: String = "",
   ): String {
@@ -31,7 +33,8 @@ internal object WidgetCollectionAdapterIdentity {
     val month = (targetDate.get(Calendar.MONTH) + 1).toString().padStart(2, '0')
     val day = targetDate.get(Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
     val contentVersion = contentFingerprint.ifBlank { "empty" }
+    val themeVersion = themeSignature.replace('|', '-')
     return "cqut-helper://widget/collection/$kind/$appWidgetId/$dayOffset/" +
-      "$contentVersion/$year-$month-$day"
+      "$themeVersion/$contentVersion/$year-$month-$day"
   }
 }

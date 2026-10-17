@@ -181,6 +181,7 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
                 kind = "today-and-next",
                 appWidgetId = appWidgetId,
                 dayOffset = 0,
+                themeSignature = theme.signature,
                 contentFingerprint =
                   TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(0)),
               ),
@@ -195,6 +196,7 @@ class TodayAndNextWidgetProvider : AppWidgetProvider() {
                 kind = "today-and-next",
                 appWidgetId = appWidgetId,
                 dayOffset = 1,
+                themeSignature = theme.signature,
                 contentFingerprint =
                   TodayWidgetData.loadVisibleCoursesFingerprint(context, intArrayOf(1)),
               ),
