@@ -251,13 +251,21 @@ class _PreviewTimeColumn extends StatelessWidget {
                     ),
                   )
                 : null,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (showTimes)
-                  Text('${8 + index}:00', style: const TextStyle(fontSize: 7)),
-                Text('${index + 1}', style: const TextStyle(fontSize: 10)),
-              ],
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (showTimes)
+                      Text(
+                        '${8 + index}:00',
+                        style: const TextStyle(fontSize: 7),
+                      ),
+                    Text('${index + 1}', style: const TextStyle(fontSize: 10)),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

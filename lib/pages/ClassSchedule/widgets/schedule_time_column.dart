@@ -57,33 +57,36 @@ class ScheduleTimeColumn extends StatelessWidget {
           return Container(
             height: sessionHeight,
             alignment: Alignment.center,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (start != null)
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (start != null)
+                    Text(
+                      start,
+                      style: TextStyle(
+                        fontSize: 8,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   Text(
-                    start,
-                    style: TextStyle(
-                      fontSize: 8,
+                    "$sessionNum",
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                Text(
-                  "$sessionNum",
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (end != null)
-                  Text(
-                    end,
-                    style: TextStyle(
-                      fontSize: 8,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  if (end != null)
+                    Text(
+                      end,
+                      style: TextStyle(
+                        fontSize: 8,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           );
         }),

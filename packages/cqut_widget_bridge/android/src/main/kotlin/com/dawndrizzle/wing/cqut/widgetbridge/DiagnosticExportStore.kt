@@ -16,6 +16,7 @@ import java.io.IOException
 class DiagnosticExportStore(private val context: Context, private val clock: () -> Long = System::currentTimeMillis) {
   private val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/CQUT-Helper/log/"
   private val namePattern = Regex("cqut_diagnostic_[^/\\\\]+\\.log")
+  private val textSuffixedNamePattern = Regex("cqut_diagnostic_[^/\\\\]+\\.log\\.txt")
   private val legacyNamePattern = Regex("cqut_export_[^/\\\\]+\\.log(?:\\.gz)?(?:\\.sha256)?")
   private val localDirectory: File get() = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir, "CQUT-Helper/log")
 
@@ -51,7 +52,7 @@ class DiagnosticExportStore(private val context: Context, private val clock: () 
 
   private fun entries(): List<DiagnosticExportEntry> {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-      val files = localDirectory.listFiles()?.filter { it.isFile && (namePattern.matches(it.name) || legacyNamePattern.matches(it.name)) }.orEmpty().toMutableList()
+      val files = localDirectory.listFiles()?.filter { it.isFile && (namePattern.matches(it.name) || textSuffixedNamePattern.matches(it.name) || legacyNamePattern.matches(it.name)) }.orEmpty().toMutableList()
       // Older public exports are only reachable when the app already has storage access.
       if (context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
         @Suppress("DEPRECATION")
@@ -63,14 +64,14 @@ class DiagnosticExportStore(private val context: Context, private val clock: () 
     val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
     val columns = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE,
       MediaStore.MediaColumns.DATE_MODIFIED, MediaStore.MediaColumns.DATE_ADDED, MediaStore.MediaColumns.IS_PENDING)
-    val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND (${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?) AND ${MediaStore.MediaColumns.OWNER_PACKAGE_NAME} = ?"
+    val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND (${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?) AND ${MediaStore.MediaColumns.OWNER_PACKAGE_NAME} = ?"
     val entries = mutableListOf<DiagnosticExportEntry>()
     @Suppress("DEPRECATION")
     val includingPending = MediaStore.setIncludePending(collection)
-    context.contentResolver.query(includingPending, columns, selection, arrayOf(relativePath, "cqut_diagnostic_%.log", "cqut_export_%.log%", context.packageName), null)?.use { cursor ->
+    context.contentResolver.query(includingPending, columns, selection, arrayOf(relativePath, "cqut_diagnostic_%.log", "cqut_diagnostic_%.log.txt", "cqut_export_%.log%", context.packageName), null)?.use { cursor ->
       while (cursor.moveToNext()) {
         val name = cursor.getString(1)
-        if (!namePattern.matches(name) && !legacyNamePattern.matches(name)) continue
+        if (!namePattern.matches(name) && !textSuffixedNamePattern.matches(name) && !legacyNamePattern.matches(name)) continue
         val modified = cursor.getLong(3).takeIf { it > 0 } ?: cursor.getLong(4)
         entries.add(DiagnosticExportEntry(ContentUris.withAppendedId(collection, cursor.getLong(0)).toString(), name, cursor.getLong(2), modified * 1000, cursor.getInt(5) != 0, legacyNamePattern.matches(name)))
       }
@@ -90,7 +91,8 @@ class DiagnosticExportStore(private val context: Context, private val clock: () 
   private fun publishMediaStore(fileName: String, bytes: ByteArray): String {
     val values = ContentValues().apply {
       put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-      put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+      // The generic MIME prevents MediaStore from appending .txt to the .log name.
+      put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
       put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
       put(MediaStore.MediaColumns.IS_PENDING, 1)
     }
