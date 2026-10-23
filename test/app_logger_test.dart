@@ -247,7 +247,7 @@ void main() {
     report();
     await logger.flush();
     expect(storage.rows.where((r) => r['kind'] == 'summary'), isEmpty);
-    expect(storage.rows.last['kind'], 'error');
+    expect(storage.rows.last['kind'], 'incident');
     expect(storage.rows.last['stackTrace'], isNotEmpty);
   });
 
@@ -277,7 +277,7 @@ void main() {
       expect(storage.rows.length, 2);
       expect(storage.rows.last['rootEventId'], storage.rows.first['eventId']);
       expect(storage.rows.last['stackTrace'], '');
-      expect(storage.rows.last['kind'], 'outcome');
+      expect(storage.rows.last['kind'], 'derived');
     },
   );
 
@@ -365,11 +365,13 @@ void main() {
       ObservedErrorHandler(),
     );
     await logger.flush();
-    final fields = storage.rows.single['fields'] as Map;
+    final attempt = storage.rows.singleWhere((r) => r['kind'] == 'attempt');
+    final incident = storage.rows.singleWhere((r) => r['kind'] == 'incident');
+    final fields = attempt['fields'] as Map;
     expect(fields['uri'], 'https://example.test/data');
     expect(fields['method'], 'GET');
     expect(fields['duration_ms'], isA<int>());
-    expect(storage.rows.single['errorType'], 'DioException');
+    expect(incident['errorType'], 'DioException');
     expect(fields['dio_type'], 'connectionTimeout');
     expect(jsonEncode(storage.rows), isNot(contains('sensitive')));
   });
@@ -541,7 +543,7 @@ void main() {
     storage.fail = false;
     logger.error('HTTP', '网络错误', error: error, stackTrace: stack);
     await logger.flush();
-    expect(storage.rows.single['kind'], 'error');
+    expect(storage.rows.single['kind'], 'incident');
     expect(storage.rows.single['stackTrace'], contains('original_throw_site'));
     expect(storage.rows.single['rootEventId'], storage.rows.single['eventId']);
   });
@@ -588,7 +590,10 @@ void main() {
         ObservedErrorHandler(),
       );
       await logger.flush();
-      expect(storage.rows.single['level'], 'error');
+      expect(
+        storage.rows.singleWhere((r) => r['kind'] == 'incident')['level'],
+        'error',
+      );
     },
   );
 

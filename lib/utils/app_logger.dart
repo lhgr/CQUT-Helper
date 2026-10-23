@@ -79,11 +79,60 @@ class _QueuedRecord {
 }
 
 class _RootLink {
-  _RootLink(this.eventId, {required this.operationId, this.errorCategory});
+  _RootLink(
+    this.eventId, {
+    required this.operationId,
+    required this.at,
+    this.errorCategory,
+  });
   final String eventId;
   final String operationId;
+  final DateTime at;
   final String? errorCategory;
   bool valid = true;
+}
+
+class _RetryIncident {
+  _RetryIncident(this.record, this.link) : lastAttemptAt = link.at;
+  final Map<String, Object?> record;
+  final _RootLink link;
+  int attempts = 0;
+  String? firstAttemptId, lastAttemptId;
+  DateTime lastAttemptAt;
+  bool recovered = false;
+}
+
+/// A retry invocation is narrower than an operation. Request ordinal separates
+/// two independent calls to the same endpoint inside a single attempt.
+class _RetryGroup {
+  _RetryGroup(this.id);
+  final String id;
+  final incidents = <String, _RetryIncident>{};
+  final ordinals = <String, int>{};
+  int unmatched = 0;
+
+  String requestKey(Map<String, Object?> fields) {
+    final endpoint = '${fields['method']}|${fields['uri']}';
+    final capturedSlot = fields['retry_request_slot'];
+    if (capturedSlot is int) return '$endpoint|$capturedSlot';
+    final slot = nextSlot(fields);
+    return slot == null
+        ? '$endpoint|unmatched-${++unmatched}'
+        : '$endpoint|$slot';
+  }
+
+  int? nextSlot(Map<String, Object?> fields) {
+    final endpoint = '${fields['method']}|${fields['uri']}';
+    final attemptKey = '${fields['attempt']}|$endpoint';
+    // Never evict a counter and later reuse its ordinal for an in-flight
+    // request. Saturated groups retain independent evidence without merging.
+    if (!ordinals.containsKey(attemptKey) && ordinals.length >= 128) {
+      return null;
+    }
+    final ordinal = (ordinals[attemptKey] ?? 0) + 1;
+    ordinals[attemptKey] = ordinal;
+    return ordinal;
+  }
 }
 
 class _RepeatedIssue {
@@ -111,6 +160,7 @@ class AppLogger {
   final LinkedHashMap<String, _RepeatedIssue> _issues = LinkedHashMap();
   Expando<Map<String, _RootLink>> _rootEvents = Expando();
   final LinkedHashMap<String, _RepeatedIssue> _templates = LinkedHashMap();
+  final Map<String, _RetryGroup> _retryGroups = {};
   DiagnosticStorage? _storage;
   Directory? _exportDirectory;
   DiagnosticExport? _exportStorage;
@@ -199,6 +249,18 @@ class AppLogger {
   String get sessionId =>
       _sessionId.isEmpty ? (_sessionId = newTraceId(bytes: 8)) : _sessionId;
   String? get currentTraceId => Zone.current[_traceZoneKey] as String?;
+  String? get currentRetryGroupId =>
+      Zone.current[diagnosticRetryGroupZoneKey] as String?;
+  int? captureRetryRequestSlot({
+    required String retryGroupId,
+    required int? attempt,
+    required String method,
+    required String uri,
+  }) => _retryGroups[retryGroupId]?.nextSlot({
+    'attempt': attempt,
+    'method': method,
+    'uri': uri,
+  });
   List<LogEvent> get recent {
     _pruneRecent();
     return List.unmodifiable(_recent);
@@ -220,6 +282,72 @@ class AppLogger {
       runZoned(fn, zoneValues: {_traceZoneKey: id});
   Future<T> runWithTraceIdAsync<T>(String id, Future<T> Function() fn) =>
       runZoned(fn, zoneValues: {_traceZoneKey: id});
+
+  Future<T> runWithRetryGroup<T>(Future<T> Function() action) async {
+    // Saturation disables correlation for the extra invocation rather than
+    // allowing diagnostic bookkeeping to grow without a bound.
+    if (_retryGroups.length >= 16) {
+      return runZoned(action, zoneValues: {diagnosticRetryGroupZoneKey: null});
+    }
+    final group = _RetryGroup(newTraceId());
+    _retryGroups[group.id] = group;
+    var succeeded = false;
+    try {
+      final result = await runZoned(
+        action,
+        zoneValues: {diagnosticRetryGroupZoneKey: group.id},
+      );
+      succeeded = true;
+      return result;
+    } finally {
+      _retryGroups.remove(group.id);
+      try {
+        for (final incident in group.incidents.values) {
+          final recovered = succeeded && incident.recovered;
+          final record = incident.record;
+          _emitIncident(incident, recovered: recovered);
+          if (recovered) {
+            info(
+              record['module'].toString(),
+              '重试恢复',
+              fields: {
+                'diagnostic_kind': 'recovery',
+                'outcome': 'succeeded',
+                'related_root_event_id': incident.link.eventId,
+                'operation_id': currentTraceId ?? incident.link.operationId,
+                'retry_group_id': group.id,
+                'after_ms': max(
+                  0,
+                  _now().difference(incident.link.at).inMilliseconds,
+                ),
+              },
+            );
+          }
+        }
+      } catch (_) {
+        _writeErrors++;
+      }
+    }
+  }
+
+  void _emitIncident(_RetryIncident incident, {bool recovered = false}) {
+    final at = _now();
+    final record = incident.record;
+    record.addAll({
+      'timestamp': at.toUtc().toIso8601String(),
+      'local_time': at.toLocal().toIso8601String(),
+      'local_offset_minutes': at.toLocal().timeZoneOffset.inMinutes,
+      'sequence': ++_sequence,
+      'level': recovered ? 'warn' : 'error',
+      'outcome': recovered ? 'recovered' : 'failed',
+      'attempts': incident.attempts,
+      'firstAttemptEventId': incident.firstAttemptId,
+      'lastAttemptEventId': incident.lastAttemptId,
+      'firstSeen': incident.link.at.toUtc().toIso8601String(),
+      'lastSeen': incident.lastAttemptAt.toUtc().toIso8601String(),
+    });
+    _enqueue(record, rootLink: incident.link);
+  }
 
   void debug(
     String tag,
@@ -373,6 +501,7 @@ class AppLogger {
           'diagnostic_kind': 'recovery',
           'outcome': 'succeeded',
           'related_root_event_id': link.eventId,
+          'after_ms': max(0, _now().difference(link.at).inMilliseconds),
         },
       );
     } catch (_) {
@@ -412,6 +541,16 @@ class AppLogger {
     StackTrace? stackTrace,
     Map<String, Object?>? fields,
   }) {
+    if (fields?['diagnostic_kind'] == 'attempt' &&
+        _recordTransportAttempt(
+          tag,
+          message,
+          error: error,
+          stackTrace: stackTrace,
+          fields: fields!,
+        )) {
+      return;
+    }
     final at = _now();
     _flushExpiredIssues();
     _pruneRecent();
@@ -424,7 +563,7 @@ class AppLogger {
     if (error is DioException && error.type == DioExceptionType.cancel) {
       level = LogLevel.info;
     }
-    final failure = level.priority >= LogLevel.warn.priority;
+    var failure = level.priority >= LogLevel.warn.priority;
     final links = error != null && _expandoKey(error)
         ? _rootEvents[error]
         : null;
@@ -432,6 +571,9 @@ class AppLogger {
         ? (links?[scope] ?? links?['*'])
         : null;
     final root = previousRoot?.valid == true ? previousRoot!.eventId : null;
+    if (root != null && level == LogLevel.error) level = LogLevel.warn;
+    final retryDecision = safeFields['diagnostic_kind'] == 'retry_decision';
+    if (retryDecision) failure = false;
     final actualFailure =
         failure &&
         (error != null ||
@@ -453,8 +595,11 @@ class AppLogger {
     final recordOperation = (operation ?? previousRoot?.operationId ?? eventId)
         .toString();
     var kind = failure
-        ? (actualFailure ? (root == null ? 'error' : 'outcome') : 'diagnostic')
+        ? (actualFailure
+              ? (root == null ? 'incident' : 'derived')
+              : 'diagnostic')
         : 'breadcrumb';
+    if (retryDecision) kind = 'retry_decision';
     if (!failure &&
         safeFields['diagnostic_kind'] == 'recovery' &&
         safeFields['related_root_event_id'] != null) {
@@ -462,6 +607,9 @@ class AppLogger {
     }
     if (!failure && safeFields['diagnostic_kind'] == 'operation') {
       kind = 'operation';
+    }
+    if (!failure && safeFields['diagnostic_kind'] == 'operation_outcome') {
+      kind = 'operation_outcome';
     }
     final category =
         previousRoot?.errorCategory ??
@@ -477,8 +625,10 @@ class AppLogger {
               )
             : null);
     final record = <String, Object?>{
-      'schema': 4,
+      'schema': 5,
       'timestamp': at.toUtc().toIso8601String(),
+      'local_time': at.toLocal().toIso8601String(),
+      'local_offset_minutes': at.toLocal().timeZoneOffset.inMinutes,
       'level': level.name,
       'version': _version,
       'source': _source,
@@ -496,11 +646,11 @@ class AppLogger {
       'sequence': sequence,
       'operationId': _clip(recordOperation, 256),
       if (operation == null) 'operationInferred': true,
-      if (failure && error != null)
+      if (failure && root == null && error != null)
         'errorType': _clip(error.runtimeType.toString(), 256),
-      'errorCategory': ?category,
+      if (root == null) 'errorCategory': ?category,
       'message': _clip(_redact(message), 2048),
-      if (failure)
+      if ((failure && root == null) || kind == 'operation_outcome')
         'reason': _clip(
           _redact(
             (safeFields['reason'] ??
@@ -534,10 +684,21 @@ class AppLogger {
             'error_type',
             'trace_id',
             'operation_id',
+            if (root != null) ...{
+              'dio_message',
+              'error_category',
+              'error_type',
+              'reason',
+              'cause_type',
+              'os_error_code',
+            },
           }.contains(entry.key))
             entry.key: entry.value,
       },
-      if (actualFailure) 'rootEventId': root ?? eventId,
+      if (actualFailure || root != null) 'rootEventId': root ?? eventId,
+      'causeEventId': ?root,
+      if (kind == 'recovery')
+        'resolvesIncidentId': safeFields['related_root_event_id'],
       if (actualFailure && root == null)
         'context': _recent
             .where((e) => e.level.priority < LogLevel.warn.priority)
@@ -556,7 +717,7 @@ class AppLogger {
     // of the small in-memory ring, while the on-disk schema uses camelCase.
     final recentFields = <String, Object?>{
       ...safeFields,
-      'schema': 4,
+      'schema': 5,
       'session_id': sessionId,
       'event_id': eventId,
       'sequence': sequence,
@@ -565,6 +726,16 @@ class AppLogger {
       if (record['errorType'] != null) 'error_type': record['errorType'],
       if (level.priority >= LogLevel.warn.priority) 'fingerprint': fingerprint,
     };
+    if (root != null) {
+      for (final key in [
+        'reason',
+        'error_category',
+        'error_type',
+        'dio_message',
+      ]) {
+        recentFields.remove(key);
+      }
+    }
     if (!failure || error == null) recentFields.remove('error_type');
     final entry = LogEvent(
       at: at,
@@ -583,6 +754,8 @@ class AppLogger {
     _pruneRecent();
     if (!failure) {
       if (kind == 'recovery' ||
+          kind == 'operation_outcome' ||
+          (kind == 'retry_decision' && root != null) ||
           (kind == 'operation' && safeFields['outcome'] == 'failed')) {
         _enqueue(record);
       }
@@ -602,6 +775,7 @@ class AppLogger {
         ? _RootLink(
             eventId,
             operationId: recordOperation,
+            at: at,
             errorCategory: category?.toString(),
           )
         : previousRoot;
@@ -631,6 +805,217 @@ class AppLogger {
       }
     }
     _enqueue(record, rootLink: rootLink);
+  }
+
+  bool _recordTransportAttempt(
+    String tag,
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    required Map<String, Object?> fields,
+  }) {
+    final safe = _sanitize(fields);
+    final group = _retryGroups[safe['retry_group_id'] ?? currentRetryGroupId];
+    final key = group?.requestKey(safe);
+    final status = safe['status_code'];
+    final failed =
+        (error != null || (status is int && status >= 400)) &&
+        !(error is DioException && error.type == DioExceptionType.cancel) &&
+        safe['status'] != 'cancelled';
+    if (!failed) {
+      if (safe['outcome'] == 'succeeded' || safe['status'] == 'success') {
+        group?.incidents[key]?.recovered = true;
+      }
+      return false;
+    }
+    final at = _now();
+    _flushExpiredIssues();
+    _pruneRecent();
+    final sequence = ++_sequence;
+    final eventId = '$sessionId-${sequence.toRadixString(36).padLeft(4, '0')}';
+    final operation =
+        currentTraceId ?? safe['operation_id'] ?? safe['trace_id'];
+    final scope = (operation ?? sessionId).toString();
+    var incident = group?.incidents[key];
+    if (incident == null) {
+      final category =
+          safe['error_category'] ??
+          classifyDiagnosticError(
+            error,
+            stage: 'request',
+            module: tag,
+            statusCode: status is int ? status : null,
+          );
+      final link = _RootLink(
+        '$eventId-incident',
+        operationId: (operation ?? eventId).toString(),
+        at: at,
+        errorCategory: category?.toString(),
+      );
+      final record = <String, Object?>{
+        'schema': 5,
+        'timestamp': at.toUtc().toIso8601String(),
+        'local_time': at.toLocal().toIso8601String(),
+        'local_offset_minutes': at.toLocal().timeZoneOffset.inMinutes,
+        'version': _version,
+        'source': _source,
+        'level': 'error',
+        'kind': 'incident',
+        'sessionId': sessionId,
+        'eventId': link.eventId,
+        'sequence': sequence,
+        'operationId': link.operationId,
+        if (operation == null) 'operationInferred': true,
+        'rootEventId': link.eventId,
+        'module': _clip(tag, 256),
+        'stage': 'request',
+        'message': _clip(_redact(message), 2048),
+        'reason': _clip(
+          _redact(
+            (safe['reason'] ??
+                    (error == null
+                        ? 'HTTP $status'
+                        : safeDiagnosticErrorSummary(error)))
+                .toString(),
+          ),
+          2048,
+        ),
+        if (error != null) 'errorType': error.runtimeType.toString(),
+        'errorCategory': ?category,
+        'stackTrace': _clip(
+          _redact((stackTrace ?? StackTrace.current).toString()),
+          maxStackBytes,
+        ),
+        'outcome': 'failed',
+        'fields': {
+          'method': safe['method'],
+          'uri': safe['uri'],
+          if (group != null) 'retry_group_id': group.id,
+          'status_code': ?status,
+          'dio_type': ?safe['dio_type'],
+          'cause_type': ?safe['cause_type'],
+          'os_error_code': ?safe['os_error_code'],
+        },
+        'context': _recent
+            .where(
+              (e) =>
+                  e.level.priority < LogLevel.warn.priority &&
+                  operation != null &&
+                  e.fields?['trace_id'] == operation,
+            )
+            .map(_breadcrumb)
+            .toList(),
+      };
+      _bound(record);
+      final fingerprint = _fingerprint(record);
+      record['fingerprint'] = fingerprint;
+      final template = _templates[fingerprint];
+      if (template?.rootLink?.valid == true &&
+          at.difference(template!.first) < _repeatWindow) {
+        record['stackReferenceEventId'] = template.record['eventId'];
+        record['stackTrace'] = '';
+        record['context'] = <Object?>[];
+      } else {
+        _templates[fingerprint] = _RepeatedIssue(record, at, link);
+        while (_templates.length > 128) {
+          _templates.remove(_templates.keys.first);
+        }
+      }
+      incident = _RetryIncident(record, link);
+      // Each record is at most 16 KiB: retained terminal evidence is bounded
+      // by 32 records / 512 KiB per active retry invocation.
+      if (group != null && group.incidents.length < 32) {
+        group.incidents[key!] = incident;
+      }
+    }
+    incident.attempts++;
+    incident.firstAttemptId ??= eventId;
+    incident.lastAttemptId = eventId;
+    incident.lastAttemptAt = at;
+    incident.recovered = false;
+    final link = incident.link;
+    if (error != null && _expandoKey(error)) {
+      final links = {...?_rootEvents[error], scope: link};
+      while (links.length > 8) {
+        links.remove(links.keys.first);
+      }
+      _rootEvents[error] = links;
+    }
+    final record = <String, Object?>{
+      'schema': 5,
+      'timestamp': at.toUtc().toIso8601String(),
+      'local_time': at.toLocal().toIso8601String(),
+      'local_offset_minutes': at.toLocal().timeZoneOffset.inMinutes,
+      'version': _version,
+      'source': _source,
+      'level': 'info',
+      'kind': 'attempt',
+      'sessionId': sessionId,
+      'eventId': eventId,
+      'sequence': sequence,
+      'operationId': link.operationId,
+      if (operation == null) 'operationInferred': true,
+      'rootEventId': link.eventId,
+      'causeEventId': link.eventId,
+      'module': _clip(tag, 256),
+      'stage': 'request',
+      'message': _clip(_redact(message), 2048),
+      'outcome': 'failed',
+      'stackTrace': '',
+      'fields': {
+        for (final entry in safe.entries)
+          if (!{
+            'diagnostic_kind',
+            'reason',
+            'error_category',
+            'error_type',
+            'dio_message',
+            'trace_id',
+            'operation_id',
+            'action',
+            'stage',
+            'outcome',
+            'status',
+          }.contains(entry.key))
+            entry.key: entry.value,
+        if (group != null) 'retry_group_id': group.id,
+      },
+    };
+    _bound(record);
+    _recent.add(
+      LogEvent(
+        at: at,
+        level: LogLevel.info,
+        tag: tag,
+        message: record['message'] as String,
+        sessionId: sessionId,
+        eventId: eventId,
+        sequence: sequence,
+        fields: _boundedFields({
+          for (final entry in safe.entries)
+            if (!{
+              'reason',
+              'error_category',
+              'error_type',
+              'dio_message',
+            }.contains(entry.key))
+              entry.key: entry.value,
+          'schema': 5,
+          'event_id': eventId,
+          'trace_id': ?operation,
+          'root_event_id': link.eventId,
+        }),
+      ),
+    );
+    _recentBytes += _recentSize(_recent.last);
+    _pruneRecent();
+    // Keep process-interruption evidence even while the terminal incident waits
+    // for the retry decision. This path always uses the ordinary queue budgets.
+    _enqueue(record);
+    if (group == null || !identical(group.incidents[key], incident)) {
+      _emitIncident(incident);
+    }
+    return true;
   }
 
   void _pruneRecent() {
@@ -664,9 +1049,13 @@ class AppLogger {
   void _flushIssue(String key) {
     final issue = _issues.remove(key);
     if (issue == null || issue.repeated == 0) return;
+    final at = _now();
     _enqueue({
       ...issue.record,
-      'timestamp': issue.last.toUtc().toIso8601String(),
+      'timestamp': at.toUtc().toIso8601String(),
+      'local_time': at.toLocal().toIso8601String(),
+      'local_offset_minutes': at.toLocal().timeZoneOffset.inMinutes,
+      'sequence': ++_sequence,
       'eventId': '${issue.record['eventId']}-summary',
       'kind': 'summary',
       'summarizedKind': issue.record['kind'],
@@ -820,6 +1209,10 @@ class AppLogger {
     _issues.clear();
     _rootEvents = Expando();
     _templates.clear();
+    for (final group in _retryGroups.values) {
+      group.incidents.clear();
+    }
+    _retryGroups.clear();
     _sessionId = '';
     _sequence = 0;
     _enqueued = _emitted = _dropped = _reportedDrops = _writeErrors = 0;
@@ -855,6 +1248,10 @@ class AppLogger {
     _recentBytes = 0;
     _rootEvents = Expando();
     _templates.clear();
+    for (final group in _retryGroups.values) {
+      group.incidents.clear();
+    }
+    _retryGroups.clear();
     if (failure != null) {
       _writeErrors++;
       throw FileSystemException('诊断文件未全部清理: ${_redact(failure.toString())}');
@@ -1014,8 +1411,9 @@ String _clip(String value, int maxBytes) {
 Map<String, Object?> _sanitize(Map<String, Object?> fields) {
   Object? walk(Object? value, String key, int depth) {
     final lower = key.toLowerCase();
-    if (RegExp(r'password|token|secret|cookie|authorization|csrf|^pwd$|^pass$')
-        .hasMatch(lower)) {
+    if (RegExp(
+      r'password|token|secret|cookie|authorization|csrf|^pwd$|^pass$|^sid$|^ticket$|^stuno$|^student_?(id|no)$',
+    ).hasMatch(lower)) {
       return '<redacted>';
     }
     if (RegExp(
@@ -1058,6 +1456,10 @@ Map<String, Object?> _sanitize(Map<String, Object?> fields) {
     'uri',
     'dio_type',
     'request_id',
+    'retry_group_id',
+    'retry_request_slot',
+    'attempt',
+    'max_attempts',
   };
   final ordered = [
     ...fields.entries.where((e) => essential.contains(e.key)),

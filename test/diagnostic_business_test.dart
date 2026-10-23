@@ -102,7 +102,7 @@ void main() {
       );
 
       final rows = await records();
-      final root = rows.singleWhere((row) => row['kind'] == 'error');
+      final root = rows.singleWhere((row) => row['kind'] == 'incident');
       expect(root['stage'], 'login');
       expect(root['reason'], contains('账号或密码错误'));
       expect(root['stackTrace'], isNotEmpty);
@@ -123,13 +123,16 @@ void main() {
     );
 
     final rows = await records();
-    final root = rows.singleWhere((row) => row['kind'] == 'error');
-    final outcome = rows.singleWhere((row) => row['kind'] == 'outcome');
+    final root = rows.singleWhere((row) => row['kind'] == 'incident');
+    final outcome = rows.singleWhere((row) => row['kind'] == 'derived');
     expect(root['stage'], 'response_decode');
     expect(root['stackTrace'], contains('ScheduleData.fromJson'));
     expect(outcome['stage'], 'load_schedule');
     expect(outcome['rootEventId'], root['eventId']);
+    expect(outcome['causeEventId'], root['eventId']);
     expect(outcome['operationId'], root['operationId']);
+    expect(outcome['reason'], isNull);
+    expect(outcome['errorCategory'], isNull);
     expect(outcome['stackTrace'], anyOf(isNull, isEmpty));
   });
 
@@ -147,7 +150,7 @@ void main() {
       );
 
       final rows = await records();
-      final root = rows.singleWhere((row) => row['kind'] == 'error');
+      final root = rows.singleWhere((row) => row['kind'] == 'incident');
       expect(root['stage'], 'cache_write');
       expect(root['errorType'], 'FormatException');
       expect(root['stackTrace'], contains('canonicalizeAndValidate'));
@@ -177,11 +180,15 @@ void main() {
       );
 
       final rows = await records();
-      final root = rows.singleWhere((row) => row['kind'] == 'error');
-      final outcome = rows.singleWhere((row) => row['kind'] == 'outcome');
+      final root = rows.singleWhere((row) => row['kind'] == 'incident');
+      final outcome = rows.singleWhere((row) => row['kind'] == 'derived');
       expect(root['errorType'], 'DioException');
       expect(outcome['rootEventId'], root['eventId']);
+      expect(outcome['causeEventId'], root['eventId']);
       expect(outcome['operationId'], root['operationId']);
+      expect(outcome['reason'], isNull);
+      expect(outcome['errorCategory'], isNull);
+      expect(outcome['stackTrace'], anyOf(isNull, isEmpty));
       expect(jsonEncode(rows), isNot(contains('private-credential')));
     },
   );
@@ -231,7 +238,11 @@ void main() {
       throwsA(isA<DioException>()),
     );
     final rows = await records();
-    expect(rows.single['kind'], 'error');
-    expect((rows.single['fields'] as Map)['status_code'], 403);
+    final root = rows.singleWhere((row) => row['kind'] == 'incident');
+    final attempt = rows.singleWhere((row) => row['kind'] == 'attempt');
+    expect((root['fields'] as Map)['status_code'], 403);
+    expect((attempt['fields'] as Map)['status_code'], 403);
+    expect(attempt['rootEventId'], root['eventId']);
+    expect(attempt['operationId'], root['operationId']);
   });
 }

@@ -17,6 +17,7 @@ class ScheduleNoticeRefreshResult {
   final Set<String> affectedKeys;
   final bool apiClosed;
   final String generatedAt;
+  final String? skipReason;
 
   const ScheduleNoticeRefreshResult({
     required this.changes,
@@ -25,6 +26,7 @@ class ScheduleNoticeRefreshResult {
     required this.affectedKeys,
     required this.apiClosed,
     required this.generatedAt,
+    this.skipReason,
   });
 }
 
@@ -34,6 +36,30 @@ class ScheduleNoticeRefreshPipeline {
   final Future<void> Function(String weekNum, String yearTerm) refreshWeek;
   final Future<SharedPreferences> Function() prefsProvider;
   final DateTime Function() nowProvider;
+  String _stage = 'not_started';
+  final List<String> _completedStages = [];
+  int _refreshedWeekCount = 0;
+
+  /// Only phase names and counts: no notice text, credentials, or week data.
+  /// The caller attaches this bounded snapshot if the pipeline fails.
+  Map<String, Object?> get diagnosticProgress => {
+    'pipeline_stage': _stage,
+    'pipeline_completed_stages': List<String>.of(_completedStages),
+    'refreshed_week_count': _refreshedWeekCount,
+  };
+
+  ScheduleNoticeRefreshResult _skip(String reason, {bool apiClosed = false}) {
+    _stage = 'skipped';
+    return ScheduleNoticeRefreshResult(
+      changes: const <ScheduleWeekChange>[],
+      changedNoticeCount: 0,
+      affectedWeeks: const <String>{},
+      affectedKeys: const <String>{},
+      apiClosed: apiClosed,
+      generatedAt: '',
+      skipReason: reason,
+    );
+  }
 
   ScheduleNoticeRefreshPipeline({
     required this.refreshWeek,
@@ -57,59 +83,38 @@ class ScheduleNoticeRefreshPipeline {
     String envName = 'prod',
     bool headless = true,
   }) async {
+    _stage = 'validate_schedule';
+    _completedStages.clear();
+    _refreshedWeekCount = 0;
     final now = nowProvider();
     final nowHour = now.hour;
     if (nowHour >= 0 && nowHour < 7) {
-      return const ScheduleNoticeRefreshResult(
-        changes: <ScheduleWeekChange>[],
-        changedNoticeCount: 0,
-        affectedWeeks: <String>{},
-        affectedKeys: <String>{},
-        apiClosed: true,
-        generatedAt: '',
-      );
+      return _skip('deep_night', apiClosed: true);
     }
     final yearTerm = (currentData.yearTerm ?? '').trim();
     final weekList = currentData.weekList ?? const <String>[];
     if (yearTerm.isEmpty || weekList.isEmpty) {
-      return const ScheduleNoticeRefreshResult(
-        changes: <ScheduleWeekChange>[],
-        changedNoticeCount: 0,
-        affectedWeeks: <String>{},
-        affectedKeys: <String>{},
-        apiClosed: false,
-        generatedAt: '',
-      );
+      return _skip('invalid_schedule_data');
     }
     if (!RegExp(r'^\d{4}-\d{4}-[12]$').hasMatch(yearTerm)) {
       throw ArgumentError.value(yearTerm, 'yearTerm', '学期格式错误，应为YYYY-YYYY-1/2');
     }
 
+    _completedStages.add(_stage);
+    _stage = 'validate_credentials';
     final prefs = await prefsProvider();
     if (!ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs)) {
-      return const ScheduleNoticeRefreshResult(
-        changes: <ScheduleWeekChange>[],
-        changedNoticeCount: 0,
-        affectedWeeks: <String>{},
-        affectedKeys: <String>{},
-        apiClosed: false,
-        generatedAt: '',
-      );
+      return _skip('disabled');
     }
     final userId = (prefs.getString('account') ?? '').trim();
     final encryptedPassword =
         ((await credentialStore.readEncryptedPassword()) ?? '').trim();
     if (userId.isEmpty || encryptedPassword.isEmpty) {
-      return const ScheduleNoticeRefreshResult(
-        changes: <ScheduleWeekChange>[],
-        changedNoticeCount: 0,
-        affectedWeeks: <String>{},
-        affectedKeys: <String>{},
-        apiClosed: false,
-        generatedAt: '',
-      );
+      return _skip('missing_credentials');
     }
 
+    _completedStages.add(_stage);
+    _stage = 'fetch_notices';
     ScheduleNoticePollData pollData;
     try {
       pollData = await scheduleApi.fetchTermScheduleNotices(
@@ -120,15 +125,10 @@ class ScheduleNoticeRefreshPipeline {
         headless: headless,
       );
     } on NoticeApiForbiddenException {
-      return const ScheduleNoticeRefreshResult(
-        changes: <ScheduleWeekChange>[],
-        changedNoticeCount: 0,
-        affectedWeeks: <String>{},
-        affectedKeys: <String>{},
-        apiClosed: true,
-        generatedAt: '',
-      );
+      return _skip('api_closed', apiClosed: true);
     }
+    _completedStages.add(_stage);
+    _stage = 'compare_notices';
     final polledYearTerm = pollData.yearTerm.trim();
     if (polledYearTerm.isNotEmpty && polledYearTerm != yearTerm) {
       throw StateError(
@@ -159,6 +159,8 @@ class ScheduleNoticeRefreshPipeline {
     final isFirstSnapshot =
         previousNotices.isEmpty || previousLoginMarker != loginMarker;
     if (isFirstSnapshot) {
+      _completedStages.add(_stage);
+      _stage = 'write_notice_state';
       final initialState = <String, dynamic>{
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
         'generatedAt': pollData.generatedAt,
@@ -166,6 +168,8 @@ class ScheduleNoticeRefreshPipeline {
         'notices': currentNotices,
       };
       await prefs.setString(stateKey, json.encode(initialState));
+      _completedStages.add(_stage);
+      _stage = 'completed';
       return ScheduleNoticeRefreshResult(
         changes: const <ScheduleWeekChange>[],
         changedNoticeCount: 0,
@@ -210,9 +214,13 @@ class ScheduleNoticeRefreshPipeline {
       }
     }
 
+    _completedStages.add(_stage);
+    _stage = 'refresh_affected_weeks';
     for (final week in affectedWeeks) {
       await refreshWeek(week, yearTerm);
+      _refreshedWeekCount++;
     }
+    _completedStages.add(_stage);
 
     final changes = <ScheduleWeekChange>[];
     for (final week in affectedWeeks) {
@@ -225,6 +233,7 @@ class ScheduleNoticeRefreshPipeline {
       return ai.compareTo(bi);
     });
 
+    _stage = 'write_notice_state';
     final newState = <String, dynamic>{
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
       'generatedAt': pollData.generatedAt,
@@ -232,6 +241,8 @@ class ScheduleNoticeRefreshPipeline {
       'notices': currentNotices,
     };
     await prefs.setString(stateKey, json.encode(newState));
+    _completedStages.add(_stage);
+    _stage = 'completed';
 
     return ScheduleNoticeRefreshResult(
       changes: changes,

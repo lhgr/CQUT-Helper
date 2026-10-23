@@ -131,15 +131,17 @@ class NoticeApi {
       );
     }
     try {
-      final pollData = await _fetchFromBaseUrl(
-        baseUrl: normalizedBaseUrl,
-        username: username,
-        encryptedPassword: encryptedPassword,
-        yearTerm: yearTerm,
-        env: env,
-        headless: headless,
-        attempt: 1,
-        maxAttempts: 1,
+      final pollData = await _runWithRequestDiagnostics(
+        () => _fetchFromBaseUrl(
+          baseUrl: normalizedBaseUrl,
+          username: username,
+          encryptedPassword: encryptedPassword,
+          yearTerm: yearTerm,
+          env: env,
+          headless: headless,
+          attempt: 1,
+          maxAttempts: 1,
+        ),
       );
       stopwatch.stop();
       return NoticeApiAvailabilityResult(
@@ -298,66 +300,118 @@ class NoticeApi {
     // the user. In particular, a self-hosted endpoint must not silently fall
     // back to the official service when it is unavailable.
     final candidates = serviceCandidates(customBaseUrl);
-    Object? lastError;
-    StackTrace? lastStackTrace;
-    for (var i = 0; i < candidates.length; i++) {
-      final baseUrl = candidates[i];
-      for (var attempt = 1; attempt <= _maxRetryPerDomain; attempt++) {
-        try {
-          return await _fetchFromBaseUrl(
-            baseUrl: baseUrl,
-            username: username,
-            encryptedPassword: encryptedPassword,
-            yearTerm: normalizedYearTerm,
-            env: env,
-            headless: headless,
-            attempt: attempt,
-            maxAttempts: _maxRetryPerDomain,
-          );
-        } on DioException catch (e, st) {
-          final code = e.response?.statusCode;
-          if (code == 403) {
-            throw NoticeApiForbiddenException('调课通知接口夜间关闭(403)');
+    return _runWithRequestDiagnostics(() async {
+      Object? lastError;
+      StackTrace? lastStackTrace;
+      for (var i = 0; i < candidates.length; i++) {
+        final baseUrl = candidates[i];
+        for (var attempt = 1; attempt <= _maxRetryPerDomain; attempt++) {
+          try {
+            return await _fetchFromBaseUrl(
+              baseUrl: baseUrl,
+              username: username,
+              encryptedPassword: encryptedPassword,
+              yearTerm: normalizedYearTerm,
+              env: env,
+              headless: headless,
+              attempt: attempt,
+              maxAttempts: _maxRetryPerDomain,
+            );
+          } on DioException catch (e, st) {
+            final code = e.response?.statusCode;
+            final willRetry =
+                code != 403 &&
+                code != 429 &&
+                (attempt < _maxRetryPerDomain || i + 1 < candidates.length);
+            _logRetryDecision(
+              e,
+              baseUrl: baseUrl,
+              attempt: attempt,
+              willRetry: willRetry,
+              reason: code == 403
+                  ? 'api_closed'
+                  : code == 429
+                  ? 'rate_limited'
+                  : willRetry
+                  ? 'retry_allowed'
+                  : 'attempts_exhausted',
+            );
+            if (code == 403) {
+              throw NoticeApiForbiddenException('调课通知接口夜间关闭(403)');
+            }
+            if (code == 429) {
+              final mapped = Exception('调课服务请求过于频繁，请稍后再试');
+              AppLogger.I.linkFailure(mapped, e);
+              throw mapped;
+            }
+            lastError = e;
+            lastStackTrace = st;
+          } catch (e, st) {
+            lastError = e;
+            lastStackTrace = st;
+            final willRetry =
+                attempt < _maxRetryPerDomain || i + 1 < candidates.length;
+            _logRetryDecision(
+              e,
+              baseUrl: baseUrl,
+              attempt: attempt,
+              willRetry: willRetry,
+              reason: willRetry ? 'retry_allowed' : 'attempts_exhausted',
+            );
+            // Response validation errors have no transport failure event.
+            // Keep their business failure visible at the existing boundary.
+            AppLogger.I.warn(
+              _tag,
+              'notice request unexpected error',
+              error: e,
+              stackTrace: st,
+              fields: {
+                'baseUrl': baseUrl,
+                'attempt': attempt,
+                'retryLimit': _maxRetryPerDomain,
+              },
+            );
           }
-          if (code == 429) {
-            throw Exception('调课服务请求过于频繁，请稍后再试');
-          }
-          lastError = e;
-          lastStackTrace = st;
-          AppLogger.I.warn(
-            _tag,
-            'notice request failed',
-            error: e,
-            stackTrace: st,
-            fields: {
-              'baseUrl': baseUrl,
-              'attempt': attempt,
-              'retryLimit': _maxRetryPerDomain,
-            },
-          );
-        } catch (e, st) {
-          lastError = e;
-          lastStackTrace = st;
-          AppLogger.I.warn(
-            _tag,
-            'notice request unexpected error',
-            error: e,
-            stackTrace: st,
-            fields: {
-              'baseUrl': baseUrl,
-              'attempt': attempt,
-              'retryLimit': _maxRetryPerDomain,
-            },
-          );
         }
       }
-    }
-    if (lastError != null) {
-      Error.throwWithStackTrace(
-        lastError,
-        lastStackTrace ?? StackTrace.current,
+      if (lastError != null) {
+        Error.throwWithStackTrace(
+          lastError,
+          lastStackTrace ?? StackTrace.current,
+        );
+      }
+      throw Exception('调课通知请求失败');
+    });
+  }
+
+  static Future<T> _runWithRequestDiagnostics<T>(Future<T> Function() action) =>
+      AppLogger.I.runWithTraceIdAsync<T>(
+        AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+        () => AppLogger.I.runWithRetryGroup<T>(action),
       );
-    }
-    throw Exception('调课通知请求失败');
+
+  static void _logRetryDecision(
+    Object error, {
+    required String baseUrl,
+    required int attempt,
+    required bool willRetry,
+    required String reason,
+  }) {
+    AppLogger.I.info(
+      _tag,
+      '请求重试决策',
+      error: error,
+      fields: {
+        'diagnostic_kind': 'retry_decision',
+        'action': 'retry_decision',
+        'retry_group_id': ?AppLogger.I.currentRetryGroupId,
+        'baseUrl': baseUrl,
+        'attempt': attempt,
+        'max_attempts': _maxRetryPerDomain,
+        'will_retry': willRetry,
+        'retry_reason': reason,
+        'backoff_ms': 0,
+      },
+    );
   }
 }

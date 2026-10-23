@@ -27,11 +27,26 @@ Map<String, int> diagnosticReportStatistics(List<Map<String, Object?>> rows) {
       unknown = 0,
       allWarnings = 0,
       allErrors = 0,
-      allFatals = 0;
+      allFatals = 0,
+      attempts = 0,
+      failedAttempts = 0;
   final roots = <String>{},
       operations = <String>{},
       inferredOperations = <String>{};
-  final groupedRoots = <String, Set<String>>{};
+  const knownKinds = {
+    'incident',
+    'error',
+    'outcome',
+    'derived',
+    'attempt',
+    'operation',
+    'operation_outcome',
+    'recovery',
+    'retry_decision',
+    'breadcrumb',
+    'diagnostic',
+    'dropped',
+  };
   for (final row in rows) {
     final kind = row['kind'];
     final summary = kind == 'summary';
@@ -39,8 +54,12 @@ Map<String, int> diagnosticReportStatistics(List<Map<String, Object?>> rows) {
     if (kind != 'dropped') original += count;
     final countedKind = summary ? row['summarizedKind'] : kind;
     var countRootLevel = true;
-    if (countedKind == null || (summary && row['summarizedKind'] == null)) {
+    if (!knownKinds.contains(countedKind)) {
       unknown += count;
+    }
+    if (countedKind == 'attempt') {
+      attempts += count;
+      if (row['outcome'] == 'failed') failedAttempts += count;
     }
     switch (row['level']) {
       case 'warn':
@@ -50,7 +69,7 @@ Map<String, int> diagnosticReportStatistics(List<Map<String, Object?>> rows) {
       case 'fatal':
         allFatals += count;
     }
-    if (countedKind == 'error') {
+    if (countedKind == 'error' || countedKind == 'incident') {
       if (summary) {
         // Legacy compressed roots cannot be recovered as individual IDs.
         repeated += count;
@@ -59,9 +78,9 @@ Map<String, int> diagnosticReportStatistics(List<Map<String, Object?>> rows) {
             (row['rootEventId'] ?? row['eventId'] ?? 'unknown-${roots.length}')
                 .toString();
         countRootLevel = roots.add(id);
-        final fingerprint = row['fingerprint'];
-        if (fingerprint is String) {
-          groupedRoots.putIfAbsent(fingerprint, () => <String>{}).add(id);
+        if (countRootLevel && countedKind == 'incident') {
+          final attemptCount = (row['attempts'] as num?)?.toInt() ?? 1;
+          if (attemptCount > 1) repeated += attemptCount - 1;
         }
       }
       if (countRootLevel) {
@@ -75,7 +94,8 @@ Map<String, int> diagnosticReportStatistics(List<Map<String, Object?>> rows) {
         }
       }
     }
-    if (countedKind == 'error' || countedKind == 'outcome') {
+    if ({'error', 'incident', 'outcome', 'derived'}.contains(countedKind) ||
+        (countedKind == 'attempt' && row['outcome'] == 'failed')) {
       final id = row['operationId'];
       if (id is String && id.isNotEmpty) {
         if (row['operationInferred'] == true) {
@@ -86,10 +106,6 @@ Map<String, int> diagnosticReportStatistics(List<Map<String, Object?>> rows) {
       }
     }
   }
-  repeated += groupedRoots.values.fold<int>(
-    0,
-    (total, ids) => total + ids.length - 1,
-  );
   return {
     'originalEventCount': original,
     'rootErrorCount': roots.length,
@@ -103,6 +119,8 @@ Map<String, int> diagnosticReportStatistics(List<Map<String, Object?>> rows) {
     'allEventWarningCount': allWarnings,
     'allEventErrorCount': allErrors,
     'allEventFatalCount': allFatals,
+    'attemptCount': attempts,
+    'failedAttemptCount': failedAttempts,
   };
 }
 
@@ -117,7 +135,9 @@ String renderDiagnosticReport(DiagnosticReportInput input) {
   final groups = <String, Map<String, Object?>>{};
   final categories = <String, int>{}, modules = <String, int>{};
   final groupedRootIds = <String>{};
-  for (final row in records.where((r) => r['kind'] == 'error')) {
+  for (final row in records.where(
+    (r) => r['kind'] == 'error' || r['kind'] == 'incident',
+  )) {
     final rootId = (row['rootEventId'] ?? row['eventId']).toString();
     if (!groupedRootIds.add(rootId)) continue;
     final key = (row['fingerprint'] ?? row['errorCategory'] ?? 'unknown')
@@ -136,6 +156,7 @@ String renderDiagnosticReport(DiagnosticReportInput input) {
         'operationIds': <String>[],
         'relatedEventIds': <String>[],
         'recoveryEventIds': <String>[],
+        'attemptEventIds': <String>[],
       },
     );
     group['rootCount'] = (group['rootCount'] as int) + 1;
@@ -157,11 +178,19 @@ String renderDiagnosticReport(DiagnosticReportInput input) {
   for (final group in groups.values.take(20)) {
     final rootIds = group['rootEventIds'] as List<String>;
     for (final row in records) {
-      final recoveryRoot = (row['fields'] as Map?)?['related_root_event_id'];
+      final recoveryRoot =
+          row['resolvesIncidentId'] ??
+          (row['fields'] as Map?)?['related_root_event_id'];
       if (row['kind'] == 'recovery' && rootIds.contains(recoveryRoot)) {
         final ids = group['recoveryEventIds'] as List<String>;
         if (ids.length < 12) ids.add(row['eventId'].toString());
-      } else if (row['kind'] == 'outcome' &&
+      } else if (row['kind'] == 'attempt' &&
+          rootIds.contains(row['rootEventId'])) {
+        final ids = group['attemptEventIds'] as List<String>;
+        if (ids.length < 12) ids.add(row['eventId'].toString());
+      } else if ((row['kind'] == 'outcome' ||
+              row['kind'] == 'derived' ||
+              row['kind'] == 'retry_decision') &&
           rootIds.contains(row['rootEventId'])) {
         final ids = group['relatedEventIds'] as List<String>;
         if (ids.length < 12) ids.add(row['eventId'].toString());
@@ -182,7 +211,7 @@ String renderDiagnosticReport(DiagnosticReportInput input) {
       '统计范围为当前保留记录；旧记录缺少语义时计入 unknownEventCount。\n'
       '二、错误分组与关联\n${attribution.isEmpty ? '暂无异常根因' : attribution}\n'
       '三、原始数据（JSONL）\n'
-      'operationId 关联操作，rootEventId 关联异常根因，stackReferenceEventId 仅复用堆栈。\n';
+      'operationId 关联操作，rootEventId/causeEventId 关联异常根因，stackReferenceEventId 仅复用堆栈。\n';
   const omission = '\n[截断] 体积达到上限，已优先保留最近完整异常记录。\n';
   // For tiny caller budgets, keep the envelope and raw section usable.
   var prefix = header;
@@ -197,10 +226,14 @@ String renderDiagnosticReport(DiagnosticReportInput input) {
   Map<String, Object?> annotated(Map<String, Object?> row) => {
     ...row,
     if (row['rootEventId'] != null && !byId.containsKey(row['rootEventId']))
-      'rootMissing': '根因已超出运行日志保留范围',
+      'rootMissing': row['kind'] == 'attempt'
+          ? '重试尚未结束或根因未保留'
+          : '根因已超出运行日志保留范围',
     if (row['stackReferenceEventId'] != null &&
         !byId.containsKey(row['stackReferenceEventId']))
       'stackReferenceMissing': '堆栈模板已超出运行日志保留范围',
+    if (row['causeEventId'] != null && !byId.containsKey(row['causeEventId']))
+      'causeMissing': '原因事件未保留或重试尚未结束',
     if ((row['fields'] as Map?)?['related_root_event_id'] != null &&
         !byId.containsKey((row['fields'] as Map?)?['related_root_event_id']))
       'recoveryRootMissing': '恢复关联的根因已超出运行日志保留范围',
@@ -208,12 +241,35 @@ String renderDiagnosticReport(DiagnosticReportInput input) {
   final selected = <Map<String, Object?>>[],
       included = <Map<String, Object?>>{};
   var used = _bytes(prefix) + _bytes(omission);
-  for (final row in records.reversed) {
+  int priority(Map<String, Object?> row) {
+    if ({'incident', 'error'}.contains(row['kind'])) return 0;
+    if (row['rootEventId'] != null ||
+        row['causeEventId'] != null ||
+        row['kind'] == 'recovery') {
+      return 1;
+    }
+    if (row['kind'] == 'operation_outcome') return 2;
+    return 3;
+  }
+
+  final candidates = records.reversed.toList()
+    ..sort((a, b) {
+      final order = priority(a).compareTo(priority(b));
+      return order != 0 ? order : _compare(b, a);
+    });
+  for (final row in candidates) {
     if (included.contains(row)) continue;
     final group = <Map<String, Object?>>[], visited = <Map<String, Object?>>{};
     void add(Map<String, Object?> entry) {
       if (included.contains(entry) || !visited.add(entry)) return;
-      for (final key in ['rootEventId', 'stackReferenceEventId']) {
+      for (final key in [
+        'rootEventId',
+        'causeEventId',
+        'stackReferenceEventId',
+        'resolvesIncidentId',
+        'firstAttemptEventId',
+        'lastAttemptEventId',
+      ]) {
         final dependency = byId[entry[key]];
         if (dependency != null && !identical(dependency, entry)) {
           add(dependency);
@@ -244,9 +300,17 @@ int _bytes(String value) => utf8.encode(value).length;
 int _compare(Map<String, Object?> a, Map<String, Object?> b) {
   final order = DateTime.parse(a['timestamp'].toString())
       .compareTo(DateTime.parse(b['timestamp'].toString()));
-  return order != 0
-      ? order
-      : (a['eventId'] ?? '').toString().compareTo(
-          (b['eventId'] ?? '').toString(),
-        );
+  if (order != 0) return order;
+  if (a['sessionId'] != null &&
+      a['sessionId'] == b['sessionId'] &&
+      a['sequence'] is num &&
+      b['sequence'] is num) {
+    final sequenceOrder = (a['sequence'] as num).compareTo(
+      b['sequence'] as num,
+    );
+    if (sequenceOrder != 0) return sequenceOrder;
+  }
+  return (a['eventId'] ?? '').toString().compareTo(
+    (b['eventId'] ?? '').toString(),
+  );
 }

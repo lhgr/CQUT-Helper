@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 const diagnosticAttemptZoneKey = 'cqut.diagnostic.attempt';
 const diagnosticMaxAttemptsZoneKey = 'cqut.diagnostic.max_attempts';
 const diagnosticFallbackZoneKey = 'cqut.diagnostic.fallback';
+const diagnosticRetryGroupZoneKey = 'cqut.diagnostic.retry_group';
 
 Future<T> runWithDiagnosticContext<T>({
   int? attempt,
@@ -161,8 +162,6 @@ Map<String, Object?> diagnosticErrorDetails(Object? error) {
     return {
       'error_type': error.runtimeType.toString(),
       'dio_type': error.type.name,
-      if (error.message != null && error.message!.trim().isNotEmpty)
-        'dio_message': sanitizeDiagnosticText(error.message!.trim()),
       'status_code': ?error.response?.statusCode,
       if (nested != null) 'cause_type': nested.runtimeType.toString(),
       if (nested is SocketException && nested.osError != null)
@@ -186,7 +185,10 @@ String safeDiagnosticErrorSummary(Object? error) {
   if (error is DioException) {
     final nested = error.error;
     final message = error.message?.trim();
-    final safeMessage = message == null || message.isEmpty
+    final safeMessage =
+        error.type == DioExceptionType.badResponse ||
+            message == null ||
+            message.isEmpty
         ? null
         : sanitizeDiagnosticText(message);
     final status = error.response?.statusCode;
@@ -231,14 +233,14 @@ String sanitizeDiagnosticText(String value) => value
     )
     .replaceAllMapped(
       RegExp(
-        r"""(["']?(?:password|passwd|pwd|pass|token|secret|cookie|authorization|csrf)[\w-]*["']?\s*:\s*["'])(.*?)(["'])""",
+        r"""(["']?(?:password|passwd|pwd|pass|token|secret|cookie|authorization|csrf|sid|ticket|stuno|student_?id|student_?no)[\w-]*["']?\s*:\s*["'])(.*?)(["'])""",
         caseSensitive: false,
       ),
       (match) => '${match[1]}<redacted>${match[3]}',
     )
     .replaceAllMapped(
       RegExp(
-        r'((?:password|passwd|pwd|pass|token|secret|cookie|authorization|csrf)[\w-]*\s*[:=]\s*)[^\s,;&]+',
+        r'''((?:password|passwd|pwd|pass|token|secret|cookie|authorization|csrf|sid|ticket|stuno|student_?id|student_?no)[\w-]*["']?\s*[:=]\s*)[^\s,;}&]+''',
         caseSensitive: false,
       ),
       (match) => '${match[1]}<redacted>',
