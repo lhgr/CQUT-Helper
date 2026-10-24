@@ -18,12 +18,11 @@ class ScheduleInlineNoticePanel extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final maxHeight = MediaQuery.of(context).size.height * 0.28;
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       decoration: BoxDecoration(
-        color: cs.errorContainer.withValues(alpha: 0.9),
-        border: Border.all(color: cs.error, width: 1.2),
-        borderRadius: BorderRadius.circular(12),
+        color: cs.errorContainer,
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,21 +43,17 @@ class ScheduleInlineNoticePanel extends StatelessWidget {
               TextButton(onPressed: onDismissAll, child: const Text('知道了')),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxHeight),
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: notices.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 6),
+              separatorBuilder: (_, _) =>
+                  Divider(height: 8, color: cs.error.withValues(alpha: 0.25)),
               itemBuilder: (context, index) {
                 return Container(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-                  decoration: BoxDecoration(
-                    color: cs.surface.withValues(alpha: 0.82),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: cs.error.withValues(alpha: 0.35)),
-                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -76,7 +71,7 @@ class ScheduleInlineNoticePanel extends StatelessWidget {
                       ),
                       IconButton(
                         icon: const Icon(Icons.close, size: 18),
-                        visualDensity: VisualDensity.compact,
+                        tooltip: '关闭此通知',
                         onPressed: () => onDismissOne(index),
                       ),
                     ],

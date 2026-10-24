@@ -129,7 +129,7 @@ class ReleaseNotesMarkdown extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (var index = 0; index < segments.length; index++) ...[
-          if (index > 0) const SizedBox(height: 10),
+          if (index > 0) const SizedBox(height: 8),
           if (segments[index].isCallout)
             _ReleaseCallout(
               segment: segments[index],
@@ -297,11 +297,11 @@ class _ReleaseCallout extends StatelessWidget {
     };
     final color = _semanticColor(context, kind);
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
-        border: Border(left: BorderSide(color: color, width: 4)),
-        borderRadius: BorderRadius.circular(10),
+        border: Border(left: BorderSide(color: color, width: 3)),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -309,7 +309,7 @@ class _ReleaseCallout extends StatelessWidget {
           Row(
             children: [
               Icon(icon, size: 18, color: color),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelLarge
@@ -318,7 +318,7 @@ class _ReleaseCallout extends StatelessWidget {
             ],
           ),
           if (segment.markdown.trim().isNotEmpty) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             markdownBuilder(segment.markdown),
           ],
         ],
@@ -353,7 +353,7 @@ class _ReleaseImage extends StatelessWidget {
           GestureDetector(
             onTap: () => _showPreview(context, url, caption),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               child: Stack(
                 children: [
                   ConstrainedBox(

@@ -171,23 +171,23 @@ class _CoursePreferenceEditorSheetState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('课程个性化', style: Theme.of(context).textTheme.titleLarge),
+            Text('课程个性化', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
             TextField(
               controller: _name,
               decoration: const InputDecoration(labelText: '显示名称'),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             TextField(
               controller: _teacher,
               decoration: const InputDecoration(labelText: '教师'),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             TextField(
               controller: _location,
               decoration: const InputDecoration(labelText: '地点'),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             TextField(
               controller: _note,
               minLines: 2,
@@ -215,7 +215,7 @@ class _CoursePreferenceEditorSheetState
               ],
               onChanged: (value) => setState(() => _reminder = value),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerLeft,
               child: Column(
@@ -262,7 +262,7 @@ class _CoursePreferenceEditorSheetState
                 ],
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: FilledButton(onPressed: _save, child: const Text('保存')),

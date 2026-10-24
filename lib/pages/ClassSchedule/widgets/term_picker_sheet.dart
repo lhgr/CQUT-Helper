@@ -18,10 +18,13 @@ void showTermPicker({
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                "选择学期",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '选择学期',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ),
             ),
             Expanded(
@@ -33,14 +36,18 @@ void showTermPicker({
                   return ListTile(
                     title: Text(
                       "$term${isCurrentTerm ? ' (当前学期)' : ''}",
-                      textAlign: TextAlign.center,
+                      textAlign: TextAlign.start,
                       style: isCurrentTerm
-                          ? TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                            )
+                          ? Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(fontWeight: FontWeight.w600)
                           : null,
                     ),
+                    selectedTileColor: Theme.of(context)
+                        .colorScheme
+                        .secondaryContainer,
+                    selectedColor: Theme.of(context)
+                        .colorScheme
+                        .onSecondaryContainer,
                     onTap: () {
                       Navigator.pop(context);
                       onTermSelected(term);

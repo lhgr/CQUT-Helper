@@ -4,6 +4,7 @@ import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 
 typedef CourseDetailEventsResolver = Future<List<EventItem>> Function(
   EventItem event,
@@ -274,17 +275,22 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
     List<EventItem> candidates;
     try {
       candidates = await resolver(event);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.I.error(
+        'ScheduleCourseGrid',
+        'Failed to resolve course detail',
+        error: error,
+        stackTrace: stackTrace,
+      );
       await _dismissLoadingDialog(
         loadingNavigator,
         loadingRoute,
         loadingDialog,
       );
       if (!mounted) return;
-      final message = error is StateError ? error.message : error.toString();
       ScaffoldMessenger.of(this.context).showSnackBar(
         SnackBar(
-          content: Text('课程详情加载失败：$message'),
+          content: const Text('无法读取课程详情，请返回课表后重试。'),
           behavior: SnackBarBehavior.floating,
         ),
       );

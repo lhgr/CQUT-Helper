@@ -20,10 +20,13 @@ void showWeekPicker({
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                "选择周次",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '选择周次',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ),
             ),
             Expanded(
@@ -43,14 +46,18 @@ void showWeekPicker({
                   return ListTile(
                     title: Text(
                       "第 $week 周${isCurrentWeek ? ' (当前周)' : ''}",
-                      textAlign: TextAlign.center,
+                      textAlign: TextAlign.start,
                       style: isCurrentWeek
-                          ? TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                            )
+                          ? Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(fontWeight: FontWeight.w600)
                           : null,
                     ),
+                    selectedTileColor: Theme.of(context)
+                        .colorScheme
+                        .secondaryContainer,
+                    selectedColor: Theme.of(context)
+                        .colorScheme
+                        .onSecondaryContainer,
                     onTap: () {
                       Navigator.pop(context);
                       onWeekSelected(index);

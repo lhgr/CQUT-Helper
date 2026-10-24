@@ -13,19 +13,19 @@ Future<bool> confirmCustomNoticeServiceRisk(BuildContext context) async {
         context: context,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
-            title: const Text('自定义调课服务风险提示'),
+            title: const Text('使用自定义调课服务'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '你正在使用自定义调课服务。应用会将你的学号、教务系统加密密码和当前学期发送至该地址；其安全性、数据使用及储存方式由服务提供者负责。请仅使用你信任的 HTTPS 服务。',
+                  '应用会将你的学号、教务系统加密密码和当前学期发送至该地址，用于查询调课通知。数据安全和处理方式由服务提供者决定，请仅使用你信任的 HTTPS 服务。',
                 ),
                 const SizedBox(height: 12),
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text('不再提示'),
+                  title: const Text('以后不再提示'),
                   value: doNotShowAgain,
                   onChanged: (value) {
                     setDialogState(() => doNotShowAgain = value ?? false);

@@ -116,7 +116,7 @@ class _ClearCachePageState extends State<ClearCachePage> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('清理失败: $e')));
+          .showSnackBar(const SnackBar(content: Text('缓存清理失败，请稍后重试')));
     } finally {
       if (mounted) setState(() => _clearing = false);
     }
@@ -128,8 +128,12 @@ class _ClearCachePageState extends State<ClearCachePage> {
     try {
       final path = await AppLogger.I.exportLogs();
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('诊断文件已保存：$path')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: SelectableText('问题日志已保存：\n$path'),
+          duration: const Duration(seconds: 8),
+        ),
+      );
     } catch (e, stackTrace) {
       AppLogger.I.logOperationFailure(
         'StorageDiagnostic',
@@ -140,7 +144,7 @@ class _ClearCachePageState extends State<ClearCachePage> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('导出失败: $e')));
+          .showSnackBar(const SnackBar(content: Text('日志导出失败，请稍后重试')));
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -155,7 +159,7 @@ class _ClearCachePageState extends State<ClearCachePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('存储与诊断'),
+        title: Text('存储与日志'),
         actions: [
           IconButton(
             onPressed: _clearing ? null : _refresh,
@@ -166,16 +170,16 @@ class _ClearCachePageState extends State<ClearCachePage> {
       body: _loading
           ? Center(child: CircularProgressIndicator())
           : ListView(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
-                Text('诊断', style: Theme.of(context).textTheme.titleSmall),
+                Text('问题排查', style: Theme.of(context).textTheme.titleSmall),
                 SizedBox(height: 8),
                 Card(
                   elevation: 0,
                   child: ListTile(
                     leading: Icon(Icons.upload_file_outlined),
-                    title: Text('导出日志'),
-                    subtitle: Text('一键导出最近异常、错误原因与相关操作上下文'),
+                    title: Text('导出问题日志'),
+                    subtitle: Text('保存近期错误记录，便于排查问题'),
                     trailing: _exporting
                         ? SizedBox(
                             width: 20,
@@ -186,8 +190,8 @@ class _ClearCachePageState extends State<ClearCachePage> {
                     onTap: (_clearing || _exporting) ? null : _exportLogs,
                   ),
                 ),
-                SizedBox(height: 20),
-                Text('缓存', style: Theme.of(context).textTheme.titleSmall),
+                SizedBox(height: 24),
+                Text('缓存管理', style: Theme.of(context).textTheme.titleSmall),
                 SizedBox(height: 8),
                 for (final u in _usages) _buildUsageTile(u),
                 SizedBox(height: 12),
@@ -197,7 +201,7 @@ class _ClearCachePageState extends State<ClearCachePage> {
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-                SizedBox(height: 72),
+                SizedBox(height: 24),
               ],
             ),
       bottomNavigationBar: SafeArea(

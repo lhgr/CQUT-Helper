@@ -12,8 +12,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('调课通知增强未开启'), findsOneWidget);
-    expect(find.text('课表变更记录（仅本地）'), findsOneWidget);
-    expect(find.textContaining('不会访问官方或第三方调课通知接口'), findsOneWidget);
+    expect(find.text('课表变更记录'), findsOneWidget);
+    expect(find.textContaining('未开启时不会查询调课通知'), findsOneWidget);
+    expect(find.textContaining('本机保存的历史记录'), findsOneWidget);
   });
 
   testWidgets('已开启调课通知增强时不展示关闭提示', (tester) async {

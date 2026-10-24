@@ -10,6 +10,7 @@ Future<void> showScheduleExperienceSettingsSheet(BuildContext context) async {
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
+    useSafeArea: true,
     builder: (_) => const ScheduleExperienceSettingsSheet(),
   );
 }
@@ -117,12 +118,19 @@ class _ScheduleExperienceSettingsSheetState
     }
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('课程与体验', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(
+              '课前提醒依据本机已同步的课表安排；调课通知增强可在通知设置中单独开启。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
             const SizedBox(height: 12),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -158,7 +166,7 @@ class _ScheduleExperienceSettingsSheetState
                   ],
                 ),
               ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             Text('课表显示密度', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             SegmentedButton<ScheduleDisplayDensity>(
@@ -180,7 +188,7 @@ class _ScheduleExperienceSettingsSheetState
               onSelectionChanged: (value) =>
                   setState(() => _density = value.first),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             AppSelectField<int>(
               value: _defaultHomeTab,
               labelText: '启动后默认页面',
@@ -204,7 +212,7 @@ class _ScheduleExperienceSettingsSheetState
               ],
               onChanged: (value) => setState(() => _defaultHomeTab = value),
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: FilledButton(

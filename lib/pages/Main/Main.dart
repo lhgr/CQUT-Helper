@@ -287,39 +287,21 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             bottom: _bottomNavigationBarMinimumInset,
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(32),
-                boxShadow: showScheduleBackground
-                    ? const []
-                    : [
-                        BoxShadow(
-                          color: colorScheme.shadow.withAlpha(
-                            effectiveTheme.brightness == Brightness.dark
-                                ? 50
-                                : 20,
-                          ),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(32),
-                child: NavigationBar(
-                  backgroundColor: showScheduleBackground
-                      ? Colors.transparent
-                      : colorScheme.surfaceContainer,
-                  elevation: 0,
-                  onDestinationSelected: (index) {
-                    setState(() {
-                      _currentIndex = index;
-                    });
-                  },
-                  selectedIndex: _currentIndex,
-                  destinations: _getDestinations(),
-                ),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+              child: NavigationBar(
+                backgroundColor: showScheduleBackground
+                    ? Colors.transparent
+                    : colorScheme.surfaceContainer,
+                elevation: 0,
+                onDestinationSelected: (index) {
+                  setState(() {
+                    _currentIndex = index;
+                  });
+                },
+                selectedIndex: _currentIndex,
+                destinations: _getDestinations(),
               ),
             ),
           ),

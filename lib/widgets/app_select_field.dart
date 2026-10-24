@@ -1,3 +1,4 @@
+import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:material_ui/material_ui.dart';
 
 @immutable
@@ -66,7 +67,7 @@ class AppSelectField<T> extends StatelessWidget {
       value: selected?.label ?? '',
       child: InkWell(
         onTap: enabled ? () => _openOptions(context) : null,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppTheme.controlRadius),
         child: InputDecorator(
           isEmpty: selected == null,
           decoration: InputDecoration(
@@ -111,34 +112,22 @@ class _AppSelectSheet<T> extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.72;
+    final hasOptionIcons = options.any((option) => option.icon != null);
 
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 4, 14),
+              padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
               child: Row(
                 children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(
-                      Icons.tune_rounded,
-                      color: colorScheme.onSecondaryContainer,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
                   Expanded(
-                    child: Text(title, style: theme.textTheme.titleLarge),
+                    child: Text(title, style: theme.textTheme.titleMedium),
                   ),
                   IconButton(
                     tooltip: '关闭',
@@ -153,47 +142,30 @@ class _AppSelectSheet<T> extends StatelessWidget {
                 shrinkWrap: true,
                 padding: EdgeInsets.zero,
                 itemCount: options.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                separatorBuilder: (_, _) => const SizedBox(height: 4),
                 itemBuilder: (context, index) {
                   final option = options[index];
                   final selected = option.value == value;
                   return Material(
                     color: selected
                         ? colorScheme.secondaryContainer
-                        : colorScheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(18),
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(AppTheme.controlRadius),
                     clipBehavior: Clip.antiAlias,
                     child: ListTile(
-                      minTileHeight: option.description == null ? 58 : 68,
+                      minTileHeight: option.description == null ? 56 : 64,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 3,
                       ),
-                      leading: option.icon == null
-                          ? Icon(
-                              selected
-                                  ? Icons.radio_button_checked_rounded
-                                  : Icons.radio_button_unchecked_rounded,
+                      leading: !hasOptionIcons
+                          ? null
+                          : option.icon == null
+                          ? const SizedBox(width: 24)
+                          : Icon(
+                              option.icon,
                               color: selected
-                                  ? colorScheme.primary
+                                  ? colorScheme.onSecondaryContainer
                                   : colorScheme.onSurfaceVariant,
-                            )
-                          : Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: selected
-                                    ? colorScheme.primary.withAlpha(28)
-                                    : colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(
-                                option.icon,
-                                size: 21,
-                                color: selected
-                                    ? colorScheme.primary
-                                    : colorScheme.onSurfaceVariant,
-                              ),
                             ),
                       title: Text(
                         option.label,
@@ -212,7 +184,7 @@ class _AppSelectSheet<T> extends StatelessWidget {
                       trailing: selected
                           ? Icon(
                               Icons.check_rounded,
-                              color: colorScheme.primary,
+                              color: colorScheme.onSecondaryContainer,
                             )
                           : null,
                       selected: selected,

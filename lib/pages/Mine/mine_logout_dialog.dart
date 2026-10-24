@@ -5,10 +5,13 @@ Future<void> showMineLogoutDialog(BuildContext context) async {
   await showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text("退出登录"),
-      content: Text("确定要退出当前账号吗？"),
+      title: const Text("退出登录"),
+      content: const Text("确定要退出当前账号吗？"),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: Text("取消")),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("取消"),
+        ),
         TextButton(
           onPressed: () async {
             final navigator = Navigator.of(context);
@@ -26,7 +29,7 @@ Future<void> showMineLogoutDialog(BuildContext context) async {
               );
             }
           },
-          child: Text("确定"),
+          child: const Text("退出登录"),
         ),
       ],
     ),

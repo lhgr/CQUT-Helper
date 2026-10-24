@@ -1,4 +1,7 @@
 import 'package:cqut_helper/api/auth/forget_password_api.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 class ForgetPasswordPage extends StatefulWidget {
@@ -37,12 +40,22 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  String _cleanException(Object e) {
-    var msg = e.toString();
-    if (msg.startsWith('Exception: ')) {
-      msg = msg.substring(11);
+  String _operationErrorMessage(Object error, {required String fallback}) {
+    if (error is DioException) return '请求未能完成，请检查网络后重试';
+    if (error is FormatException) return '服务响应异常，请稍后重试';
+    if (error is PlatformException) return '系统操作未能完成，请稍后重试';
+
+    if (error is Exception) {
+      final rawMessage = error.toString();
+      if (!rawMessage.startsWith('Exception: ')) return fallback;
+      final message = rawMessage.substring('Exception: '.length).trim();
+      const technicalMessages = {'发送验证码失败：缺少 ticket', '响应格式异常'};
+      if (technicalMessages.contains(message) || message.isEmpty) {
+        return fallback;
+      }
+      return message;
     }
-    return msg;
+    return fallback;
   }
 
   bool _isValidPassword(String password) {
@@ -82,9 +95,15 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
       });
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('验证码已发送')));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'ForgetPassword',
+        'send verification code failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
-      _showError(_cleanException(e));
+      _showError(_operationErrorMessage(e, fallback: '验证码发送失败，请稍后重试'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -115,9 +134,15 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
       });
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('验证码验证成功')));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'ForgetPassword',
+        'verify code failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
-      _showError(_cleanException(e));
+      _showError(_operationErrorMessage(e, fallback: '验证码验证失败，请检查后重试'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -151,9 +176,15 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('密码已重置，请用新密码登录')));
       Navigator.of(context).pop();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'ForgetPassword',
+        'reset password failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
-      _showError(_cleanException(e));
+      _showError(_operationErrorMessage(e, fallback: '密码重置失败，请稍后重试'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -162,223 +193,230 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('忘记密码')),
+      appBar: AppBar(title: const Text('忘记密码')),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _StepHeader(step: _step),
-              SizedBox(height: 24),
-              if (_step == 0) ...[
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: '手机号',
-                    prefixIcon: Icon(Icons.phone_android),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '重置统一身份认证密码',
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                ),
-                SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _isLoading ? null : _sendCode,
-                  style: FilledButton.styleFrom(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 8),
+                  Text(
+                    '验证手机号后设置新密码',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                    elevation: 0,
                   ),
-                  child: _isLoading
-                      ? SizedBox(
-                          height: 24,
-                          width: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(
-                          '发送验证码',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+                  const SizedBox(height: 20),
+                  _StepHeader(step: _step),
+                  const SizedBox(height: 24),
+                  if (_step == 0) ...[
+                    TextFormField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: InputDecoration(
+                        labelText: '手机号',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                ),
-              ],
-              if (_step == 1) ...[
-                Text(
-                  '验证码已发送到：${_phoneController.text.trim()}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                SizedBox(height: 12),
-                TextFormField(
-                  controller: _codeController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: '验证码',
-                    prefixIcon: Icon(Icons.verified_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                  ),
-                ),
-                SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _isLoading
-                            ? null
-                            : () => setState(() => _step = 0),
-                        style: OutlinedButton.styleFrom(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text('返回'),
                       ),
                     ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: _isLoading ? null : _verifyCode,
-                        style: FilledButton.styleFrom(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
+                    SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: _isLoading ? null : _sendCode,
+                      style: FilledButton.styleFrom(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: _isLoading
-                            ? SizedBox(
-                                height: 24,
-                                width: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Text(
-                                '验证验证码',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                        elevation: 0,
+                      ),
+                      child: _isLoading
+                          ? SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              '发送验证码',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
                               ),
-                      ),
+                            ),
                     ),
                   ],
-                ),
-              ],
-              if (_step == 2) ...[
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    labelText: '新密码',
-                    prefixIcon: Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
+                  if (_step == 1) ...[
+                    Text(
+                      '验证码已发送到：${_phoneController.text.trim()}',
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                  ),
-                ),
-                SizedBox(height: 16),
-                TextFormField(
-                  controller: _password2Controller,
-                  obscureText: _obscurePassword2,
-                  decoration: InputDecoration(
-                    labelText: '确认新密码',
-                    prefixIcon: Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword2
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () => setState(
-                        () => _obscurePassword2 = !_obscurePassword2,
-                      ),
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                  ),
-                ),
-                SizedBox(height: 12),
-                Text(
-                  '密码必须包含:大写字母、小写字母、数字、字符中任意三种以上组合，长度为8-20个字符。',
-                  style: Theme.of(context).textTheme.bodySmall
-                      ?.copyWith(color: Theme.of(context).colorScheme.outline),
-                ),
-                SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _isLoading
-                            ? null
-                            : () => setState(() => _step = 1),
-                        style: OutlinedButton.styleFrom(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                    SizedBox(height: 12),
+                    TextFormField(
+                      controller: _codeController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: '验证码',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Text('返回'),
                       ),
                     ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: _isLoading ? null : _resetPassword,
-                        style: FilledButton.styleFrom(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: _isLoading
-                            ? SizedBox(
-                                height: 24,
-                                width: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Text(
-                                '重置密码',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                    SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _isLoading
+                                ? null
+                                : () => setState(() => _step = 0),
+                            style: OutlinedButton.styleFrom(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                      ),
+                            ),
+                            child: Text('返回'),
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: _isLoading ? null : _verifyCode,
+                            style: FilledButton.styleFrom(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: _isLoading
+                                ? SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Text(
+                                    '验证验证码',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                ),
-              ],
-            ],
+                  if (_step == 2) ...[
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: _obscurePassword,
+                      decoration: InputDecoration(
+                        labelText: '新密码',
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                          onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword,
+                          ),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    TextFormField(
+                      controller: _password2Controller,
+                      obscureText: _obscurePassword2,
+                      decoration: InputDecoration(
+                        labelText: '确认新密码',
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePassword2
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                          onPressed: () => setState(
+                            () => _obscurePassword2 = !_obscurePassword2,
+                          ),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      '密码必须包含:大写字母、小写字母、数字、字符中任意三种以上组合，长度为8-20个字符。',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _isLoading
+                                ? null
+                                : () => setState(() => _step = 1),
+                            style: OutlinedButton.styleFrom(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text('返回'),
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: _isLoading ? null : _resetPassword,
+                            style: FilledButton.styleFrom(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: _isLoading
+                                ? SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Text(
+                                    '重置密码',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -1,5 +1,6 @@
 import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'mine_menu_section.dart';
@@ -61,10 +62,16 @@ class _MineViewState extends State<MineView> {
         _loading = false;
         _error = null;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'Mine',
+        'load user info failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setState(() {
-        _error = e is MineNotLoggedInException ? e.toString() : e.toString();
+        _error = e is MineNotLoggedInException ? '请先登录后查看个人信息' : '个人信息加载失败';
         _loading = false;
       });
     }
@@ -94,10 +101,7 @@ class _MineViewState extends State<MineView> {
                 color: Theme.of(context).colorScheme.error,
               ),
               SizedBox(height: 16),
-              Text(
-                "加载失败: $_error",
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
+              Text(_error!),
               SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: () {
@@ -107,8 +111,8 @@ class _MineViewState extends State<MineView> {
                   });
                   _loadUserInfo();
                 },
-                icon: Icon(Icons.refresh),
-                label: Text("重试"),
+                icon: const Icon(Icons.refresh),
+                label: const Text("重试"),
               ),
             ],
           ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cqut_helper/manager/daily_quote_manager.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:material_ui/material_ui.dart';
 
 class DailyQuoteCard extends StatefulWidget {
@@ -83,8 +84,14 @@ class _DailyQuoteCardState extends State<DailyQuoteCard>
       _scheduleBoundary(
         refreshed?.config.nextRefreshAt ?? await _manager.cachedNextRefreshAt(),
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
       // 一言是装饰性内容，网络失败时保留缓存或保持隐藏。
+      AppLogger.I.warn(
+        'DailyQuoteCard',
+        'Failed to refresh daily quote; retaining cached content',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 

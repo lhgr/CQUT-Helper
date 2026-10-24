@@ -10,8 +10,10 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dar
 import 'package:cqut_helper/pages/TodaySchedule/widgets/daily_quote_card.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
+import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:material_ui/material_ui.dart';
 
 class TodayScheduleView extends StatefulWidget {
@@ -249,7 +251,13 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       if (term.isNotEmpty) {
         unawaited(_loadAcademicCalendar(term, checkDue: true));
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.I.error(
+        'TodaySchedule',
+        'Failed to load today schedule',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       final term = (_scheduleData?.yearTerm ?? '').trim();
       if (term.isNotEmpty) {
@@ -279,14 +287,14 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
 
   String get _freshnessText {
     final at = _lastSuccessfulRefreshAt;
-    if (at == null) return '$_dataSource · 更新时间未知';
+    if (at == null) return '来自$_dataSource · 上次更新时间未知';
     final now = DateTime.now();
     final sameDay =
         now.year == at.year && now.month == at.month && now.day == at.day;
     final date = sameDay ? '今天' : '${at.month}/${at.day}';
     final hour = at.hour.toString().padLeft(2, '0');
     final minute = at.minute.toString().padLeft(2, '0');
-    return '$_dataSource · $date $hour:$minute 更新';
+    return '来自$_dataSource · 上次更新：$date $hour:$minute';
   }
 
   String _mapError(Object error) {
@@ -299,7 +307,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         text.contains('鉴权')) {
       return '登录凭证已失效，请重新登录。';
     }
-    return '加载今日课表失败：$error';
+    return '无法加载今日课表，请检查网络后重试。';
   }
 
   bool get _requiresReauthentication {
@@ -771,15 +779,8 @@ class _SummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Color.lerp(colors.surface, colors.primaryContainer, 0.55)!,
-            Color.lerp(colors.surface, colors.secondaryContainer, 0.4)!,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(28),
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -791,7 +792,7 @@ class _SummaryCard extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: theme.textTheme.headlineSmall?.copyWith(
+                style: theme.textTheme.titleLarge?.copyWith(
                   color: colors.onSurface,
                 ),
               ),
@@ -806,10 +807,17 @@ class _SummaryCard extends StatelessWidget {
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
-            runSpacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _MetaChip(label: weekText),
-              _MetaChip(label: termText),
+              Text(weekText, style: theme.textTheme.bodyMedium),
+              Text('·', style: theme.textTheme.bodySmall),
+              Text(
+                termText,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -820,28 +828,6 @@ class _SummaryCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  final String label;
-
-  const _MetaChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withAlpha(180),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.bodySmall
-            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
       ),
     );
   }

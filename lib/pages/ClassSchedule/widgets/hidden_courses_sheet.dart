@@ -1,4 +1,5 @@
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:material_ui/material_ui.dart';
 
 class HiddenCoursesSheet extends StatefulWidget {
@@ -30,12 +31,26 @@ class _HiddenCoursesSheetState extends State<HiddenCoursesSheet> {
   }
 
   void _reload() {
-    _courses =
-        widget.loadCourses?.call() ??
-        ScheduleCustomizationManager.instance.hiddenCourses(
-          userId: widget.userId,
-          yearTerm: widget.yearTerm,
-        );
+    _courses = _loadCourses();
+  }
+
+  Future<List<HiddenCourseInfo>> _loadCourses() async {
+    try {
+      final loader = widget.loadCourses;
+      if (loader != null) return await loader();
+      return await ScheduleCustomizationManager.instance.hiddenCourses(
+        userId: widget.userId,
+        yearTerm: widget.yearTerm,
+      );
+    } catch (error, stackTrace) {
+      AppLogger.I.error(
+        'HiddenCoursesSheet',
+        'Failed to load hidden courses',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
   }
 
   Future<void> _restore(HiddenCourseInfo course) async {
@@ -59,11 +74,17 @@ class _HiddenCoursesSheetState extends State<HiddenCoursesSheet> {
         ),
       );
       setState(_reload);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.I.error(
+        'HiddenCoursesSheet',
+        'Failed to restore hidden course',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('恢复失败：$error'),
+          content: const Text('恢复课程失败，请稍后重试。'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -82,13 +103,13 @@ class _HiddenCoursesSheetState extends State<HiddenCoursesSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
                       '已隐藏课程',
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                   IconButton(
@@ -118,7 +139,7 @@ class _HiddenCoursesSheetState extends State<HiddenCoursesSheet> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('读取隐藏课程失败：${snapshot.error}'),
+                            const Text('读取隐藏课程失败，请稍后重试。'),
                             const SizedBox(height: 12),
                             FilledButton(
                               onPressed: () => setState(_reload),

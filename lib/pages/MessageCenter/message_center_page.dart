@@ -111,9 +111,13 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
                   Card(
                     clipBehavior: Clip.antiAlias,
                     child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
                       leading: const Icon(Icons.campaign_outlined),
                       title: const Text('应用公告'),
-                      subtitle: const Text('版本说明、服务状态和重要通知'),
+                      subtitle: const Text('版本说明、服务状态与重要通知'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
@@ -122,53 +126,70 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
                   if (!_noticeEnhancementEnabled) ...[
                     Card(
                       color: Theme.of(context)
                           .colorScheme
                           .surfaceContainerHighest,
-                      child: ListTile(
-                        leading: const Icon(Icons.privacy_tip_outlined),
-                        title: const Text('调课通知增强未开启'),
-                        subtitle: const Text(
-                          '不会访问官方或第三方调课通知接口；下方仅展示普通课表同步在本机检测到的差异和既有记录，不代表已查询调课通知。',
-                        ),
-                        trailing: TextButton(
-                          onPressed: _openNotificationSettings,
-                          child: const Text('去开启'),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '调课通知增强未开启',
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '未开启时不会查询调课通知。下方展示本机保存的历史记录，以及课表同步检测到的变更。',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _openNotificationSettings,
+                                child: const Text('通知设置'),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                   ],
                   Text(
-                    _noticeEnhancementEnabled ? '课表变更记录' : '课表变更记录（仅本地）',
+                    '课表变更记录',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  const SizedBox(height: 8),
+                  if (_noticeEnhancementEnabled) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '记录保存在本机',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
                   if (_records.isEmpty)
                     Card(
                       child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Center(
-                          child: Text(
-                            _noticeEnhancementEnabled
-                                ? '暂无调课或课表变更记录'
-                                : '暂无本地课表变更记录',
-                          ),
-                        ),
+                        padding: const EdgeInsets.all(20),
+                        child: Center(child: Text('暂无课表变更记录')),
                       ),
                     )
                   else
                     ..._records.map(
                       (record) => Card(
-                        margin: const EdgeInsets.only(bottom: 10),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        clipBehavior: Clip.antiAlias,
                         child: ExpansionTile(
-                          leading: Icon(
-                            Icons.swap_horiz_rounded,
-                            color: Theme.of(context).colorScheme.primary,
+                          tilePadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
                           ),
+                          childrenPadding: const EdgeInsets.only(bottom: 4),
                           title: Text(
                             record.changes.length == 1
                                 ? '第${record.changes.first.weekNum}周课表有变更'

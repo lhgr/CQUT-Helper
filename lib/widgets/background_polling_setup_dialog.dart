@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:material_ui/material_ui.dart';
 
 Future<bool> showBackgroundPollingSetupDialog(BuildContext context) async {
@@ -60,7 +61,13 @@ class _BackgroundPollingSetupDialogState
       opened = _step == _SetupStep.battery
           ? await widget.requestBattery() || await widget.openBattery()
           : await widget.openAutoStart();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'BackgroundPollingSetup',
+        'open platform settings failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       opened = false;
     }
     if (!mounted) return;
@@ -73,7 +80,7 @@ class _BackgroundPollingSetupDialogState
             ? _SetupStep.autoStart
             : _SetupStep.finish;
       } else {
-        _error = '无法打开系统设置，请重试，或稍后在手机设置中手动允许应用后台运行和自启动。';
+        _error = '无法打开系统设置，请重试，或在手机设置中手动允许后台运行和自启动。';
       }
     });
   }
@@ -81,11 +88,10 @@ class _BackgroundPollingSetupDialogState
   @override
   Widget build(BuildContext context) {
     final content = switch (_step) {
-      _SetupStep.battery => '先打开省电策略，允许应用忽略电池优化或选择“不限制”。设置后请返回本应用，继续设置自启动。',
+      _SetupStep.battery => '允许应用在后台运行（忽略电池优化或选择“不限制”）。完成后返回此处继续设置自启动。',
       _SetupStep.autoStart =>
-        '接下来请打开自启动设置，允许 CQUT Helper 自启动。若进入应用详情，请在其中查找自启动或后台运行设置。设置后请返回本应用。',
-      _SetupStep.finish =>
-        '请确认已在系统设置中允许自启动和后台运行。应用无法直接确认自启动开关状态，后续可在“同步与诊断”中查看后台运行情况。',
+        '允许 CQUT Helper 自启动。部分设备需在应用详情中开启自启动或后台运行。完成后返回此处。',
+      _SetupStep.finish => '请确认已允许自启动和后台运行。系统无法直接读取自启动状态，可在“同步与诊断”查看后台运行情况。',
     };
     return PopScope(
       canPop: !_opening,

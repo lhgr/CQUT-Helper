@@ -42,8 +42,7 @@ void showCourseDetailDialog(
       return AlertDialog(
         title: Text(
           normalizedName,
-          style: Theme.of(dialogContext).textTheme.titleLarge,
-          textAlign: TextAlign.center,
+          style: Theme.of(dialogContext).textTheme.titleMedium,
         ),
         content: SizedBox(
           width: dialogWidth,
@@ -52,36 +51,33 @@ void showCourseDetailDialog(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildDetailRow(
-                  dialogContext,
-                  Icons.person_outline,
-                  "教师",
-                  teachers.join("、"),
-                ),
-                _buildDetailRow(
-                  dialogContext,
-                  Icons.room_outlined,
-                  "教室",
-                  classrooms.join("、"),
-                ),
-                _buildDetailRow(
-                  dialogContext,
-                  Icons.calendar_today_outlined,
-                  "周次",
-                  weekCovers.join("、"),
-                ),
-                _buildDetailRow(
-                  dialogContext,
-                  Icons.access_time,
-                  "节次",
-                  sessions.map((e) => e.text).join('\n'),
-                ),
-                if (notes.isNotEmpty)
+                if (teachers.isNotEmpty)
+                  _buildDetailRow(dialogContext, '教师', teachers.join('、')),
+                if (classrooms.isNotEmpty)
+                  _buildDetailRow(dialogContext, '教室', classrooms.join('、')),
+                if (weekCovers.isNotEmpty)
+                  _buildDetailRow(dialogContext, '周次', weekCovers.join('、')),
+                if (sessions.isNotEmpty)
                   _buildDetailRow(
                     dialogContext,
-                    Icons.notes,
-                    '备注',
-                    notes.join('\n'),
+                    '节次',
+                    sessions.map((e) => e.text).join('\n'),
+                  ),
+                if (notes.isNotEmpty)
+                  _buildDetailRow(dialogContext, '备注', notes.join('\n')),
+                if (teachers.isEmpty &&
+                    classrooms.isEmpty &&
+                    weekCovers.isEmpty &&
+                    sessions.isEmpty &&
+                    notes.isEmpty)
+                  Text(
+                    '暂无课程详情',
+                    style: Theme.of(dialogContext).textTheme.bodyMedium
+                        ?.copyWith(
+                          color: Theme.of(dialogContext)
+                              .colorScheme
+                              .onSurfaceVariant,
+                        ),
                   ),
               ],
             ),
@@ -122,35 +118,19 @@ void showCourseDetailDialog(
   );
 }
 
-Widget _buildDetailRow(
-  BuildContext context,
-  IconData icon,
-  String label,
-  String value,
-) {
+Widget _buildDetailRow(BuildContext context, String label, String value) {
   return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 8.0),
-    child: Row(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelSmall
-                    ?.copyWith(color: Theme.of(context).colorScheme.outline),
-              ),
-              Text(
-                value.isEmpty ? "未知" : value,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-          ),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
+        const SizedBox(height: 4),
+        Text(value, style: Theme.of(context).textTheme.bodyMedium),
       ],
     ),
   );

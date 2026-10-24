@@ -2,6 +2,8 @@ import 'package:cqut_helper/api/auth/auth_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
 import 'package:cqut_helper/utils/diagnostic_operation.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -121,22 +123,42 @@ class _LoginPageState extends State<LoginPage> {
           }
         }
       });
-    } catch (e) {
+    } catch (error) {
       if (mounted) {
-        String errorMessage = e.toString();
-        // 如果存在 "Exception: " 前缀，则移除
-        if (errorMessage.startsWith("Exception: ")) {
-          errorMessage = errorMessage.substring(11);
-        }
-
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('登录失败: $errorMessage')));
+            .showSnackBar(SnackBar(content: Text(_loginErrorMessage(error))));
       }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  String _loginErrorMessage(Object error) {
+    if (error is DioException) return '登录请求未能完成，请检查网络后重试';
+    if (error is FormatException) return '登录服务响应异常，请稍后重试';
+    if (error is PlatformException) return '登录暂时不可用，请稍后重试';
+
+    if (error is Exception) {
+      final rawMessage = error.toString();
+      if (!rawMessage.startsWith('Exception: ')) {
+        return '登录暂时无法完成，请稍后重试';
+      }
+      final message = rawMessage.substring('Exception: '.length).trim();
+      const technicalMessages = {
+        '登录失败：登录接口返回格式异常',
+        'Login failed at step 1',
+        'Login failed at step 2',
+        '响应格式异常',
+        'Password or encryptedPassword must be provided',
+      };
+      if (technicalMessages.contains(message) || message.isEmpty) {
+        return '登录暂时无法完成，请稍后重试';
+      }
+      return message;
+    }
+    return '登录暂时无法完成，请稍后重试';
   }
 
   @override
@@ -147,184 +169,148 @@ class _LoginPageState extends State<LoginPage> {
         _accountController.text == _savedAccount;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              colorScheme.primaryContainer.withAlpha(isDark ? 70 : 105),
-              colorScheme.surface,
-              colorScheme.surface,
-            ],
-            stops: const [0, 0.42, 1],
-          ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) => SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: (constraints.maxHeight - 48).clamp(
-                    0,
-                    double.infinity,
-                  ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: (constraints.maxHeight - 32).clamp(
+                  0,
+                  double.infinity,
                 ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 480),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Align(
-                            child: Container(
-                              width: 88,
-                              height: 88,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(28),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: colorScheme.primary.withAlpha(
-                                      isDark ? 55 : 45,
-                                    ),
-                                    blurRadius: 28,
-                                    offset: const Offset(0, 10),
-                                  ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(28),
-                                child: Image.asset(
-                                  'lib/assets/Icon.png',
-                                  fit: BoxFit.cover,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.asset(
+                              'lib/assets/Icon.png',
+                              width: 64,
+                              height: 64,
+                              fit: BoxFit.cover,
+                              color: colorScheme.primary,
+                              colorBlendMode: BlendMode.srcIn,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'CQUT Helper',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.headlineMedium,
+                        ),
+                        const SizedBox(height: 24),
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  widget.reauthenticate ? '重新验证身份' : '统一身份认证',
+                                  style: theme.textTheme.titleLarge,
                                 ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          Text(
-                            'CQUT Helper',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.headlineMedium,
-                          ),
-                          const SizedBox(height: 32),
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Text(
-                                    widget.reauthenticate ? '重新验证身份' : '统一身份认证',
-                                    style: theme.textTheme.titleLarge,
+                                const SizedBox(height: 8),
+                                Text(
+                                  widget.reauthenticate
+                                      ? '登录状态已失效，请重新输入密码；本地课表与个性化设置会保留'
+                                      : '使用学校统一身份认证账号登录',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
                                   ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    widget.reauthenticate
-                                        ? '登录状态已失效，请重新输入密码；本地课表与个性化设置会保留'
-                                        : '使用学校统一身份认证账号登录',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _accountController,
+                                  autofillHints: const [AutofillHints.username],
+                                  decoration: const InputDecoration(
+                                    labelText: '账号',
+                                    prefixIcon: Icon(Icons.person_outline),
                                   ),
-                                  const SizedBox(height: 22),
-                                  TextFormField(
-                                    controller: _accountController,
-                                    autofillHints: const [
-                                      AutofillHints.username,
-                                    ],
-                                    decoration: const InputDecoration(
-                                      labelText: '账号',
-                                      prefixIcon: Icon(Icons.person_outline),
-                                    ),
-                                    textInputAction: TextInputAction.next,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  TextFormField(
-                                    controller: _passwordController,
-                                    autofillHints: const [
-                                      AutofillHints.password,
-                                    ],
-                                    obscureText: _obscurePassword,
-                                    decoration: InputDecoration(
-                                      labelText: '密码',
-                                      hintText: showSavedPasswordHint
-                                          ? '已保存密码，可直接登录'
-                                          : '请输入密码',
-                                      hintStyle: showSavedPasswordHint
-                                          ? TextStyle(
-                                              color: colorScheme.primary,
-                                            )
-                                          : null,
-                                      prefixIcon: const Icon(
-                                        Icons.lock_outline,
+                                  textInputAction: TextInputAction.next,
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _passwordController,
+                                  autofillHints: const [AutofillHints.password],
+                                  obscureText: _obscurePassword,
+                                  decoration: InputDecoration(
+                                    labelText: '密码',
+                                    hintText: showSavedPasswordHint
+                                        ? '已保存密码，可直接登录'
+                                        : '请输入密码',
+                                    hintStyle: showSavedPasswordHint
+                                        ? TextStyle(color: colorScheme.primary)
+                                        : null,
+                                    suffixIcon: IconButton(
+                                      tooltip: _obscurePassword
+                                          ? '显示密码'
+                                          : '隐藏密码',
+                                      icon: Icon(
+                                        _obscurePassword
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined,
                                       ),
-                                      suffixIcon: IconButton(
-                                        tooltip: _obscurePassword
-                                            ? '显示密码'
-                                            : '隐藏密码',
-                                        icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_off_outlined
-                                              : Icons.visibility_outlined,
-                                        ),
-                                        onPressed: () => setState(
-                                          () => _obscurePassword =
-                                              !_obscurePassword,
-                                        ),
+                                      onPressed: () => setState(
+                                        () => _obscurePassword =
+                                            !_obscurePassword,
                                       ),
                                     ),
-                                    onFieldSubmitted: (_) => _handleLogin(),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: TextButton(
-                                      onPressed: () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                const ForgetPasswordPage(),
+                                  onFieldSubmitted: (_) => _handleLogin(),
+                                ),
+                                const SizedBox(height: 8),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const ForgetPasswordPage(),
+                                        ),
+                                      );
+                                    },
+                                    child: const Text('忘记密码？'),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton.icon(
+                                  onPressed: _isLoading ? null : _handleLogin,
+                                  icon: _isLoading
+                                      ? SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: colorScheme.onPrimary,
                                           ),
-                                        );
-                                      },
-                                      child: const Text('忘记密码？'),
-                                    ),
+                                        )
+                                      : const Icon(Icons.login_rounded),
+                                  label: Text(
+                                    _isLoading
+                                        ? '正在验证'
+                                        : widget.reauthenticate
+                                        ? '重新验证'
+                                        : '登录',
                                   ),
-                                  const SizedBox(height: 12),
-                                  FilledButton.icon(
-                                    onPressed: _isLoading ? null : _handleLogin,
-                                    icon: _isLoading
-                                        ? SizedBox(
-                                            height: 20,
-                                            width: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: colorScheme.onPrimary,
-                                            ),
-                                          )
-                                        : const Icon(Icons.login_rounded),
-                                    label: Text(
-                                      _isLoading
-                                          ? '正在验证'
-                                          : widget.reauthenticate
-                                          ? '重新验证'
-                                          : '登录',
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

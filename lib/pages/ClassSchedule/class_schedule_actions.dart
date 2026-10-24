@@ -268,11 +268,17 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
         eventId: event.eventID!.trim(),
       );
       if (mounted) await _refreshAfterCustomCourseMutation();
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.I.error(
+        'ClassSchedule',
+        'Failed to delete custom course',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('删除失败：$error'),
+          content: const Text('删除自定义课程失败，请检查网络后重试。'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -360,10 +366,16 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
           : '（第${failedWeeks.join('、')}周读取失败）';
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('ICS 已导出到 $path$suffix')));
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.I.error(
+        'ClassSchedule',
+        'Failed to export schedule as ICS',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('ICS 导出失败：$error')));
+          .showSnackBar(const SnackBar(content: Text('导出 ICS 失败，请检查下载目录后重试。')));
     } finally {
       final dialogContext = loadingContext;
       if (dialogContext != null && dialogContext.mounted) {

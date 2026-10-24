@@ -88,7 +88,7 @@ class _AppearanceStartupSettingsPageState
             if (themeManager.wingColorUnlocked) ThemeManager.wingColor,
           ];
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               Text('主题模式', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
@@ -114,7 +114,7 @@ class _AppearanceStartupSettingsPageState
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               Text('主题颜色', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
               Card(
@@ -210,7 +210,7 @@ class _AppearanceStartupSettingsPageState
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               Text('启动', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
               Card(
@@ -242,7 +242,7 @@ class _AppearanceStartupSettingsPageState
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               Text('页面导航', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
               Card(

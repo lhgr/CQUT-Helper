@@ -7,6 +7,7 @@ import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:material_ui/material_ui.dart';
@@ -111,10 +112,16 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(success)));
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'SyncDiagnostics',
+        'diagnostic action failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('操作失败：$error')));
+            .showSnackBar(const SnackBar(content: Text('操作未能完成，请稍后重试')));
       }
     } finally {
       if (mounted) setState(() => _working = false);
@@ -237,7 +244,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
                 Text('数据同步', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 8),
@@ -286,7 +293,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 Text(
                   _noticeEnhancementEnabled ? '通知与后台' : '通知',
                   style: Theme.of(context).textTheme.titleSmall,
@@ -345,7 +352,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 FilledButton.icon(
                   onPressed: _working || _account.isEmpty
                       ? null
@@ -360,7 +367,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
                   label: Text(_working ? '正在处理…' : '立即刷新课表、组件和提醒'),
                 ),
                 if (_noticeEnhancementEnabled) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: _working
                         ? null
@@ -371,7 +378,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
                   ),
                 ],
                 if (_needsReauthentication) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   TextButton.icon(
                     onPressed: _working
                         ? null

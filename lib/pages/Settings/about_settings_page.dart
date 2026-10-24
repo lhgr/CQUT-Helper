@@ -27,7 +27,7 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('关于应用')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
           Center(
             child: ClipRRect(
@@ -56,7 +56,7 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 24),
           Card(
             elevation: 0,
             child: Column(
@@ -76,8 +76,8 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.info_outline),
-                  title: const Text('开发者与开源信息'),
-                  subtitle: const Text('查看作者、项目主页与开源地址'),
+                  title: const Text('项目与开源'),
+                  subtitle: const Text('查看项目主页和开源地址'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => showMineAboutDialog(context),
                 ),

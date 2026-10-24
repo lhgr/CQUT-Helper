@@ -11,6 +11,7 @@ import 'package:cqut_helper/widgets/background_polling_setup_dialog.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/widgets/marquee_text.dart';
 import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 
 class ScheduleSettingsSheet extends StatefulWidget {
   final String userId;
@@ -181,7 +182,13 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
         encryptedPassword: encryptedPassword,
         yearTerm: widget.yearTerm,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogger.I.error(
+        'ScheduleSettingsSheet',
+        'Failed to read credentials while checking notice service',
+        error: error,
+        stackTrace: stackTrace,
+      );
       result = const NoticeApiAvailabilityResult(
         success: false,
         elapsedMs: 0,
@@ -405,17 +412,27 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '课表设置',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ),
                   if (_sheetNoticeMessage.trim().isNotEmpty)
                     Container(
                       width: double.infinity,
-                      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 10,
                       ),
                       decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                       child: Text(
                         _sheetNoticeMessage,

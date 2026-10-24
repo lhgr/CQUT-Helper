@@ -25,9 +25,9 @@ void main() {
 
     await tester.tap(find.text('保存自定义地址'));
     await tester.pumpAndSettle();
-    expect(find.text('自定义调课服务风险提示'), findsOneWidget);
+    expect(find.text('使用自定义调课服务'), findsOneWidget);
 
-    await tester.tap(find.text('不再提示'));
+    await tester.tap(find.text('以后不再提示'));
     await tester.tap(find.text('我已了解，继续'));
     await tester.pumpAndSettle();
 

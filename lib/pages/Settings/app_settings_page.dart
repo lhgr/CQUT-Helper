@@ -1,10 +1,6 @@
-import 'dart:async';
-
-import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/Mine/ClearCache.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 import 'about_settings_page.dart';
 import 'appearance_startup_settings_page.dart';
@@ -60,9 +56,7 @@ class AppSettingsPage extends StatefulWidget {
 }
 
 class _AppSettingsPageState extends State<AppSettingsPage> {
-  final ScheduleSettingsManager _manager = ScheduleSettingsManager();
   SettingsScheduleScope? _scope;
-  String _version = '';
   bool _loading = true;
 
   @override
@@ -72,47 +66,24 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   }
 
   Future<void> _load() async {
-    await _manager.load();
     final scope = widget.initialScope ?? await SettingsScheduleScope.resolve();
     if (!mounted) return;
     setState(() {
       _scope = scope;
       _loading = false;
     });
-    unawaited(_loadVersion());
-  }
-
-  Future<void> _loadVersion() async {
-    String version = '';
-    try {
-      version = (await PackageInfo.fromPlatform()).version;
-    } catch (_) {
-      // 部分测试和不支持的平台没有 package_info 通道。
-    }
-    if (!mounted) return;
-    setState(() => _version = version);
   }
 
   String get _scheduleSummary {
-    final weekend = _manager.showWeekend ? '显示周末' : '仅工作日';
-    final layout = _manager.layoutSettings;
-    return '$weekend · ${layout.gridCellWidth.round()}×${layout.gridCellHeight.round()} 网格 · 卡片样式';
+    return '显示方式与课程卡片';
   }
 
   String get _notificationSummary {
-    final reminders = _manager.remindersEnabled ? '课前提醒已开启' : '课前提醒已关闭';
-    final polling = _manager.backgroundPollingEnabled ? '调课通知已开启' : '调课通知已关闭';
-    return '$reminders · $polling';
+    return '课前提醒与调课通知增强';
   }
 
   String get _appearanceSummary {
-    final mode = switch (ThemeManager().themeMode) {
-      ThemeMode.system => '跟随系统',
-      ThemeMode.light => '亮色模式',
-      ThemeMode.dark => '深色模式',
-    };
-    const tabs = ['今日', '课表', '我的'];
-    return '$mode · 默认打开${tabs[_manager.defaultHomeTab]}';
+    return '主题、配色与启动页面';
   }
 
   Future<void> _openSection(AppSettingsSection section) async {
@@ -136,55 +107,106 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
           : ListenableBuilder(
               listenable: ThemeManager(),
               builder: (context, _) => ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  SettingsSectionTile(
-                    icon: Icons.health_and_safety_outlined,
-                    title: '同步与诊断',
-                    subtitle: '课表、组件、提醒权限与后台运行状态',
-                    onTap: () => _openSection(AppSettingsSection.diagnostics),
+                  _SettingsGroup(
+                    title: '使用偏好',
+                    children: [
+                      SettingsSectionTile(
+                        icon: Icons.calendar_month_outlined,
+                        title: '课表与课程',
+                        subtitle: _scheduleSummary,
+                        onTap: () => _openSection(AppSettingsSection.schedule),
+                      ),
+                      const Divider(height: 1, indent: 56),
+                      SettingsSectionTile(
+                        icon: Icons.notifications_outlined,
+                        title: '通知与提醒',
+                        subtitle: _notificationSummary,
+                        onTap: () =>
+                            _openSection(AppSettingsSection.notifications),
+                      ),
+                      const Divider(height: 1, indent: 56),
+                      SettingsSectionTile(
+                        icon: Icons.palette_outlined,
+                        title: '外观与启动',
+                        subtitle: _appearanceSummary,
+                        onTap: () =>
+                            _openSection(AppSettingsSection.appearance),
+                      ),
+                    ],
                   ),
-                  SettingsSectionTile(
-                    icon: Icons.settings_backup_restore,
-                    title: '备份与恢复',
-                    subtitle: '导出或恢复课程个性化与应用设置',
-                    onTap: () => _openSection(AppSettingsSection.backup),
+                  const SizedBox(height: 16),
+                  _SettingsGroup(
+                    title: '数据与维护',
+                    children: [
+                      SettingsSectionTile(
+                        icon: Icons.settings_backup_restore,
+                        title: '备份与恢复',
+                        subtitle: '保存或恢复课程偏好与应用设置',
+                        onTap: () => _openSection(AppSettingsSection.backup),
+                      ),
+                      const Divider(height: 1, indent: 56),
+                      SettingsSectionTile(
+                        icon: Icons.health_and_safety_outlined,
+                        title: '同步与诊断',
+                        subtitle: '检查课表同步、提醒和后台状态',
+                        onTap: () =>
+                            _openSection(AppSettingsSection.diagnostics),
+                      ),
+                      const Divider(height: 1, indent: 56),
+                      SettingsSectionTile(
+                        icon: Icons.storage_outlined,
+                        title: '存储与日志',
+                        subtitle: '管理缓存并导出问题日志',
+                        onTap: () => _openSection(AppSettingsSection.storage),
+                      ),
+                    ],
                   ),
-                  SettingsSectionTile(
-                    icon: Icons.calendar_month_outlined,
-                    title: '课表与课程',
-                    subtitle: _scheduleSummary,
-                    onTap: () => _openSection(AppSettingsSection.schedule),
-                  ),
-                  SettingsSectionTile(
-                    icon: Icons.notifications_outlined,
-                    title: '通知与提醒',
-                    subtitle: _notificationSummary,
-                    onTap: () => _openSection(AppSettingsSection.notifications),
-                  ),
-                  SettingsSectionTile(
-                    icon: Icons.palette_outlined,
-                    title: '外观与启动',
-                    subtitle: _appearanceSummary,
-                    onTap: () => _openSection(AppSettingsSection.appearance),
-                  ),
-                  SettingsSectionTile(
-                    icon: Icons.storage_outlined,
-                    title: '存储与日志',
-                    subtitle: '缓存占用、清理与诊断日志导出',
-                    onTap: () => _openSection(AppSettingsSection.storage),
-                  ),
-                  SettingsSectionTile(
-                    icon: Icons.info_outline,
-                    title: '关于应用',
-                    subtitle: _version.isEmpty
-                        ? '版本、更新与开源信息'
-                        : '版本 $_version · 更新与开源信息',
-                    onTap: () => _openSection(AppSettingsSection.about),
+                  const SizedBox(height: 16),
+                  _SettingsGroup(
+                    title: null,
+                    children: [
+                      SettingsSectionTile(
+                        icon: Icons.info_outline,
+                        title: '关于应用',
+                        subtitle: '版本与项目信息',
+                        onTap: () => _openSection(AppSettingsSection.about),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _SettingsGroup extends StatelessWidget {
+  final String? title;
+  final List<Widget> children;
+
+  const _SettingsGroup({required this.title, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (title != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(title!, style: Theme.of(context).textTheme.titleSmall),
+          ),
+        Card(
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(mainAxisSize: MainAxisSize.min, children: children),
+        ),
+      ],
     );
   }
 }

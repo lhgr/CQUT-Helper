@@ -184,7 +184,6 @@ void main() {
     await tester.tap(find.byTooltip('更多课表操作'));
     await tester.pumpAndSettle();
     expect(find.text('课表操作'), findsOneWidget);
-    expect(find.text('添加、导出或调整当前课表'), findsOneWidget);
     expect(find.text('添加自定义课程'), findsOneWidget);
     expect(find.text('管理自定义课程'), findsNothing);
     expect(find.text('课表设置'), findsOneWidget);

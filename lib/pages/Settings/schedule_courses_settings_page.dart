@@ -10,6 +10,7 @@ import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/utils/background_color_extractor.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/schedule_background_brightness_analyzer.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:image_picker/image_picker.dart';
@@ -145,7 +146,7 @@ class _ScheduleCoursesSettingsPageState
       } else {
         await _manager.saveLayoutSettings(layout);
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
       // A completed newer request owns the visible state. An older failed
       // request must not roll it back, but it still reports its failure.
       final isLatest = revision == _displaySettingsRevision;
@@ -177,9 +178,15 @@ class _ScheduleCoursesSettingsPageState
           // The failed write and its rollback are both best effort.
         }
       }
+      AppLogger.I.logOperationFailure(
+        'ScheduleSettings',
+        'save display settings failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('课表显示设置保存失败：$error')));
+            .showSnackBar(const SnackBar(content: Text('课表显示设置保存失败，请重试')));
       }
     }
   }
@@ -239,7 +246,7 @@ class _ScheduleCoursesSettingsPageState
         .changedDayCount;
     if (result.error != null) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('假期与调休刷新失败：${result.error}')));
+          .showSnackBar(const SnackBar(content: Text('假期与调休暂时无法更新，请稍后重试')));
     } else if (result.updated) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('假期与调休已更新 $changedDayCount 天')));
@@ -540,10 +547,16 @@ class _ScheduleLayoutSettingsPageState
       if (shouldExtract == true && mounted) {
         await _extractThemeColor(croppedPath);
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      AppLogger.I.logOperationFailure(
+        'ScheduleSettings',
+        'read selected background image failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('无法读取图片：$error')));
+          .showSnackBar(const SnackBar(content: Text('无法读取图片，请重新选择')));
     }
   }
 
@@ -581,10 +594,16 @@ class _ScheduleLayoutSettingsPageState
       _change(() => _pendingExtractedThemeColor = color);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('已完成取色，保存后将作为应用全局主题色')));
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      AppLogger.I.logOperationFailure(
+        'ScheduleSettings',
+        'extract background theme color failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('背景取色失败：$error')));
+          .showSnackBar(const SnackBar(content: Text('背景取色失败，请重试')));
     } finally {
       if (mounted) setState(() => _extractingThemeColor = false);
     }
@@ -722,10 +741,16 @@ class _ScheduleLayoutSettingsPageState
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('布局与外观已保存')));
       return true;
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted) return false;
+      AppLogger.I.logOperationFailure(
+        'ScheduleSettings',
+        'save layout settings failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('保存失败：$error')));
+          .showSnackBar(const SnackBar(content: Text('布局与外观保存失败，请重试')));
       return false;
     } finally {
       if (mounted) setState(() => _saving = false);

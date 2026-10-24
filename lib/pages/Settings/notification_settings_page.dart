@@ -4,6 +4,7 @@ import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/course_reminder_mode.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
@@ -132,8 +133,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
           widget.scope.userId.isNotEmpty) {
         try {
           await CourseReminderScheduler.rescheduleForUser(widget.scope.userId);
-        } catch (error) {
-          _showMessage('权限状态已刷新，但重建课程提醒失败：$error');
+        } catch (error, stackTrace) {
+          _showFailure(
+            '权限状态已刷新，但课程提醒计划未能更新。',
+            error,
+            stackTrace,
+            action: 'reminder reschedule after permission refresh failed',
+          );
         }
       }
     } finally {
@@ -186,8 +192,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       if (await CourseReminderMode.openSettings(kind)) return true;
       _showMessage('无法打开对应的系统设置，课程模式未更改。');
       return false;
-    } catch (error) {
-      _showMessage('打开系统设置失败，课程模式未更改：$error');
+    } catch (error, stackTrace) {
+      _showFailure(
+        '无法打开系统设置，课程模式未更改。',
+        error,
+        stackTrace,
+        action: 'open course mode settings failed',
+      );
       return false;
     }
   }
@@ -206,11 +217,14 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       _pendingPermissionKind = null;
       try {
         await _applyCourseAutoMode(requestedMode);
-      } catch (error) {
-        _showMessage(
+      } catch (error, stackTrace) {
+        _showFailure(
           _courseAutoMode == requestedMode
-              ? '上课勿扰与静音已保存，但课程提醒计划更新失败：$error'
-              : '应用上课勿扰与静音失败，原设置未更改：$error',
+              ? '上课勿扰与静音已保存，但课程提醒计划未能更新。'
+              : '课程模式未能应用，原设置未更改。',
+          error,
+          stackTrace,
+          action: 'apply course auto mode failed',
         );
       } finally {
         if (mounted) setState(() => _working = false);
@@ -238,6 +252,21 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showFailure(
+    String message,
+    Object error,
+    StackTrace stackTrace, {
+    required String action,
+  }) {
+    AppLogger.I.logOperationFailure(
+      'NotificationSettings',
+      action,
+      error: error,
+      stackTrace: stackTrace,
+    );
+    _showMessage(message);
   }
 
   Future<void> _persistReminderSettings({
@@ -278,8 +307,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       setState(() => _remindersEnabled = value);
       await _rescheduleReminders();
       await _refreshPermissionStatus(rebuildOnPermissionChange: false);
-    } catch (error) {
-      _showMessage('保存或重建课程提醒失败：$error');
+    } catch (error, stackTrace) {
+      _showFailure(
+        '保存或更新课程提醒失败，请重试。',
+        error,
+        stackTrace,
+        action: 'save reminder setting failed',
+      );
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -312,8 +346,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       await _rescheduleReminders();
     } on ArgumentError {
       _showMessage('提前时间必须在 1 到 120 分钟之间');
-    } catch (error) {
-      _showMessage('保存或重建课程提醒失败：$error');
+    } catch (error, stackTrace) {
+      _showFailure(
+        '保存或更新课程提醒失败，请重试。',
+        error,
+        stackTrace,
+        action: 'save reminder schedule failed',
+      );
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -396,13 +435,16 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       if (!await _openCourseModePermission(missingKind)) {
         _clearPendingCourseAutoMode('系统授权流程已取消，课程模式保持原设置；可以重试。');
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
       _pendingCourseAutoMode = null;
       _pendingPermissionKind = null;
-      _showMessage(
+      _showFailure(
         _courseAutoMode == value
-            ? '上课勿扰与静音已保存，但应用失败：$error'
-            : '读取授权或应用上课模式失败，原设置未更改：$error',
+            ? '上课勿扰与静音已保存，但系统设置未能应用。'
+            : '无法读取授权或应用上课模式，原设置未更改。',
+        error,
+        stackTrace,
+        action: 'change course auto mode failed',
       );
     } finally {
       if (mounted && _pendingCourseAutoMode == null) {
@@ -436,8 +478,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       if (!await CourseReminderMode.openSettings(kind)) {
         _showMessage('无法打开对应的系统设置');
       }
-    } catch (error) {
-      _showMessage('打开系统设置失败：$error');
+    } catch (error, stackTrace) {
+      _showFailure(
+        '无法打开系统设置，请稍后重试。',
+        error,
+        stackTrace,
+        action: 'open permission settings failed',
+      );
     }
   }
 
@@ -608,7 +655,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
                 Text('课程提醒', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 8),
@@ -773,7 +820,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 Text('调课通知', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 8),
                 Card(

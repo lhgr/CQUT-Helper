@@ -179,7 +179,6 @@ void _showScheduleActionsSheet(
     isScrollControlled: true,
     builder: (sheetContext) {
       final theme = Theme.of(sheetContext);
-      final colorScheme = theme.colorScheme;
 
       void runAction(VoidCallback action) {
         Navigator.of(sheetContext).pop();
@@ -187,42 +186,18 @@ void _showScheduleActionsSheet(
       }
 
       return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const SizedBox(height: 8),
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
+              padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
               child: Row(
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(
-                      Icons.calendar_month_outlined,
-                      color: colorScheme.onSecondaryContainer,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('课表操作', style: theme.textTheme.titleLarge),
-                        const SizedBox(height: 2),
-                        Text(
-                          '添加、导出或调整当前课表',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+                    child: Text('课表操作', style: theme.textTheme.titleMedium),
                   ),
                   IconButton(
                     tooltip: '关闭',
@@ -234,8 +209,6 @@ void _showScheduleActionsSheet(
             ),
             Card(
               margin: EdgeInsets.zero,
-              elevation: 0,
-              color: colorScheme.surfaceContainerHigh,
               child: Column(
                 children: [
                   _ScheduleActionTile(
@@ -278,19 +251,10 @@ class _ScheduleActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return ListTile(
-      minTileHeight: 72,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: colorScheme.secondaryContainer,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(icon, color: colorScheme.onSecondaryContainer, size: 22),
-      ),
+      minTileHeight: 56,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      leading: Icon(icon),
       title: Text(title),
       trailing: const Icon(Icons.chevron_right_rounded),
       onTap: onTap,

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:cqut_helper/manager/background_image_temp_manager.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/schedule_background_image_processing.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -52,7 +53,13 @@ class _ScheduleBackgroundCropPageState
         return;
       }
       setState(() => _image = frame.image);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'ScheduleBackgroundCrop',
+        'image load failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) setState(() => _loadError = error);
     }
   }
@@ -154,11 +161,17 @@ class _ScheduleBackgroundCropPageState
         cropped?.dispose();
         picture.dispose();
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.I.logOperationFailure(
+        'ScheduleBackgroundCrop',
+        'image crop failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setState(() => _cropping = false);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('裁切失败：$error')));
+          .showSnackBar(const SnackBar(content: Text('图片裁切失败，请重试')));
     }
   }
 
@@ -167,7 +180,7 @@ class _ScheduleBackgroundCropPageState
     return Scaffold(
       appBar: AppBar(title: const Text('裁切背景图片')),
       body: _loadError != null
-          ? Center(child: Text('无法读取图片：$_loadError'))
+          ? const Center(child: Text('无法读取图片，请重新选择背景图片'))
           : _image == null
           ? const Center(child: CircularProgressIndicator())
           : Column(

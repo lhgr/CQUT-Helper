@@ -79,7 +79,7 @@ abstract final class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
         toolbarHeight: 64,
-        titleSpacing: 20,
+        titleSpacing: 16,
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
         surfaceTintColor: Colors.transparent,
@@ -98,10 +98,10 @@ abstract final class AppTheme {
         shape: cardShape,
       ),
       listTileTheme: ListTileThemeData(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
         iconColor: colorScheme.onSurfaceVariant,
         textColor: colorScheme.onSurface,
-        minTileHeight: 64,
+        minTileHeight: 56,
         shape: controlShape,
         titleTextStyle: base.textTheme.titleMedium?.copyWith(
           color: colorScheme.onSurface,
@@ -120,8 +120,8 @@ abstract final class AppTheme {
               : (isDark ? 130 : 170),
         ),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 18,
+          horizontal: 16,
+          vertical: 16,
         ),
         prefixIconColor: colorScheme.onSurfaceVariant,
         suffixIconColor: colorScheme.onSurfaceVariant,
@@ -241,25 +241,27 @@ abstract final class AppTheme {
         foregroundColor: colorScheme.onPrimaryContainer,
       ),
       dialogTheme: DialogThemeData(
-        elevation: 3,
+        elevation: 0,
         backgroundColor: colorScheme.surfaceContainerHigh,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(cardRadius),
+        ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        elevation: 2,
-        modalElevation: 3,
+        elevation: 0,
+        modalElevation: 0,
         backgroundColor: colorScheme.surfaceContainerLow,
         modalBackgroundColor: colorScheme.surfaceContainerLow,
         surfaceTintColor: Colors.transparent,
         showDragHandle: true,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        elevation: 2,
+        elevation: 0,
         backgroundColor: colorScheme.inverseSurface,
         contentTextStyle: base.textTheme.bodyMedium?.copyWith(
           color: colorScheme.onInverseSurface,
@@ -317,7 +319,7 @@ abstract final class AppTheme {
       WidgetStateProperty.resolveWith((states) {
         return RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(
-            states.contains(WidgetState.pressed) ? 12 : 24,
+            states.contains(WidgetState.pressed) ? 12 : controlRadius,
           ),
         );
       });

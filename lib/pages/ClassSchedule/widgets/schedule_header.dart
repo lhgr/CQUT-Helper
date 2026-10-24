@@ -34,9 +34,44 @@ class ScheduleHeader extends StatelessWidget {
     final weekDayListAll = scheduleData.weekDayList ?? [];
     final weekDayList = showWeekend ? weekDayListAll : weekDayListAll.take(5);
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final textScaler = MediaQuery.textScalerOf(context);
+    final textDirection = Directionality.of(context);
+    final weekdayStyle = textTheme.bodySmall;
+    final dateStyle = textTheme.labelSmall?.copyWith(fontSize: 10);
+    final markerStyle = textTheme.labelSmall?.copyWith(fontSize: 9);
+    final monthStyle = textTheme.labelSmall?.copyWith(
+      color: colorScheme.primary,
+      fontWeight: FontWeight.bold,
+    );
+
+    double textHeight(String text, TextStyle? style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: textDirection,
+        textScaler: textScaler,
+      )..layout();
+      final measuredHeight = painter.height;
+      painter.dispose();
+      return measuredHeight;
+    }
+
+    final weekdayHeight = textHeight('周一', weekdayStyle);
+    final dateHeight = textHeight('00/00', dateStyle);
+    final markerHeight = textHeight('休', markerStyle);
+    final monthHeight = textHeight('${scheduleData.nowMonth}\n月', monthStyle);
+    final requiredHeight =
+        [
+          weekdayHeight +
+              2 +
+              (dateHeight > markerHeight ? dateHeight : markerHeight),
+          monthHeight,
+        ].reduce((a, b) => a > b ? a : b) +
+        (showGridLines ? 1 : 0);
+    final headerHeight = height > requiredHeight ? height : requiredHeight;
 
     return Container(
-      height: height,
+      height: headerHeight,
       decoration: BoxDecoration(
         color: transparentBackground ? Colors.transparent : colorScheme.surface,
         border: showGridLines

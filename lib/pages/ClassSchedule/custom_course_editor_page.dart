@@ -1,6 +1,7 @@
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:material_ui/material_ui.dart';
 
 class CustomCourseEditorPage extends StatefulWidget {
@@ -118,12 +119,18 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
       }
       if (!mounted) return;
       Navigator.of(context).pop(true);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.I.error(
+        'CustomCourseEditor',
+        'Failed to save custom course',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('保存失败：$error'),
+          content: const Text('保存课程失败，请检查网络后重试。'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -145,38 +152,29 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
           TextField(
             controller: _title,
             autofocus: widget.initial == null,
-            decoration: const InputDecoration(
-              labelText: '名称',
-              prefixIcon: Icon(Icons.book_outlined),
-            ),
+            decoration: const InputDecoration(labelText: '课程或事件名称'),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _teacher,
-            decoration: const InputDecoration(
-              labelText: '教师（可选）',
-              prefixIcon: Icon(Icons.person_outline),
-            ),
+            decoration: const InputDecoration(labelText: '教师（可选）'),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _location,
-            decoration: const InputDecoration(
-              labelText: '地点（可选）',
-              prefixIcon: Icon(Icons.place_outlined),
-            ),
+            decoration: const InputDecoration(labelText: '地点（可选）'),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Text('教学周', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
           Wrap(
-            spacing: 6,
-            runSpacing: 4,
+            spacing: 8,
+            runSpacing: 8,
             children: widget.availableWeeks
                 .map(
                   (week) => FilterChip(
@@ -225,7 +223,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                   onChanged: (value) => setState(() => _weekDay = value),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: AppSelectField<int>(
                   value: _startSession,
@@ -241,27 +239,28 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                   onChanged: (value) => setState(() => _startSession = value),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: AppSelectField<int>(
-                  key: ValueKey((maxCount, _sessionCount)),
-                  value: _sessionCount.clamp(1, maxCount),
-                  labelText: '持续',
-                  sheetTitle: '选择持续节数',
-                  options: List.generate(
-                    maxCount,
-                    (index) => AppSelectOption(
-                      value: index + 1,
-                      label: '${index + 1}节',
-                    ),
-                  ),
-                  onChanged: (value) => setState(() => _sessionCount = value),
-                ),
-              ),
             ],
           ),
+          const SizedBox(height: 8),
+          AppSelectField<int>(
+            key: ValueKey((maxCount, _sessionCount)),
+            value: _sessionCount.clamp(1, maxCount),
+            labelText: '持续节数',
+            sheetTitle: '选择持续节数',
+            options: List.generate(
+              maxCount,
+              (index) =>
+                  AppSelectOption(value: index + 1, label: '${index + 1}节'),
+            ),
+            onChanged: (value) => setState(() => _sessionCount = value),
+          ),
           const SizedBox(height: 16),
-          const Text('自定义课程将保存到学校课表服务，并在其他使用学校课表的设备上同步。'),
+          Text(
+            '课程会保存到学校课表服务，并同步到使用学校课表的其他设备。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
     );

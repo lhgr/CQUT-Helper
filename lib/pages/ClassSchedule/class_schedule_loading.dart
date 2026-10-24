@@ -382,9 +382,22 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         );
       }
       return data;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.I.error(
+        'ClassSchedule',
+        'Failed to load schedule',
+        error: e,
+        stackTrace: stackTrace,
+      );
       _setState(() {
-        _error = e.toString();
+        final text = e.toString().toLowerCase();
+        _error =
+            text.contains('login') ||
+                text.contains('credential') ||
+                text.contains('凭证') ||
+                text.contains('鉴权')
+            ? '登录凭证已失效，请重新登录后加载课表。'
+            : '无法加载课表，请检查网络后重试。';
       });
       return null;
     } finally {
