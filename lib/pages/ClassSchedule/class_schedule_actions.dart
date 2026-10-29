@@ -456,13 +456,4 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       yearTerm: _currentScheduleData?.yearTerm ?? '',
     );
   }
-
-  void _showNotificationSettingsPage() {
-    openAppSettings(
-      context,
-      section: AppSettingsSection.notifications,
-      userId: _controller.userId ?? '',
-      yearTerm: _currentScheduleData?.yearTerm ?? '',
-    );
-  }
 }

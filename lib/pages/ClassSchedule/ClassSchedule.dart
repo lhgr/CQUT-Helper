@@ -8,15 +8,18 @@ import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_update_manager.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/manager/schedule_message_center_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
+import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_app_bar.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_inline_notice_panel.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_onboarding_hint.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_page_view.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_return_week_button.dart';
 import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
@@ -251,6 +254,25 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     unawaited(_loadAcademicCalendar(term));
   }
 
+  bool _weekHasDisplayedCourses(ScheduleData data) {
+    final days = data.weekDayList ?? const [];
+    final resolved = <AcademicCalendarResolvedDay>[];
+    for (final day in days) {
+      final date = ScheduleDate.tryParseWeekDate(day.weekDate);
+      if (date == null) continue;
+      resolved.add(
+        resolveAcademicCalendarDay(
+          actualDate: date,
+          schedules: _weekCache.values,
+          calendar: _academicCalendar,
+          includeHolidayEvents: true,
+        ),
+      );
+    }
+    if (resolved.isEmpty) return (data.eventList ?? const []).isNotEmpty;
+    return resolved.any((day) => day.events.isNotEmpty);
+  }
+
   Future<void> _loadAcademicCalendar(
     String term, {
     bool checkDue = false,
@@ -390,6 +412,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     }
 
     final displayedWeek = _weekList![_currentWeekIndex];
+    final displayedSchedule = _weekCache[int.tryParse(displayedWeek) ?? -1];
     final deviceDate = DateTime.now();
     final todayDate = DateUtils.isSameDay(_schoolTodayReceivedAt, deviceDate)
         ? _schoolTodayDate ?? deviceDate
@@ -445,6 +468,19 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
               onDismissOne: _dismissInlineNoticeAt,
               onDismissAll: _clearInlineNotices,
             ),
+          ScheduleOnboardingHintVisibility(
+            manager: OnboardingManager.instance,
+            readyToShow:
+                !_loading &&
+                _currentScheduleData != null &&
+                _weekList != null &&
+                _weekList!.isNotEmpty &&
+                _weekCache[int.tryParse(displayedWeek) ?? -1] != null,
+            hasInlineNotices: _inlineNoticeMessages.isNotEmpty,
+            hasCourses: () =>
+                displayedSchedule != null &&
+                _weekHasDisplayedCourses(displayedSchedule),
+          ),
           Expanded(
             child: SchedulePageView(
               pageController: _pageController,

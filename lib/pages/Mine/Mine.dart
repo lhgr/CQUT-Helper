@@ -4,6 +4,7 @@ import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'mine_menu_section.dart';
+import 'mine_optional_features_card.dart';
 import 'mine_user_info_card.dart';
 import 'mine_user_info_loader.dart';
 import 'mine_user_info_view_model.dart';
@@ -79,47 +80,6 @@ class _MineViewState extends State<MineView> {
 
   @override
   Widget build(BuildContext context) {
-    // If loading and no data, show loading
-    if (_loading && _userInfo == null) {
-      return Scaffold(
-        appBar: AppBar(title: Text("我的"), centerTitle: true),
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    // 如果发生错误且没有数据，显示错误页面
-    if (_error != null && _userInfo == null) {
-      return Scaffold(
-        appBar: AppBar(title: Text("我的"), centerTitle: true),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 48,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              SizedBox(height: 16),
-              Text(_error!),
-              SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _loading = true;
-                    _error = null;
-                  });
-                  _loadUserInfo();
-                },
-                icon: const Icon(Icons.refresh),
-                label: const Text("重试"),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     final user = MineUserInfoViewModel.fromApi(_userInfo);
 
     return Scaffold(
@@ -129,16 +89,66 @@ class _MineViewState extends State<MineView> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
           children: [
-            MineUserInfoCard(
-              realName: user.realName,
-              username: user.username,
-              campusName: user.campusName,
-            ),
-            SizedBox(height: 24),
+            _buildProfileSection(user),
+            const MineOptionalFeaturesCard(),
+            const SizedBox(height: 24),
             const MineMenuSection(),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildProfileSection(MineUserInfoViewModel user) {
+    if (_loading && _userInfo == null) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+    if (_error != null && _userInfo == null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(_error!)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _loading = true;
+                      _error = null;
+                    });
+                    _loadUserInfo();
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('重试'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return MineUserInfoCard(
+      realName: user.realName,
+      username: user.username,
+      campusName: user.campusName,
     );
   }
 }

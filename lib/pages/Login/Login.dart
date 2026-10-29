@@ -1,5 +1,6 @@
 import 'package:cqut_helper/api/auth/auth_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
+import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
 import 'package:cqut_helper/utils/diagnostic_operation.dart';
 import 'package:dio/dio.dart';
@@ -230,6 +231,15 @@ class _LoginPageState extends State<LoginPage> {
                                     color: colorScheme.onSurfaceVariant,
                                   ),
                                 ),
+                                if (OnboardingManager.instance.isNewUser) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '登录后自动同步课表，已同步的课程可离线查看。',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                                 const SizedBox(height: 16),
                                 TextFormField(
                                   controller: _accountController,

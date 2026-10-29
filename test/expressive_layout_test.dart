@@ -4,16 +4,20 @@ import 'dart:ui' as ui;
 
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/course_preference_model.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
+import 'package:cqut_helper/pages/Guide/usage_guide_page.dart';
 import 'package:cqut_helper/pages/Announcement/Announcement.dart';
 import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut_helper/pages/ClassSchedule/custom_course_editor_page.dart';
 import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
@@ -304,6 +308,87 @@ void main() {
       messenger.setMockMethodCallHandler(MethodChannel(name), null);
     }
     SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('onboarding visual covers new user pages and cached schedule', (
+    tester,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('onboarding_is_new_user', true);
+    final onboarding = OnboardingManager.instance;
+    await onboarding.initialize();
+    await prefs.setString('schedule_message_history_v1_$_user', '[]');
+
+    for (final scenario in [
+      ('light-390', Brightness.light, 390.0, 1.0),
+      ('dark-390', Brightness.dark, 390.0, 1.0),
+      ('light-320-large', Brightness.light, 320.0, 2.0),
+      ('dark-320-large', Brightness.dark, 320.0, 2.0),
+    ]) {
+      final (label, brightness, width, scale) = scenario;
+
+      await _pumpPage(tester, const LoginPage(), width, brightness, scale);
+      expect(find.text('登录后自动同步课表，已同步的课程可离线查看。'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'onboarding-login-$label');
+      if (scale >= 2) {
+        final loginButton = find.widgetWithText(FilledButton, '登录');
+        await tester.ensureVisible(loginButton);
+        expect(loginButton.hitTestable(), findsOneWidget);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      final background = label == 'dark-390'
+          ? ScheduleLayoutSettings(
+              backgroundImagePath:
+                  '${Directory.current.path}/lib/assets/Icon.png',
+            )
+          : null;
+
+      await _pumpPage(
+        tester,
+        const ClassscheduleView(),
+        width,
+        brightness,
+        scale,
+        scheduleBackground: background,
+      );
+      expect(find.textContaining('数字图像处理', findRichText: true), findsWidgets);
+      expect(onboarding.scheduleReady, isTrue);
+      expect(find.textContaining('点顶部周次'), findsOneWidget);
+      await _revealCachedCourse(tester);
+      if (label == 'light-390') {
+        // The visual fixture has a valid local cache and no saved credential,
+        // so a manual refresh takes the real local failure path without a
+        // network request. The cached schedule and hint should remain usable.
+        await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh));
+        await tester.pumpAndSettle();
+        expect(onboarding.showScheduleHint, isTrue);
+        expect(find.textContaining('点顶部周次'), findsOneWidget);
+        expect(find.textContaining('数字图像处理', findRichText: true), findsWidgets);
+      }
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'onboarding-schedule-cache-$label');
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 200));
+
+      await _pumpPage(tester, const MineView(), width, brightness, scale);
+      expect(find.text('按需设置'), findsOneWidget);
+      expect(find.text('课前提醒'), findsOneWidget);
+      expect(find.text('桌面小组件'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'onboarding-mine-$label');
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      await _pumpPage(tester, const UsageGuidePage(), width, brightness, scale);
+      expect(find.text('课表缓存后可离线查看。'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'onboarding-guide-$label');
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+
+    await onboarding.dismissScheduleHint();
+    await onboarding.dismissOptionalFeatures();
   });
 
   for (final scenario in [
@@ -849,8 +934,10 @@ Future<void> _pumpPage(
   Widget page,
   double width,
   Brightness brightness,
-  double scale,
-) async {
+  double scale, {
+  bool settle = true,
+  ScheduleLayoutSettings? scheduleBackground,
+}) async {
   tester.view.physicalSize = Size(width, 844);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
@@ -885,7 +972,15 @@ Future<void> _pumpPage(
             .copyWith(textScaler: TextScaler.linear(scale)),
         child: child!,
       ),
-      home: page is ClassscheduleView
+      home: page is ClassscheduleView && scheduleBackground != null
+          ? Stack(
+              fit: StackFit.expand,
+              children: [
+                ScheduleBackground(settings: scheduleBackground),
+                page,
+              ],
+            )
+          : page is ClassscheduleView
           ? ColoredBox(color: theme.scaffoldBackgroundColor, child: page)
           : page,
     ),
@@ -896,6 +991,12 @@ Future<void> _pumpPage(
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
   } else {
+    final backgroundPath = scheduleBackground?.backgroundImagePath;
+    if (backgroundPath != null && backgroundPath.trim().isNotEmpty) {
+      await tester.runAsync(
+        () => ScheduleBackground.preloadFile(backgroundPath),
+      );
+    }
     await tester.pumpWidget(app);
   }
   if (_capture) {
@@ -914,7 +1015,11 @@ Future<void> _pumpPage(
     });
     await tester.pump();
   }
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }
 
 Future<void> _capturePage(WidgetTester tester, String name) async {

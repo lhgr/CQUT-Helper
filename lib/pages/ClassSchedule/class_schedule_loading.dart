@@ -60,7 +60,6 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       }
       _scheduleDeferredInitialWork(currentData);
     }
-    await _maybeShowBackgroundPollingGuide();
   }
 
   void _scheduleDeviceDateCheck() {
@@ -259,39 +258,19 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     });
   }
 
-  Future<void> _maybeShowBackgroundPollingGuide() async {
-    if (!mounted) return;
-    if (_settingsManager.backgroundPollingEnabled) return;
-    final prefs = await SharedPreferences.getInstance();
-    final account = (prefs.getString('account') ?? '').trim();
-    final key = account.isEmpty
-        ? 'schedule_polling_guide_shown'
-        : 'schedule_polling_guide_shown_$account';
-    final shown = prefs.getBool(key) ?? false;
-    if (shown) return;
-    await prefs.setBool(key, true);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('如需在后台接收调课提醒，可在右上角设置中开启“调课通知增强”'),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 6),
-        action: SnackBarAction(
-          label: '去设置',
-          onPressed: _showNotificationSettingsPage,
-        ),
-      ),
-    );
-  }
-
   void _processLoadedData(
     ScheduleData data, {
     bool isInitial = false,
     bool keepCurrentSelection = false,
   }) {
-    if (data.weekNum == null || data.weekList == null) return;
+    if (data.weekNum == null ||
+        data.weekList == null ||
+        data.weekList!.isEmpty) {
+      return;
+    }
 
     _controller.processLoadedData(data);
+    unawaited(OnboardingManager.instance.markScheduleReady());
     final calendarTerm = (data.yearTerm ?? '').trim();
     if (calendarTerm.isNotEmpty) {
       unawaited(_loadAcademicCalendar(calendarTerm));

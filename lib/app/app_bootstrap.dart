@@ -5,6 +5,7 @@ import 'package:cqut_helper/manager/academic_calendar_manager.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
+import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
@@ -31,6 +32,7 @@ Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
   );
 
   await ThemeManager().init();
+  await OnboardingManager.instance.initialize();
   final scheduleBackgroundReady = _preloadScheduleBackground();
   await LocalNotifications.initialize();
   await ScheduleUpdateWorker.initialize();

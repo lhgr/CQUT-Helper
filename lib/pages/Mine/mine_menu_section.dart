@@ -1,5 +1,6 @@
 import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
 import 'package:cqut_helper/pages/MessageCenter/message_center_page.dart';
+import 'package:cqut_helper/pages/Guide/usage_guide_page.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'mine_logout_dialog.dart';
@@ -24,6 +25,17 @@ class MineMenuSection extends StatelessWidget {
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const MessageCenterPage(),
+                  ),
+                ),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              MineMenuItem(
+                icon: Icons.menu_book_outlined,
+                title: '使用指南',
+                subtitle: '课表、提醒与桌面小组件',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const UsageGuidePage(),
                   ),
                 ),
               ),
