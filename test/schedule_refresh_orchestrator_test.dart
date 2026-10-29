@@ -102,10 +102,112 @@ void main() {
       );
       await Future<void>.delayed(Duration.zero);
       orchestrator.cancelPrefetch();
-      firstLoad.complete(true);
+      firstLoad.complete(false);
 
-      expect(await prefetch, isFalse);
+      final result = await prefetch;
+      expect(result.completed, isFalse);
+      expect(result.failedWeeks, ['1']);
       expect(calls, ['1@2024-2025-2']);
     });
+
+    test(
+      'prefetchAllWeeksInBackground reports completed full success',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final calls = <String>[];
+        final orchestrator = ScheduleRefreshOrchestrator(
+          isDisposed: () => false,
+          ensureWeekLoaded:
+              (
+                weekNum,
+                yearTerm, {
+                bool forceRefresh = false,
+                bool updateLastViewed = false,
+              }) async {
+                calls.add('$weekNum@$yearTerm:$forceRefresh');
+                return true;
+              },
+          loadUserId: () async => 'u1',
+        );
+
+        final result = await orchestrator.prefetchAllWeeksInBackground(
+          ScheduleData(
+            weekNum: '2',
+            yearTerm: '2024-2025-2',
+            weekList: const ['1', '2', '3'],
+          ),
+          null,
+          interval: Duration.zero,
+          forceRefresh: true,
+        );
+
+        expect(result.completed, isTrue);
+        expect(result.failedWeeks, isEmpty);
+        expect(calls, ['1@2024-2025-2:true', '3@2024-2025-2:true']);
+      },
+    );
+
+    test('week failure is reported while traversal still completes', () async {
+      SharedPreferences.setMockInitialValues({});
+      final orchestrator = ScheduleRefreshOrchestrator(
+        isDisposed: () => false,
+        ensureWeekLoaded: (
+          weekNum,
+          yearTerm, {
+          bool forceRefresh = false,
+          bool updateLastViewed = false,
+        }) async => weekNum != '1',
+        loadUserId: () async => 'u1',
+      );
+
+      final result = await orchestrator.prefetchAllWeeksInBackground(
+        ScheduleData(
+          weekNum: '2',
+          yearTerm: '2024-2025-2',
+          weekList: const ['1', '2', '3'],
+        ),
+        null,
+        interval: Duration.zero,
+      );
+
+      expect(result.completed, isTrue);
+      expect(result.failedWeeks, ['1']);
+      expect(() => result.failedWeeks.add('4'), throwsUnsupportedError);
+    });
+
+    test(
+      'disposed prefetch is incomplete and retains earlier week failures',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        var disposed = false;
+        final orchestrator = ScheduleRefreshOrchestrator(
+          isDisposed: () => disposed,
+          ensureWeekLoaded:
+              (
+                weekNum,
+                yearTerm, {
+                bool forceRefresh = false,
+                bool updateLastViewed = false,
+              }) async {
+                disposed = true;
+                return false;
+              },
+          loadUserId: () async => 'u1',
+        );
+
+        final result = await orchestrator.prefetchAllWeeksInBackground(
+          ScheduleData(
+            weekNum: '2',
+            yearTerm: '2024-2025-2',
+            weekList: const ['1', '2', '3'],
+          ),
+          null,
+          interval: Duration.zero,
+        );
+
+        expect(result.completed, isFalse);
+        expect(result.failedWeeks, ['1']);
+      },
+    );
   });
 }

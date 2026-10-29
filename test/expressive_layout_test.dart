@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
+import 'package:cqut_helper/manager/schedule_update_worker_health.dart';
 import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/model/academic_calendar_model.dart';
@@ -35,6 +38,7 @@ import 'package:cqut_helper/pages/Settings/schedule_courses_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_layout_preview.dart';
 import 'package:cqut_helper/pages/Settings/settings_schedule_scope.dart';
 import 'package:cqut_helper/pages/Settings/sync_diagnostics_page.dart';
+import 'package:cqut_helper/pages/Settings/sync_diagnostics_service.dart';
 import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
 import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
@@ -54,6 +58,49 @@ String? _fontFamily;
 late Map<String, Object?> _scheduleRow;
 bool _scheduleAvailable = true;
 late WorkmanagerPlatform _originalWorkmanager;
+
+class _VisualSyncDiagnosticsService extends SyncDiagnosticsService {
+  @override
+  Future<SyncDiagnosticsSnapshot> load() async {
+    final now = DateTime.now();
+    return SyncDiagnosticsSnapshot(
+      account: '2026001001',
+      hasCredential: true,
+      remindersEnabled: true,
+      enhancementEnabled: true,
+      cachedWeeks: 2,
+      refresh: ScheduleRefreshSnapshot(
+        lastSuccessfulRefreshAt: now.subtract(const Duration(minutes: 5)),
+        widgetState: ScheduleWidgetRefreshState.idle,
+        failure: null,
+      ),
+      reminders: CourseReminderStatus(
+        enabled: true,
+        ready: true,
+        reason: '提醒已安排',
+        scheduledCount: 4,
+        cachedWeekCount: 2,
+        expectedWeekCount: 2,
+        nextReminderAt: now.add(const Duration(hours: 1)),
+        updatedAt: now,
+      ),
+      notifications: true,
+      exactAlarm: true,
+      background: ScheduleBackgroundPollHealthSnapshot(
+        status: ScheduleBackgroundPollHealthStatus.healthy,
+        title: '后台运行正常',
+        detail: '后台检查按计划运行',
+        lastRunAt: now.subtract(const Duration(minutes: 10)),
+        lastSuccessAt: now.subtract(const Duration(minutes: 10)),
+      ),
+      batteryIgnored: true,
+      backgroundRestricted: false,
+    );
+  }
+
+  @override
+  void logFailure(String operation, Object error, StackTrace stack) {}
+}
 DatabaseFactory? _originalDatabaseFactory;
 
 class _VisualWorkmanager extends WorkmanagerPlatform {
@@ -736,7 +783,11 @@ void main() {
         '课前提醒',
       ),
       ('settings-appearance', const AppearanceStartupSettingsPage(), '主题模式'),
-      ('settings-diagnostics', const SyncDiagnosticsPage(), '同步与诊断'),
+      (
+        'settings-diagnostics',
+        SyncDiagnosticsPage(service: _VisualSyncDiagnosticsService()),
+        '同步与修复',
+      ),
       ('settings-backup', const BackupRestorePage(), '导出备份文件'),
       ('settings-storage', const ClearCachePage(), '课表缓存'),
       ('settings-about', const AboutSettingsPage(), '版本 1.2.1'),
@@ -746,6 +797,10 @@ void main() {
       ) async {
         await _pumpPage(tester, page.$2, width, brightness, scale);
         expect(find.text(page.$3), findsWidgets);
+        if (page.$1 == 'settings-diagnostics') {
+          expect(find.text('提醒就绪状态'), findsOneWidget);
+          expect(find.text('调课通知增强'), findsOneWidget);
+        }
         expect(find.byType(CircularProgressIndicator), findsNothing);
         expect(tester.takeException(), isNull, reason: page.$1);
         await _capturePage(tester, '${page.$1}-$label');
@@ -757,6 +812,20 @@ void main() {
           reason: '${page.$1} after scroll',
         );
         await _capturePage(tester, '${page.$1}-end-$label');
+        if (page.$1 == 'settings-diagnostics') {
+          await tester.tap(find.text('查看详情'));
+          await tester.pumpAndSettle();
+          final backgroundSuccess = find.textContaining('后台最近成功：');
+          await tester.ensureVisible(backgroundSuccess);
+          await tester.pumpAndSettle();
+          expect(backgroundSuccess.hitTestable(), findsOneWidget);
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: '${page.$1} details expanded',
+          );
+          await _capturePage(tester, '${page.$1}-details-$label');
+        }
         await tester.pumpWidget(const SizedBox.shrink());
       });
     }

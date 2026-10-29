@@ -143,7 +143,7 @@ void main() {
     expect(find.text('不同桌面的入口名称可能不同。'), findsOneWidget);
   });
 
-  testWidgets('个人资料请求失败时指南和设置菜单仍可用', (tester) async {
+  testWidgets('个人资料请求失败时设置菜单仍可用且不显示常驻指南入口', (tester) async {
     SharedPreferences.setMockInitialValues({'account': 'test-user'});
     final previousAdapter = ApiClient().dio.httpClientAdapter;
     ApiClient().dio.httpClientAdapter = _FailingAdapter();
@@ -153,11 +153,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('个人信息加载失败'), findsOneWidget);
-    expect(find.text('使用指南'), findsOneWidget);
+    expect(find.text('使用指南'), findsNothing);
     expect(find.text('设置'), findsOneWidget);
-    await tester.tap(find.text('使用指南'));
+    await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
-    expect(find.text('查看课表'), findsOneWidget);
+    expect(find.text('外观与启动'), findsOneWidget);
   });
 }
 

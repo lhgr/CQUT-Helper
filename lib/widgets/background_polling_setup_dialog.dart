@@ -91,7 +91,7 @@ class _BackgroundPollingSetupDialogState
       _SetupStep.battery => '允许应用在后台运行（忽略电池优化或选择“不限制”）。完成后返回此处继续设置自启动。',
       _SetupStep.autoStart =>
         '允许 CQUT Helper 自启动。部分设备需在应用详情中开启自启动或后台运行。完成后返回此处。',
-      _SetupStep.finish => '请确认已允许自启动和后台运行。系统无法直接读取自启动状态，可在“同步与诊断”查看后台运行情况。',
+      _SetupStep.finish => '请确认已允许自启动和后台运行。系统无法直接读取自启动状态，可在“同步与修复”查看后台运行情况。',
     };
     return PopScope(
       canPop: !_opening,

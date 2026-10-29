@@ -182,13 +182,13 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
 
   Future<void> _runAllWeeksPrefetch(ScheduleData currentData) async {
     _allWeeksPrefetchInFlight = true;
-    final completed = await _controller.prefetchAllWeeksInBackground(
+    final result = await _controller.prefetchAllWeeksInBackground(
       currentData,
       null,
     );
     _allWeeksPrefetchInFlight = false;
     if (!mounted) return;
-    if (!completed) {
+    if (!result.completed) {
       if (!_weekPageScrolling) {
         _scheduleAllWeeksPrefetch(_currentScheduleData ?? currentData);
       }

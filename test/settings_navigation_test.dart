@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
+import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/appearance_startup_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_courses_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/schedule_layout_preview.dart';
 import 'package:cqut_helper/pages/Settings/settings_schedule_scope.dart';
+import 'package:cqut_helper/pages/Settings/sync_diagnostics_page.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -66,6 +68,26 @@ void main() {
     expect(manager.layoutSettings.hideLocation, isTrue);
     expect(manager.layoutSettings.hideTeacher, isTrue);
     expect(manager.layoutSettings.removeCampusPrefix, isTrue);
+  });
+
+  testWidgets('同步与修复入口打开同步修复页面', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppSettingsPage(
+          initialScope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final entry = find.text('同步与修复');
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SyncDiagnosticsPage), findsOneWidget);
+    expect(find.text('同步与修复'), findsOneWidget);
   });
 
   testWidgets('布局子页预览固定在顶部且无背景时隐藏背景调节项', (tester) async {

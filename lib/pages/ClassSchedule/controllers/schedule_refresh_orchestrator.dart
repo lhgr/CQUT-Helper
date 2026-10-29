@@ -3,6 +3,16 @@ import 'dart:async';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class SchedulePrefetchResult {
+  final bool completed;
+  final List<String> failedWeeks;
+
+  SchedulePrefetchResult({
+    required this.completed,
+    Iterable<String> failedWeeks = const [],
+  }) : failedWeeks = List.unmodifiable(failedWeeks);
+}
+
 class ScheduleRefreshOrchestrator {
   final bool Function() isDisposed;
   final Future<bool> Function(
@@ -78,7 +88,7 @@ class ScheduleRefreshOrchestrator {
     onUpdate();
   }
 
-  Future<bool> prefetchAllWeeksInBackground(
+  Future<SchedulePrefetchResult> prefetchAllWeeksInBackground(
     ScheduleData currentData,
     void Function()? onUpdate, {
     Duration interval = const Duration(milliseconds: 150),
@@ -86,28 +96,40 @@ class ScheduleRefreshOrchestrator {
   }) {
     final generation = ++_backgroundPrefetchGeneration;
     return Future(() async {
+      final failedWeeks = <String>[];
       final wList = currentData.weekList;
       final currentWeekStr = currentData.weekNum;
       final cTerm = currentData.yearTerm;
       if (wList == null || currentWeekStr == null || cTerm == null) {
-        return false;
+        return SchedulePrefetchResult(completed: false);
       }
 
       for (final week in wList) {
         if (isDisposed() || generation != _backgroundPrefetchGeneration) {
-          return false;
+          return SchedulePrefetchResult(
+            completed: false,
+            failedWeeks: failedWeeks,
+          );
         }
         if (week == currentWeekStr) continue;
-        await ensureWeekLoaded(week, cTerm, forceRefresh: forceRefresh);
+        final loaded = await ensureWeekLoaded(
+          week,
+          cTerm,
+          forceRefresh: forceRefresh,
+        );
+        if (!loaded) failedWeeks.add(week);
         if (isDisposed() || generation != _backgroundPrefetchGeneration) {
-          return false;
+          return SchedulePrefetchResult(
+            completed: false,
+            failedWeeks: failedWeeks,
+          );
         }
         onUpdate?.call();
         if (interval > Duration.zero) {
           await Future.delayed(interval);
         }
       }
-      return true;
+      return SchedulePrefetchResult(completed: true, failedWeeks: failedWeeks);
     });
   }
 

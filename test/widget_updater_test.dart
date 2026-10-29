@@ -18,9 +18,12 @@ void main() {
       if (attempts == 1) throw MissingPluginException();
     };
 
-    await WidgetUpdater.updateTodayWidget(trigger: 'app_resumed');
+    final result = await WidgetUpdater.updateTodayWidget(
+      trigger: 'app_resumed',
+    );
 
     expect(attempts, 2);
+    expect(result, WidgetUpdateResult.accepted);
   });
 
   test('does not invoke the Android bridge on other platforms', () async {
@@ -30,9 +33,12 @@ void main() {
       invoked = true;
     };
 
-    await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+    final result = await WidgetUpdater.updateTodayWidget(
+      trigger: 'schedule_refresh',
+    );
 
     expect(invoked, isFalse);
+    expect(result, WidgetUpdateResult.notSupported);
   });
 
   test(
@@ -52,7 +58,10 @@ void main() {
         throw MissingPluginException('bridge unavailable');
       };
 
-      await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+      final result = await WidgetUpdater.updateTodayWidget(
+        trigger: 'schedule_refresh',
+      );
+      expect(result, WidgetUpdateResult.failed);
 
       final failures = logger.recent
           .where(

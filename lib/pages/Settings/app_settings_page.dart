@@ -149,8 +149,8 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                       const Divider(height: 1, indent: 56),
                       SettingsSectionTile(
                         icon: Icons.health_and_safety_outlined,
-                        title: '同步与诊断',
-                        subtitle: '检查课表同步、提醒和后台状态',
+                        title: '同步与修复',
+                        subtitle: '查看同步状态，处理课表和提醒问题',
                         onTap: () =>
                             _openSection(AppSettingsSection.diagnostics),
                       ),

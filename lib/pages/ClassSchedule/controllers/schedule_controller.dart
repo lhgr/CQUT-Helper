@@ -198,7 +198,7 @@ class ScheduleController {
     );
   }
 
-  Future<bool> prefetchAllWeeksInBackground(
+  Future<SchedulePrefetchResult> prefetchAllWeeksInBackground(
     ScheduleData currentData,
     void Function()? onUpdate, {
     Duration interval = const Duration(milliseconds: 150),

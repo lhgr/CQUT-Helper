@@ -248,7 +248,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     if (!prepared || !mounted) return false;
 
     setState(() {
-      _sheetNoticeMessage = '后台轮询已开启，实际稳定性以后续后台运行记录为准；可在“同步与诊断”中检查设置。';
+      _sheetNoticeMessage = '后台轮询已开启，实际稳定性以后续后台运行记录为准；可在“同步与修复”中检查设置。';
     });
     return true;
   }

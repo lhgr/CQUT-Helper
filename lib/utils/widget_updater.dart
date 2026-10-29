@@ -9,6 +9,8 @@ typedef WidgetMethodInvoker = Future<void> Function(
   Map<String, Object?> arguments,
 );
 
+enum WidgetUpdateResult { accepted, failed, notSupported }
+
 class WidgetUpdater {
   static const MethodChannel _channel = MethodChannel('cqut/widget');
   static const Duration _retryDelay = Duration(milliseconds: 120);
@@ -22,17 +24,21 @@ class WidgetUpdater {
   @visibleForTesting
   static Future<void> Function(Duration delay)? debugDelay;
 
-  static Future<void> updateTodayWidget({String? themeMode, String? trigger}) =>
-      AppLogger.I.runWithTraceIdAsync(
-        AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
-        () => _updateTodayWidget(themeMode: themeMode, trigger: trigger),
-      );
+  static Future<WidgetUpdateResult> updateTodayWidget({
+    String? themeMode,
+    String? trigger,
+  }) => AppLogger.I.runWithTraceIdAsync(
+    AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+    () => _updateTodayWidget(themeMode: themeMode, trigger: trigger),
+  );
 
-  static Future<void> _updateTodayWidget({
+  static Future<WidgetUpdateResult> _updateTodayWidget({
     String? themeMode,
     String? trigger,
   }) async {
-    if (!(debugIsAndroidOverride ?? Platform.isAndroid)) return;
+    if (!(debugIsAndroidOverride ?? Platform.isAndroid)) {
+      return WidgetUpdateResult.notSupported;
+    }
     final arguments = <String, Object?>{
       'themeMode': ?themeMode,
       'trigger': ?trigger,
@@ -57,7 +63,7 @@ class WidgetUpdater {
             'trigger': trigger,
           },
         );
-        return;
+        return WidgetUpdateResult.accepted;
       } catch (error, stackTrace) {
         final isFinalAttempt = attempt == 2;
         final log = isFinalAttempt ? AppLogger.I.error : AppLogger.I.warn;
@@ -76,7 +82,7 @@ class WidgetUpdater {
             'outcome': isFinalAttempt ? 'failed' : 'retrying',
           },
         );
-        if (isFinalAttempt) return;
+        if (isFinalAttempt) return WidgetUpdateResult.failed;
         final delay = debugDelay;
         if (delay == null) {
           await Future<void>.delayed(_retryDelay);
@@ -85,6 +91,7 @@ class WidgetUpdater {
         }
       }
     }
+    return WidgetUpdateResult.failed;
   }
 
   static Future<void> _invokePlatformMethod(
