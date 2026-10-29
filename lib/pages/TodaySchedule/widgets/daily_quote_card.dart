@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cqut_helper/manager/daily_quote_manager.dart';
+import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -136,13 +137,16 @@ class _DailyQuoteCardState extends State<DailyQuoteCard>
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.only(top: 24),
       child: Card(
         margin: EdgeInsets.zero,
         elevation: 0,
         color: colors.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+        ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -150,15 +154,14 @@ class _DailyQuoteCardState extends State<DailyQuoteCard>
                 children: [
                   Icon(
                     Icons.format_quote_rounded,
-                    color: colors.primary,
-                    size: 22,
+                    color: colors.onSurfaceVariant,
+                    size: 20,
                   ),
                   const SizedBox(width: 6),
                   Text(
                     '一言',
                     style: theme.textTheme.labelLarge?.copyWith(
-                      color: colors.primary,
-                      fontWeight: FontWeight.w700,
+                      color: colors.onSurfaceVariant,
                     ),
                   ),
                   const Spacer(),
@@ -168,6 +171,7 @@ class _DailyQuoteCardState extends State<DailyQuoteCard>
                       icon: const Icon(Icons.autorenew_rounded, size: 18),
                       label: const Text('换一句'),
                       style: TextButton.styleFrom(
+                        foregroundColor: colors.onSurfaceVariant,
                         visualDensity: VisualDensity.compact,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -194,9 +198,9 @@ class _DailyQuoteCardState extends State<DailyQuoteCard>
                           quote.text,
                           maxLines: 4,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
+                          style: theme.textTheme.bodyLarge?.copyWith(
                             height: 1.55,
-                            color: colors.onSurface,
+                            color: colors.onSurfaceVariant,
                           ),
                         ),
                         if (quote.source != null) ...[

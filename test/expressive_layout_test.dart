@@ -52,6 +52,7 @@ const _user = 'visual-test';
 const _term = '2026-2027-1';
 String? _fontFamily;
 late Map<String, Object?> _scheduleRow;
+bool _scheduleAvailable = true;
 late WorkmanagerPlatform _originalWorkmanager;
 DatabaseFactory? _originalDatabaseFactory;
 
@@ -105,6 +106,7 @@ void main() {
   });
 
   setUp(() {
+    _scheduleAvailable = true;
     final now = DateTime.now();
     String clock(int minute) =>
         '${(minute ~/ 60).toString().padLeft(2, '0')}:${(minute % 60).toString().padLeft(2, '0')}';
@@ -219,6 +221,21 @@ void main() {
         ],
       }),
       'schedule_default_home_tab': 2,
+      'daily_quote_cache_ts_v1': now.millisecondsSinceEpoch,
+      'daily_quote_config_v1': jsonEncode({
+        'enabled': true,
+        'revision': 1,
+        'rotationMode': 'daily',
+        'items': [
+          {
+            'id': 'visual-first',
+            'text': '把平凡的每一天，过成自己的好时光。',
+            'source': '校园一言',
+            'priority': 100,
+          },
+          {'id': 'visual-second', 'text': '慢慢来，每一步都有意义。'},
+        ],
+      }),
       'academic_calendar_snapshot_v1_$_term': calendar.encode(),
       'academic_calendar_checked_at_v1_$_term': now.millisecondsSinceEpoch,
       'user_info_$_user': jsonEncode({
@@ -283,7 +300,16 @@ void main() {
                 {'value': '1'},
               ];
             }
-            if (sql.contains('schedule_weeks')) return [_scheduleRow];
+            if (sql.contains('schedule_weeks')) {
+              if (!_scheduleAvailable) return <Map<String, Object?>>[];
+              final arguments = args?['arguments'] as List? ?? const [];
+              if (sql.contains('week_num = ?') &&
+                  arguments.length >= 3 &&
+                  arguments[2] != _scheduleRow['week_num']) {
+                return <Map<String, Object?>>[];
+              }
+              return [_scheduleRow];
+            }
             return <Map<String, Object?>>[];
           case 'execute':
             if ((args?['sql'] as String? ?? '').startsWith('BEGIN')) {
@@ -391,6 +417,142 @@ void main() {
     await onboarding.dismissOptionalFeatures();
   });
 
+  testWidgets('today represents next course and finished day', (tester) async {
+    final now = DateTime.now();
+    final minute = now.hour * 60 + now.minute;
+    // Relative times exercise production countdown selection without changing
+    // the page clock or adding a test-only production constructor.
+    if (minute < 1420) {
+      await _setTodayTimes(start: minute + 10, end: minute + 30);
+      await _pumpPage(
+        tester,
+        const TodayScheduleView(),
+        390,
+        Brightness.light,
+        1,
+      );
+      expect(find.text('下一节课'), findsOneWidget);
+      expect(find.textContaining('10分钟'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'today-next-light-390');
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+    if (minute > 30) {
+      await _setTodayTimes(start: minute - 30, end: minute - 10);
+      await _pumpPage(
+        tester,
+        const TodayScheduleView(),
+        390,
+        Brightness.dark,
+        1,
+      );
+      expect(find.text('今日课程已结束'), findsOneWidget);
+      expect(find.text('数字图像处理'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'today-finished-dark-390');
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  for (final state in [
+    'no-courses',
+    'holiday',
+    'outside-week',
+    'missing-source',
+    'mapped',
+  ]) {
+    testWidgets('today $state preserves calendar meaning', (tester) async {
+      final now = DateTime.now();
+      final data = _fixtureSchedule();
+      if (state == 'no-courses') data.eventList = [];
+      if (state == 'outside-week') {
+        for (var index = 0; index < data.weekDayList!.length; index++) {
+          final date = now.add(Duration(days: 14 + index));
+          data.weekDayList![index].weekDate =
+              '${date.year}-${date.month}-${date.day}';
+        }
+      }
+      if (state == 'holiday' ||
+          state == 'missing-source' ||
+          state == 'mapped') {
+        final source = state == 'mapped'
+            ? now.add(Duration(days: now.weekday == 7 ? -1 : 1))
+            : now.add(const Duration(days: 28));
+        if (state == 'mapped') {
+          data.eventList = [
+            data.eventList!.first..weekDay = '${source.weekday}',
+          ];
+        }
+        await _setCalendar([
+          AcademicCalendarDay(
+            date: now,
+            kind: state == 'holiday'
+                ? AcademicCalendarDayKind.holiday
+                : AcademicCalendarDayKind.teachingDay,
+            label: state == 'holiday' ? '校历假日' : '调休安排',
+            scheduleDate: state == 'holiday' ? null : source,
+          ),
+        ]);
+      }
+      _replaceFixtureSchedule(data);
+      await _pumpPage(
+        tester,
+        const TodayScheduleView(),
+        390,
+        Brightness.light,
+        1,
+      );
+      switch (state) {
+        case 'no-courses':
+          expect(find.text('今天没课'), findsOneWidget);
+        case 'holiday':
+          expect(find.text('今日放假'), findsOneWidget);
+          expect(find.textContaining('校历假日'), findsOneWidget);
+          expect(find.text('数字图像处理'), findsNothing);
+        case 'outside-week':
+          expect(find.text('当前不在教学周'), findsOneWidget);
+        case 'missing-source':
+          expect(find.text('调休课表尚未加载'), findsOneWidget);
+          expect(find.text('数字图像处理'), findsNothing);
+        case 'mapped':
+          expect(find.text('数字图像处理'), findsWidgets);
+          expect(find.textContaining('调休：原'), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'today-$state-light-390');
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('today missing credentials offers retry and login', (
+    tester,
+  ) async {
+    _scheduleAvailable = false;
+    await _pumpPage(
+      tester,
+      const TodayScheduleView(),
+      320,
+      Brightness.light,
+      1.6,
+    );
+    expect(find.text('重试'), findsOneWidget);
+    expect(find.text('重新登录'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _capturePage(tester, 'today-error-light-320-large');
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(find.text('重新登录'), findsOneWidget);
+    await tester.tap(find.text('重新登录'));
+    await tester.pumpAndSettle();
+    expect(find.byType(LoginPage), findsOneWidget);
+    expect(
+      tester.widget<LoginPage>(find.byType(LoginPage)).reauthenticate,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final scenario in [
     ('light-390', Brightness.light, 390.0, 1.0),
     ('dark-390', Brightness.dark, 390.0, 1.0),
@@ -462,6 +624,68 @@ void main() {
       expect(find.textContaining('1小时40分钟'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await _capturePage(tester, 'today-$label');
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('today long content $label opens details and refreshes cache', (
+      tester,
+    ) async {
+      const name = '数字图像处理与计算机视觉综合实践课程设计';
+      const location = '花溪校区第三教学楼与工程训练中心联合实验室 A 区 302';
+      const note = '请携带笔记本电脑，提前阅读实验指导书，准备本周课程汇报材料。';
+      final data = _fixtureSchedule();
+      data.eventList!.first
+        ..eventName = name
+        ..address = location
+        ..note = note;
+      data.eventList!.last
+        ..memberName = null
+        ..address = null
+        ..note = null;
+      _replaceFixtureSchedule(data);
+      await _pumpPage(
+        tester,
+        const TodayScheduleView(),
+        width,
+        brightness,
+        scale,
+      );
+      expect(find.text(name), findsWidgets);
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'today-long-$label');
+
+      // Open the real course row rather than testing the dialog in isolation.
+      final course = find.text(name).last;
+      await tester.ensureVisible(course);
+      await tester.tap(course);
+      await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(find.textContaining(location), findsWidgets);
+      expect(find.textContaining(note), findsWidgets);
+      expect(tester.takeException(), isNull);
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsNothing);
+
+      final quote = find.text('换一句');
+      await tester.ensureVisible(quote);
+      await tester.pumpAndSettle();
+      expect(find.text('地点：null'), findsNothing);
+      expect(find.text('教师：null'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'today-long-list-end-$label');
+      await tester.tap(quote);
+      await tester.pumpAndSettle();
+      expect(find.text('慢慢来，每一步都有意义。'), findsOneWidget);
+      expect(find.text('把平凡的每一天，过成自己的好时光。'), findsNothing);
+
+      await tester.drag(find.byType(ListView).first, const Offset(0, 2400));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).first, const Offset(0, 500));
+      await tester.pumpAndSettle();
+      expect(find.text(name), findsWidgets);
+      expect(find.text('请重新登录后刷新，正在显示已保存课表。'), findsOneWidget);
+      expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
@@ -918,6 +1142,57 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
     });
   }
+}
+
+ScheduleData _fixtureSchedule() => ScheduleData.fromJson(
+  (jsonDecode(_scheduleRow['raw_json'] as String) as Map)
+      .cast<String, dynamic>(),
+);
+
+void _replaceFixtureSchedule(ScheduleData data) {
+  final raw = jsonEncode(data.toJson());
+  _scheduleRow = {
+    ..._scheduleRow,
+    'raw_json': raw,
+    'checksum': ScheduleCacheDatabase.checksumFor(raw),
+  };
+}
+
+Future<void> _setTodayTimes({required int start, required int end}) async {
+  String clock(int minute) =>
+      '${(minute ~/ 60).toString().padLeft(2, '0')}:${(minute % 60).toString().padLeft(2, '0')}';
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(
+    'schedule_time_info_cache_v1',
+    jsonEncode({
+      'campusName': '花溪校区',
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      'items': [
+        for (var session = 1; session <= 6; session++)
+          CampusTimeInfo(
+            campusName: '花溪校区',
+            sessionNum: session,
+            startTime: clock(start),
+            endTime: clock(end),
+          ).toJson(),
+      ],
+    }),
+  );
+}
+
+Future<void> _setCalendar(List<AcademicCalendarDay> days) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(
+    'academic_calendar_snapshot_v1_$_term',
+    AcademicCalendarSnapshot(
+      schemaVersion: 1,
+      yearTerm: _term,
+      revision: 'visual-state',
+      generatedAt: DateTime.now(),
+      complete: true,
+      days: days,
+    ).encode(),
+  );
 }
 
 Future<void> _revealCachedCourse(WidgetTester tester) async {

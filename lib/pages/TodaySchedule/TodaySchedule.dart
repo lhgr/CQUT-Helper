@@ -287,14 +287,16 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
 
   String get _freshnessText {
     final at = _lastSuccessfulRefreshAt;
-    if (at == null) return '来自$_dataSource · 上次更新时间未知';
+    final saved = _error != null || _dataSource == '缓存';
+    if (at == null) return saved ? '使用已保存课表' : '课表已更新';
     final now = DateTime.now();
     final sameDay =
         now.year == at.year && now.month == at.month && now.day == at.day;
-    final date = sameDay ? '今天' : '${at.month}/${at.day}';
+    final date = sameDay ? '' : '${at.month}月${at.day}日 ';
     final hour = at.hour.toString().padLeft(2, '0');
     final minute = at.minute.toString().padLeft(2, '0');
-    return '来自$_dataSource · 上次更新：$date $hour:$minute';
+    final updated = '更新于 $date$hour:$minute';
+    return saved ? '已保存课表 · $updated' : updated;
   }
 
   String _mapError(Object error) {
@@ -406,7 +408,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .join('、');
-    return sessions.isEmpty ? '节次未知' : '第$sessions节';
+    return sessions.isEmpty ? '' : '第$sessions节';
   }
 
   String? _timeRangeLabel(EventItem event) {
@@ -486,13 +488,13 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
 
   String _weekDayLabel(int weekDay) {
     const labels = <int, String>{
-      1: '周一',
-      2: '周二',
-      3: '周三',
-      4: '周四',
-      5: '周五',
-      6: '周六',
-      7: '周日',
+      1: '星期一',
+      2: '星期二',
+      3: '星期三',
+      4: '星期四',
+      5: '星期五',
+      6: '星期六',
+      7: '星期日',
     };
     return labels[weekDay] ?? '今天';
   }
@@ -502,42 +504,43 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     final data = _scheduleData;
 
     if (_loading && data == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        appBar: AppBar(title: const Text('今日'), centerTitle: true),
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
 
     if (data == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('今日课表'), centerTitle: true),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+        appBar: AppBar(title: const Text('今日'), centerTitle: true),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
+          children: [
+            _EmptyState(
+              icon: Icons.event_busy_outlined,
+              title: _requiresReauthentication ? '需要重新登录' : '课表暂时不可用',
+              message: _error ?? '暂无可用的课表数据。',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                const Icon(Icons.event_busy_outlined, size: 48),
-                const SizedBox(height: 16),
-                Text(_error ?? '暂无可用的课表数据。'),
-                const SizedBox(height: 16),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 8,
-                  children: [
-                    if (_requiresReauthentication)
-                      FilledButton.icon(
-                        onPressed: _reauthenticate,
-                        icon: const Icon(Icons.login),
-                        label: const Text('重新登录'),
-                      ),
-                    OutlinedButton.icon(
-                      onPressed: () => _loadSchedule(forceRefresh: true),
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('重试'),
-                    ),
-                  ],
+                if (_requiresReauthentication)
+                  FilledButton.icon(
+                    onPressed: _reauthenticate,
+                    icon: const Icon(Icons.login),
+                    label: const Text('重新登录'),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: () => _loadSchedule(forceRefresh: true),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('重试'),
                 ),
               ],
             ),
-          ),
+          ],
         ),
       );
     }
@@ -557,24 +560,22 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         ? _todayEvents(data)
         : const <EventItem>[];
     final moment = events.isEmpty ? null : _courseMoment(events);
+    final hasCourseCount =
+        calendarHoliday ||
+        (!calendarMissingSource &&
+            (coveredToday || resolvedToday?.isTeachingDay == true));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('今日课表'), centerTitle: true),
+      appBar: AppBar(title: const Text('今日'), centerTitle: true),
       body: RefreshIndicator(
         onRefresh: () => _loadSchedule(forceRefresh: true),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
           children: [
-            _SummaryCard(
-              title: calendarHoliday
-                  ? '今日放假'
-                  : resolvedToday?.isTeachingDay == true ||
-                        calendarMissingSource
-                  ? '今日调休上课'
-                  : _weekDayLabel(weekDayNum),
+            _DateSummary(
               dateText:
-                  '${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}',
+                  '${now.month}月${now.day}日 · ${_weekDayLabel(weekDayNum)}',
               termText: data.yearTerm?.trim().isNotEmpty == true
                   ? data.yearTerm!.trim()
                   : '当前学期',
@@ -583,14 +584,10 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                   : '本周',
               freshnessText: _freshnessText,
             ),
-            if (calendarHoliday)
-              _InfoBanner(
-                icon: Icons.event_busy_outlined,
-                message: resolvedToday!.label.isEmpty
-                    ? '今天没有课程安排。'
-                    : '${resolvedToday.label}，今天没有课程安排。',
-              ),
-            if (!calendarHoliday && resolvedToday?.isTeachingDay == true)
+            if (!calendarHoliday &&
+                !calendarMissingSource &&
+                resolvedToday?.isTeachingDay == true) ...[
+              const SizedBox(height: 12),
               _InfoBanner(
                 icon: Icons.event_available_outlined,
                 message: [
@@ -598,28 +595,58 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                   '按原课表${academicCalendarDateKey(resolvedToday.scheduleDate!)}上课',
                 ].join(' · '),
               ),
-            if (calendarMissingSource)
-              const _InfoBanner(
-                icon: Icons.sync_problem_outlined,
-                message: '调休课表尚未加载完成，请稍后重试。',
-              ),
+            ],
             if (moment != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 24),
               _NowNextCard(moment: moment),
             ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               _InfoBanner(
                 icon: Icons.wifi_off_outlined,
-                message: _error!,
-                isError: true,
+                message: _requiresReauthentication
+                    ? '请重新登录后刷新，正在显示已保存课表。'
+                    : '刷新失败，正在显示已保存课表。',
               ),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '今日课程',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (hasCourseCount)
+                  Text(
+                    '${events.length}项安排',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
             if (calendarHoliday)
-              const SizedBox.shrink()
+              _EmptyState(
+                icon: Icons.event_busy_outlined,
+                title: '今日放假',
+                message: resolvedToday!.label.isEmpty
+                    ? '今天没有课程安排。'
+                    : '${resolvedToday.label}，今天没有课程安排。',
+              )
             else if (calendarMissingSource)
-              const SizedBox.shrink()
+              _EmptyState(
+                icon: Icons.sync_problem_outlined,
+                title: '调休课表尚未加载',
+                message: [
+                  if (resolvedToday!.label.isNotEmpty) resolvedToday.label,
+                  if (resolvedToday.scheduleDate != null)
+                    '按原课表${academicCalendarDateKey(resolvedToday.scheduleDate!)}上课',
+                  '请下拉刷新后重试。',
+                ].join(' · '),
+              )
             else if (!coveredToday && resolvedToday?.isTeachingDay != true)
               const _EmptyState(
                 icon: Icons.event_note_outlined,
@@ -632,7 +659,12 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
                 title: '今天没课',
               )
             else
-              ...events.map((event) => _buildEventCard(context, event)),
+              ...events.indexed.expand(
+                (entry) => [
+                  if (entry.$1 > 0) const SizedBox(height: 12),
+                  _buildEventCard(context, entry.$2),
+                ],
+              ),
             DailyQuoteCard(
               key: const ValueKey('today_daily_quote'),
               active: widget.isActive,
@@ -645,17 +677,22 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   }
 
   Widget _buildEventCard(BuildContext context, EventItem event) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final timeRange = _timeRangeLabel(event);
     final sessionLabel = _sessionLabel(event);
     final location = (event.address ?? '').trim();
     final teacher = (event.memberName ?? '').trim();
     final note = (event.note ?? '').trim();
-    final startSession = _sessionStart(event);
-    final endSession = _sessionEnd(event);
+    final name = (event.eventName ?? '').trim();
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: EdgeInsets.zero,
       elevation: 0,
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
@@ -667,88 +704,63 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         },
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 56,
-                padding: const EdgeInsets.symmetric(
-                  vertical: 10,
-                  horizontal: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      '$startSession',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                    Text(
-                      endSession > startSession ? '-$endSession' : '单节',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ],
+              Text(
+                name.isEmpty ? '未命名课程' : name,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              if (sessionLabel.isNotEmpty || timeRange != null) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 4,
                   children: [
-                    Text(
-                      (event.eventName ?? '').trim().isEmpty
-                          ? '未命名课程'
-                          : event.eventName!.trim(),
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      timeRange == null
-                          ? sessionLabel
-                          : '$sessionLabel  |  $timeRange',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    if (location.isNotEmpty) ...[
-                      const SizedBox(height: 6),
+                    if (sessionLabel.isNotEmpty)
                       Text(
-                        '地点：$location',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                    if (teacher.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '教师：$teacher',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        sessionLabel,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colors.onSurfaceVariant,
                         ),
                       ),
-                    ],
-                    if (note.isNotEmpty) ...[
-                      const SizedBox(height: 6),
+                    if (timeRange != null)
                       Text(
-                        note,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.tertiary,
+                        timeRange,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colors.onSurfaceVariant,
                         ),
                       ),
-                    ],
                   ],
                 ),
-              ),
+              ],
+              if (location.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _CourseMetadata(
+                  icon: Icons.location_on_outlined,
+                  label: '地点',
+                  text: location,
+                ),
+              ],
+              if (teacher.isNotEmpty) ...[
+                SizedBox(height: location.isNotEmpty ? 8 : 12),
+                _CourseMetadata(
+                  icon: Icons.person_outline,
+                  label: '教师',
+                  text: teacher,
+                ),
+              ],
+              if (note.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  note,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -757,15 +769,48 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  final String title;
+class _CourseMetadata extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String text;
+
+  const _CourseMetadata({
+    required this.icon,
+    required this.label,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurfaceVariant;
+    return Semantics(
+      label: '$label：$text',
+      excludeSemantics: true,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodyMedium?.copyWith(color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DateSummary extends StatelessWidget {
   final String dateText;
   final String termText;
   final String weekText;
   final String freshnessText;
 
-  const _SummaryCard({
-    required this.title,
+  const _DateSummary({
     required this.dateText,
     required this.termText,
     required this.weekText,
@@ -775,60 +820,18 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  color: colors.onSurface,
-                ),
-              ),
-              Text(
-                dateText,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(weekText, style: theme.textTheme.bodyMedium),
-              Text('·', style: theme.textTheme.bodySmall),
-              Text(
-                termText,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            freshnessText,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
+    final secondaryStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(dateText, style: theme.textTheme.titleLarge),
+        const SizedBox(height: 8),
+        Text('$termText · $weekText', style: secondaryStyle),
+        const SizedBox(height: 4),
+        Text(freshnessText, style: secondaryStyle),
+      ],
     );
   }
 }
@@ -836,36 +839,31 @@ class _SummaryCard extends StatelessWidget {
 class _InfoBanner extends StatelessWidget {
   final IconData icon;
   final String message;
-  final bool isError;
 
-  const _InfoBanner({
-    required this.icon,
-    required this.message,
-    this.isError = false,
-  });
+  const _InfoBanner({required this.icon, required this.message});
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final background = isError
-        ? colors.errorContainer
-        : colors.secondaryContainer;
-    final foreground = isError
-        ? colors.onErrorContainer
-        : colors.onSecondaryContainer;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(14),
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppTheme.controlRadius),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: foreground),
-          const SizedBox(width: 10),
+          Icon(icon, size: 20, color: colors.onSurfaceVariant),
+          const SizedBox(width: 8),
           Expanded(
-            child: Text(message, style: TextStyle(color: foreground)),
+            child: Text(
+              message,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
           ),
         ],
       ),
@@ -882,31 +880,36 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 36),
-      child: Column(
-        children: [
-          Icon(icon, size: 40, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          if (message != null) ...[
-            const SizedBox(height: 8),
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurfaceVariant;
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(icon, size: 40, color: color),
+            const SizedBox(height: 12),
             Text(
-              message!,
+              title,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+              style: theme.textTheme.titleMedium?.copyWith(color: color),
             ),
+            if (message != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                message!,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(color: color),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -943,101 +946,71 @@ class _NowNextCard extends StatelessWidget {
     return hours > 0 ? '$hours小时$minutes分钟' : '$minutes分钟';
   }
 
-  String get _countdown {
-    if (moment.kind == _CourseMomentKind.finished) return '辛苦了';
-    return moment.kind == _CourseMomentKind.ongoing
-        ? '距离下课 $_countdownDuration'
-        : '$_countdownDuration 后开始';
-  }
-
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final finished = moment.kind == _CourseMomentKind.finished;
+    final foreground = finished
+        ? colors.onSurfaceVariant
+        : colors.onPrimaryContainer;
     final name = (moment.event.eventName ?? '').trim();
     final location = (moment.event.address ?? '').trim();
-    final stackCountdown =
-        MediaQuery.sizeOf(context).width < 360 ||
-        MediaQuery.textScalerOf(context).scale(1) > 1.3;
-    final countdownStyle = Theme.of(context).textTheme.labelLarge
-        ?.copyWith(color: Theme.of(context).colorScheme.onTertiaryContainer);
+    final countdownStyle = theme.textTheme.titleMedium?.copyWith(
+      color: foreground,
+      fontWeight: FontWeight.w600,
+    );
     return Card(
+      margin: EdgeInsets.zero,
       elevation: 0,
-      color: Theme.of(context).colorScheme.tertiaryContainer,
+      color: finished ? colors.surfaceContainerLow : colors.primaryContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              moment.kind == _CourseMomentKind.ongoing
-                  ? Icons.play_circle_fill
-                  : moment.kind == _CourseMomentKind.next
-                  ? Icons.upcoming
-                  : Icons.done_all,
-              size: 34,
-              color: Theme.of(context).colorScheme.onTertiaryContainer,
+            Text(
+              _title,
+              style: theme.textTheme.labelLarge?.copyWith(color: foreground),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _title,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onTertiaryContainer,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  if (moment.kind != _CourseMomentKind.finished)
-                    Text(
-                      name.isEmpty ? '未命名课程' : name,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onTertiaryContainer,
-                      ),
-                    ),
-                  if (location.isNotEmpty &&
-                      moment.kind != _CourseMomentKind.finished)
-                    Text(
-                      location,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  if (stackCountdown) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 4,
-                      runSpacing: 0,
-                      children: [
-                        if (moment.kind == _CourseMomentKind.ongoing)
-                          Text('距离下课', style: countdownStyle),
-                        if (moment.kind != _CourseMomentKind.finished)
-                          Text(
-                            _countdownDuration,
-                            maxLines: 1,
-                            softWrap: false,
-                            style: countdownStyle,
-                          ),
-                        if (moment.kind == _CourseMomentKind.next)
-                          Text('后开始', style: countdownStyle),
-                        if (moment.kind == _CourseMomentKind.finished)
-                          Text('辛苦了', style: countdownStyle),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (!stackCountdown) ...[
-              const SizedBox(width: 8),
+            if (finished) ...[
+              const SizedBox(height: 8),
               Text(
-                _countdown,
-                textAlign: TextAlign.end,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                '辛苦了',
+                style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                name.isEmpty ? '未命名课程' : name,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: foreground,
                   fontWeight: FontWeight.w700,
-                  color: Theme.of(context).colorScheme.onTertiaryContainer,
                 ),
+              ),
+              if (location.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  location,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: foreground,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  if (moment.kind == _CourseMomentKind.ongoing)
+                    Text('距离下课', style: countdownStyle),
+                  Text(_countdownDuration, style: countdownStyle),
+                  if (moment.kind == _CourseMomentKind.next)
+                    Text('后开始', style: countdownStyle),
+                ],
               ),
             ],
           ],
