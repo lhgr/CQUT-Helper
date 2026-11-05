@@ -4,10 +4,9 @@ import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/model/announcement_model.dart';
 import 'package:dio/dio.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:cqut_helper/widgets/announcement_dialog.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 enum AnnouncementFailureType { backend, network, request }
 
@@ -114,11 +113,21 @@ class AnnouncementManager {
   factory AnnouncementManager() => _instance;
   AnnouncementManager._internal();
 
+  @visibleForTesting
+  AnnouncementManager.forTesting({
+    required Future<AnnouncementModel?> Function() loadLatest,
+  }) : _loadLatestOverride = loadLatest;
+
+  Future<AnnouncementModel?> Function()? _loadLatestOverride;
+  Future<AnnouncementModel?>? _pendingRequest;
+  bool _showingAnnouncement = false;
+
   final ApiService _apiService = ApiService();
 
   static const _cacheItemsKey = 'announcement_cache_items_v1';
   static const _cacheTsKey = 'announcement_cache_ts_v1';
   static const _latestPopupIdKey = 'announcement_latest_popup_id_v1';
+  static const _readIdsKey = 'announcement_read_ids_v1';
   static const _cacheTtlMs = 6 * 60 * 60 * 1000;
 
   Future<void> _purgeExpiredCache(SharedPreferences prefs, int nowMs) async {
@@ -127,23 +136,6 @@ class AnnouncementManager {
       await prefs.remove(_cacheItemsKey);
       await prefs.remove(_cacheTsKey);
     }
-  }
-
-  String _formatMarkdown(String raw) {
-    final normalized = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    final lines = normalized.split('\n');
-    final buffer = StringBuffer();
-    for (int i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      if (line.isNotEmpty && !line.endsWith('  ')) {
-        buffer.write(line);
-        buffer.write('  ');
-      } else {
-        buffer.write(line);
-      }
-      if (i != lines.length - 1) buffer.write('\n');
-    }
-    return buffer.toString();
   }
 
   Future<AnnouncementHealthResult> checkHealth() async {
@@ -268,64 +260,64 @@ class AnnouncementManager {
     }
   }
 
-  Future<void> checkAndShow(BuildContext context) async {
+  Future<Set<String>> _readAnnouncementIds() async {
     final prefs = await SharedPreferences.getInstance();
-    final packageInfo = await PackageInfo.fromPlatform();
-    final latest = await _apiService.announcement.getLatest(
-      appVersion: packageInfo.version,
-    );
-    if (latest == null) return;
-    final lastPopupId = prefs.getString(_latestPopupIdKey);
-    if (lastPopupId == latest.id) return;
-    if (!context.mounted) return;
-
-    await _showAnnouncementDialog(context, latest);
-    await prefs.setString(_latestPopupIdKey, latest.id);
+    return {
+      ...?prefs.getStringList(_readIdsKey),
+      if (prefs.getString(_latestPopupIdKey) case final String id) id,
+    };
   }
 
-  Future<void> _showAnnouncementDialog(
+  Future<AnnouncementModel?> fetchPendingAnnouncement() {
+    return _pendingRequest ??= _fetchPendingAnnouncement().whenComplete(() {
+      _pendingRequest = null;
+    });
+  }
+
+  Future<AnnouncementModel?> _fetchPendingAnnouncement() async {
+    final AnnouncementModel? latest;
+    final loadLatest = _loadLatestOverride;
+    if (loadLatest != null) {
+      latest = await loadLatest();
+    } else {
+      final packageInfo = await PackageInfo.fromPlatform();
+      latest = await _apiService.announcement.getLatest(
+        appVersion: packageInfo.version,
+      );
+    }
+    if (latest == null) return null;
+    final readIds = await _readAnnouncementIds();
+    return readIds.contains(latest.id) ? null : latest;
+  }
+
+  Future<bool> showPendingAnnouncement(
     BuildContext context,
-    AnnouncementModel item,
-  ) async {
-    final force = item.force == true;
-
-    await showDialog(
-      context: context,
-      barrierDismissible: !force,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(item.title),
-          content: SingleChildScrollView(
-            // flutter_markdown_plus consumes Flutter Material theme/localizations.
-            // ignore: deprecated_member_use
-            child: MaterialUiCompatibilityBridge(
-              child: MarkdownBody(
-                data: _formatMarkdown(item.contentMarkdown),
-                onTapLink: (text, href, title) {
-                  if (href == null || href.isEmpty) return;
-                  _launchExternalUrl(context, href);
-                },
-              ),
-            ),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(force ? '我已知晓' : '关闭'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _launchExternalUrl(BuildContext context, String url) async {
-    final Uri uri = Uri.parse(url);
-    if (!await launchUrl(uri)) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('无法打开链接')));
+    AnnouncementModel item, {
+    bool Function()? canShow,
+  }) async {
+    if (_showingAnnouncement) return false;
+    _showingAnnouncement = true;
+    try {
+      final readIds = await _readAnnouncementIds();
+      if (readIds.contains(item.id)) return true;
+      if (!context.mounted ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          (canShow != null && !canShow())) {
+        return false;
       }
+      final confirmed = await showAnnouncementDialog(
+        context: context,
+        item: item,
+        requireAcknowledgement: item.force == true,
+      );
+      if (item.force == true && confirmed != true) return false;
+      final prefs = await SharedPreferences.getInstance();
+      final currentReadIds = await _readAnnouncementIds();
+      currentReadIds.add(item.id);
+      await prefs.setStringList(_readIdsKey, currentReadIds.toList());
+      return true;
+    } finally {
+      _showingAnnouncement = false;
     }
   }
 }

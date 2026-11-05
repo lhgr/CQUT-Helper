@@ -1,17 +1,20 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cqut_helper/api/update/update_api.dart';
 import 'package:cqut_helper/manager/announcement_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/update_manager.dart';
+import 'package:cqut_helper/model/announcement_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
 import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
 import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:cqut_helper/theme/app_theme_catalog.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
 import 'package:cqut_helper/widgets/ios_prerelease_notice.dart';
@@ -19,7 +22,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class MainPage extends StatefulWidget {
-  const MainPage({super.key});
+  const MainPage({super.key, this.announcementManager, this.updateManager});
+
+  final AnnouncementManager? announcementManager;
+  final UpdateManager? updateManager;
 
   @override
   State<MainPage> createState() => _MainPageState();
@@ -33,6 +39,16 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   int _lastOpenFromNotificationToken = 0;
   int _currentIndex = 1;
   int _lastWidgetNavigationToken = 0;
+  late final AnnouncementManager _announcementManager =
+      widget.announcementManager ?? AnnouncementManager();
+  late final UpdateManager _updateManager =
+      widget.updateManager ?? UpdateManager();
+  bool _startupNavigationComplete = false;
+  bool _announcementChecked = false;
+  bool _updateChecked = false;
+  bool _showingStartupPrompt = false;
+  AnnouncementModel? _pendingAnnouncement;
+  UpdateFetchResult? _pendingUpdate;
   final ScheduleSettingsManager _scheduleSettingsManager =
       ScheduleSettingsManager();
   ScheduleLayoutSettings _scheduleLayoutSettings =
@@ -73,7 +89,17 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Subscribe here so returning from another route resumes pending prompts.
+    ModalRoute.isCurrentOf(context);
+    _scheduleStartupPrompt();
+  }
+
+  @override
   void dispose() {
+    _pendingAnnouncement = null;
+    _pendingUpdate = null;
     WidgetsBinding.instance.removeObserver(this);
     ScheduleUpdateIntents.openFromSystemNotification.removeListener(
       _onOpenFromSystemNotification,
@@ -94,6 +120,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       _markActive();
       unawaited(ScheduleUpdateWorker.syncFromPreferences());
       unawaited(_onCourseReminderOpened());
+      _scheduleStartupPrompt();
     }
   }
 
@@ -148,11 +175,12 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       if (!mounted) return;
       _onWidgetNavigation();
       _onOpenFromSystemNotification();
-      UpdateManager().checkUpdate(context);
-      AnnouncementManager().checkAndShow(context);
+      unawaited(_fetchStartupAnnouncement());
+      unawaited(_fetchStartupUpdate());
       unawaited(ScheduleUpdateWorker.syncFromPreferences());
       _markActive();
       final open = await LocalNotifications.consumeOpenScheduleUpdateFlag();
+      if (!mounted) return;
       if (open) {
         _openScheduleAndChanges();
       }
@@ -161,7 +189,110 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       if (openCourse && mounted && _currentIndex != 0) {
         setState(() => _currentIndex = 0);
       }
+      if (!mounted) return;
+      _startupNavigationComplete = true;
+      _scheduleStartupPrompt();
     });
+  }
+
+  Future<void> _fetchStartupAnnouncement() async {
+    try {
+      final item = await _announcementManager.fetchPendingAnnouncement();
+      if (mounted) _pendingAnnouncement = item;
+    } catch (error, stackTrace) {
+      AppLogger.I.warn(
+        'MainPage',
+        'Startup announcement fetch failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      if (mounted) {
+        _announcementChecked = true;
+        _scheduleStartupPrompt();
+      }
+    }
+  }
+
+  Future<void> _fetchStartupUpdate() async {
+    try {
+      final result = await _updateManager.fetchUpdate();
+      if (mounted) _pendingUpdate = result;
+    } catch (error, stackTrace) {
+      AppLogger.I.warn(
+        'MainPage',
+        'Startup update fetch failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      if (mounted) {
+        _updateChecked = true;
+        _scheduleStartupPrompt();
+      }
+    }
+  }
+
+  bool get _canShowStartupPrompt =>
+      mounted &&
+      !_isCheckingLogin &&
+      _startupNavigationComplete &&
+      (WidgetsBinding.instance.lifecycleState == null ||
+          WidgetsBinding.instance.lifecycleState ==
+              AppLifecycleState.resumed) &&
+      (ModalRoute.isCurrentOf(context) ?? true);
+
+  void _scheduleStartupPrompt() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_showNextStartupPrompt());
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Future<void> _showNextStartupPrompt() async {
+    if (!_canShowStartupPrompt ||
+        _showingStartupPrompt ||
+        !_announcementChecked) {
+      return;
+    }
+    final announcement = _pendingAnnouncement;
+    final update = _pendingUpdate;
+    if (announcement == null && (!_updateChecked || update == null)) return;
+    _showingStartupPrompt = true;
+    var consumed = false;
+    try {
+      if (announcement != null) {
+        consumed = await _announcementManager.showPendingAnnouncement(
+          context,
+          announcement,
+          canShow: () => _canShowStartupPrompt,
+        );
+        if (consumed) _pendingAnnouncement = null;
+      } else if (update != null) {
+        consumed = await _updateManager.showFetchedUpdate(
+          context,
+          update,
+          canShow: () => _canShowStartupPrompt,
+        );
+        if (consumed) _pendingUpdate = null;
+      }
+    } catch (error, stackTrace) {
+      AppLogger.I.warn(
+        'MainPage',
+        'Startup prompt failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (announcement != null) {
+        _pendingAnnouncement = null;
+      } else {
+        _pendingUpdate = null;
+      }
+      consumed = true;
+    } finally {
+      _showingStartupPrompt = false;
+      if (mounted && consumed) _scheduleStartupPrompt();
+    }
   }
 
   Future<void> _onCourseReminderOpened() async {

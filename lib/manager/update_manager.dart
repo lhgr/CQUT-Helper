@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:cqut_helper/api/api_service.dart';
+import 'package:cqut_helper/api/update/update_api.dart';
 import 'package:cqut_helper/model/update_model.dart';
 import 'package:cqut_helper/widgets/release_notes_markdown.dart';
 import 'package:material_ui/material_ui.dart';
@@ -11,41 +12,81 @@ class UpdateManager {
   factory UpdateManager() => _instance;
   UpdateManager._internal();
 
-  final ApiService _apiService = ApiService();
+  @visibleForTesting
+  UpdateManager.forTesting({
+    required this._fetchLatest,
+    required this._currentVersion,
+  });
 
-  /// 检查更新
-  /// [context] 用于显示弹窗
-  /// [showNoUpdateToast] 是否在没有更新时显示提示（手动检查时为 true）
+  Future<UpdateFetchResult> Function({bool forceRefresh})? _fetchLatest;
+  Future<String> Function()? _currentVersion;
+  final Set<String> _shownVersions = <String>{};
+
+  Future<UpdateFetchResult> fetchUpdate({bool forceRefresh = false}) {
+    return (_fetchLatest ?? ApiService().update.fetchLatest)(
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  /// Manual checks refresh the network and finish when the dialog closes.
   Future<void> checkUpdate(
     BuildContext context, {
     bool showNoUpdateToast = false,
   }) async {
-    // 1. 获取当前版本
-    PackageInfo packageInfo = await PackageInfo.fromPlatform();
-    String currentVersion = packageInfo.version;
+    final result = await fetchUpdate(forceRefresh: showNoUpdateToast);
+    if (!context.mounted) return;
+    await showFetchedUpdate(context, result, manual: showNoUpdateToast);
+  }
 
-    // 2. 获取远程版本
-    UpdateModel? updateInfo = await _apiService.update.checkUpdate();
+  /// False retains the startup result until its page can show a dialog.
+  Future<bool> showFetchedUpdate(
+    BuildContext context,
+    UpdateFetchResult result, {
+    bool manual = false,
+    bool Function()? canShow,
+  }) async {
+    bool canPresent() =>
+        context.mounted &&
+        (WidgetsBinding.instance.lifecycleState == null ||
+            WidgetsBinding.instance.lifecycleState ==
+                AppLifecycleState.resumed) &&
+        (ModalRoute.isCurrentOf(context) ?? true) &&
+        (canShow?.call() ?? true);
 
-    if (updateInfo == null) {
-      if (showNoUpdateToast && context.mounted) {
+    if (!canPresent()) return false;
+    final info = result.info;
+    if (info == null) {
+      if (manual) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('检查更新失败，请稍后重试')));
+            .showSnackBar(const SnackBar(content: Text('检查更新失败，请稍后重试')));
       }
-      return;
+      return true;
     }
-
-    String remoteVersion = updateInfo.tagName.replaceAll('v', '');
-
-    if (_hasNewVersion(currentVersion, remoteVersion)) {
-      if (context.mounted) {
-        _showUpdateDialog(context, updateInfo, currentVersion);
-      }
-    } else {
-      if (showNoUpdateToast && context.mounted) {
-        _showLatestVersionDialog(context, updateInfo, currentVersion);
-      }
+    if (!manual &&
+        (result.failure != null || _shownVersions.contains(info.tagName))) {
+      return true;
     }
+    final currentVersion =
+        await (_currentVersion?.call() ??
+            PackageInfo.fromPlatform().then((info) => info.version));
+    if (!context.mounted || !canPresent()) return false;
+    final isNewVersion = _hasNewVersion(
+      currentVersion,
+      info.tagName.replaceAll('v', ''),
+    );
+    if (!manual && (!isNewVersion || _shownVersions.contains(info.tagName))) {
+      return true;
+    }
+    _shownVersions.add(info.tagName);
+    await _showVersionDialog(
+      context,
+      info,
+      currentVersion,
+      isNewVersion: isNewVersion,
+      stale: result.failure != null,
+      validatedAt: result.validatedAt,
+    );
+    return true;
   }
 
   bool _hasNewVersion(String current, String remote) {
@@ -86,42 +127,69 @@ class UpdateManager {
     }
   }
 
-  void _showUpdateDialog(
+  Future<void> _showVersionDialog(
     BuildContext context,
     UpdateModel info,
-    String currentVersion,
-  ) {
-    showDialog(
+    String currentVersion, {
+    required bool isNewVersion,
+    required bool stale,
+    DateTime? validatedAt,
+  }) async {
+    var closing = false;
+    final title = stale
+        ? '上次获取的版本日志 ${info.tagName}'
+        : isNewVersion
+        ? '发现新版本 ${info.tagName}'
+        : '当前已是最新版本 ${info.tagName}';
+    await showDialog<void>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('发现新版本 ${info.tagName}'),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('当前版本: $currentVersion'),
-                if (defaultTargetPlatform == TargetPlatform.iOS)
-                  const Text('下载 iOS 安装包后，使用个人签名工具签名并侧载。'),
-                SizedBox(height: 8),
-                Text('更新内容:', style: TextStyle(fontWeight: FontWeight.bold)),
-                SizedBox(height: 4),
-                ReleaseNotesMarkdown(
-                  data: info.body,
-                  onTapLink: (href) => _launchExternalUrl(context, href),
-                ),
-              ],
+      builder: (dialogContext) => AlertDialog(
+        constraints: const BoxConstraints(maxWidth: 560),
+        scrollable: true,
+        title: Text(title),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('当前版本 $currentVersion'),
+            if (stale) ...[
+              const SizedBox(height: 8),
+              const Text('本次刷新失败，以下为上次成功获取的版本日志。'),
+              if (validatedAt != null)
+                Text('上次获取时间 ${_formatTime(validatedAt)}'),
+            ],
+            if (defaultTargetPlatform == TargetPlatform.iOS)
+              const Text('下载 iOS 安装包后，使用个人签名工具签名并侧载。'),
+            const SizedBox(height: 8),
+            Text(
+              isNewVersion ? '更新内容' : '版本日志',
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 4),
+            if (info.body.trim().isEmpty)
+              const Text('暂无更新说明')
+            else
+              ReleaseNotesMarkdown(
+                data: info.body,
+                onTapLink: (href) => _launchExternalUrl(context, href),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (closing) return;
+              closing = true;
+              Navigator.pop(dialogContext);
+            },
+            child: Text(isNewVersion ? '稍后' : '知道了'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('稍后'),
-            ),
+          if (isNewVersion)
             FilledButton(
               onPressed: () {
-                Navigator.pop(context);
+                if (closing) return;
+                closing = true;
+                Navigator.pop(dialogContext);
                 _launchExternalUrl(
                   context,
                   defaultTargetPlatform == TargetPlatform.iOS
@@ -133,49 +201,16 @@ class UpdateManager {
                 defaultTargetPlatform == TargetPlatform.iOS ? '查看发行版' : '立即更新',
               ),
             ),
-          ],
-        );
-      },
+        ],
+      ),
     );
   }
 
-  void _showLatestVersionDialog(
-    BuildContext context,
-    UpdateModel info,
-    String currentVersion,
-  ) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('当前已是最新版本 ${info.tagName}'),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('当前版本: $currentVersion'),
-                if (defaultTargetPlatform == TargetPlatform.iOS)
-                  const Text('下载 iOS 安装包后，使用个人签名工具签名并侧载。'),
-                SizedBox(height: 8),
-                Text('版本日志:', style: TextStyle(fontWeight: FontWeight.bold)),
-                SizedBox(height: 4),
-                ReleaseNotesMarkdown(
-                  data: info.body,
-                  onTapLink: (href) => _launchExternalUrl(context, href),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('知道了'),
-            ),
-          ],
-        );
-      },
-    );
+  String _formatTime(DateTime value) {
+    final local = value.toLocal();
+    String twoDigits(int part) => part.toString().padLeft(2, '0');
+    return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
+        '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
   }
 
   Future<void> _launchExternalUrl(BuildContext context, String url) async {

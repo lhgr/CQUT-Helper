@@ -1,8 +1,7 @@
 import 'package:cqut_helper/manager/announcement_manager.dart';
 import 'package:cqut_helper/model/announcement_model.dart';
-import 'package:cqut_helper/widgets/release_notes_markdown.dart';
+import 'package:cqut_helper/widgets/announcement_dialog.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class AnnouncementListPage extends StatefulWidget {
   const AnnouncementListPage({super.key});
@@ -42,22 +41,13 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _launchExternalUrl(BuildContext context, String url) async {
-    final Uri uri = Uri.parse(url);
-    if (!await launchUrl(uri)) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('无法打开链接')));
-      }
-    }
-  }
-
   void _openDetail(AnnouncementModel item) {
+    final detailFuture = AnnouncementManager().getAnnouncementDetail(item.id);
     showDialog(
       context: context,
       builder: (context) {
         return FutureBuilder<AnnouncementDetailResult>(
-          future: AnnouncementManager().getAnnouncementDetail(item.id),
+          future: detailFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return AlertDialog(
@@ -96,28 +86,7 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
               );
             }
 
-            return AlertDialog(
-              scrollable: true,
-              title: Row(children: [Expanded(child: Text(detail.title))]),
-              content: ReleaseNotesMarkdown(
-                data: detail.contentMarkdown,
-                onTapLink: (href) => _launchExternalUrl(context, href),
-              ),
-              actions: [
-                if (detail.linkUrl != null && detail.linkUrl!.isNotEmpty)
-                  TextButton(
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      await _launchExternalUrl(context, detail.linkUrl!);
-                    },
-                    child: Text('打开链接'),
-                  ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('关闭'),
-                ),
-              ],
-            );
+            return AnnouncementDialog(item: detail);
           },
         );
       },
