@@ -14,6 +14,7 @@ import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
+import 'package:cqut_helper/widgets/ios_prerelease_notice.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -50,6 +51,8 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _lastOpenFromNotificationToken =
+        ScheduleUpdateIntents.openFromSystemNotification.value;
     WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openFromSystemNotification.addListener(
       _onOpenFromSystemNotification,
@@ -62,8 +65,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       _loadScheduleLayoutSettings,
     );
     _loadScheduleLayoutSettings();
-    _checkLoginStatus();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onWidgetNavigation());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await showIosPrereleaseNotice(context);
+      if (!mounted) return;
+      await _checkLoginStatus();
+    });
   }
 
   @override
@@ -84,7 +90,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && !_isCheckingLogin) {
       _markActive();
       unawaited(ScheduleUpdateWorker.syncFromPreferences());
       unawaited(_onCourseReminderOpened());
@@ -139,6 +145,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      _onWidgetNavigation();
+      _onOpenFromSystemNotification();
       UpdateManager().checkUpdate(context);
       AnnouncementManager().checkAndShow(context);
       unawaited(ScheduleUpdateWorker.syncFromPreferences());
@@ -164,6 +173,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   void _onOpenFromSystemNotification() {
+    if (_isCheckingLogin) return;
     final token = ScheduleUpdateIntents.openFromSystemNotification.value;
     if (token == _lastOpenFromNotificationToken) return;
     _lastOpenFromNotificationToken = token;
@@ -174,6 +184,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     final navigation = WidgetNavigation.request.value;
     if (navigation == null ||
         navigation.token == _lastWidgetNavigationToken ||
+        _isCheckingLogin ||
         !mounted) {
       return;
     }

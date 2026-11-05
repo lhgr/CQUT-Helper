@@ -1,5 +1,7 @@
 import 'package:cqut_helper/manager/update_manager.dart';
 import 'package:cqut_helper/pages/Mine/mine_about_dialog.dart';
+import 'package:cqut_helper/utils/ios_release.dart';
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -18,7 +20,13 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
   void initState() {
     super.initState();
     PackageInfo.fromPlatform().then((info) {
-      if (mounted) setState(() => _version = info.version);
+      if (mounted) {
+        setState(() {
+          _version = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS
+              ? currentIosRelease.displayVersion(info.version)
+              : info.version;
+        });
+      }
     });
   }
 

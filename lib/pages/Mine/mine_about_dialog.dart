@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:cqut_helper/manager/app_network_image_cache.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/ios_release.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -58,7 +60,9 @@ Future<void> _precacheAboutAvatars(BuildContext context) async {
 
 Future<void> showMineAboutDialog(BuildContext context) async {
   final packageInfo = await PackageInfo.fromPlatform();
-  final version = packageInfo.version;
+  final version = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS
+      ? currentIosRelease.displayVersion(packageInfo.version)
+      : packageInfo.version;
 
   if (!context.mounted) return;
 

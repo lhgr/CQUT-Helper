@@ -7,33 +7,61 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: Tag name for release
+        description: Existing tag matching the selected source (vX.Y.Z)
         required: true
-        default: v0.0.0
+        type: string
       skip_release:
-        description: Skip creating release?
+        description: Build artifacts only (allows a branch without a release tag)
         required: false
-        default: 'false'
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag_name }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Verify, sign and package
+  prepare:
+    name: Validate release source and version
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.version.outputs.source_sha }}
+      build_name: ${{ steps.version.outputs.build_name }}
+      build_number: ${{ steps.version.outputs.build_number }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+    steps:
+      - name: Checkout selected source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test release metadata validation
+        run: python3 -B -m unittest discover -s tool -p test_release_metadata.py -v
+
+      - name: Resolve and validate version
+        id: version
+        env:
+          DISPATCH_TAG_NAME: ${{ inputs.tag_name }}
+          SKIP_RELEASE: ${{ inputs.skip_release }}
+        run: python3 tool/release_metadata.py --release >> "$GITHUB_OUTPUT"
+
+  android:
+    name: Verify, sign and package Android
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       TZ: Asia/Shanghai
+      BUILD_NAME: ${{ needs.prepare.outputs.build_name }}
+      BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
     steps:
-      - name: Checkout
+      - name: Checkout prepared source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -54,7 +82,7 @@ jobs:
       - name: Verify formatting
         run: >-
           dart format --output=none --set-exit-if-changed
-          lib test packages/cqut_widget_bridge/lib
+          lib test tool/ios_release_metadata.dart packages/cqut_widget_bridge/lib
 
       - name: Analyze
         run: flutter analyze
@@ -75,61 +103,6 @@ jobs:
           bash ./gradlew
           :app:lintDebug
           :cqut_widget_bridge:lintDebug
-
-      - name: Resolve and validate version
-        id: version
-        env:
-          DISPATCH_TAG_NAME: ${{ github.event.inputs.tag_name }}
-        run: |
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import os
-          import re
-          import subprocess
-          from pathlib import Path
-
-          content = Path("pubspec.yaml").read_text(encoding="utf-8")
-          match = re.search(r"^version:\s*([0-9A-Za-z.\-]+)\+(\d+)\s*$", content, re.M)
-          if not match:
-              raise SystemExit("pubspec.yaml missing version like x.y.z+N")
-          build_name, build_number = match.group(1), int(match.group(2))
-
-          ref_type = os.environ.get("GITHUB_REF_TYPE", "").strip()
-          ref_name = os.environ.get("GITHUB_REF_NAME", "").strip()
-          dispatch_tag = os.environ.get("DISPATCH_TAG_NAME", "").strip()
-          raw_tag = ref_name if ref_type == "tag" else dispatch_tag
-          tag_version = raw_tag.removeprefix("v").split("+", 1)[0]
-          if not tag_version or tag_version != build_name:
-              raise SystemExit(
-                  f"tag version ({tag_version or 'missing'}) does not match pubspec ({build_name})"
-              )
-
-          version_pattern = re.compile(r"^version:\s*[0-9A-Za-z.\-]+\+(\d+)\s*$", re.M)
-          previous_numbers = []
-          for tag in subprocess.check_output(
-              ["git", "tag", "--list", "v*"], text=True
-          ).splitlines():
-              if tag.strip() == raw_tag:
-                  continue
-              try:
-                  old = subprocess.check_output(
-                      ["git", "show", f"{tag.strip()}:pubspec.yaml"],
-                      text=True,
-                      stderr=subprocess.DEVNULL,
-                  )
-              except subprocess.CalledProcessError:
-                  continue
-              old_match = version_pattern.search(old)
-              if old_match:
-                  previous_numbers.append(int(old_match.group(1)))
-          if previous_numbers and build_number <= max(previous_numbers):
-              raise SystemExit(
-                  f"build number {build_number} must exceed previous maximum {max(previous_numbers)}"
-              )
-
-          print(f"build_name={build_name}")
-          print(f"build_number={build_number}")
-          print(f"tag_name={raw_tag}")
-          PY
 
       - name: Validate release secrets
         env:
@@ -165,48 +138,128 @@ jobs:
 
       - name: Build signed universal APK
         run: |
+          set -o pipefail
+          mkdir -p build/android-release/assets build/android-release/logs
           flutter build apk --release \
-            --build-name=${{ steps.version.outputs.build_name }} \
-            --build-number=${{ steps.version.outputs.build_number }}
-          mv build/app/outputs/flutter-apk/app-release.apk \
-            build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
+            --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
+            2>&1 | tee build/android-release/logs/universal.log
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            build/android-release/assets/CQUT-Helper-universal.apk
 
       - name: Build signed split APKs
         run: |
+          set -o pipefail
           flutter build apk --release --split-per-abi \
-            --build-name=${{ steps.version.outputs.build_name }} \
-            --build-number=${{ steps.version.outputs.build_number }}
+            --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
+            2>&1 | tee build/android-release/logs/split.log
+          cp build/app/outputs/flutter-apk/app-*-release.apk build/android-release/assets/
 
       - name: Build signed Android App Bundle
         run: |
+          set -o pipefail
           flutter build appbundle --release \
-            --build-name=${{ steps.version.outputs.build_name }} \
-            --build-number=${{ steps.version.outputs.build_number }}
+            --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
+            2>&1 | tee build/android-release/logs/bundle.log
           cp build/app/outputs/bundle/release/app-release.aab \
-            build/app/outputs/bundle/release/CQUT-Helper.aab
+            build/android-release/assets/CQUT-Helper.aab
 
       - name: Verify signatures and create checksums
+        working-directory: build/android-release/assets
         run: |
-          for artifact in build/app/outputs/flutter-apk/*.apk build/app/outputs/bundle/release/*.aab; do
+          for artifact in *.apk *.aab; do
             jarsigner -verify "$artifact"
           done
-          sha256sum \
-            build/app/outputs/flutter-apk/CQUT-Helper-universal.apk \
-            build/app/outputs/flutter-apk/app-*-release.apk \
-            build/app/outputs/bundle/release/CQUT-Helper.aab \
-            > build/CQUT-Helper-SHA256SUMS.txt
+          sha256sum *.apk *.aab > Android-SHA256SUMS.txt
 
-      - name: Create draft release
-        uses: softprops/action-gh-release@v2
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.skip_release == 'false'
+      - name: Upload Android packages
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.version.outputs.tag_name }}
-          name: Release ${{ steps.version.outputs.tag_name }}
+          name: CQUT-Helper-android
+          path: build/android-release/assets/
+          if-no-files-found: warn
+
+      - name: Upload Android build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-build-log
+          path: build/android-release/logs/
+          if-no-files-found: warn
+
+  ios:
+    name: Package iOS
+    needs: prepare
+    uses: ./.github/workflows/ios-sideload.yml
+    with:
+      source_sha: ${{ needs.prepare.outputs.source_sha }}
+      build_name: ${{ needs.prepare.outputs.build_name }}
+      build_number: ${{ needs.prepare.outputs.build_number }}
+
+  publish:
+    name: Collect packages and prepare release draft
+    needs: [prepare, android, ios]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout prepared source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Download Android packages
+        uses: actions/download-artifact@v4
+        with:
+          name: CQUT-Helper-android
+          path: build/release
+
+      - name: Download iOS package
+        uses: actions/download-artifact@v4
+        with:
+          name: CQUT-Helper-unsigned-ios
+          path: build/release
+
+      - name: Verify packages and create combined checksums
+        working-directory: build/release
+        run: |
+          sha256sum --check Android-SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+          sha256sum *.apk *.aab *.ipa > CQUT-Helper-SHA256SUMS.txt
+
+      - name: Upload complete release packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: CQUT-Helper-release
+          path: |
+            build/release/*.apk
+            build/release/*.aab
+            build/release/*.ipa
+            build/release/CQUT-Helper-SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Recheck release tag source
+        if: github.event_name != 'workflow_dispatch' || !inputs.skip_release
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag_name }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        run: |
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" = "$SOURCE_SHA"
+
+      - name: Create or update draft release
+        if: github.event_name != 'workflow_dispatch' || !inputs.skip_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          name: Release ${{ needs.prepare.outputs.tag_name }}
           files: |
-            build/app/outputs/flutter-apk/CQUT-Helper-universal.apk
-            build/app/outputs/flutter-apk/app-*-release.apk
-            build/app/outputs/bundle/release/CQUT-Helper.aab
-            build/CQUT-Helper-SHA256SUMS.txt
+            build/release/*.apk
+            build/release/*.aab
+            build/release/*.ipa
+            build/release/CQUT-Helper-SHA256SUMS.txt
+          fail_on_unmatched_files: true
           generate_release_notes: true
           draft: true
           prerelease: false

@@ -91,9 +91,11 @@ iOS 按最近课程时间优先安排本地通知，待发送通知总数最多 
 
 ### iPhone 个人侧载
 
-1. 在 GitHub Actions 中手动运行 `Build unsigned iOS IPA`，选择需要的分支。
-2. 下载成功运行的 `CQUT-Helper-unsigned-ios` artifact，解压得到
-   `CQUT-Helper-unsigned.ipa`。
+1. 前往 GitHub Releases，在已公开的发行版中下载带版本号和阶段名的未签名 IPA，
+   当前文件名为 `CQUT-Helper-1.2.1-alpha-unsigned.ipa`。Beta 阶段使用 `-beta`，
+   稳定阶段文件名为 `CQUT-Helper-<版本号>-unsigned.ipa`。
+2. 如需指定分支的构建，在 GitHub Actions 中手动运行 `Build unsigned iOS IPA`，
+   选择分支后下载 `CQUT-Helper-unsigned-ios` artifact，解压得到对应 IPA。
 3. 在 Windows 安装 Sideloadly，并按工具要求安装 Apple 设备驱动。连接 iPhone，
    在手机上信任这台电脑。
 4. 在 Sideloadly 选择设备、该 IPA 和自己的 Apple ID，按工具提示完成个人签名及安装。
@@ -179,11 +181,15 @@ iOS 构建需要 macOS 15.6+ 和 Xcode 26+，CI 明确使用 Xcode 26.3。
 
 ```bash
 flutter pub get
-flutter build ios --release --no-codesign
+eval "$(python3 tool/release_metadata.py)"
+eval "$(dart tool/ios_release_metadata.dart "$build_name")"
+flutter build ios --release --no-codesign \
+  --build-name="$build_name" --build-number="$build_number"
 mkdir -p build/ios-sideload/Payload
 cp -R build/ios/iphoneos/Runner.app build/ios-sideload/Payload/
 cd build/ios-sideload
-zip -qry CQUT-Helper-unsigned.ipa Payload
+zip -qry "$ipa_filename" Payload
+shasum -a 256 "$ipa_filename" > SHA256SUMS.txt
 ```
 
 CI 与发布 workflow 均固定使用 Flutter 3.47.7。`Quality Gate` 在 push、Pull Request
@@ -195,8 +201,19 @@ CI 与发布 workflow 均固定使用 Flutter 3.47.7。`Quality Gate` 在 push�
 将截图与模拟器日志上传为 `ios-simulator-smoke`。本地模拟器构建命令为
 `flutter build ios --simulator --debug`。
 
-个人侧载 IPA 由独立的 `Build unsigned iOS IPA` 手动 workflow 生成，下载
-`CQUT-Helper-unsigned-ios` artifact 后自行签名安装。Android CI 与发布使用现有流程。
+推送 `vX.Y.Z` 标签后，`Build and Release` 先校验标签、数字版本和递增 build，
+再以同一源码提交和版本并行构建 Android 与未签名 iOS IPA。两端成功后汇总
+`CQUT-Helper-SHA256SUMS.txt`，创建或更新同一 GitHub Release 草稿，发行类型保持正式版。
+维护者公开草稿后即可在发行页下载 IPA，并完成个人签名安装。
+
+手动运行 `Build and Release` 时，所选源码必须与 `tag_name` 指向同一提交。
+勾选 `skip_release` 可在分支上验证打包，`tag_name` 仍填写与项目版本对应的
+`vX.Y.Z`，允许该标签尚未创建。两端产物、构建日志及带总校验和的
+`CQUT-Helper-release` artifact 仍会上传。也可独立手动运行
+`Build unsigned iOS IPA`，选择分支获取 `CQUT-Helper-unsigned-ios` artifact。
+
+iOS 阶段在 `lib/utils/ios_release.dart` 统一配置，关于页提示与 IPA 文件名由此生成。
+Alpha、Beta 后缀用于展示和文件名，原生构建版本始终采用 `pubspec.yaml` 的数字版本与 build。
 
 macOS CI 已通过 iOS 模拟器编译、安装与启动验收，截图确认登录页正常显示，
 设备 Release 未签名 IPA 构建通过，下载产物的 SHA-256 校验匹配。

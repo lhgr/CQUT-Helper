@@ -2,12 +2,26 @@ name: Build unsigned iOS IPA
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Prepared source commit
+        required: true
+        type: string
+      build_name:
+        description: Numeric app version
+        required: true
+        type: string
+      build_number:
+        description: App build number
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ios-sideload-${{ github.ref }}
+  group: ios-sideload-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -16,8 +30,10 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 40
     steps:
-      - name: Checkout
+      - name: Checkout prepared or selected source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -34,28 +50,59 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Resolve shared version and iOS filename
+        id: version
+        env:
+          EXPECTED_BUILD_NAME: ${{ inputs.build_name }}
+          EXPECTED_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          METADATA=$(python3 tool/release_metadata.py \
+            --expected-build-name "$EXPECTED_BUILD_NAME" \
+            --expected-build-number "$EXPECTED_BUILD_NUMBER")
+          printf '%s\n' "$METADATA" >> "$GITHUB_OUTPUT"
+          VERSION=$(printf '%s\n' "$METADATA" | sed -n 's/^build_name=//p')
+          dart tool/ios_release_metadata.dart "$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Build unsigned device release
+        env:
+          BUILD_NAME: ${{ steps.version.outputs.build_name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
         run: |
           set -o pipefail
           mkdir -p build/ios-sideload
-          flutter build ios --release --no-codesign 2>&1 | tee build/ios-sideload/build.log
+          flutter build ios --release --no-codesign \
+            --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
+            2>&1 | tee build/ios-sideload/build.log
 
-      - name: Package IPA for personal signing
+      - name: Package and validate IPA for personal signing
+        env:
+          IPA_FILENAME: ${{ steps.version.outputs.ipa_filename }}
         run: |
           mkdir -p build/ios-sideload/Payload
           cp -R build/ios/iphoneos/Runner.app build/ios-sideload/Payload/
           cd build/ios-sideload
-          zip -qry CQUT-Helper-unsigned.ipa Payload
-          shasum -a 256 CQUT-Helper-unsigned.ipa > SHA256SUMS.txt
+          zip -qry "$IPA_FILENAME" Payload
+          python3 - "$IPA_FILENAME" <<'PY'
+          import sys
+          import zipfile
+          with zipfile.ZipFile(sys.argv[1]) as ipa:
+              if "Payload/Runner.app/Info.plist" not in ipa.namelist():
+                  raise SystemExit("IPA missing Payload/Runner.app/Info.plist")
+              bad_entry = ipa.testzip()
+              if bad_entry:
+                  raise SystemExit(f"IPA contains a corrupt entry: {bad_entry}")
+          PY
+          shasum -a 256 "$IPA_FILENAME" > SHA256SUMS.txt
 
       - name: Upload unsigned IPA
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: CQUT-Helper-unsigned-ios
           path: |
-            build/ios-sideload/CQUT-Helper-unsigned.ipa
+            build/ios-sideload/*.ipa
             build/ios-sideload/SHA256SUMS.txt
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload build log
         if: always()
