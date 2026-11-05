@@ -193,10 +193,12 @@ CI 与发布 workflow 均固定使用 Flutter 3.47.7。`Quality Gate` 在独立 
 Android 发布沿用现有流程。手动运行 `Quality Gate` 也会同时调用未签名 IPA
 打包作业，可在同一次运行下载模拟器验收记录与设备安装包。
 
-当前 iOS 验收状态为已提供原生工程、平台适配、macOS CI 和未签名打包流程。
-尚未取得 iOS CI 成功运行记录，也尚未完成 iPhone 真机登录、通知授权、锁屏提醒、
-文件分享及侧载续签验收。模拟器启动记录只能确认
-应用构建与启动，账号同步和实际课程提醒需在设备上继续验证。
+macOS CI 已通过 iOS 模拟器编译、安装与启动验收，截图确认登录页正常显示，
+设备 Release 未签名 IPA 构建通过，下载产物的 SHA-256 校验匹配。
+[查看 CI 验收记录](https://github.com/lhgr/CQUT-Helper/actions/runs/42015154561)。
+
+核心业务已有自动测试覆盖。iPhone 真机登录与同步、通知授权与锁屏提醒、个人签名安装
+及续签、文件系统交互仍待真机验证。
 
 有关课表数据接口的分析可参阅
 [课表 API 相关文章](https://blog.dawndrizzle.top/blog/reverse-timetable)。
