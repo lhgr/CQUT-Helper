@@ -84,6 +84,15 @@ object TodayWidgetData {
     val markedToday: Boolean,
   )
 
+  internal class CalendarProjection(
+    val hasDays: Boolean,
+    private val daysByDate: Map<String, JSONObject>,
+  ) {
+    // These JSON objects are owned by the render snapshot and only read by the
+    // private projection loaders, so no mutable JSON escapes to public callers.
+    fun day(date: String): JSONObject? = daysByDate[date]
+  }
+
   private data class ParsedScheduleDate(
     val year: Int?,
     val month: Int,
@@ -265,7 +274,7 @@ object TodayWidgetData {
       }
     val projection = loadCalendarProjection(context)
     val hasAnyScheduleCache =
-      projection?.optJSONArray("days")?.length()?.let { it > 0 } == true ||
+      projection?.hasDays == true ||
         loadScheduleJsonObjects(context).isNotEmpty()
     val isDebuggable =
       context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
@@ -713,27 +722,39 @@ object TodayWidgetData {
   }
 
   /** Returns the Flutter-resolved calendar projection for the signed-in user. */
-  private fun loadCalendarProjection(context: Context): JSONObject? {
+  private fun loadCalendarProjection(context: Context): CalendarProjection? {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim()
       ?.takeIf { it.isNotEmpty() } ?: return null
     val raw = prefs.getString("$KEY_WIDGET_CALENDAR_PROJECTION_PREFIX$account", null)
       ?.takeIf { it.isNotBlank() } ?: return null
+    val snapshot = WidgetRenderSnapshot.current.get()
+    return if (snapshot == null) {
+      parseCalendarProjection(raw)
+    } else {
+      snapshot.loadCalendarProjection(raw) { parseCalendarProjection(raw) }
+    }
+  }
+
+  private fun parseCalendarProjection(raw: String): CalendarProjection? {
     return try {
-      JSONObject(raw)
+      val days = JSONObject(raw).optJSONArray("days")
+      val daysByDate = HashMap<String, JSONObject>()
+      if (days != null) {
+        for (index in 0 until days.length()) {
+          val day = days.optJSONObject(index) ?: continue
+          // Preserve the first match used by the previous linear lookup.
+          daysByDate.putIfAbsent(day.optString("date", ""), day)
+        }
+      }
+      CalendarProjection(days != null && days.length() > 0, daysByDate)
     } catch (_: Exception) {
       null
     }
   }
 
   private fun loadProjectedDay(context: Context, targetDate: Calendar): JSONObject? {
-    val days = loadCalendarProjection(context)?.optJSONArray("days") ?: return null
-    val targetKey = widgetDateKey(targetDate)
-    for (index in 0 until days.length()) {
-      val day = days.optJSONObject(index) ?: continue
-      if (day.optString("date", "") == targetKey) return day
-    }
-    return null
+    return loadCalendarProjection(context)?.day(widgetDateKey(targetDate))
   }
 
   private fun widgetDateKey(calendar: Calendar): String = String.format(

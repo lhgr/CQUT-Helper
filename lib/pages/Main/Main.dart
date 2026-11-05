@@ -14,7 +14,6 @@ import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
-import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -33,8 +32,6 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   int _lastOpenFromNotificationToken = 0;
   int _currentIndex = 1;
   int _lastWidgetNavigationToken = 0;
-  final WidgetResumeRefreshGate _widgetResumeRefreshGate =
-      WidgetResumeRefreshGate();
   final ScheduleSettingsManager _scheduleSettingsManager =
       ScheduleSettingsManager();
   ScheduleLayoutSettings _scheduleLayoutSettings =
@@ -87,9 +84,6 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_widgetResumeRefreshGate.shouldRefresh(state)) {
-      unawaited(WidgetUpdater.updateTodayWidget(trigger: 'app_resumed'));
-    }
     if (state == AppLifecycleState.resumed) {
       _markActive();
       unawaited(ScheduleUpdateWorker.syncFromPreferences());

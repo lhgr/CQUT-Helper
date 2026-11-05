@@ -6,6 +6,20 @@ package com.dawndrizzle.wing.cqut.widget
 internal object WidgetRenderSnapshot {
   internal class Snapshot(val nowMillis: Long) {
     var sessionClocks: Map<Int, Pair<Int, Int>>? = null
+
+    private var projectionRaw: String? = null
+    private var projection: TodayWidgetData.CalendarProjection? = null
+
+    fun loadCalendarProjection(
+      raw: String,
+      decode: () -> TodayWidgetData.CalendarProjection?,
+    ): TodayWidgetData.CalendarProjection? {
+      if (projectionRaw != raw) {
+        projection = decode()
+        projectionRaw = raw
+      }
+      return projection
+    }
   }
 
   internal val current = ThreadLocal<Snapshot>()

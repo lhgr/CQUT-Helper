@@ -62,6 +62,25 @@ class WidgetCalendarProjection {
     ),
   );
 
+  /// Generation time records a projection rebuild, not schedule freshness.
+  /// Successful refresh times are stored separately by ScheduleRefreshState.
+  static bool hasSameContent(
+    String? previousJson,
+    Map<String, dynamic> projection,
+  ) {
+    if (previousJson == null) return false;
+    try {
+      final previous = jsonDecode(previousJson);
+      if (previous is! Map) return false;
+      previous.remove('generated_at');
+      final content = Map<String, dynamic>.of(projection)
+        ..remove('generated_at');
+      return jsonEncode(previous) == jsonEncode(content);
+    } on FormatException {
+      return false;
+    }
+  }
+
   static Map<String, dynamic> _resolvedDayToJson(
     AcademicCalendarResolvedDay day,
   ) => <String, dynamic>{

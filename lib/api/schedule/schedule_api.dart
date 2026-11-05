@@ -92,7 +92,7 @@ class ScheduleApi {
               weekNum: weekNum,
               schedule: merged,
             );
-        if (updatesVisibleWidgetProjection) {
+        if (updatesVisibleWidgetProjection.changed) {
           await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
         }
         return merged;
@@ -225,7 +225,7 @@ class ScheduleApi {
         lastFetchAtKey(userId, saveTerm, saveWeek),
         fetchedAt.millisecondsSinceEpoch,
       );
-      if (updatesVisibleWidgetProjection) {
+      if (updatesVisibleWidgetProjection.visible) {
         if (notifyWidget) {
           await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
         }
@@ -486,7 +486,7 @@ class ScheduleApi {
       weekNum: normalizedWeek,
     );
     final decoded = json.decode(stored?.rawJson ?? jsonStr);
-    var updatesVisibleWidgetProjection = false;
+    var updatesVisibleWidgetProjection = (visible: false, changed: false);
     if (decoded is Map<String, dynamic>) {
       final merged = await ScheduleCustomizationManager.instance
           .applyToSchedule(
@@ -506,7 +506,7 @@ class ScheduleApi {
       lastFetchAtKey(userId, normalizedTerm, normalizedWeek),
       fetchedAt.millisecondsSinceEpoch,
     );
-    if (updatesVisibleWidgetProjection) {
+    if (updatesVisibleWidgetProjection.visible) {
       await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
       await _rescheduleCourseRemindersSafely(userId);
     }
@@ -536,7 +536,7 @@ class ScheduleApi {
       prefs.getString(_widgetTermKey(userId))?.trim() ??
       prefs.getString(_lastViewedTermKey(userId))?.trim();
 
-  Future<bool> _writeWidgetProjectionIfPinned({
+  Future<({bool visible, bool changed})> _writeWidgetProjectionIfPinned({
     required SharedPreferences prefs,
     required String userId,
     required String yearTerm,
@@ -551,23 +551,25 @@ class ScheduleApi {
       pinnedYearTerm: pinnedTerm,
       pinnedWeekNum: pinnedWeek,
     )) {
-      return false;
+      return (visible: false, changed: false);
     }
-    await prefs.setString(
-      _scheduleKey(userId, yearTerm, weekNum),
-      json.encode(schedule.toJson()),
-    );
-    await _writeCalendarProjection(
+    final scheduleKey = _scheduleKey(userId, yearTerm, weekNum);
+    final scheduleJson = json.encode(schedule.toJson());
+    final scheduleChanged = prefs.getString(scheduleKey) != scheduleJson;
+    if (scheduleChanged) {
+      await prefs.setString(scheduleKey, scheduleJson);
+    }
+    final calendarChanged = await _writeCalendarProjection(
       prefs: prefs,
       userId: userId,
       yearTerm: yearTerm,
       centerWeek: pinnedWeek,
       currentSchedule: schedule,
     );
-    return true;
+    return (visible: true, changed: scheduleChanged || calendarChanged);
   }
 
-  Future<void> _writeCalendarProjection({
+  Future<bool> _writeCalendarProjection({
     required SharedPreferences prefs,
     required String userId,
     required String yearTerm,
@@ -630,7 +632,7 @@ class ScheduleApi {
       );
     }
     final calendar = _readCachedAcademicCalendar(prefs, yearTerm);
-    await _storeCalendarProjection(
+    return await _storeCalendarProjection(
       prefs: prefs,
       userId: userId,
       yearTerm: yearTerm,
@@ -719,21 +721,25 @@ class ScheduleApi {
         .any((date) => dates.contains(academicCalendarDateKey(date)));
   }
 
-  Future<void> _storeCalendarProjection({
+  Future<bool> _storeCalendarProjection({
     required SharedPreferences prefs,
     required String userId,
     required String yearTerm,
     required Iterable<ScheduleData> schedules,
     required AcademicCalendarSnapshot? calendar,
   }) async {
-    await prefs.setString(
-      _widgetCalendarProjectionKey(userId),
-      WidgetCalendarProjection.encode(
-        yearTerm: yearTerm,
-        schedules: schedules,
-        calendar: calendar,
-      ),
+    final key = _widgetCalendarProjectionKey(userId);
+    final projection = WidgetCalendarProjection.build(
+      yearTerm: yearTerm,
+      schedules: schedules,
+      calendar: calendar,
     );
+    final previous = prefs.getString(key);
+    if (WidgetCalendarProjection.hasSameContent(previous, projection)) {
+      return false;
+    }
+    await prefs.setString(key, json.encode(projection));
+    return true;
   }
 
   AcademicCalendarSnapshot? _readCachedAcademicCalendar(

@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 
 typedef WidgetMethodInvoker = Future<void> Function(
   String method,
@@ -106,27 +106,5 @@ class WidgetUpdater {
     debugIsAndroidOverride = null;
     debugMethodInvoker = null;
     debugDelay = null;
-  }
-}
-
-/// Suppresses the launch-time `resumed` callback while repairing widgets when
-/// an existing app session actually returns from the background.
-class WidgetResumeRefreshGate {
-  bool _leftForeground = false;
-
-  bool shouldRefresh(AppLifecycleState state) {
-    switch (state) {
-      case AppLifecycleState.resumed:
-        final shouldRefresh = _leftForeground;
-        _leftForeground = false;
-        return shouldRefresh;
-      case AppLifecycleState.hidden:
-      case AppLifecycleState.paused:
-      case AppLifecycleState.detached:
-        _leftForeground = true;
-        return false;
-      case AppLifecycleState.inactive:
-        return false;
-    }
   }
 }
