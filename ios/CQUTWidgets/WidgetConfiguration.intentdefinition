@@ -11,6 +11,7 @@
   <array><dict>
     <key>INIntentName</key><string>WidgetConfiguration</string>
     <key>INIntentCategory</key><string>information</string>
+    <key>INIntentVerb</key><string>View</string>
     <key>INIntentTitle</key><string>课表小组件</string>
     <key>INIntentDescription</key><string>选择显示日期、外观和同步提醒间隔。</string>
     <key>INIntentType</key><string>Custom</string>
@@ -25,7 +26,7 @@
         <key>INIntentParameterEnumType</key><string>WidgetDisplayDay</string>
         <key>INIntentParameterConfigurable</key><true/>
         <key>INIntentParameterMetadata</key><dict>
-          <key>INIntentParameterMetadataDefaultValue</key><integer>1</integer>
+          <key>INIntentParameterMetadataDefaultValue</key><string>today</string>
         </dict>
       </dict>
       <dict>
@@ -35,7 +36,7 @@
         <key>INIntentParameterEnumType</key><string>WidgetAppearance</string>
         <key>INIntentParameterConfigurable</key><true/>
         <key>INIntentParameterMetadata</key><dict>
-          <key>INIntentParameterMetadataDefaultValue</key><integer>1</integer>
+          <key>INIntentParameterMetadataDefaultValue</key><string>app</string>
         </dict>
       </dict>
       <dict>
@@ -53,6 +54,7 @@
   <dict>
     <key>INIntentName</key><string>FixedWidgetConfiguration</string>
     <key>INIntentCategory</key><string>information</string>
+    <key>INIntentVerb</key><string>View</string>
     <key>INIntentTitle</key><string>课表小组件外观</string>
     <key>INIntentDescription</key><string>选择外观和同步提醒间隔。</string>
     <key>INIntentType</key><string>Custom</string>
@@ -67,7 +69,7 @@
         <key>INIntentParameterEnumType</key><string>WidgetAppearance</string>
         <key>INIntentParameterConfigurable</key><true/>
         <key>INIntentParameterMetadata</key><dict>
-          <key>INIntentParameterMetadataDefaultValue</key><integer>1</integer>
+          <key>INIntentParameterMetadataDefaultValue</key><string>app</string>
         </dict>
       </dict>
       <dict>
@@ -86,7 +88,8 @@
   <array>
     <dict>
       <key>INEnumName</key><string>WidgetDisplayDay</string>
-      <key>INEnumType</key><string>Integer</string>
+      <key>INEnumType</key><string>Regular</string>
+      <key>INEnumGeneratesHeader</key><true/>
       <key>INEnumValues</key><array>
         <dict><key>INEnumValueName</key><string>unknown</string><key>INEnumValueIndex</key><integer>0</integer><key>INEnumValueDisplayName</key><string>今天</string></dict>
         <dict><key>INEnumValueName</key><string>today</string><key>INEnumValueIndex</key><integer>1</integer><key>INEnumValueDisplayName</key><string>今天</string></dict>
@@ -95,7 +98,8 @@
     </dict>
     <dict>
       <key>INEnumName</key><string>WidgetAppearance</string>
-      <key>INEnumType</key><string>Integer</string>
+      <key>INEnumType</key><string>Regular</string>
+      <key>INEnumGeneratesHeader</key><true/>
       <key>INEnumValues</key><array>
         <dict><key>INEnumValueName</key><string>unknown</string><key>INEnumValueIndex</key><integer>0</integer><key>INEnumValueDisplayName</key><string>跟随应用</string></dict>
         <dict><key>INEnumValueName</key><string>app</string><key>INEnumValueIndex</key><integer>1</integer><key>INEnumValueDisplayName</key><string>跟随应用</string></dict>

@@ -95,6 +95,10 @@ struct LegacyScheduleProvider<Configuration: INIntent & ScheduleWidgetConfigurat
 
 struct CourseScheduleWidget: Widget {
   let style: ScheduleStyle
+
+  init() { self.init(style: .course) }
+  init(style: ScheduleStyle) { self.style = style }
+
   var body: some WidgetConfiguration {
     IntentConfiguration(kind: style.rawValue, intent: WidgetConfigurationIntent.self,
       provider: LegacyScheduleProvider<WidgetConfigurationIntent>(style: style)) { entry in
@@ -108,6 +112,10 @@ struct CourseScheduleWidget: Widget {
 
 struct FixedCourseScheduleWidget: Widget {
   let style: ScheduleStyle
+
+  init() { self.init(style: .tiny) }
+  init(style: ScheduleStyle) { self.style = style }
+
   var body: some WidgetConfiguration {
     IntentConfiguration(kind: style.rawValue, intent: FixedWidgetConfigurationIntent.self,
       provider: LegacyScheduleProvider<FixedWidgetConfigurationIntent>(style: style)) { entry in

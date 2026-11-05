@@ -12,42 +12,33 @@
 ![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%2015%2B-3DDC84?style=flat-square&logo=android&logoColor=white)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square)](LICENSE)
 
-[下载最新版本](https://github.com/lhgr/CQUT-Helper/releases) ·
-[核心功能](#-核心功能) ·
-[应用截图](#-应用截图) ·
+[下载应用](https://github.com/lhgr/CQUT-Helper/releases) ·
+[功能介绍](#功能) ·
+[应用截图](#应用截图) ·
 [问题反馈](https://github.com/lhgr/CQUT-Helper/issues)
 
 </div>
 
 > [!NOTE]
-> CQUT Helper 是第三方非官方应用。重要课程与调课安排请以学校官方信息为准。
+> CQUT Helper 是第三方非官方应用。课程与调课安排请以学校官方信息为准。
 
-## ✨ 核心功能
+## 功能
 
-| 功能 | 说明 |
-| --- | --- |
-| **今日与周课表** | 查看当天课程和完整周课表，支持周次切换、周末显示和离线缓存 |
-| **假期与调休校历** | 根据学校通知的放假与调休日期将调休当天映射到对应课表安排 |
-| **桌面小组件** | Android 和 iPhone 提供今日课程、日视图、近日课程、超小课程和垂直列表五种样式 |
-| **课前提醒** | 根据本机课表安排课程通知，可设置默认提前时间 |
-| **调课通知增强** | 可选查询当前学期调课信息，记录新增、变更和撤销，并刷新受影响教学周。iOS 在打开应用或手动同步时查询 |
-| **课程个性化** | 支持课程别名、备注、颜色、隐藏状态，以及课程卡片和课表布局调整 |
-| **主题与背景** | 支持亮色、深色、Material 3 动态取色、自选主题色和课表背景 |
-| **备份与恢复** | 导出或恢复课表布局、主题、提醒和课程个性化设置，不包含登录凭据 |
+- 查看今日和周课表，切换教学周；课表同步后保存在本机，断网时仍可查看已有数据。
+- 根据校历中的假期与调休日期映射课程安排，并用于今日页、课表、提醒和小组件。
+- 使用 Android 桌面小组件或 iPhone WidgetKit 小组件查看课程。iOS 17 及以上，支持切换的样式可直接在组件内切换日期。
+- 按本机课表安排课前提醒；iPhone 会优先安排近期提醒，待发送通知最多 64 条。可在“设置 → 同步与修复”查看实际覆盖时间，之后打开应用同步续排。
+- 按需开启调课通知增强，查看通知变更并刷新受影响教学周。使用方式见[调课通知说明](FastAPI/README.md)。
+- 自定义课程别名、备注、颜色和隐藏状态，调整课表布局、主题及背景。
+- 导出或恢复应用设置和课程个性化。备份包含账号标识，不包含登录凭据、课表缓存、日志或自定义背景图片。
 
-课表同步后会缓存在本机，临时断网时仍可查看已有课程。放假与调休规则也会应用到
-今日页、周课表、课程提醒和桌面小组件，减少特殊教学安排带来的日期混淆。
-
-调课通知增强为可选功能，不开启也不影响登录、普通课表同步、课前提醒和桌面小组件。
-详细行为和设置方法见 [调课通知增强功能说明](FastAPI/README.md)。
-
-## 📱 应用截图
+## 应用截图
 
 <table align="center">
   <tr>
     <td align="center"><img src="assets/img/schedule.png" alt="周课表界面" width="260" /></td>
     <td align="center"><img src="assets/img/schedule-customization.png" alt="课表布局与外观设置" width="260" /></td>
-    <td align="center"><img src="assets/img/schedule-notice.png" alt="调课通知增强设置" width="260" /></td>
+    <td align="center"><img src="assets/img/schedule-notice.png" alt="课前提醒与调课通知设置" width="260" /></td>
   </tr>
   <tr>
     <td align="center"><sub>周课表与假期调休</sub></td>
@@ -56,216 +47,92 @@
   </tr>
 </table>
 
-## 平台支持
+## 平台与限制
 
-| 能力 | Android | iOS 15+ iPhone |
+| 功能 | Android | iPhone |
 | --- | --- | --- |
-| 登录、今日与周课表、缓存、校历、个性化、主题、备份 | 支持 | 支持 |
-| 课表与调课同步 | 前台、手动及系统安排的后台任务 | 启动、返回前台、手动同步 |
-| 课前提醒 | 通知及精确闹钟授权后安排 | 通知授权后安排近期本地提醒 |
-| 桌面小组件 | 五种样式 | 五种 WidgetKit 样式，iOS 15+ 展示，iOS 17+ 支持组件内日期切换 |
-| 课程期间自动勿扰或静音 | 支持的 Android 设备可开启 | 本期未实现 |
+| 登录、课表、校历、个性化、主题与备份 | 支持 | 支持（iOS 15+） |
+| 课表与调课同步 | 课表支持前台、手动及系统安排的后台刷新；调课通知也可后台检查 | 课表支持前台和手动同步；调课通知在启动、返回应用及手动同步时检查 |
+| 课前提醒 | 需允许通知；精确提醒还需系统授权 | 需允许通知；应用会安排近期本地提醒 |
+| 桌面小组件 | 支持 | 支持；iOS 17+ 部分样式可在组件内切换日期 |
+| 课程期间自动勿扰或静音 | 部分设备支持，需允许访问系统勿扰设置及精确闹钟 | 不支持 |
 
-iOS 按最近课程时间优先安排本地通知，待发送通知总数最多 64 条。设置中的
-“同步与修复”显示已安排数量、下一条提醒与实际覆盖截至时间。课程较多时覆盖时间
-会短于计划窗口，需定期打开应用同步并续排。已经安排的通知由系统发送。
+> [!TIP]
+> iPhone 提醒受系统待发送通知数量限制，课表较多时实际覆盖时间可能短于计划窗口。请定期打开应用同步，并在“设置 → 同步与修复”查看覆盖情况。
 
-## 📦 下载安装
+> [!NOTE]
+> iPhone 小组件与应用通过 App Group 共享课表。若自行签名安装，主应用和小组件扩展必须由同一开发团队签名，并使用该团队已配置的同一个 App Group；否则小组件无法读取应用课表。
+
+## 下载安装
 
 ### Android
 
-前往 [GitHub Releases](https://github.com/lhgr/CQUT-Helper/releases) 下载 APK：
+从 [GitHub Releases](https://github.com/lhgr/CQUT-Helper/releases) 下载 APK。大多数现代 Android 手机请选择 **Arm64-v8a**；旧款 32 位设备可选 **Armeabi-v7a**，模拟器或 x86_64 设备可选对应版本。不确定设备架构时可下载 **Universal**，安装包较大但兼容范围更广。
 
-| 安装包 | 适用设备 |
-| --- | --- |
-| **Arm64-v8a** | 绝大多数现代 64 位 Android 手机，建议优先选择 |
-| **Armeabi-v7a** | 较旧的 32 位 Android 手机 |
-| **x86_64** | 少数模拟器或 x86_64 Android 设备 |
-| **Universal** | 不确定设备架构时使用，兼容范围更广但文件更大 |
+### iPhone（个人侧载）
 
-> [!CAUTION]
-> **旧版本升级**
->
-> 从 v1.0.0 开始，应用启用了新的长期正式签名，无法从 v0.3.0 及更早版本直接覆盖安装。
-> 请先确认账号密码可用，再卸载旧版本并安装新版。卸载会清除旧版本保存在本机的登录状态、课表缓存和设置。
+> [!WARNING]
+> iOS 版本尚未经真机测试，功能可用性仍待验证，暂不能保证各项功能正常运行。使用中如遇问题，请通过 [GitHub Issues](https://github.com/lhgr/CQUT-Helper/issues) 反馈，并附上设备型号、iOS 版本和问题描述。
 
-### iPhone 个人侧载
+发行页提供当前 Alpha 阶段的未签名 IPA，文件名格式为 `CQUT-Helper-<版本号>-alpha-unsigned.ipa`；后续阶段会按发行版本调整。也可以在 GitHub Actions 手动运行 [Build unsigned iOS IPA](.github/workflows/ios-sideload.yml)，选择分支并下载 `CQUT-Helper-unsigned-ios` artifact。
 
-1. 前往 GitHub Releases，在已公开的发行版中下载带版本号和阶段名的未签名 IPA，
-   当前文件名为 `CQUT-Helper-1.2.1-alpha-unsigned.ipa`。Beta 阶段使用 `-beta`，
-   稳定阶段文件名为 `CQUT-Helper-<版本号>-unsigned.ipa`。
-2. 如需指定分支的构建，在 GitHub Actions 中手动运行 `Build unsigned iOS IPA`，
-   选择分支后下载 `CQUT-Helper-unsigned-ios` artifact，解压得到对应 IPA。
-3. 在 Windows 安装 Sideloadly，并按工具要求安装 Apple 设备驱动。连接 iPhone，
-   在手机上信任这台电脑。
-4. 在 Sideloadly 选择设备、该 IPA 和自己的 Apple ID，按工具提示完成个人签名及安装。
-   可使用自己的开发者账号与证书。安装包本身为未签名产物，签名由侧载工具完成。
-5. 在 iPhone 的“设置 → 通用 → VPN 与设备管理”中信任签名账号。
-   iOS 16 及以上按系统提示开启开发者模式，之后启动应用。
-6. 按所用账号和侧载工具的有效期要求续签。应用内“查看发行版”打开发行页，更新时
-   下载对应 IPA 并重新签名安装。
+使用 Sideloadly 等侧载工具，按工具说明连接 iPhone，并用自己的 Apple ID 完成签名和安装。iOS 16 及以上还需按系统提示开启开发者模式。签名有效期与续签方式取决于所用账号和工具。侧载工具说明见 [Sideloadly 官网](https://sideloadly.io/)。
 
-个人签名时需保留 `Runner.app/PlugIns/CQUTWidgetsExtension.appex`。应用与扩展必须由
-同一开发团队签名，并使用该团队已配置、配置描述文件允许的同一 App Group。
-重新签名时需同时保留或调整两者的 App Group entitlement 与 `Info.plist` 中
-`CQUTWidgetAppGroup`，所有值使用相同标识才能共享课表。所用账号与侧载工具能否保留
-扩展和 App Group，需按实际签名配置验证。
-
-侧载工具说明见 [Sideloadly 官网](https://sideloadly.io/)。
-
-## 🚀 首次使用
+## 首次使用
 
 1. 使用学校账号登录，进入课表并完成首次同步。
-2. 按需调整周末显示、课程卡片、主题和课表背景。
-3. 如需课前提醒，在“设置 → 通知与提醒”中开启相关权限。
-4. 添加桌面小组件后，如果显示“课表尚未同步”，请回到应用同步一次课表。iPhone 在主屏幕长按空白处，添加小组件并搜索“CQUT”，选择样式及尺寸。
-5. 按需在通知设置或课表设置中开启“调课通知增强”。iOS 会在启动、返回前台和手动同步时检查。
-6. iPhone 开启课前提醒后，在“同步与修复”确认实际提醒覆盖，定期打开应用更新。
+2. 按需调整课表外观、主题和提醒设置。
+3. 添加小组件；若显示尚未同步，回到应用同步课表后再查看。
+4. 如需调课通知增强，在“设置 → 通知与提醒”或课表设置中开启并检查服务可用性。详细设置与服务说明见[调课通知说明](FastAPI/README.md)。
 
-### iPhone 桌面小组件
+## 数据与隐私
 
-先打开应用完成登录与课表同步，再在主屏幕添加 CQUT 小组件。长按已添加的组件并选择
-“编辑小组件”，可选择显示日期、外观及同步提醒天数。课程别名等信息沿用应用设置。
-组件使用应用同步到本机的
-共享快照，打开应用、同步课表或修改相关设置后会请求刷新，实际刷新时间由 iOS 安排。
+学校账号和课表请求会发送到学校认证及课表服务。应用也会按需请求公开公告、每日一言、校历配置和 GitHub 版本信息。登录所需凭据使用系统安全存储保存在设备上；课表缓存、设置和消息记录保存在本机。
 
-五种样式覆盖今日课程、日视图、近日课程、超小课程和垂直列表。iOS 17+ 的日期按钮
-可直接切换查看日期。同一样式且配置相同的组件共享切换状态。iOS 15/16 点击组件会打开
-应用。列表按组件尺寸显示固定数量的课程，
-超出部分显示剩余数量，点击组件进入完整课表。退出登录会清除共享课程快照。
+调课通知增强默认关闭。开启并确认说明后，应用才会向所选调课服务发送学号、教务系统加密密码和当前学期。加密密码仍可用于访问教务系统，请只使用信任的服务。备份文件包含账号标识、应用设置和课程个性化，不包含登录凭据、课表缓存、日志或自定义背景图片。
 
-## 🔒 隐私与网络请求
+## 常见问题
 
-CQUT Helper 不接入 Firebase，也不包含遥测或用户行为统计服务。应用会按功能需要
-发起以下网络请求：
+- **Android 小组件没有及时刷新**: 打开应用并同步课表；仍未更新时，在“设置 → 同步与修复”查看后台状态，并检查系统的后台运行和电池优化设置。
+- **调课日期与学校安排不一致**: 刷新校历并同步相关教学周；重要安排以学校通知和教务系统为准。
+- **没有收到课前提醒**: 检查系统通知授权。iPhone 可在“设置 → 同步与修复”查看已安排数量和覆盖时间，并打开应用续排。
+- **调课通知查询失败**: 确认已开启功能并通过“检查服务可用性”；自定义服务不会在失败时自动切换到官方服务。
+- **如何配置自己的调课服务？** 请参阅[调课通知与服务说明](FastAPI/README.md)。
 
-| 场景 | 请求内容与用途 |
-| --- | --- |
-| **学校登录与课表** | 登录时向学校统一认证系统提交登录所需信息，并向学校课表服务请求账号和课表数据 |
-| **公开内容** | 请求应用公告、今日一言、假期与调休校历配置，以及 GitHub 版本信息；这些请求不需要发送学校账号凭据或个人课表 |
-| **调课通知增强** | 仅在主动开启并确认隐私提示后，向所选调课服务发送学号、教务系统加密密码和当前学期，用于代为查询调课通知 |
+## 本地开发
 
-- 登录凭据通过系统安全存储保存在设备上；课表缓存、个性化设置和消息记录保存在本机。
-- 关闭调课通知增强后，应用不会继续访问官方或自定义调课服务；退出登录也会关闭该功能并清除授权状态。
-- 配置自定义调课服务后，请求不会在失败时静默回退到官方服务。
-- 加密密码不是明文密码，但仍可用于访问教务系统，请只选择自己信任的调课服务。
-- 备份文件不包含登录密码、可用于登录的凭据、诊断日志、课表缓存或自定义背景图片。
-
-## ❓ 常见问题
-
-### Android 小组件没有及时刷新
-
-先打开应用确认登录状态并手动同步课表，再点击小组件刷新。如果仍无改善，请在
-“设置 → 同步与修复”中检查后台状态，并根据手机系统设置允许应用自启动、后台运行
-和忽略电池优化。
-
-### Android 小组件显示“课表可能已过期”
-
-这表示本机缓存较长时间没有得到成功同步确认。检查网络和登录状态后主动刷新即可。
-如果最近已经成功同步，但当前不属于教学周，小组件会显示“当前不在教学周”。
-
-### 放假或调休日期与学校安排不一致
-
-先进入课表设置刷新假期与调休信息，再主动同步相关教学周。校历配置用于辅助展示，
-如仍有差异，请以学校最新通知和教务系统课表为准，并通过 Issue 反馈。
-
-### 收不到课前提醒或调课通知
-
-Android 检查通知权限、后台运行限制和电池优化设置。iPhone 检查系统通知授权，
-并在“同步与修复”查看已安排数量和覆盖截至时间，打开应用同步续排。调课通知需要
-主动开启“调课通知增强”，并确保所选服务通过“检查服务可用性”。
-
-### 备份会保存密码吗？
-
-不会。备份只包含设置与课程个性化数据，不包含登录密码、可登录凭据、日志或课表缓存。
-
-## 🧩 项目说明
-
-这是一个个人学习项目，在 AI 协助下持续完善。欢迎通过
-[GitHub Issues](https://github.com/lhgr/CQUT-Helper/issues) 提交问题或建议，也可以发送
-邮件至 <dawndrizzle0104@gmail.com>。
-
-### 本地开发与构建
-
-开发环境使用 Flutter 3.47.7（Dart 3.13.5）。首次获取依赖并构建 Release APK：
+建议使用与 CI 一致的 Flutter 3.47.7。项目约束为 Flutter >=3.47.0、Dart ^3.13.0。在项目根目录执行：
 
 ```bash
 flutter pub get
+flutter run
+flutter analyze
+flutter test
+```
+
+构建 Android Release APK 需要先在 `android/key.properties` 配置签名信息。`storeFile` 是相对于 `android/app` 的路径，例如 `../upload-keystore.jks`：
+
+```properties
+storeFile=../upload-keystore.jks
+storePassword=<密钥库密码>
+keyAlias=<密钥别名>
+keyPassword=<密钥密码>
+```
+
+之后运行：
+
+```bash
 flutter build apk --release
 ```
 
-iOS 构建需要 macOS 15.6+ 和 Xcode 26+，CI 明确使用 Xcode 26.3。
-现有插件使用 iOS 26 SDK 中的类型。项目以 iOS 15 为最低版本，仅面向 iPhone。
+iOS 构建需要 macOS；当前 CI 使用 `macos-15` 和 Xcode 26.3。项目最低支持 iOS 15。配置 Xcode 签名时，主应用 `Runner` 与 `CQUTWidgetsExtension` 需使用同一团队及同一 App Group。日常检查见 [Quality Gate workflow](.github/workflows/ci.yml)；发行构建见 [Build and Release workflow](.github/workflows/release.yml) 与 [iOS IPA workflow](.github/workflows/ios-sideload.yml)。
 
-```bash
-flutter pub get
-eval "$(python3 tool/release_metadata.py)"
-eval "$(dart tool/ios_release_metadata.dart "$build_name")"
-flutter build ios --release --no-codesign \
-  --build-name="$build_name" --build-number="$build_number"
-mkdir -p build/ios-sideload/Payload
-cp -R build/ios/iphoneos/Runner.app build/ios-sideload/Payload/
-cd build/ios-sideload
-zip -qry "$ipa_filename" Payload
-python3 ../../tool/verify_ios_widgets.py Payload/Runner.app --ipa "$ipa_filename"
-shasum -a 256 "$ipa_filename" > SHA256SUMS.txt
-```
+## 项目与协议
 
-CI 与发布 workflow 均固定使用 Flutter 3.47.7。`Quality Gate` 在 push、Pull Request
-和默认手动运行时执行分析、测试与 Release 构建。iOS 在独立 macOS 作业中执行
-`flutter build ios --release --no-codesign`，构建日志上传为 `ios-release-build-log`。构建后校验主应用与嵌入的小组件扩展版本、
-App Group 和扩展可执行文件，随后在可用 iPhone 模拟器运行 `WidgetSnapshotTests`，
-结果上传为 `ios-widget-tests`。未签名 IPA 打包也会校验扩展是否保留。
-
-Xcode 中 `Runner` 与 `CQUTWidgetsExtension` 使用同一签名团队，为两个 bundle ID
-启用同一 App Group。默认标识为 `group.com.dawndrizzle.wing.cqut`，可通过共同的
-`CQUT_WIDGET_APP_GROUP` build setting 覆盖。该设置同时用于两个 target 的 entitlements
-和运行时 `CQUTWidgetAppGroup`。扩展与主应用均使用 Flutter 数字版本和 build，最低 iOS 15。
-
-需要查看 iOS 界面时，手动运行 `Quality Gate` 并勾选 `capture_ios_screenshots`。
-该参数默认关闭，开启后额外构建 Debug 模拟器应用、启动 iPhone 模拟器并安装运行，
-将截图与模拟器日志上传为 `ios-simulator-smoke`。本地模拟器构建命令为
-`flutter build ios --simulator --debug`。
-
-推送 `vX.Y.Z` 标签后，`Build and Release` 先校验标签、数字版本和递增 build，
-再以同一源码提交和版本并行构建 Android 与未签名 iOS IPA。两端成功后汇总
-`CQUT-Helper-SHA256SUMS.txt`，创建或更新同一 GitHub Release 草稿，发行类型保持正式版。
-维护者公开草稿后即可在发行页下载 IPA，并完成个人签名安装。
-
-手动运行 `Build and Release` 时，所选源码必须与 `tag_name` 指向同一提交。
-勾选 `skip_release` 可在分支上验证打包，`tag_name` 仍填写与项目版本对应的
-`vX.Y.Z`，允许该标签尚未创建。两端产物、构建日志及带总校验和的
-`CQUT-Helper-release` artifact 仍会上传。也可独立手动运行
-`Build unsigned iOS IPA`，选择分支获取 `CQUT-Helper-unsigned-ios` artifact。
-
-iOS 阶段在 `lib/utils/ios_release.dart` 统一配置，关于页提示与 IPA 文件名由此生成。
-Alpha、Beta 后缀用于展示和文件名，原生构建版本始终采用 `pubspec.yaml` 的数字版本与 build。
-
-macOS CI 已通过 iOS 模拟器编译、安装与启动验收，截图确认登录页正常显示，
-设备 Release 未签名 IPA 构建通过，下载产物的 SHA-256 校验匹配。
-[查看 CI 验收记录](https://github.com/lhgr/CQUT-Helper/actions/runs/42015154561)。
-
-小组件扩展、共享快照、日期切换与打包校验已接入源码及 CI。本次改动尚待 macOS CI
-编译与原生测试验收，组件添加、系统刷新、交互与 App Group 重签名仍待 iPhone 真机验证。
-
-核心业务已有自动测试覆盖。iPhone 真机登录与同步、通知授权与锁屏提醒、个人签名安装
-及续签、文件系统交互仍待真机验证。
-
-有关课表数据接口的分析可参阅
-[课表 API 相关文章](https://blog.dawndrizzle.top/blog/reverse-timetable)。
-
-## 📚 参考与协议
+这是一个个人学习项目。欢迎通过 [GitHub Issues](https://github.com/lhgr/CQUT-Helper/issues) 提交问题或建议，也可以发送邮件至 <dawndrizzle0104@gmail.com>。
 
 - [cqut-net-login](https://github.com/CQUT-handsomeboy/cqut-net-login)：密码加密模块参考。
-- [Wake Up 课程表](https://www.wakeup.fun/) 与
-  [拾光课程表](https://github.com/XingHeYuZhuan/shiguangschedule)：桌面小组件样式参考。
-- [CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)：
-  感谢参与资料整理和分享的同学。
+- [Wake Up 课程表](https://www.wakeup.fun/) 与 [拾光课程表](https://github.com/XingHeYuZhuan/shiguangschedule)：小组件样式参考。
+- [CQUT-Course-Guide-Sharing-Scheme](https://github.com/Royfor12/CQUT-Course-Guide-Sharing-Scheme)：感谢参与资料整理和分享的同学。
 
 本项目采用 [Apache License 2.0](LICENSE) 开源。
-
-## 👀 访问统计
-
-<p align="center">
-  <img src="https://count.getloli.com/@DawnDrizzle?name=DawnDrizzle&theme=minecraft" alt="Visitor Count" />
-</p>
