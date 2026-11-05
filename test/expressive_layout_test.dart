@@ -705,6 +705,8 @@ void main() {
       // Open the real course row rather than testing the dialog in isolation.
       final course = find.text(name).last;
       await tester.ensureVisible(course);
+      await tester.pumpAndSettle();
+      expect(course.hitTestable(), findsOneWidget);
       await tester.tap(course);
       await tester.pumpAndSettle();
       expect(find.byType(Dialog), findsOneWidget);
@@ -800,7 +802,14 @@ void main() {
         expect(find.text(page.$3), findsWidgets);
         if (page.$1 == 'settings-diagnostics') {
           expect(find.text('提醒就绪状态'), findsOneWidget);
-          expect(find.text('调课通知增强'), findsOneWidget);
+          await tester.scrollUntilVisible(find.text('调课通知增强'), 250);
+          await tester.pumpAndSettle();
+          expect(find.text('调课通知增强').hitTestable(), findsOneWidget);
+          final backgroundSettings = find.widgetWithText(TextButton, '电池与后台设置');
+          expect(
+            tester.widget<TextButton>(backgroundSettings).onPressed,
+            isNotNull,
+          );
         }
         expect(find.byType(CircularProgressIndicator), findsNothing);
         expect(tester.takeException(), isNull, reason: page.$1);

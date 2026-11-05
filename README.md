@@ -174,7 +174,8 @@ flutter pub get
 flutter build apk --release
 ```
 
-iOS 构建在 macOS 和 Xcode 环境执行。项目以 iOS 15 为最低版本，仅面向 iPhone。
+iOS 构建需要 macOS 15.6+ 和 Xcode 26+，CI 明确使用 Xcode 26.3。
+现有插件使用 iOS 26 SDK 中的类型。项目以 iOS 15 为最低版本，仅面向 iPhone。
 
 ```bash
 flutter pub get
