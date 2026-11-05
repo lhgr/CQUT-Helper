@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -7,6 +8,68 @@ const diagnosticAttemptZoneKey = 'cqut.diagnostic.attempt';
 const diagnosticMaxAttemptsZoneKey = 'cqut.diagnostic.max_attempts';
 const diagnosticFallbackZoneKey = 'cqut.diagnostic.fallback';
 const diagnosticRetryGroupZoneKey = 'cqut.diagnostic.retry_group';
+
+Map<String, Object?> diagnosticServiceIdentity({
+  required String service,
+  required String method,
+  required Uri uri,
+}) => {
+  'service': service,
+  'origin': uri.hasAuthority ? uri.origin : '',
+  'route': uri.path,
+  'method': method.toUpperCase(),
+};
+
+/// Inspect only an explicit error-code marker in the bounded 530 error page.
+/// The inspected text is never retained in diagnostics.
+Map<String, Object?> diagnosticCloudflareDetails(Response? response) {
+  if (response?.statusCode != 530) return const {};
+  final server = response!.headers['server']?.join(' ').toLowerCase() ?? '';
+  final ray = response.headers['cf-ray'];
+  if (!server.contains('cloudflare') && (ray == null || ray.isEmpty)) {
+    return {'cloudflare_code_result': 'not_cloudflare'};
+  }
+  const budget = 16 * 1024;
+  final data = response.data;
+  String text;
+  var truncated = false;
+  if (data is String) {
+    final prefix = StringBuffer();
+    var size = 0;
+    for (final rune in data.runes) {
+      final character = String.fromCharCode(rune);
+      final bytes = utf8.encode(character).length;
+      if (size + bytes > budget) {
+        truncated = true;
+        break;
+      }
+      size += bytes;
+      prefix.write(character);
+    }
+    text = prefix.toString();
+  } else if (data is List<int>) {
+    truncated = data.length > budget;
+    text = utf8.decode(data.take(budget).toList(), allowMalformed: true);
+  } else {
+    return {'cloudflare_code_result': 'unsupported_body'};
+  }
+  final plain = text
+      .replaceAll(RegExp(r'<[^>]{0,512}>'), ' ')
+      .replaceAll(RegExp(r'&(?:nbsp|#160);', caseSensitive: false), ' ');
+  final match = RegExp(
+    r'\berror\s*(?:code\s*)?[:#=]?\s*(1\d{3})\b',
+    caseSensitive: false,
+  ).firstMatch(plain);
+  return {
+    if (match != null) 'cloudflare_error_code': match.group(1),
+    'cloudflare_code_result': match != null
+        ? 'found'
+        : truncated
+        ? 'not_found_in_prefix'
+        : 'not_found',
+    'cloudflare_scan_truncated': truncated,
+  };
+}
 
 Future<T> runWithDiagnosticContext<T>({
   int? attempt,

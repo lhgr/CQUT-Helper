@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cqut_helper/api/auth/auth_api.dart';
+import 'package:cqut_helper/api/calendar/calendar_api.dart';
 import 'package:cqut_helper/api/core/api_client.dart';
 import 'package:cqut_helper/api/course/course_api.dart';
 import 'package:cqut_helper/api/notice/notice_api.dart';
@@ -86,6 +87,117 @@ void main() {
     await logger.flush();
     return storage.snapshot();
   }
+
+  for (final recovers in [false, true]) {
+    test(
+      'notice payload retry keeps one root and validated recovery=$recovers',
+      () async {
+        var calls = 0;
+        final api = NoticeApi(
+          accessEnabled: () async => true,
+          dioFactory: (baseUrl) =>
+              Dio(BaseOptions(baseUrl: baseUrl))
+                ..httpClientAdapter = _ResponseAdapter((_) {
+                  calls++;
+                  return {
+                    'success': true,
+                    'data': {
+                      'year_term': '2026-2027-1',
+                      'term_schedule_notices_complete': recovers && calls == 2,
+                      'term_schedule_notices': <Object?>[],
+                    },
+                  };
+                }),
+        );
+        final future = api.fetchTermScheduleNotices(
+          username: 'private-account',
+          encryptedPassword: 'private-password',
+          yearTerm: '2026-2027-1',
+        );
+        if (recovers) {
+          expect((await future).notices, isEmpty);
+        } else {
+          await expectLater(future, throwsA(isA<NoticeApiResponseException>()));
+        }
+        final rows = await records();
+        final root = rows.singleWhere((row) => row['kind'] == 'incident');
+        expect(root['attempts'], recovers ? 1 : 2);
+        expect(root['errorCategory'], 'DATA_PARSE_FAILED');
+        expect((root['fields'] as Map)['validation_failed'], isTrue);
+        expect(
+          rows.where((row) => row['kind'] == 'recovery'),
+          hasLength(recovers ? 1 : 0),
+        );
+        final successes = rows
+            .where(
+              (row) => (row['fields'] as Map?)?['network_validated'] == true,
+            )
+            .toList();
+        expect(successes, hasLength(recovers ? 1 : 0));
+        if (recovers) {
+          expect(successes.single['stage'], 'service_response');
+          expect((successes.single['fields'] as Map)['service'], 'NoticeApi');
+        }
+      },
+    );
+  }
+
+  test(
+    'calendar 304 requires explicit cache validation for success evidence',
+    () async {
+      final dio = Dio()
+        ..httpClientAdapter = _ResponseAdapter(
+          (_) => ResponseBody.fromString('', 304),
+        );
+      final api = CalendarApi(
+        dio: dio,
+        baseUrl: 'https://custom.example.test:8443',
+      );
+      final response = await api.fetch(yearTerm: '2026-2027-1');
+      expect(await records(), isEmpty);
+      api.recordValidatedNotModified(response);
+      final rows = await records();
+      final success = rows.single;
+      expect(success['kind'], 'operation_outcome');
+      expect(success['operationId'], response.operationId);
+      final fields = success['fields'] as Map;
+      expect(fields['origin'], 'https://custom.example.test:8443');
+      expect(fields['route'], '/api/calendar/term-overrides');
+      expect(fields['network_validated'], isTrue);
+      expect(fields['status_code'], 304);
+    },
+  );
+
+  test('calendar rejects a different term without success evidence', () async {
+    final api = CalendarApi(
+      dio: Dio()
+        ..httpClientAdapter = _ResponseAdapter(
+          (_) => {
+            'success': true,
+            'data': {
+              'schema_version': 1,
+              'year_term': '2025-2026-2',
+              'revision': 'test-revision',
+              'generated_at': '2026-11-05T00:00:00Z',
+              'term_calendar_complete': true,
+              'days': <Object?>[],
+            },
+          },
+        ),
+    );
+    await expectLater(
+      api.fetch(yearTerm: '2026-2027-1'),
+      throwsFormatException,
+    );
+    final rows = await records();
+    expect(rows.where((row) => row['kind'] == 'incident'), hasLength(1));
+    expect(
+      rows.where(
+        (row) => (row['fields'] as Map?)?['network_validated'] == true,
+      ),
+      isEmpty,
+    );
+  });
 
   test(
     'HTTP 200 login rejection records the business cause and stack',

@@ -66,5 +66,6 @@ Future<T> runDiagnosticOperation<T>(
         rethrow;
       }
     },
+    inferred: logger.currentTraceInferred,
   );
 }

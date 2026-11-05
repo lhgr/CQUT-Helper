@@ -53,13 +53,35 @@ Future<T> retryWithExponentialBackoff<T>(
                 ? 'retry_allowed'
                 : 'attempts_exhausted',
             'backoff_ms': backoffMs,
+            'retry_policy': 'exponential_backoff',
+            'retry_filter': shouldRetry == null ? 'any_error' : 'predicate',
+            'initial_delay_ms': initialDelay.inMilliseconds,
+            'max_delay_ms': maxDelay.inMilliseconds,
+            'backoff_factor': factor,
+            'jitter_ms': jitterMs,
           },
         );
         if (!willRetry) rethrow;
+        final waiting = Stopwatch()..start();
         await Future.delayed(Duration(milliseconds: backoffMs));
+        AppLogger.I.logOperationOutcome(
+          'Retry',
+          '重试等待完成',
+          outcome: 'succeeded',
+          fields: {
+            'stage': 'retry_wait',
+            'retry_group_id': ?AppLogger.I.currentRetryGroupId,
+            'attempt': attempt,
+            'backoff_ms': backoffMs,
+            'actual_backoff_ms': waiting.elapsedMilliseconds,
+            'retry_policy': 'exponential_backoff',
+          },
+        );
       }
     }
 
     throw lastError ?? StateError('retry failed');
   }),
+  inferred:
+      AppLogger.I.currentTraceId == null || AppLogger.I.currentTraceInferred,
 );

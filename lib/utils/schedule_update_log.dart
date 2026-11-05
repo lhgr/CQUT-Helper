@@ -34,16 +34,33 @@ class ScheduleUpdateLog {
     return out;
   }
 
-  static Future<void> appendRun(Map<String, dynamic> item) async {
+  static Future<void> appendRun(
+    Map<String, dynamic> item, {
+    Object? error,
+    StackTrace? stackTrace,
+  }) async {
     final fields = _sanitizeForRuntime(item);
-    AppLogger.I.info(
+    final skipped = item['apiClosed'] == true || item['skip_reason'] != null;
+    AppLogger.I.logOperationOutcome(
       'ScheduleUpdate',
       'run',
+      outcome: item['hadFailures'] == true
+          ? 'failed'
+          : skipped
+          ? 'skipped'
+          : 'succeeded',
+      error: error,
+      stackTrace: stackTrace,
       fields: {
         ...fields,
         'stage': 'schedule_update',
-        'diagnostic_kind': 'operation',
-        'outcome': item['hadFailures'] == true ? 'failed' : 'completed',
+        'reason':
+            item['skip_reason'] ??
+            (item['apiClosed'] == true
+                ? 'api_closed'
+                : item['hadFailures'] == true
+                ? 'refresh_failed'
+                : 'completed'),
       },
     );
   }
@@ -52,6 +69,7 @@ class ScheduleUpdateLog {
     Map<String, dynamic> item, {
     Object? error,
     StackTrace? stackTrace,
+    bool recordFailure = true,
   }) async {
     // This counter is a business signal used by the run result. Historical
     // diagnostic payloads belong only to the bounded diagnostic store.
@@ -61,27 +79,14 @@ class ScheduleUpdateLog {
       final counter = (prefs.getInt(_failureCounterKey) ?? 0) + 1;
       await prefs.setInt(_failureCounterKey, counter);
     } catch (_) {}
-    final fields = _sanitizeForRuntime(item);
-    if (error != null) {
+    if (recordFailure && error != null) {
       AppLogger.I.logOperationFailure(
         'ScheduleUpdate',
         'update failed',
         error: error,
         stackTrace: stackTrace,
-        fields: {...fields, 'stage': 'schedule_update', 'outcome': 'failed'},
+        fields: {..._sanitizeForRuntime(item), 'stage': 'schedule_update'},
       );
-      return;
     }
-    AppLogger.I.info(
-      'ScheduleUpdate',
-      'update outcome',
-      fields: {
-        ...fields,
-        'stage': 'schedule_update',
-        'diagnostic_kind': 'operation',
-        'outcome': 'failed',
-        if (item['error'] is String) 'reason': item['error'],
-      },
-    );
   }
 }

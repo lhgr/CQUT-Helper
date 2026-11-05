@@ -86,6 +86,127 @@ void main() {
     expect(logger.recent, isEmpty);
   });
 
+  test(
+    'operation outcome links a real unrecorded cause without becoming a root',
+    () async {
+      final error = StateError('unexpected failure');
+      logger.runWithTraceId('worker-operation', () {
+        logger.logOperationOutcome(
+          'Worker',
+          'task finished',
+          outcome: 'failed',
+          error: error,
+          fields: {'stage': 'load_cache', 'lifecycle': 'background_task'},
+        );
+      });
+      await logger.flush();
+      final rootEvent = storage.rows.singleWhere(
+        (row) => row['kind'] == 'incident',
+      );
+      final outcome = storage.rows.singleWhere(
+        (row) => row['kind'] == 'operation_outcome',
+      );
+      expect(outcome['causeEventId'], rootEvent['eventId']);
+      expect(outcome['rootEventId'], rootEvent['eventId']);
+      expect(outcome['operationId'], 'worker-operation');
+      expect(outcome['errorType'], isNull);
+      expect(outcome['stackTrace'], isEmpty);
+      expect(storage.rows, hasLength(2));
+    },
+  );
+
+  test(
+    'self cause mapping bridges only the explicitly selected operation',
+    () async {
+      final error = StateError('shared load failure');
+      logger.runWithTraceId('scope-A', () {
+        logger.logOperationFailure('Loader', 'load failed', error: error);
+      });
+      logger.runWithTraceId('scope-B', () {
+        logger.linkFailure(error, error);
+        logger.logOperationOutcome(
+          'Loader',
+          'waiter failed',
+          outcome: 'failed',
+          error: error,
+        );
+      });
+      logger.runWithTraceId('scope-C', () {
+        logger.logOperationFailure(
+          'Loader',
+          'independent load failed',
+          error: error,
+        );
+      });
+      await logger.flush();
+      final roots = storage.rows
+          .where((row) => row['kind'] == 'incident')
+          .toList();
+      final outcome = storage.rows.singleWhere(
+        (row) => row['kind'] == 'operation_outcome',
+      );
+      expect(roots, hasLength(2));
+      expect(roots.map((row) => row['operationId']), ['scope-A', 'scope-C']);
+      expect(outcome['operationId'], 'scope-B');
+      expect(outcome['causeEventId'], roots.first['eventId']);
+      expect(roots.last['rootEventId'], isNot(roots.first['eventId']));
+    },
+  );
+
+  test(
+    'failed outcome without a cause does not fabricate an exception',
+    () async {
+      logger.logOperationOutcome('Worker', 'task failed', outcome: 'failed');
+      await logger.flush();
+      expect(storage.rows, hasLength(1));
+      expect(storage.rows.single['kind'], 'operation_outcome');
+      expect(storage.rows.single['rootEventId'], isNull);
+      expect(storage.rows.single['reason'], 'failure_cause_unavailable');
+    },
+  );
+
+  test('queue preserves background lifecycle and validated service evidence amid warnings', () async {
+    storage.gate = Completer<void>();
+    logger.warn('App', 'block writer');
+    logger.info(
+      'Worker',
+      'started',
+      fields: {
+        'diagnostic_kind': 'operation',
+        'outcome': 'started',
+        'lifecycle': 'background_task',
+      },
+    );
+    logger.logOperationOutcome('Worker', 'finished', outcome: 'skipped');
+    logger.logServiceSuccess(
+      'NoticeApi',
+      service: 'NoticeApi',
+      method: 'POST',
+      uri: Uri.parse('https://example.test/api/notices'),
+    );
+    for (var index = 0; index < 250; index++) {
+      logger.warn('Warning', 'warning $index');
+    }
+    storage.gate!.complete();
+    storage.gate = null;
+    await logger.flush();
+    expect(
+      storage.rows.where((row) => row['message'] == 'started'),
+      hasLength(1),
+    );
+    expect(
+      storage.rows.where((row) => row['message'] == 'finished'),
+      hasLength(1),
+    );
+    expect(
+      storage.rows.where(
+        (row) => (row['fields'] as Map?)?['network_validated'] == true,
+      ),
+      hasLength(1),
+    );
+    expect(logger.metrics.dropped, greaterThan(0));
+  });
+
   test('failure contains trace, sanitized metadata, stack and relevant breadcrumbs', () async {
     logger.runWithTraceId('load-1', () {
       logger.info('Schedule', '准备读取缓存', fields: {'action': 'cache_read'});

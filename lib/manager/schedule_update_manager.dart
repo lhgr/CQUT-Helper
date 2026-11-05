@@ -4,6 +4,7 @@ import 'package:cqut_helper/manager/schedule_update_result.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 
 class ScheduleUpdateManager {
   final ScheduleController controller;
@@ -14,64 +15,56 @@ class ScheduleUpdateManager {
   void dispose() {}
 
   Future<List<ScheduleWeekChange>> checkForUpdates(
-    ScheduleData currentData,
-  ) async {
-    final result = await _checkForUpdatesInternal(
-      currentData,
-      runType: 'foreground_manual',
-    );
-    return result.changes;
-  }
+    ScheduleData currentData, {
+    String trigger = 'foreground_manual',
+  }) => AppLogger.I.runWithTraceIdAsync(
+    AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+    () async {
+      final result = await _checkForUpdatesInternal(
+        currentData,
+        runType: trigger,
+      );
+      return result.changes;
+    },
+  );
 
-  Future<
-    ({
-      List<ScheduleWeekChange> changes,
-      bool hadFailures,
-      int failureDelta,
-      bool apiClosed,
-      int changedNotices,
-      int affectedWeeks,
-    })
-  >
-  _checkForUpdatesInternal(
+  Future<ScheduleUpdateRunResult> _checkForUpdatesInternal(
     ScheduleData currentData, {
     required String runType,
   }) async {
     if (_checkInFlight) {
-      const result = ScheduleUpdateRunResult.empty();
-      return (
-        changes: result.changes,
-        hadFailures: result.hadFailures,
-        failureDelta: result.failureDelta,
-        apiClosed: result.apiClosed,
-        changedNotices: result.changedNotices,
-        affectedWeeks: result.affectedWeeks,
+      AppLogger.I.logOperationOutcome(
+        'ScheduleUpdate',
+        'notice check skipped',
+        outcome: 'skipped',
+        fields: {
+          'stage': 'schedule_update',
+          'trigger': runType,
+          'reason': 'already_running',
+        },
       );
+      return const ScheduleUpdateRunResult.empty();
     }
     _checkInFlight = true;
     final startAt = DateTime.now();
-    final failuresBefore = await loadScheduleUpdateFailureCounter();
+    var failuresBefore = 0;
     var summary = const ScheduleUpdatePipelineSummary.empty();
     Object? error;
     StackTrace? stackTrace;
-    ScheduleUpdateRunResult? finalized;
+    ScheduleUpdateRunResult finalized;
+    final pipeline = ScheduleNoticeRefreshPipeline(
+      refreshWeek: (weekNum, yearTerm) async {
+        await controller.ensureWeekLoaded(
+          weekNum,
+          yearTerm,
+          forceRefresh: true,
+          updateLastViewed: false,
+          rethrowOnFailure: true,
+        );
+      },
+    );
     try {
-      final pipeline = ScheduleNoticeRefreshPipeline(
-        refreshWeek: (weekNum, yearTerm) {
-          return controller
-              .ensureWeekLoaded(
-                weekNum,
-                yearTerm,
-                forceRefresh: true,
-                updateLastViewed: false,
-              )
-              .then((success) {
-                if (!success) {
-                  throw StateError('第$weekNum周课表刷新失败');
-                }
-              });
-        },
-      );
+      failuresBefore = await loadScheduleUpdateFailureCounter();
       final result = await pipeline.run(currentData: currentData);
       summary = ScheduleUpdatePipelineSummary.fromRefreshResult(result);
       requestScheduleUpdatedIfNeeded(summary.changes);
@@ -84,25 +77,21 @@ class ScheduleUpdateManager {
         stackTrace: st,
       );
     } finally {
-      finalized = await finalizeScheduleUpdateRun(
-        runType: runType,
-        startAt: startAt,
-        failuresBefore: failuresBefore,
-        summary: summary,
-        error: error,
-        stackTrace: stackTrace,
-      );
-      _checkInFlight = false;
+      try {
+        finalized = await finalizeScheduleUpdateRun(
+          runType: runType,
+          startAt: startAt,
+          failuresBefore: failuresBefore,
+          summary: summary,
+          error: error,
+          stackTrace: stackTrace,
+          diagnosticFields: pipeline.diagnosticProgress,
+        );
+      } finally {
+        _checkInFlight = false;
+      }
     }
-    final result = finalized;
-    return (
-      changes: result.changes,
-      hadFailures: result.hadFailures,
-      failureDelta: result.failureDelta,
-      apiClosed: result.apiClosed,
-      changedNotices: result.changedNotices,
-      affectedWeeks: result.affectedWeeks,
-    );
+    return finalized;
   }
 
   Future<({String? yearTerm, List<ScheduleWeekChange> changes})>

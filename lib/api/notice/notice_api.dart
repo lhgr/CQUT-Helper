@@ -216,11 +216,16 @@ class NoticeApi {
     if (!RegExp(r'^\d{4}-\d{4}-[12]$').hasMatch(normalizedYearTerm)) {
       throw ArgumentError.value(yearTerm, 'yearTerm', '学期格式应为YYYY-YYYY-1/2');
     }
-    final response = await _dioFactory(baseUrl).post(
+    final dio = _dioFactory(baseUrl);
+    AppLogger.I.attachToDio(dio, tag: _tag);
+    final diagnostics = AppLogger.I.dioInterceptor(tag: _tag);
+    final response = await dio.post(
       _path,
       options: Options(
         extra: {
           'diagnostic_expected_statuses': [403],
+          'diagnostic_service': _tag,
+          'diagnostic_validate_response': true,
           'diagnostic_attempt': ?attempt,
           'diagnostic_max_attempts': ?maxAttempts,
         },
@@ -233,52 +238,60 @@ class NoticeApi {
         'headless': headless,
       },
     );
-    final data = response.data;
-    if (data is! Map<String, dynamic>) {
-      throw NoticeApiResponseException('调课通知响应格式错误');
-    }
-    if (data['success'] != true) {
-      throw NoticeApiResponseException(
-        _backendErrorMessage(data) ?? '调课通知响应失败',
-      );
-    }
-    final payload = data['data'];
-    if (payload is! Map<String, dynamic>) {
-      throw NoticeApiResponseException('调课通知数据缺失');
-    }
-    final envName = (payload['env'] ?? env).toString().trim();
-    final responseYearTerm = (payload['year_term'] ?? '').toString().trim();
-    if (responseYearTerm.isNotEmpty && responseYearTerm != normalizedYearTerm) {
-      throw StateError(
-        '调课通知学期不一致: request=$normalizedYearTerm, response=$responseYearTerm',
-      );
-    }
-    final generatedAt = (payload['generated_at'] ?? '').toString().trim();
-    if (payload['term_schedule_notices_complete'] != true) {
-      throw NoticeApiResponseException('调课通知数据完整性未确认');
-    }
-    final rawNotices = payload['term_schedule_notices'];
-    if (rawNotices is! List) {
-      throw NoticeApiResponseException('调课通知列表缺失或格式错误');
-    }
-    final notices = <ScheduleNotice>[];
-    for (final item in rawNotices) {
-      if (item is Map<String, dynamic>) {
-        notices.add(ScheduleNotice.fromJson(item));
-      } else if (item is Map) {
-        notices.add(ScheduleNotice.fromJson(item.cast<String, dynamic>()));
-      } else {
-        throw NoticeApiResponseException('调课通知条目格式错误');
+    try {
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        throw NoticeApiResponseException('调课通知响应格式错误');
       }
+      if (data['success'] != true) {
+        throw NoticeApiResponseException(
+          _backendErrorMessage(data) ?? '调课通知响应失败',
+        );
+      }
+      final payload = data['data'];
+      if (payload is! Map<String, dynamic>) {
+        throw NoticeApiResponseException('调课通知数据缺失');
+      }
+      final envName = (payload['env'] ?? env).toString().trim();
+      final responseYearTerm = (payload['year_term'] ?? '').toString().trim();
+      if (responseYearTerm.isNotEmpty &&
+          responseYearTerm != normalizedYearTerm) {
+        throw StateError(
+          '调课通知学期不一致: request=$normalizedYearTerm, response=$responseYearTerm',
+        );
+      }
+      final generatedAt = (payload['generated_at'] ?? '').toString().trim();
+      if (payload['term_schedule_notices_complete'] != true) {
+        throw NoticeApiResponseException('调课通知数据完整性未确认');
+      }
+      final rawNotices = payload['term_schedule_notices'];
+      if (rawNotices is! List) {
+        throw NoticeApiResponseException('调课通知列表缺失或格式错误');
+      }
+      final notices = <ScheduleNotice>[];
+      for (final item in rawNotices) {
+        if (item is Map<String, dynamic>) {
+          notices.add(ScheduleNotice.fromJson(item));
+        } else if (item is Map) {
+          notices.add(ScheduleNotice.fromJson(item.cast<String, dynamic>()));
+        } else {
+          throw NoticeApiResponseException('调课通知条目格式错误');
+        }
+      }
+      final result = ScheduleNoticePollData(
+        env: envName,
+        yearTerm: responseYearTerm.isEmpty
+            ? normalizedYearTerm
+            : responseYearTerm,
+        generatedAt: generatedAt,
+        notices: notices,
+      );
+      diagnostics.logValidatedResponse(response);
+      return result;
+    } catch (error, stackTrace) {
+      diagnostics.logValidationFailure(response, error, stackTrace);
+      rethrow;
     }
-    return ScheduleNoticePollData(
-      env: envName,
-      yearTerm: responseYearTerm.isEmpty
-          ? normalizedYearTerm
-          : responseYearTerm,
-      generatedAt: generatedAt,
-      notices: notices,
-    );
   }
 
   Future<ScheduleNoticePollData> fetchTermScheduleNotices({
@@ -358,8 +371,7 @@ class NoticeApi {
               willRetry: willRetry,
               reason: willRetry ? 'retry_allowed' : 'attempts_exhausted',
             );
-            // Response validation errors have no transport failure event.
-            // Keep their business failure visible at the existing boundary.
+            // Validation failures already have the request's causal root.
             AppLogger.I.warn(
               _tag,
               'notice request unexpected error',
@@ -388,6 +400,7 @@ class NoticeApi {
       AppLogger.I.runWithTraceIdAsync<T>(
         AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
         () => AppLogger.I.runWithRetryGroup<T>(action),
+        inferred: AppLogger.I.currentTraceInferred,
       );
 
   static void _logRetryDecision(
@@ -411,6 +424,9 @@ class NoticeApi {
         'will_retry': willRetry,
         'retry_reason': reason,
         'backoff_ms': 0,
+        'actual_backoff_ms': 0,
+        'retry_policy': 'immediate',
+        'retry_filter': 'except_403_429',
       },
     );
   }

@@ -391,6 +391,29 @@ void main() {
       expect(weekCache, isEmpty);
     });
 
+    test(
+      'strict affected-week refresh preserves the original exception',
+      () async {
+        SharedPreferences.setMockInitialValues({'account': 'u1'});
+        final failure = StateError('original week transport failure');
+        final api = _FakeWeekLoaderScheduleApi()..networkError = failure;
+        final loader = buildLoader(
+          api,
+          credentialStore: _FakeWeekLoaderCredentialStore(value: 'secure-p1'),
+        );
+        await expectLater(
+          loader.ensureWeekLoaded(
+            '2',
+            '2024-2025-2',
+            forceRefresh: true,
+            rethrowOnFailure: true,
+          ),
+          throwsA(same(failure)),
+        );
+        expect(weekCache, isEmpty);
+      },
+    );
+
     test('并发加载同一周时复用同一个请求', () async {
       SharedPreferences.setMockInitialValues({'account': 'u1'});
       final pending = Completer<ScheduleData>();
@@ -415,6 +438,37 @@ void main() {
       expect(await Future.wait([first, second]), [isTrue, isTrue]);
       expect(api.cacheCalls, 1);
       expect(api.networkCalls, 1);
+    });
+
+    test('strict and ordinary concurrent waiters share a failed request across traces', () async {
+      SharedPreferences.setMockInitialValues({'account': 'u1'});
+      final pending = Completer<ScheduleData>();
+      final failure = StateError('shared week failure');
+      final api = _FakeWeekLoaderScheduleApi()..networkCompleter = pending;
+      final loader = buildLoader(
+        api,
+        credentialStore: _FakeWeekLoaderCredentialStore(value: 'secure-p1'),
+      );
+      final ordinary = AppLogger.I.runWithTraceIdAsync(
+        'ordinary-waiter',
+        () => loader.ensureWeekLoaded('2', '2024-2025-2', forceRefresh: true),
+      );
+      final strict = AppLogger.I.runWithTraceIdAsync(
+        'strict-waiter',
+        () => loader.ensureWeekLoaded(
+          '2',
+          '2024-2025-2',
+          forceRefresh: true,
+          rethrowOnFailure: true,
+        ),
+      );
+      final strictCheck = expectLater(strict, throwsA(same(failure)));
+      await Future<void>.delayed(Duration.zero);
+      pending.completeError(failure, StackTrace.current);
+      expect(await ordinary, isFalse);
+      await strictCheck;
+      expect(api.networkCalls, 1);
+      expect(weekCache, isEmpty);
     });
   });
 }

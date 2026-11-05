@@ -70,7 +70,16 @@ class _QueuedRecord {
   final Map<String, Object?> event;
   final _RootLink? rootLink;
   final int bytes;
-  int get priority => LogLevel.values
+  int get priority => max(
+    event['kind'] == 'operation_outcome' ||
+            event['kind'] == 'recovery' ||
+            (event['kind'] == 'operation' &&
+                (event['fields'] as Map?)?['lifecycle'] == 'background_task')
+        ? LogLevel.error.priority
+        : 0,
+    levelPriority,
+  );
+  int get levelPriority => LogLevel.values
       .firstWhere(
         (level) => level.name == event['level'],
         orElse: () => LogLevel.warn,
@@ -84,11 +93,13 @@ class _RootLink {
     required this.operationId,
     required this.at,
     this.errorCategory,
+    this.operationInferred = false,
   });
   final String eventId;
   final String operationId;
   final DateTime at;
   final String? errorCategory;
+  final bool operationInferred;
   bool valid = true;
 }
 
@@ -155,6 +166,7 @@ class AppLogger {
   static const _contextLifetime = Duration(minutes: 2);
   static const _repeatWindow = Duration(seconds: 60);
   final Object _traceZoneKey = Object();
+  final Object _inferredTraceZoneKey = Object();
   final ListQueue<LogEvent> _recent = ListQueue();
   final ListQueue<_QueuedRecord> _queue = ListQueue();
   final LinkedHashMap<String, _RepeatedIssue> _issues = LinkedHashMap();
@@ -249,6 +261,7 @@ class AppLogger {
   String get sessionId =>
       _sessionId.isEmpty ? (_sessionId = newTraceId(bytes: 8)) : _sessionId;
   String? get currentTraceId => Zone.current[_traceZoneKey] as String?;
+  bool get currentTraceInferred => Zone.current[_inferredTraceZoneKey] == true;
   String? get currentRetryGroupId =>
       Zone.current[diagnosticRetryGroupZoneKey] as String?;
   int? captureRetryRequestSlot({
@@ -278,10 +291,19 @@ class AppLogger {
     bytes,
     (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0'),
   ).join();
-  T runWithTraceId<T>(String id, T Function() fn) =>
-      runZoned(fn, zoneValues: {_traceZoneKey: id});
-  Future<T> runWithTraceIdAsync<T>(String id, Future<T> Function() fn) =>
-      runZoned(fn, zoneValues: {_traceZoneKey: id});
+  T runWithTraceId<T>(String id, T Function() fn, {bool inferred = false}) =>
+      runZoned(
+        fn,
+        zoneValues: {_traceZoneKey: id, _inferredTraceZoneKey: inferred},
+      );
+  Future<T> runWithTraceIdAsync<T>(
+    String id,
+    Future<T> Function() fn, {
+    bool inferred = false,
+  }) => runZoned(
+    fn,
+    zoneValues: {_traceZoneKey: id, _inferredTraceZoneKey: inferred},
+  );
 
   Future<T> runWithRetryGroup<T>(Future<T> Function() action) async {
     // Saturation disables correlation for the extra invocation rather than
@@ -315,6 +337,9 @@ class AppLogger {
                 'outcome': 'succeeded',
                 'related_root_event_id': incident.link.eventId,
                 'operation_id': currentTraceId ?? incident.link.operationId,
+                'operation_inferred': currentTraceId == null
+                    ? incident.link.operationInferred
+                    : currentTraceInferred,
                 'retry_group_id': group.id,
                 'after_ms': max(
                   0,
@@ -456,6 +481,10 @@ class AppLogger {
     if (links == null || links.isEmpty) return;
     final scope = currentTraceId ?? sessionId;
     final link = links[scope] ?? links['*'] ?? links.values.last;
+    if (identical(mapped, cause)) {
+      _rootEvents[mapped] = {...links, scope: link};
+      return;
+    }
     // An explicit causal mapping may bridge operations. Automatic identity
     // matching below remains strictly scoped to its operation.
     _rootEvents[mapped] = {...links, '*': link};
@@ -476,6 +505,84 @@ class AppLogger {
     stackTrace: stackTrace,
     fields: fields,
   );
+
+  void logOperationOutcome(
+    String tag,
+    String message, {
+    required String outcome,
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, Object?> fields = const {},
+  }) {
+    final cause = error;
+    if (cause != null &&
+        !(cause is DioException && cause.type == DioExceptionType.cancel)) {
+      final links = _expandoKey(cause) ? _rootEvents[cause] : null;
+      final root = links?[currentTraceId ?? sessionId] ?? links?['*'];
+      if (root?.valid != true) {
+        logOperationFailure(
+          tag,
+          message,
+          error: cause,
+          stackTrace: stackTrace,
+          fields: {
+            ...fields,
+            'diagnostic_kind': 'failure',
+            'outcome': 'failed',
+          },
+        );
+      }
+    }
+    info(
+      tag,
+      message,
+      error: cause,
+      fields: {
+        ...fields,
+        'diagnostic_kind': 'operation_outcome',
+        'outcome': outcome,
+        if (outcome == 'failed' &&
+            cause == null &&
+            !fields.containsKey('reason'))
+          'reason': 'failure_cause_unavailable',
+      },
+    );
+  }
+
+  void logServiceSuccess(
+    String tag, {
+    required String service,
+    required String method,
+    required Uri uri,
+    int? statusCode,
+    Map<String, Object?> fields = const {},
+  }) {
+    try {
+      final evidence = {
+        ...fields,
+        ...diagnosticServiceIdentity(
+          service: service,
+          method: method,
+          uri: uri,
+        ),
+        'uri': sanitizeUriForLogging(uri),
+        'status_code': ?statusCode,
+        'network_validated': true,
+        'stage': 'service_response',
+        'action': 'service_response',
+        'outcome': 'succeeded',
+      };
+      _recordTransportAttempt(tag, '接口响应校验通过', fields: evidence);
+      logOperationOutcome(
+        tag,
+        '接口响应校验通过',
+        outcome: 'succeeded',
+        fields: evidence,
+      );
+    } catch (_) {
+      _writeErrors++;
+    }
+  }
 
   /// A retry knows its causal exception explicitly; success in unrelated work
   /// cannot create a recovery merely because its stage happens to match.
@@ -498,6 +605,9 @@ class AppLogger {
         fields: {
           ...?fields,
           'operation_id': currentTraceId ?? link.operationId,
+          'operation_inferred': currentTraceId == null
+              ? link.operationInferred
+              : currentTraceInferred,
           'diagnostic_kind': 'recovery',
           'outcome': 'succeeded',
           'related_root_event_id': link.eventId,
@@ -557,8 +667,11 @@ class AppLogger {
     final sequence = ++_sequence;
     final eventId = '$sessionId-${sequence.toRadixString(36).padLeft(4, '0')}';
     final safeFields = _sanitize(fields ?? {});
-    final operation =
-        currentTraceId ?? safeFields['operation_id'] ?? safeFields['trace_id'];
+    final operation = safeFields['net'] == true
+        ? safeFields['trace_id'] ?? currentTraceId
+        : currentTraceId ??
+              safeFields['operation_id'] ??
+              safeFields['trace_id'];
     final scope = (operation ?? sessionId).toString();
     if (error is DioException && error.type == DioExceptionType.cancel) {
       level = LogLevel.info;
@@ -608,7 +721,7 @@ class AppLogger {
     if (!failure && safeFields['diagnostic_kind'] == 'operation') {
       kind = 'operation';
     }
-    if (!failure && safeFields['diagnostic_kind'] == 'operation_outcome') {
+    if (safeFields['diagnostic_kind'] == 'operation_outcome') {
       kind = 'operation_outcome';
     }
     final category =
@@ -645,7 +758,10 @@ class AppLogger {
       'eventId': eventId,
       'sequence': sequence,
       'operationId': _clip(recordOperation, 256),
-      if (operation == null) 'operationInferred': true,
+      if (operation == null ||
+          safeFields['operation_inferred'] == true ||
+          currentTraceInferred)
+        'operationInferred': true,
       if (failure && root == null && error != null)
         'errorType': _clip(error.runtimeType.toString(), 256),
       if (root == null) 'errorCategory': ?category,
@@ -684,6 +800,7 @@ class AppLogger {
             'error_type',
             'trace_id',
             'operation_id',
+            'operation_inferred',
             if (root != null) ...{
               'dio_message',
               'error_category',
@@ -756,6 +873,8 @@ class AppLogger {
       if (kind == 'recovery' ||
           kind == 'operation_outcome' ||
           (kind == 'retry_decision' && root != null) ||
+          (kind == 'operation' &&
+              safeFields['lifecycle'] == 'background_task') ||
           (kind == 'operation' && safeFields['outcome'] == 'failed')) {
         _enqueue(record);
       }
@@ -777,6 +896,7 @@ class AppLogger {
             operationId: recordOperation,
             at: at,
             errorCategory: category?.toString(),
+            operationInferred: record['operationInferred'] == true,
           )
         : previousRoot;
     if (issueKey != null) {
@@ -833,8 +953,13 @@ class AppLogger {
     _pruneRecent();
     final sequence = ++_sequence;
     final eventId = '$sessionId-${sequence.toRadixString(36).padLeft(4, '0')}';
-    final operation =
-        currentTraceId ?? safe['operation_id'] ?? safe['trace_id'];
+    final operation = safe['net'] == true
+        ? safe['trace_id'] ?? currentTraceId
+        : currentTraceId ?? safe['operation_id'] ?? safe['trace_id'];
+    final inferred =
+        operation == null ||
+        safe['operation_inferred'] == true ||
+        currentTraceInferred;
     final scope = (operation ?? sessionId).toString();
     var incident = group?.incidents[key];
     if (incident == null) {
@@ -851,6 +976,7 @@ class AppLogger {
         operationId: (operation ?? eventId).toString(),
         at: at,
         errorCategory: category?.toString(),
+        operationInferred: inferred,
       );
       final record = <String, Object?>{
         'schema': 5,
@@ -865,7 +991,7 @@ class AppLogger {
         'eventId': link.eventId,
         'sequence': sequence,
         'operationId': link.operationId,
-        if (operation == null) 'operationInferred': true,
+        if (inferred) 'operationInferred': true,
         'rootEventId': link.eventId,
         'module': _clip(tag, 256),
         'stage': 'request',
@@ -895,6 +1021,26 @@ class AppLogger {
           'dio_type': ?safe['dio_type'],
           'cause_type': ?safe['cause_type'],
           'os_error_code': ?safe['os_error_code'],
+          for (final key in const [
+            'service',
+            'origin',
+            'route',
+            'response_headers',
+            'cloudflare_error_code',
+            'cloudflare_code_result',
+            'cloudflare_scan_truncated',
+            'validation_failed',
+            'duration_ms',
+            'request_id',
+            'connect_timeout_ms',
+            'send_timeout_ms',
+            'receive_timeout_ms',
+            'attempt',
+            'max_attempts',
+            'auth_attempt',
+            'auth_max_attempts',
+          ])
+            if (safe.containsKey(key)) key: safe[key],
         },
         'context': _recent
             .where(
@@ -954,7 +1100,7 @@ class AppLogger {
       'eventId': eventId,
       'sequence': sequence,
       'operationId': link.operationId,
-      if (operation == null) 'operationInferred': true,
+      if (link.operationInferred) 'operationInferred': true,
       'rootEventId': link.eventId,
       'causeEventId': link.eventId,
       'module': _clip(tag, 256),
@@ -972,6 +1118,7 @@ class AppLogger {
             'dio_message',
             'trace_id',
             'operation_id',
+            'operation_inferred',
             'action',
             'stage',
             'outcome',
@@ -1125,7 +1272,7 @@ class AppLogger {
       _queueBytes -= item.bytes;
       try {
         if (_enableFile && _storage != null) await _storage!.write(item.event);
-        if (_console && item.priority >= _minLevel.priority) {
+        if (_console && item.levelPriority >= _minLevel.priority) {
           debugPrint(jsonEncode(item.event));
         }
         _emitted++;
@@ -1450,6 +1597,7 @@ Map<String, Object?> _sanitize(Map<String, Object?> fields) {
     'error_category',
     'error_type',
     'operation_id',
+    'operation_inferred',
     'trace_id',
     'status_code',
     'method',
@@ -1460,13 +1608,33 @@ Map<String, Object?> _sanitize(Map<String, Object?> fields) {
     'retry_request_slot',
     'attempt',
     'max_attempts',
+    'service',
+    'origin',
+    'route',
+    'network_validated',
+    'lifecycle',
+    'response_headers',
+    'cloudflare_error_code',
+    'cloudflare_code_result',
+    'cloudflare_scan_truncated',
+    'duration_ms',
+    'stage_durations_ms',
+    'failed_stage',
+    'lifecycle_id',
+    'data_source',
+    'schedule_data_source',
+    'network_outcome',
+    'network_attempted',
+    'cache_available',
+    'cache_used',
+    'cache_age_ms',
   };
   final ordered = [
     ...fields.entries.where((e) => essential.contains(e.key)),
     ...fields.entries.where((e) => !essential.contains(e.key)),
   ];
   return {
-    for (final entry in ordered.take(32))
+    for (final entry in ordered.take(48))
       _clip(entry.key, 128): walk(entry.value, entry.key, 0),
   };
 }

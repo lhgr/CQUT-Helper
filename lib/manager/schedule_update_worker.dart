@@ -18,6 +18,7 @@ import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:dio/dio.dart';
 
 export 'package:cqut_helper/manager/schedule_update_worker_health.dart';
 
@@ -42,7 +43,6 @@ class ScheduleUpdateWorker {
   static const String _triggerFallbackNoon = 'fallback_noon';
   static const String _timeZoneOffset = '+08:00';
   static bool _loggerReady = false;
-
   static String pendingKeyForUser(String userId) =>
       scheduleUpdateWorkerPendingKeyForUser(userId);
 
@@ -226,66 +226,133 @@ class ScheduleUpdateWorker {
   @visibleForTesting
   static Future<bool> runTaskForTesting(
     String task,
-    Map<String, dynamic>? inputData,
-  ) => _runTask(task, inputData);
+    Map<String, dynamic>? inputData, {
+    Future<void> Function()? followUp,
+  }) => _runTask(task, inputData, followUp: followUp);
 
   static Future<bool> _runTask(
     String task,
-    Map<String, dynamic>? inputData,
-  ) async {
-    final refreshId = (inputData?['refreshId']?.toString() ?? '').trim();
+    Map<String, dynamic>? inputData, {
+    Future<void> Function()? followUp,
+  }) async {
+    final logger = AppLogger.I;
+    final refreshId = inputData?['refreshId'] is String
+        ? (inputData!['refreshId'] as String).trim()
+        : '';
     try {
-      return await AppLogger.I.runWithTraceIdAsync(
-        refreshId.isEmpty ? AppLogger.I.newTraceId() : refreshId,
+      return await logger.runWithTraceIdAsync(
+        refreshId.isEmpty ? logger.newTraceId() : refreshId,
         () async {
           final elapsed = Stopwatch()..start();
+          final stageClock = Stopwatch()..start();
+          final durations = <String, int>{};
+          var stage = 'background_refresh';
           final diagnosticOutcome = <String, Object?>{
             'outcome': 'failed',
             'reason': 'unhandled_failure',
-            'stage': 'background_refresh',
+            'stage': stage,
             'task': task,
+            'lifecycle': 'background_task',
+            'lifecycle_id': logger.newTraceId(),
+            'data_source': 'none',
+            'network_outcome': 'not_attempted',
+            'cache_used': false,
             if (inputData?['trigger'] is String)
               'trigger': inputData!['trigger'],
           };
-          AppLogger.I.info(
+          void enterStage(String next) {
+            durations[stage] =
+                (durations[stage] ?? 0) + stageClock.elapsedMilliseconds;
+            stage = next;
+            stageClock.reset();
+            diagnosticOutcome['stage'] = next;
+          }
+
+          Object? taskError;
+          StackTrace? taskStack;
+          void captureFailure(Object error, StackTrace stackTrace) {
+            taskError = error;
+            taskStack = stackTrace;
+            diagnosticOutcome['failed_stage'] =
+                diagnosticOutcome['pipeline_stage'] ?? stage;
+          }
+
+          logger.info(
             'ScheduleUpdateWorker',
             'background task started',
             fields: {
-              'stage': 'background_refresh',
-              'task': task,
-              'trigger': inputData?['trigger'],
+              ...diagnosticOutcome,
+              'diagnostic_kind': 'operation',
+              'outcome': 'started',
             },
           );
           try {
-            return await _executeTask(task, inputData, diagnosticOutcome);
-          } catch (error, stackTrace) {
-            AppLogger.I.logOperationFailure(
-              'ScheduleUpdateWorker',
-              'background task failed',
-              error: error,
-              stackTrace: stackTrace,
+            await recordScheduleUpdateWorkerState(
+              status: 'started',
+              trigger: (diagnosticOutcome['trigger'] as String?) ?? 'unknown',
+              task: task,
               fields: {
-                'stage': diagnosticOutcome['stage'],
-                'outcome': 'failed',
-                'task': task,
+                'operation_id': logger.currentTraceId,
+                'lifecycle_id': diagnosticOutcome['lifecycle_id'],
               },
             );
+            return await _executeTask(
+              task,
+              inputData,
+              diagnosticOutcome,
+              enterStage,
+              captureFailure,
+              followUp,
+            );
+          } catch (error, stackTrace) {
+            if (!diagnosticOutcome.containsKey('status')) {
+              captureFailure(error, stackTrace);
+              diagnosticOutcome.addAll({
+                'outcome': 'failed',
+                'reason': 'unhandled_failure',
+                'status': 'unhandled_failed',
+              });
+            }
             rethrow;
           } finally {
-            AppLogger.I.info(
+            durations[stage] =
+                (durations[stage] ?? 0) + stageClock.elapsedMilliseconds;
+            final fields = <String, Object?>{
+              ...diagnosticOutcome,
+              'stage': 'background_refresh',
+              'duration_ms': elapsed.elapsedMilliseconds,
+              'stage_durations_ms': {
+                if (diagnosticOutcome['stage_durations_ms'] is Map)
+                  ...(diagnosticOutcome['stage_durations_ms'] as Map)
+                      .cast<String, Object?>(),
+                ...durations,
+              },
+            };
+            logger.logOperationOutcome(
               'ScheduleUpdateWorker',
               'background task finished',
+              outcome: diagnosticOutcome['outcome'] as String,
+              error: taskError,
+              stackTrace: taskStack,
+              fields: fields,
+            );
+            await recordScheduleUpdateWorkerState(
+              status:
+                  (diagnosticOutcome['status'] as String?) ??
+                  'unhandled_failed',
+              trigger: (diagnosticOutcome['trigger'] as String?) ?? 'unknown',
+              task: task,
               fields: {
-                ...diagnosticOutcome,
-                'diagnostic_kind': 'operation_outcome',
-                'duration_ms': elapsed.elapsedMilliseconds,
+                ...fields,
+                'operation_id': logger.currentTraceId,
+                if (refreshId.isNotEmpty) 'refreshId': refreshId,
               },
             );
           }
         },
       );
     } finally {
-      await AppLogger.I.flush();
+      await logger.flush();
     }
   }
 
@@ -293,23 +360,25 @@ class ScheduleUpdateWorker {
     String task,
     Map<String, dynamic>? inputData,
     Map<String, Object?> diagnosticOutcome,
+    void Function(String) enterStage,
+    void Function(Object, StackTrace) captureFailure,
+    Future<void> Function()? followUp,
   ) async {
     final trigger = ((inputData?['trigger'] ?? 'unknown').toString()).trim();
     final isWidgetManual = trigger == _triggerWidgetManual;
     final refreshId = ((inputData?['refreshId'] ?? '').toString()).trim();
     final logicalDateBjt = ((inputData?['logicalDateBjt'] ?? '').toString())
         .trim();
-    await recordScheduleUpdateWorkerState(
-      status: 'started',
-      trigger: trigger,
-      task: task,
-      fields: {if (refreshId.isNotEmpty) 'refreshId': refreshId},
-    );
     Future<bool> done({
       required String status,
       Map<String, Object?> fields = const {},
       bool scheduleFollowUp = false,
+      Object? error,
+      StackTrace? stackTrace,
     }) async {
+      if (error != null) {
+        captureFailure(error, stackTrace ?? StackTrace.current);
+      }
       if (status.endsWith('_failed')) {
         diagnosticOutcome['failed_stage'] =
             diagnosticOutcome['pipeline_stage'] ?? diagnosticOutcome['stage'];
@@ -331,22 +400,9 @@ class ScheduleUpdateWorker {
           );
         }
       }
-      await recordScheduleUpdateWorkerState(
-        status: status,
-        trigger: trigger,
-        task: task,
-        fields: {...fields, if (refreshId.isNotEmpty) 'refreshId': refreshId},
-      );
-      if (scheduleFollowUp) {
-        diagnosticOutcome['stage'] = 'schedule_follow_up';
-        await _handleFollowUpScheduling(
-          trigger: trigger,
-          status: status,
-          logicalDateBjt: logicalDateBjt,
-          inputData: inputData,
-        );
-      }
       diagnosticOutcome.addAll({
+        for (final entry in fields.entries)
+          if (entry.key != 'error') entry.key: entry.value,
         'outcome':
             status.startsWith('skip_') ||
                 status.startsWith('calendar_skip_') ||
@@ -362,11 +418,49 @@ class ScheduleUpdateWorker {
         for (final key in ['apiClosed', 'changes', 'skip_reason'])
           if (fields.containsKey(key)) key: fields[key],
       });
+      if (scheduleFollowUp) {
+        enterStage('schedule_follow_up');
+        final clock = Stopwatch()..start();
+        try {
+          if (followUp != null) {
+            await followUp();
+          } else if (task == _calendarTaskName) {
+            await _scheduleCalendarTask();
+          } else {
+            await _handleFollowUpScheduling(
+              trigger: trigger,
+              status: status,
+              logicalDateBjt: logicalDateBjt,
+              inputData: inputData,
+            );
+          }
+          diagnosticOutcome['follow_up_outcome'] = 'succeeded';
+        } catch (error, stackTrace) {
+          diagnosticOutcome['follow_up_outcome'] = 'failed';
+          AppLogger.I.logOperationOutcome(
+            'ScheduleUpdateWorker',
+            'background follow-up scheduling failed',
+            outcome: 'failed',
+            error: error,
+            stackTrace: stackTrace,
+            fields: {
+              'stage': 'schedule_follow_up',
+              'trigger': trigger,
+              'task': task,
+              'duration_ms': clock.elapsedMilliseconds,
+            },
+          );
+          rethrow;
+        } finally {
+          diagnosticOutcome['follow_up_duration_ms'] =
+              clock.elapsedMilliseconds;
+        }
+      }
       return true;
     }
 
     if (task == _calendarTaskName) {
-      diagnosticOutcome['stage'] = 'calendar_refresh';
+      enterStage('calendar_refresh');
       final calendarPrefs = await SharedPreferences.getInstance();
       final calendarAccount = (calendarPrefs.getString('account') ?? '').trim();
       final term = calendarAccount.isEmpty
@@ -378,18 +472,34 @@ class ScheduleUpdateWorker {
                     '')
                 .trim();
       if (term.isEmpty) {
-        await _scheduleCalendarTask();
-        return done(status: 'calendar_skip_missing_term');
+        return done(
+          status: 'calendar_skip_missing_term',
+          scheduleFollowUp: true,
+        );
       }
-      final result = await AcademicCalendarManager.instance.refreshIfDue(term);
-      await _scheduleCalendarTask();
+      final result = await AcademicCalendarManager.instance.refreshIfDue(
+        term,
+        trigger: trigger,
+      );
       return done(
-        status: result.error == null
+        error: result.error,
+        stackTrace: result.errorStackTrace,
+        scheduleFollowUp: true,
+        status: result.reason == 'fresh_cache'
+            ? 'calendar_skip_fresh_cache'
+            : result.error == null
             ? result.updated
                   ? 'calendar_updated'
                   : 'calendar_unchanged'
             : 'calendar_failed',
         fields: {
+          'data_source': result.source,
+          'network_outcome': result.networkOutcome,
+          'network_attempted': result.networkAttempted,
+          'cache_used': result.cacheUsed,
+          'cache_age_ms': result.cacheAgeMs,
+          'cache_available': result.cacheAvailable,
+          if (result.failedStage != null) 'failed_stage': result.failedStage,
           if (result.error != null)
             'error': safeDiagnosticErrorSummary(result.error),
         },
@@ -456,7 +566,12 @@ class ScheduleUpdateWorker {
 
     final scheduleApi = ScheduleApi();
     if (isWidgetManual) {
-      diagnosticOutcome['stage'] = 'widget_manual_refresh';
+      enterStage('widget_manual_refresh');
+      diagnosticOutcome.addAll({
+        'network_attempted': true,
+        'network_outcome': 'unknown',
+        'schedule_network_outcome': 'unknown',
+      });
       try {
         await loadCurrentWeekAndUpdateWidgetPin(
           scheduleApi: scheduleApi,
@@ -465,9 +580,19 @@ class ScheduleUpdateWorker {
           notifyWidget: false,
           refreshId: refreshId,
         );
+        diagnosticOutcome.addAll({
+          'data_source': 'network',
+          'schedule_data_source': 'network',
+          'network_outcome': 'succeeded',
+          'schedule_network_outcome': 'succeeded',
+        });
         await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
         return await done(status: 'widget_manual_success');
       } catch (e, st) {
+        diagnosticOutcome.addAll({
+          'network_outcome': e is DioException ? 'failed' : 'unknown',
+          'schedule_network_outcome': e is DioException ? 'failed' : 'unknown',
+        });
         final failure = ScheduleRefreshState.looksLikeCredentialFailure(e)
             ? ScheduleWidgetRefreshFailure.credentialInvalid
             : ScheduleWidgetRefreshFailure.generic;
@@ -476,21 +601,11 @@ class ScheduleUpdateWorker {
           failure: failure,
           refreshId: refreshId,
         );
-        AppLogger.I.event(
-          LogLevel.error,
-          'ScheduleUpdateWorker',
-          event: 'schedule_widget_manual_refresh_fail',
-          messageZh: '小组件手动刷新课表失败',
-          message: 'widget manual refresh failed',
-          module: 'schedule',
-          action: 'widget_manual_refresh',
-          status: 'fail',
-          reason: failure.name,
-          error: e,
-          stackTrace: st,
-        );
+
         return done(
           status: 'widget_manual_failed',
+          error: e,
+          stackTrace: st,
           fields: {
             'error': safeDiagnosticErrorSummary(e),
             'failure': failure.name,
@@ -504,7 +619,7 @@ class ScheduleUpdateWorker {
     final pollingTarget = resolvePollingTarget(prefs: prefs, userId: userId);
     final preferredTerm = (pollingTarget.yearTerm ?? '').trim();
     final preferredWeek = pollingTarget.weekNum.trim();
-    diagnosticOutcome['stage'] = 'load_cache';
+    enterStage('load_cache');
     try {
       if (preferredTerm.isNotEmpty) {
         pollingTargetData = await scheduleApi.loadFromCache(
@@ -516,20 +631,36 @@ class ScheduleUpdateWorker {
       currentData = pollingTargetData;
       currentData ??= await scheduleApi.loadFromCache(userId: userId);
     } catch (e, st) {
-      AppLogger.I.event(
-        LogLevel.warn,
+      AppLogger.I.logOperationOutcome(
         'ScheduleUpdateWorker',
-        event: 'schedule_notice_poll_cache_load_fail',
-        messageZh: '后台轮询读取缓存失败',
-        message: 'load cache failed',
-        module: 'schedule_notice_poll',
-        action: 'load_cache',
-        status: 'fail',
-        reason: 'cache_read_failed',
+        'background cache read failed',
+        outcome: 'failed',
         error: e,
         stackTrace: st,
-        fields: {'trigger': trigger},
+        fields: {
+          'trigger': trigger,
+          'stage': 'load_cache',
+          'reason': 'cache_read_failed',
+        },
       );
+    }
+    diagnosticOutcome.addAll({
+      'cache_available': currentData != null,
+      'cache_used': currentData != null,
+      'schedule_data_source': currentData == null ? 'none' : 'cache',
+    });
+    if (currentData != null) {
+      final fetchedAt = prefs.getInt(
+        ScheduleApi.lastFetchAtKey(
+          userId,
+          currentData.yearTerm ?? '',
+          currentData.weekNum ?? '',
+        ),
+      );
+      if (fetchedAt != null) {
+        final age = DateTime.now().millisecondsSinceEpoch - fetchedAt;
+        diagnosticOutcome['cache_age_ms'] = age < 0 ? 0 : age;
+      }
     }
     final targetToValidate = preferredTerm.isNotEmpty
         ? pollingTargetData
@@ -537,7 +668,12 @@ class ScheduleUpdateWorker {
     final coverageDateBjt = pollingCoverageDateBjt();
     var reanchoredPollingTarget = false;
     if (shouldReanchorPollingTarget(targetToValidate, now: coverageDateBjt)) {
-      diagnosticOutcome['stage'] = 'load_network';
+      enterStage('load_network');
+      diagnosticOutcome.addAll({
+        'network_attempted': true,
+        'network_outcome': 'unknown',
+        'schedule_network_outcome': 'unknown',
+      });
       AppLogger.I.info(
         'ScheduleUpdateWorker',
         'polling target does not cover today; reanchor to current week',
@@ -556,27 +692,21 @@ class ScheduleUpdateWorker {
           notifyWidget: true,
         );
         reanchoredPollingTarget = true;
+        diagnosticOutcome.addAll({
+          'schedule_data_source': 'network',
+          'cache_used': false,
+          'network_outcome': 'succeeded',
+          'schedule_network_outcome': 'succeeded',
+        });
       } catch (e, st) {
-        AppLogger.I.event(
-          LogLevel.error,
-          'ScheduleUpdateWorker',
-          event: 'schedule_notice_poll_network_load_fail',
-          messageZh: '后台轮询拉取课表失败',
-          message: 'load network failed',
-          module: 'schedule_notice_poll',
-          action: 'load_network',
-          status: 'fail',
-          reason: 'network_load_failed',
-          error: e,
-          stackTrace: st,
-          fields: {
-            'trigger': trigger,
-            'preferredTerm': preferredTerm,
-            'preferredWeek': preferredWeek,
-          },
-        );
+        diagnosticOutcome.addAll({
+          'network_outcome': e is DioException ? 'failed' : 'unknown',
+          'schedule_network_outcome': e is DioException ? 'failed' : 'unknown',
+        });
         return done(
           status: 'load_network_failed',
+          error: e,
+          stackTrace: st,
           fields: {'error': safeDiagnosticErrorSummary(e)},
           scheduleFollowUp: true,
         );
@@ -584,18 +714,11 @@ class ScheduleUpdateWorker {
     }
     if (currentData == null) {
       final error = StateError('current schedule unavailable after refresh');
-      AppLogger.I.logOperationFailure(
-        'ScheduleUpdateWorker',
-        'background refresh returned no schedule',
-        error: error,
-        stackTrace: StackTrace.current,
-        fields: const {
-          'stage': 'validate_schedule',
-          'outcome': 'load_network_failed',
-        },
-      );
+
       return done(
         status: 'load_network_failed',
+        error: error,
+        stackTrace: StackTrace.current,
         fields: const {'error': 'current schedule unavailable'},
         scheduleFollowUp: true,
       );
@@ -665,36 +788,31 @@ class ScheduleUpdateWorker {
     );
 
     ScheduleNoticeRefreshResult result;
-    diagnosticOutcome['stage'] = 'run_pipeline';
+    enterStage('run_pipeline');
     try {
       result = await pipeline.run(currentData: currentData, headless: true);
     } catch (e, st) {
-      AppLogger.I.event(
-        LogLevel.error,
-        'ScheduleUpdateWorker',
-        event: 'schedule_notice_poll_pipeline_fail',
-        messageZh: '后台轮询处理流程失败',
-        message: 'pipeline run failed',
-        module: 'schedule_notice_poll',
-        action: 'run_pipeline',
-        status: 'fail',
-        reason: 'pipeline_failed',
-        error: e,
-        stackTrace: st,
-        fields: {'trigger': trigger, ...pipeline.diagnosticProgress},
-      );
       diagnosticOutcome.addAll(pipeline.diagnosticProgress);
       return done(
         status: 'pipeline_failed',
+        error: e,
+        stackTrace: st,
         fields: {'error': safeDiagnosticErrorSummary(e)},
         scheduleFollowUp: true,
       );
     }
 
+    diagnosticOutcome.addAll(pipeline.diagnosticProgress);
     if (result.apiClosed || result.changes.isEmpty) {
-      await recordScheduleUpdateWorkerSuccessfulRun();
+      if (!result.apiClosed && result.skipReason == null) {
+        await recordScheduleUpdateWorkerSuccessfulRun();
+      }
       return done(
-        status: result.apiClosed ? 'api_closed' : 'no_changes',
+        status: result.apiClosed
+            ? 'api_closed'
+            : result.skipReason != null
+            ? 'skip_${result.skipReason}'
+            : 'no_changes',
         fields: {
           'apiClosed': result.apiClosed,
           'changes': result.changes.length,
@@ -704,7 +822,7 @@ class ScheduleUpdateWorker {
       );
     }
 
-    diagnosticOutcome['stage'] = 'write_pending_changes';
+    enterStage('write_pending_changes');
     await writeScheduleUpdateWorkerPendingChanges(
       prefs: prefs,
       userId: userId,
@@ -713,7 +831,7 @@ class ScheduleUpdateWorker {
     );
     final title = '课表更新提醒';
     final body = '检测到 ${result.changes.length} 周存在调课变更';
-    diagnosticOutcome['stage'] = 'show_notification';
+    enterStage('show_notification');
     await LocalNotifications.showScheduleUpdate(
       title: title,
       body: body,

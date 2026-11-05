@@ -7,6 +7,7 @@ class ScheduleNoticeMetricsRecord {
   final bool success;
   final bool degraded;
   final bool apiClosed;
+  final bool skipped;
   final int changeCount;
   final int affectedWeeks;
   final int durationMs;
@@ -17,6 +18,7 @@ class ScheduleNoticeMetricsRecord {
     required this.success,
     required this.degraded,
     required this.apiClosed,
+    this.skipped = false,
     required this.changeCount,
     required this.affectedWeeks,
     required this.durationMs,
@@ -32,7 +34,9 @@ class ScheduleNoticeMetrics {
     final prefs = await SharedPreferences.getInstance();
     final state = await _loadState(prefs);
     state['poll_total'] = (state['poll_total'] ?? 0) + 1;
-    if (record.success) {
+    if (record.skipped) {
+      state['skipped_total'] = (state['skipped_total'] ?? 0) + 1;
+    } else if (record.success) {
       state['success_total'] = (state['success_total'] ?? 0) + 1;
     } else {
       state['failure_total'] = (state['failure_total'] ?? 0) + 1;
@@ -96,6 +100,9 @@ class ScheduleNoticeMetrics {
       '# HELP schedule_notice_poll_failure_total Failed notice polling count',
       '# TYPE schedule_notice_poll_failure_total counter',
       'schedule_notice_poll_failure_total ${v('failure_total')}',
+      '# HELP schedule_notice_poll_skipped_total Skipped notice polling count',
+      '# TYPE schedule_notice_poll_skipped_total counter',
+      'schedule_notice_poll_skipped_total ${v('skipped_total')}',
       '# HELP schedule_notice_poll_api_closed_total Nightly API closed events',
       '# TYPE schedule_notice_poll_api_closed_total counter',
       'schedule_notice_poll_api_closed_total ${v('api_closed_total')}',

@@ -27,6 +27,7 @@ class _Controller extends ScheduleController {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    String trigger = 'schedule_load',
   }) async {
     loads++;
     if (networkError != null) throw networkError!;

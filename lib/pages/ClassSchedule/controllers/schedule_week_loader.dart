@@ -17,6 +17,15 @@ class _ScheduleCredentialsUnavailable implements Exception {
   String toString() => 'Exception: $message';
 }
 
+class _WeekLoadResult {
+  const _WeekLoadResult.success() : error = null, stackTrace = null;
+  const _WeekLoadResult.failure(this.error, this.stackTrace);
+
+  final Object? error;
+  final StackTrace? stackTrace;
+  bool get loaded => error == null;
+}
+
 class ScheduleWeekLoader {
   final ScheduleApi service;
   final CredentialStore credentialStore;
@@ -32,7 +41,7 @@ class ScheduleWeekLoader {
   final void Function(String? value) setNowStatusLabel;
   String? _userId;
   String? _encryptedPassword;
-  final Map<String, Future<bool>> _weekLoadRequests = <String, Future<bool>>{};
+  final Map<String, Future<_WeekLoadResult>> _weekLoadRequests = {};
 
   ScheduleWeekLoader({
     required this.service,
@@ -136,27 +145,46 @@ class ScheduleWeekLoader {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    String trigger = 'schedule_load',
   }) => AppLogger.I.runWithTraceIdAsync(
     AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
     () async {
+      final elapsed = Stopwatch()..start();
       try {
-        return await _loadFromNetwork(
+        final data = await _loadFromNetwork(
           weekNum: weekNum,
           yearTerm: yearTerm,
           persistLastViewed: persistLastViewed,
           updateWidgetPins: updateWidgetPins,
         );
+        AppLogger.I.logOperationOutcome(
+          'ScheduleWeekLoader',
+          'week load finished',
+          outcome: 'succeeded',
+          fields: {
+            'stage': 'load_week',
+            'trigger': trigger,
+            'data_source': 'network',
+            'network_outcome': 'succeeded',
+            'week': weekNum,
+            'term': yearTerm,
+            'duration_ms': elapsed.elapsedMilliseconds,
+          },
+        );
+        return data;
       } catch (error, stackTrace) {
         if (error is! _ScheduleCredentialsUnavailable &&
             !(error is DioException && error.type == DioExceptionType.cancel)) {
-          AppLogger.I.logOperationFailure(
+          AppLogger.I.logOperationOutcome(
             'ScheduleWeekLoader',
             'week load failed',
+            outcome: 'failed',
             error: error,
             stackTrace: stackTrace,
             fields: {
               'stage': 'load_week',
-              'outcome': 'failed',
+              'trigger': trigger,
+              'duration_ms': elapsed.elapsedMilliseconds,
               'week': weekNum,
               'term': yearTerm,
             },
@@ -286,6 +314,7 @@ class ScheduleWeekLoader {
     String yearTerm, {
     bool forceRefresh = false,
     bool updateLastViewed = false,
+    bool rethrowOnFailure = false,
   }) async {
     final requestKey = [
       yearTerm.trim(),
@@ -294,17 +323,30 @@ class ScheduleWeekLoader {
       updateLastViewed,
     ].join('|');
     final existing = _weekLoadRequests[requestKey];
-    if (existing != null) return existing;
-
-    final request = _ensureWeekLoadedInternal(
-      weekNum,
-      yearTerm,
-      forceRefresh: forceRefresh,
-      updateLastViewed: updateLastViewed,
-    );
+    final request =
+        existing ??
+        AppLogger.I.runWithTraceIdAsync(
+          AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+          () => _ensureWeekLoadedInternal(
+            weekNum,
+            yearTerm,
+            forceRefresh: forceRefresh,
+            updateLastViewed: updateLastViewed,
+          ),
+        );
     _weekLoadRequests[requestKey] = request;
     try {
-      return await request;
+      final result = await request;
+      final error = result.error;
+      if (error != null && rethrowOnFailure) {
+        // A shared request explicitly supplies the same cause to every waiter.
+        AppLogger.I.linkFailure(error, error);
+        Error.throwWithStackTrace(
+          error,
+          result.stackTrace ?? StackTrace.current,
+        );
+      }
+      return result.loaded;
     } finally {
       if (identical(_weekLoadRequests[requestKey], request)) {
         _weekLoadRequests.remove(requestKey);
@@ -312,7 +354,7 @@ class ScheduleWeekLoader {
     }
   }
 
-  Future<bool> _ensureWeekLoadedInternal(
+  Future<_WeekLoadResult> _ensureWeekLoadedInternal(
     String weekNum,
     String yearTerm, {
     required bool forceRefresh,
@@ -322,12 +364,12 @@ class ScheduleWeekLoader {
     final cache = getWeekCache();
 
     if (!forceRefresh) {
-      if (cache.containsKey(wInt)) return true;
+      if (cache.containsKey(wInt)) return const _WeekLoadResult.success();
 
       final cached = await loadFromCache(weekNum: weekNum, yearTerm: yearTerm);
       if (cached != null) {
         cache[wInt] = cached;
-        return true;
+        return const _WeekLoadResult.success();
       }
     }
 
@@ -337,6 +379,7 @@ class ScheduleWeekLoader {
         yearTerm: yearTerm,
         persistLastViewed: updateLastViewed,
         updateWidgetPins: false,
+        trigger: 'ensure_week_loaded',
       );
       processLoadedData(data);
       final uid = _userId;
@@ -372,7 +415,7 @@ class ScheduleWeekLoader {
         await prefs.setInt(fpUpdatedAtKey, now);
         await prefs.setInt(fetchAtKey, now);
       }
-      return true;
+      return const _WeekLoadResult.success();
     } catch (e, st) {
       if (e is _ScheduleCredentialsUnavailable ||
           (e is DioException && e.type == DioExceptionType.cancel)) {
@@ -388,23 +431,22 @@ class ScheduleWeekLoader {
             'term': yearTerm,
           },
         );
-        return false;
+        return _WeekLoadResult.failure(e, st);
       }
-      AppLogger.I.event(
-        LogLevel.warn,
+      AppLogger.I.logOperationOutcome(
         'ScheduleController',
-        event: 'schedule_week_prefetch_fail',
-        messageZh: '预取周课表失败，已忽略',
-        message: 'prefetch week failed',
-        module: 'schedule',
-        action: 'prefetch_week',
-        status: 'fail',
-        reason: 'prefetch_failed',
+        'prefetch week failed',
+        outcome: 'failed',
         error: e,
         stackTrace: st,
-        fields: {'week': weekNum, 'term': yearTerm},
+        fields: {
+          'stage': 'prefetch_week',
+          'reason': 'prefetch_failed',
+          'week': weekNum,
+          'term': yearTerm,
+        },
       );
-      return false;
+      return _WeekLoadResult.failure(e, st);
     }
   }
 }

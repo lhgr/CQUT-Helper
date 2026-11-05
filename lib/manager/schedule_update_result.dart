@@ -8,19 +8,22 @@ class ScheduleUpdatePipelineSummary {
   final int changedNotices;
   final int affectedWeeks;
   final bool apiClosed;
+  final String? skipReason;
 
   const ScheduleUpdatePipelineSummary({
     required this.changes,
     required this.changedNotices,
     required this.affectedWeeks,
     required this.apiClosed,
+    this.skipReason,
   });
 
   const ScheduleUpdatePipelineSummary.empty()
     : changes = const <ScheduleWeekChange>[],
       changedNotices = 0,
       affectedWeeks = 0,
-      apiClosed = false;
+      apiClosed = false,
+      skipReason = null;
 
   factory ScheduleUpdatePipelineSummary.fromRefreshResult(
     ScheduleNoticeRefreshResult result,
@@ -30,6 +33,7 @@ class ScheduleUpdatePipelineSummary {
       changedNotices: result.changedNoticeCount,
       affectedWeeks: result.affectedWeeks.length,
       apiClosed: result.apiClosed,
+      skipReason: result.skipReason,
     );
   }
 }
@@ -41,6 +45,7 @@ class ScheduleUpdateRunResult {
   final bool apiClosed;
   final int changedNotices;
   final int affectedWeeks;
+  final String? skipReason;
 
   const ScheduleUpdateRunResult({
     required this.changes,
@@ -49,6 +54,7 @@ class ScheduleUpdateRunResult {
     required this.apiClosed,
     required this.changedNotices,
     required this.affectedWeeks,
+    this.skipReason,
   });
 
   const ScheduleUpdateRunResult.empty()
@@ -57,7 +63,8 @@ class ScheduleUpdateRunResult {
       failureDelta = 0,
       apiClosed = false,
       changedNotices = 0,
-      affectedWeeks = 0;
+      affectedWeeks = 0,
+      skipReason = null;
 }
 
 ScheduleUpdateRunResult buildScheduleUpdateRunResult({
@@ -75,6 +82,7 @@ ScheduleUpdateRunResult buildScheduleUpdateRunResult({
     apiClosed: summary.apiClosed,
     changedNotices: summary.changedNotices,
     affectedWeeks: summary.affectedWeeks,
+    skipReason: summary.skipReason,
   );
 }
 

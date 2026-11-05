@@ -3,11 +3,68 @@ import 'dart:convert';
 import 'package:cqut_helper/manager/schedule_update_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_result.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
+import 'package:cqut_helper/manager/schedule_update_effects.dart';
+import 'package:cqut_helper/utils/schedule_notice_metrics.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test(
+    'successful failed and skipped runs have separate notice counters',
+    () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      SharedPreferences.setMockInitialValues({});
+      final runs = [
+        (summary: const ScheduleUpdatePipelineSummary.empty(), error: null),
+        (
+          summary: const ScheduleUpdatePipelineSummary.empty(),
+          error: StateError('poll failed'),
+        ),
+        (
+          summary: const ScheduleUpdatePipelineSummary(
+            changes: [],
+            changedNotices: 0,
+            affectedWeeks: 0,
+            apiClosed: true,
+            skipReason: 'api_closed',
+          ),
+          error: null,
+        ),
+        (
+          summary: const ScheduleUpdatePipelineSummary(
+            changes: [],
+            changedNotices: 0,
+            affectedWeeks: 0,
+            apiClosed: false,
+            skipReason: 'disabled',
+          ),
+          error: null,
+        ),
+      ];
+      for (final run in runs) {
+        await finalizeScheduleUpdateRun(
+          runType: 'metrics_test',
+          startAt: DateTime.now(),
+          failuresBefore: 0,
+          summary: run.summary,
+          error: run.error,
+          stackTrace: null,
+        );
+      }
+      final text = await ScheduleNoticeMetrics.loadPromText();
+      expect(
+        text.split('\n'),
+        containsAll([
+          'schedule_notice_poll_total 4',
+          'schedule_notice_poll_success_total 1',
+          'schedule_notice_poll_failure_total 1',
+          'schedule_notice_poll_skipped_total 2',
+          'schedule_notice_poll_api_closed_total 1',
+        ]),
+      );
+    },
+  );
   group('ScheduleUpdateManager.checkPendingChanges', () {
     late ScheduleUpdateManager manager;
 

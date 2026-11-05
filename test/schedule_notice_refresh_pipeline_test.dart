@@ -165,14 +165,27 @@ void main() {
         ),
         throwsA(same(failure)),
       );
-      expect(pipeline.diagnosticProgress, {
-        'pipeline_stage': 'fetch_notices',
-        'pipeline_completed_stages': [
+      final progress = pipeline.diagnosticProgress;
+      expect(progress['pipeline_stage'], 'fetch_notices');
+      expect(progress['pipeline_completed_stages'], [
+        'validate_schedule',
+        'validate_credentials',
+      ]);
+      expect(progress['refreshed_week_count'], 0);
+      expect(progress['network_outcome'], 'failed');
+      expect(progress['network_attempted'], isTrue);
+      expect(
+        (progress['stage_durations_ms'] as Map).keys,
+        containsAll([
           'validate_schedule',
           'validate_credentials',
-        ],
-        'refreshed_week_count': 0,
-      });
+          'fetch_notices',
+        ]),
+      );
+      expect(
+        (progress['stage_durations_ms'] as Map).values,
+        everyElement(isNonNegative),
+      );
       expect(refreshCalls, 0);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('schedule_notice_state_u1_2024-2025-2'), isNull);

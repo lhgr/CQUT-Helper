@@ -239,7 +239,10 @@ class _ScheduleCoursesSettingsPageState
         phase: AcademicCalendarSyncPhase.loading,
       );
     });
-    final result = await AcademicCalendarManager.instance.refresh(term);
+    final result = await AcademicCalendarManager.instance.refresh(
+      term,
+      trigger: 'settings_calendar_manual',
+    );
     if (!mounted) return;
     final changedDayCount = AcademicCalendarManager.instance
         .stateFor(term)

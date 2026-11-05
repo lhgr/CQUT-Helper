@@ -56,12 +56,30 @@ class AcademicCalendarSyncResult {
     required this.notModified,
     this.snapshot,
     this.error,
+    this.source = 'network',
+    this.reason = 'completed',
+    this.networkAttempted = false,
+    this.cacheUsed = false,
+    this.networkOutcome = 'not_attempted',
+    this.cacheAgeMs,
+    this.failedStage,
+    this.errorStackTrace,
+    this.cacheAvailable = false,
   });
 
   final bool updated;
   final bool notModified;
   final AcademicCalendarSnapshot? snapshot;
   final Object? error;
+  final String source;
+  final String reason;
+  final bool networkAttempted;
+  final bool cacheUsed;
+  final String networkOutcome;
+  final int? cacheAgeMs;
+  final String? failedStage;
+  final StackTrace? errorStackTrace;
+  final bool cacheAvailable;
 
   bool get succeeded => error == null;
 }
@@ -112,24 +130,19 @@ class AcademicCalendarManager extends ChangeNotifier {
   Future<AcademicCalendarSyncResult> refresh(
     String yearTerm, {
     bool manual = true,
+    String trigger = 'calendar_manual',
   }) {
     final term = _term(yearTerm);
-    if (term.isEmpty) {
-      return Future.value(
-        const AcademicCalendarSyncResult(
-          updated: false,
-          notModified: false,
-          error: FormatException('缺少当前学期'),
-        ),
-      );
-    }
     final existing = _inFlight[term];
     if (existing != null) {
       if (manual) _manualRefreshTerms.add(term);
       return existing;
     }
     if (manual) _manualRefreshTerms.add(term);
-    final future = _refreshInternal(term, manual: manual);
+    final future = AppLogger.I.runWithTraceIdAsync(
+      AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+      () => _refreshOperation(term, manual: manual, trigger: trigger),
+    );
     _inFlight[term] = future;
     future.whenComplete(() {
       if (identical(_inFlight[term], future)) {
@@ -140,9 +153,21 @@ class AcademicCalendarManager extends ChangeNotifier {
     return future;
   }
 
-  Future<AcademicCalendarSyncResult> refreshIfDue(String yearTerm) async {
+  Future<AcademicCalendarSyncResult> refreshIfDue(
+    String yearTerm, {
+    String trigger = 'calendar_automatic',
+  }) => AppLogger.I.runWithTraceIdAsync(
+    AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+    () => _refreshIfDue(yearTerm, trigger: trigger),
+  );
+
+  Future<AcademicCalendarSyncResult> _refreshIfDue(
+    String yearTerm, {
+    required String trigger,
+  }) async {
+    final elapsed = Stopwatch()..start();
     final term = _term(yearTerm);
-    if (term.isEmpty) return refresh(term, manual: false);
+    if (term.isEmpty) return refresh(term, manual: false, trigger: trigger);
     final prefs = await SharedPreferences.getInstance();
     final lastCheck = prefs.getInt(_checkedAtKey(term));
     if (lastCheck != null &&
@@ -150,7 +175,7 @@ class AcademicCalendarManager extends ChangeNotifier {
               DateTime.fromMillisecondsSinceEpoch(lastCheck),
             ) <
             checkInterval &&
-        _readSnapshot(prefs, term) != null) {
+        _validSnapshot(_readSnapshot(prefs, term), term)) {
       final cached = _readSnapshot(prefs, term)!;
       _setState(
         term,
@@ -160,12 +185,38 @@ class AcademicCalendarManager extends ChangeNotifier {
           lastSuccessfulAt: _readSuccessAt(prefs, term),
         ),
       );
-      return const AcademicCalendarSyncResult(
+      AppLogger.I.logOperationOutcome(
+        'AcademicCalendar',
+        'calendar refresh uses fresh cache',
+        outcome: 'skipped',
+        fields: {
+          'stage': 'calendar_refresh',
+          'trigger': trigger,
+          'term': term,
+          'reason': 'fresh_cache',
+          'source': 'cache',
+          'data_source': 'cache',
+          'network_outcome': 'not_attempted',
+          'network_attempted': false,
+          'cache_available': true,
+          'cache_used': true,
+          'cache_age_ms': _cacheAgeMs(prefs, term),
+          'duration_ms': elapsed.elapsedMilliseconds,
+          'stage_durations_ms': {'load_cache': elapsed.elapsedMilliseconds},
+        },
+      );
+      return AcademicCalendarSyncResult(
         updated: false,
-        notModified: true,
+        notModified: false,
+        snapshot: cached,
+        source: 'cache',
+        reason: 'fresh_cache',
+        cacheUsed: true,
+        cacheAgeMs: _cacheAgeMs(prefs, term),
+        cacheAvailable: true,
       );
     }
-    return refresh(term, manual: false);
+    return refresh(term, manual: false, trigger: trigger);
   }
 
   /// Starts a non-blocking first check for the term currently selected by the
@@ -180,7 +231,9 @@ class AcademicCalendarManager extends ChangeNotifier {
                     prefs.getString('schedule_widget_term_$account') ??
                     '')
                 .trim();
-      if (term.isNotEmpty) await refreshIfDue(term);
+      if (term.isNotEmpty) {
+        await refreshIfDue(term, trigger: 'app_bootstrap');
+      }
     } catch (error, stackTrace) {
       AppLogger.I.warn(
         'AcademicCalendar',
@@ -191,12 +244,82 @@ class AcademicCalendarManager extends ChangeNotifier {
     }
   }
 
+  Future<AcademicCalendarSyncResult> _refreshOperation(
+    String term, {
+    required bool manual,
+    required String trigger,
+  }) async {
+    final elapsed = Stopwatch()..start();
+    final stages = <String, int>{};
+    AcademicCalendarSyncResult? result;
+    StackTrace? failureStack;
+    try {
+      if (term.isEmpty) throw const FormatException('缺少当前学期');
+      result = await _refreshInternal(
+        term,
+        manual: manual,
+        stages: stages,
+        trigger: trigger,
+      );
+      return result;
+    } catch (error, stackTrace) {
+      failureStack = stackTrace;
+      result = AcademicCalendarSyncResult(
+        updated: false,
+        notModified: false,
+        error: error,
+        source: 'none',
+        reason: term.isEmpty ? 'missing_term' : 'initialization_failed',
+        failedStage: term.isEmpty ? 'validate_term' : 'load_cache',
+      );
+      return result;
+    } finally {
+      AppLogger.I.logOperationOutcome(
+        'AcademicCalendar',
+        'calendar refresh finished',
+        outcome: result?.error == null ? 'succeeded' : 'failed',
+        error: result?.error,
+        stackTrace: result?.errorStackTrace ?? failureStack,
+        fields: {
+          'stage': 'calendar_refresh',
+          'trigger': trigger,
+          'term': term,
+          'reason': result?.reason ?? 'unhandled_failure',
+          'source': result?.source ?? 'none',
+          'data_source': result?.source ?? 'none',
+          'network_outcome': result?.networkOutcome ?? 'not_attempted',
+          'network_attempted': result?.networkAttempted ?? false,
+          'cache_available': result?.cacheAvailable ?? false,
+          'cache_used': result?.cacheUsed ?? false,
+          'cache_age_ms': result?.cacheAgeMs,
+          if (result?.failedStage != null) 'failed_stage': result!.failedStage,
+          'updated': result?.updated ?? false,
+          'duration_ms': elapsed.elapsedMilliseconds,
+          'stage_durations_ms': stages,
+        },
+      );
+    }
+  }
+
   Future<AcademicCalendarSyncResult> _refreshInternal(
     String term, {
     required bool manual,
+    required Map<String, int> stages,
+    required String trigger,
   }) async {
+    final clock = Stopwatch()..start();
+    var stage = 'load_cache';
+    void enterStage(String next) {
+      stages[stage] = clock.elapsedMilliseconds;
+      stage = next;
+      clock.reset();
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    final old = _readSnapshot(prefs, term);
+    final cached = _readSnapshot(prefs, term);
+    final old = _validSnapshot(cached, term) ? cached : null;
+    final cacheAgeMs = old == null ? null : _cacheAgeMs(prefs, term);
+    var networkValidated = false;
     _setState(
       term,
       AcademicCalendarSyncState(
@@ -206,16 +329,21 @@ class AcademicCalendarManager extends ChangeNotifier {
       ),
     );
     try {
+      enterStage('fetch_calendar');
       final response = await _api.fetch(
         yearTerm: term,
-        etag: prefs.getString(_etagKey(term)),
+        etag: old == null ? null : prefs.getString(_etagKey(term)),
       );
+      enterStage('validate_calendar');
       final now = DateTime.now();
       if (response.notModified) {
         final current = old;
         if (current == null) {
           throw const FormatException('校历接口返回 304 但本地没有完整快照');
         }
+        _api.recordValidatedNotModified(response);
+        networkValidated = true;
+        enterStage('persist_calendar');
         await prefs.setInt(_checkedAtKey(term), now.millisecondsSinceEpoch);
         await prefs.setInt(_successAtKey(term), now.millisecondsSinceEpoch);
         _setState(
@@ -230,13 +358,21 @@ class AcademicCalendarManager extends ChangeNotifier {
           updated: false,
           notModified: true,
           snapshot: current,
+          reason: 'http_304',
+          networkAttempted: true,
+          cacheUsed: true,
+          networkOutcome: 'succeeded',
+          cacheAgeMs: cacheAgeMs,
+          cacheAvailable: true,
         );
       }
       final snapshot = response.snapshot;
       if (snapshot == null || !snapshot.complete || snapshot.yearTerm != term) {
         throw const FormatException('校历快照不完整或学期不匹配');
       }
+      networkValidated = true;
       final changedDayCount = _changedDayCount(old, snapshot);
+      enterStage('persist_calendar');
       await prefs.setString(_snapshotKey(term), snapshot.encode());
       await prefs.setString(_etagKey(term), response.etag ?? snapshot.revision);
       await prefs.setInt(_checkedAtKey(term), now.millisecondsSinceEpoch);
@@ -252,58 +388,78 @@ class AcademicCalendarManager extends ChangeNotifier {
       );
       final revisionChanged = old?.revision != snapshot.revision;
       if (revisionChanged) epoch.value++;
-      if (old != null &&
-          revisionChanged &&
-          !manual &&
-          !_manualRefreshTerms.contains(term)) {
-        await LocalNotifications.showScheduleUpdate(
-          title: '假期与调休已更新',
-          body: changedDayCount > 0
-              ? '当前学期更新了 $changedDayCount 天安排'
-              : '当前学期校历已更新',
-          payload: LocalNotifications.payloadScheduleUpdate,
-        );
-      }
-      final userId = (prefs.getString('account') ?? '').trim();
-      if (userId.isNotEmpty && revisionChanged) {
-        try {
-          await _scheduleApi.rebuildWidgetCalendarProjection(
-            userId: userId,
-            yearTerm: term,
-            calendar: snapshot,
-          );
-        } catch (projectionError, projectionStackTrace) {
-          // Calendar persistence remains successful even if the optional
-          // native-widget projection cannot be rebuilt from schedule cache.
-          AppLogger.I.warn(
-            'AcademicCalendar',
-            'widget calendar projection rebuild failed',
-            error: projectionError,
-            stackTrace: projectionStackTrace,
-            fields: {'term': term},
+      enterStage('calendar_effects');
+      try {
+        if (old != null &&
+            revisionChanged &&
+            !manual &&
+            !_manualRefreshTerms.contains(term)) {
+          await LocalNotifications.showScheduleUpdate(
+            title: '假期与调休已更新',
+            body: changedDayCount > 0
+                ? '当前学期更新了 $changedDayCount 天安排'
+                : '当前学期校历已更新',
+            payload: LocalNotifications.payloadScheduleUpdate,
           );
         }
-        await WidgetUpdater.updateTodayWidget(
-          trigger: 'academic_calendar_refresh',
-        );
-        await CourseReminderScheduler.rescheduleForUser(
-          userId,
-          calendar: snapshot,
+        final userId = (prefs.getString('account') ?? '').trim();
+        if (userId.isNotEmpty && revisionChanged) {
+          try {
+            await _scheduleApi.rebuildWidgetCalendarProjection(
+              userId: userId,
+              yearTerm: term,
+              calendar: snapshot,
+            );
+          } catch (projectionError, projectionStackTrace) {
+            // Calendar persistence remains successful even if the optional
+            // native-widget projection cannot be rebuilt from schedule cache.
+            AppLogger.I.logOperationOutcome(
+              'AcademicCalendar',
+              'widget calendar projection rebuild failed',
+              outcome: 'failed',
+              error: projectionError,
+              stackTrace: projectionStackTrace,
+              fields: {
+                'term': term,
+                'stage': 'widget_calendar_projection',
+                'trigger': trigger,
+              },
+            );
+          }
+          await WidgetUpdater.updateTodayWidget(
+            trigger: 'academic_calendar_refresh',
+          );
+          await CourseReminderScheduler.rescheduleForUser(
+            userId,
+            calendar: snapshot,
+          );
+        }
+      } catch (error, stackTrace) {
+        AppLogger.I.logOperationOutcome(
+          'AcademicCalendar',
+          'calendar post-sync effect failed',
+          outcome: 'failed',
+          error: error,
+          stackTrace: stackTrace,
+          fields: {
+            'stage': 'calendar_effects',
+            'term': term,
+            'calendar_committed': true,
+            'trigger': trigger,
+          },
         );
       }
       return AcademicCalendarSyncResult(
         updated: revisionChanged,
         notModified: false,
         snapshot: snapshot,
+        reason: revisionChanged ? 'revision_changed' : 'same_revision',
+        networkAttempted: true,
+        networkOutcome: 'succeeded',
+        cacheAgeMs: cacheAgeMs,
+        cacheAvailable: old != null,
       );
     } catch (error, stackTrace) {
-      AppLogger.I.warn(
-        'AcademicCalendar',
-        'calendar refresh failed',
-        error: error,
-        stackTrace: stackTrace,
-        fields: {'term': term},
-      );
       _setState(
         term,
         AcademicCalendarSyncState(
@@ -318,8 +474,29 @@ class AcademicCalendarManager extends ChangeNotifier {
         notModified: false,
         snapshot: old,
         error: error,
+        source: old == null ? 'none' : 'cache',
+        reason: 'refresh_failed',
+        networkAttempted: true,
+        cacheUsed: old != null,
+        networkOutcome: networkValidated ? 'succeeded' : 'failed',
+        cacheAgeMs: cacheAgeMs,
+        failedStage: stage,
+        errorStackTrace: stackTrace,
+        cacheAvailable: old != null,
       );
+    } finally {
+      stages[stage] = clock.elapsedMilliseconds;
     }
+  }
+
+  static bool _validSnapshot(AcademicCalendarSnapshot? snapshot, String term) =>
+      snapshot != null && snapshot.complete && snapshot.yearTerm == term;
+
+  int? _cacheAgeMs(SharedPreferences prefs, String term) {
+    final successAt = _readSuccessAt(prefs, term);
+    if (successAt == null) return null;
+    final age = DateTime.now().difference(successAt).inMilliseconds;
+    return age < 0 ? 0 : age;
   }
 
   static int _changedDayCount(

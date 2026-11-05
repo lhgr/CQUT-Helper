@@ -126,6 +126,56 @@ class _ReorderedPairAdapter implements HttpClientAdapter {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('Cloudflare 530 extracts only explicit bounded error codes', () {
+    Response<dynamic> response(Object? body, {bool cloudflare = true}) =>
+        Response<dynamic>(
+          requestOptions: RequestOptions(path: 'https://example.test/failed'),
+          statusCode: 530,
+          data: body,
+          headers: Headers.fromMap({
+            'server': [cloudflare ? 'cloudflare' : 'private-server'],
+          }),
+        );
+    expect(
+      diagnosticCloudflareDetails(response('error code: 1033')),
+      containsPair('cloudflare_error_code', '1033'),
+    );
+    expect(
+      diagnosticCloudflareDetails(response('<h1>Error 1016</h1>')),
+      containsPair('cloudflare_error_code', '1016'),
+    );
+    expect(
+      diagnosticCloudflareDetails(
+        response('<h1><span>Error</span>&nbsp;<span>1033</span></h1>'),
+      ),
+      containsPair('cloudflare_error_code', '1033'),
+    );
+    expect(
+      diagnosticCloudflareDetails(response(utf8.encode('error code: 1033'))),
+      containsPair('cloudflare_error_code', '1033'),
+    );
+    expect(
+      diagnosticCloudflareDetails(response('request 1033')),
+      containsPair('cloudflare_code_result', 'not_found'),
+    );
+    final bounded = diagnosticCloudflareDetails(
+      response('${'x' * (16 * 1024)} error code: 1033'),
+    );
+    expect(bounded['cloudflare_error_code'], isNull);
+    expect(bounded['cloudflare_code_result'], 'not_found_in_prefix');
+    expect(bounded['cloudflare_scan_truncated'], isTrue);
+    expect(
+      diagnosticCloudflareDetails(
+        response('error code: 1033', cloudflare: false),
+      ),
+      {'cloudflare_code_result': 'not_cloudflare'},
+    );
+    expect(
+      diagnosticCloudflareDetails(response({'error': 'error code: 1033'})),
+      {'cloudflare_code_result': 'unsupported_body'},
+    );
+  });
+
   test('network categories use typed errors and platform DNS codes', () {
     DioException dioError(DioExceptionType type) => DioException(
       requestOptions: RequestOptions(path: '/'),
@@ -324,6 +374,23 @@ void main() {
         expect(
           decisions.every(
             (row) => (row['fields'] as Map)['will_retry'] == true,
+          ),
+          isTrue,
+        );
+        expect(
+          decisions.every(
+            (row) =>
+                (row['fields'] as Map)['retry_policy'] == 'exponential_backoff',
+          ),
+          isTrue,
+        );
+        final waits = rows
+            .where((row) => row['stage'] == 'retry_wait')
+            .toList();
+        expect(waits, hasLength(2));
+        expect(
+          waits.every(
+            (row) => ((row['fields'] as Map)['actual_backoff_ms'] as int) >= 7,
           ),
           isTrue,
         );
@@ -705,6 +772,13 @@ void main() {
               .toList();
           expect(incidents, hasLength(1));
           expect(attempts, hasLength(1));
+          expect(incidents.single['operationInferred'], isTrue);
+          final rootFields = incidents.single['fields'] as Map;
+          expect(rootFields['service'], 'NetworkHeaders');
+          expect(rootFields['origin'], 'https://example.test');
+          expect(rootFields['route'], '/fails');
+          expect(rootFields['request_id'], isNotEmpty);
+          expect(rootFields['duration_ms'], isNonNegative);
           final fields = attempts.single['fields'] as Map;
           expect(fields['status_code'], 502);
           expect(fields['body_omitted_reason'], 'privacy_policy');

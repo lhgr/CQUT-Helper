@@ -127,12 +127,14 @@ class ScheduleController {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    String trigger = 'schedule_load',
   }) {
     return _weekLoader.loadFromNetwork(
       weekNum: weekNum,
       yearTerm: yearTerm,
       persistLastViewed: persistLastViewed,
       updateWidgetPins: updateWidgetPins,
+      trigger: trigger,
     );
   }
 
@@ -217,12 +219,14 @@ class ScheduleController {
     String yearTerm, {
     bool forceRefresh = false,
     bool updateLastViewed = false,
+    bool rethrowOnFailure = false,
   }) {
     return _weekLoader.ensureWeekLoaded(
       weekNum,
       yearTerm,
       forceRefresh: forceRefresh,
       updateLastViewed: updateLastViewed,
+      rethrowOnFailure: rethrowOnFailure,
     );
   }
 }

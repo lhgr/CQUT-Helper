@@ -284,7 +284,9 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     }
     setState(() => _academicCalendar = cached);
     if (cached != null) unawaited(_ensureCalendarSourceWeeks(cached));
-    if (checkDue) unawaited(manager.refreshIfDue(term));
+    if (checkDue) {
+      unawaited(manager.refreshIfDue(term, trigger: 'schedule_page_load'));
+    }
   }
 
   Future<void> _ensureCalendarSourceWeeks(

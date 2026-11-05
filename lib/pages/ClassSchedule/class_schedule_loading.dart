@@ -143,7 +143,10 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
   Future<void> _runDeferredInitialSync(ScheduleData currentData) async {
     try {
       final changes = _settingsManager.backgroundPollingEnabled
-          ? await _updateManager.checkForUpdates(currentData)
+          ? await _updateManager.checkForUpdates(
+              currentData,
+              trigger: 'foreground_initial_sync',
+            )
           : const <ScheduleWeekChange>[];
       if (!mounted) return;
       if (changes.isNotEmpty) {
@@ -313,6 +316,21 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     String? yearTerm,
     bool updateWidgetPins = false,
     bool fromInitialBoot = false,
+  }) => AppLogger.I.runWithTraceIdAsync(
+    AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+    () => _loadFromNetworkInOperation(
+      weekNum: weekNum,
+      yearTerm: yearTerm,
+      updateWidgetPins: updateWidgetPins,
+      fromInitialBoot: fromInitialBoot,
+    ),
+  );
+
+  Future<ScheduleData?> _loadFromNetworkInOperation({
+    String? weekNum,
+    String? yearTerm,
+    required bool updateWidgetPins,
+    required bool fromInitialBoot,
   }) async {
     if (_controller.weekCache.containsKey(int.tryParse(weekNum ?? "") ?? -1)) {}
 
@@ -326,6 +344,9 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
         weekNum: weekNum,
         yearTerm: yearTerm,
         updateWidgetPins: updateWidgetPins,
+        trigger: fromInitialBoot
+            ? 'schedule_initial_load'
+            : 'schedule_manual_refresh',
       );
 
       final receivedAt = DateTime.now();
@@ -362,11 +383,18 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       }
       return data;
     } catch (e, stackTrace) {
-      AppLogger.I.error(
+      AppLogger.I.logOperationOutcome(
         'ClassSchedule',
         'Failed to load schedule',
+        outcome: 'failed',
         error: e,
         stackTrace: stackTrace,
+        fields: {
+          'stage': 'schedule_page_load',
+          'trigger': fromInitialBoot
+              ? 'schedule_initial_load'
+              : 'schedule_manual_refresh',
+        },
       );
       _setState(() {
         final text = e.toString().toLowerCase();

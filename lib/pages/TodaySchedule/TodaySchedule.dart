@@ -93,7 +93,9 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     if (!mounted || (_scheduleData?.yearTerm ?? '').trim() != term) return;
     setState(() => _academicCalendar = cached);
     if (cached != null) unawaited(_ensureCalendarSourceWeek(cached));
-    if (checkDue) unawaited(manager.refreshIfDue(term));
+    if (checkDue) {
+      unawaited(manager.refreshIfDue(term, trigger: 'today_page_load'));
+    }
   }
 
   Future<void> _ensureCalendarSourceWeek(
@@ -189,7 +191,13 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     });
   }
 
-  Future<void> _loadSchedule({bool forceRefresh = false}) async {
+  Future<void> _loadSchedule({bool forceRefresh = false}) =>
+      AppLogger.I.runWithTraceIdAsync(
+        AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+        () => _loadScheduleInOperation(forceRefresh: forceRefresh),
+      );
+
+  Future<void> _loadScheduleInOperation({required bool forceRefresh}) async {
     if (!mounted) return;
     setState(() {
       if (forceRefresh) {
@@ -232,6 +240,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         final networkData = await _controller.loadFromNetwork(
           persistLastViewed: false,
           updateWidgetPins: false,
+          trigger: forceRefresh ? 'today_manual_refresh' : 'today_initial_load',
         );
         _controller.processLoadedData(networkData);
         if (!mounted) return;
@@ -252,16 +261,28 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         unawaited(_loadAcademicCalendar(term, checkDue: true));
       }
     } catch (e, stackTrace) {
-      AppLogger.I.error(
+      AppLogger.I.logOperationOutcome(
         'TodaySchedule',
         'Failed to load today schedule',
+        outcome: 'failed',
         error: e,
         stackTrace: stackTrace,
+        fields: {
+          'stage': 'today_page_load',
+          'trigger': forceRefresh
+              ? 'today_manual_refresh'
+              : 'today_initial_load',
+        },
       );
       if (!mounted) return;
       final term = (_scheduleData?.yearTerm ?? '').trim();
       if (term.isNotEmpty) {
-        unawaited(AcademicCalendarManager.instance.refreshIfDue(term));
+        unawaited(
+          AcademicCalendarManager.instance.refreshIfDue(
+            term,
+            trigger: 'today_page_cached_fallback',
+          ),
+        );
       }
       setState(() {
         _error = _mapError(e);

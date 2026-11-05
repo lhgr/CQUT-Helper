@@ -14,11 +14,14 @@ class DioLogInterceptor extends Interceptor {
   static const _startKey = '__diagnostic_start';
   static const _traceKey = '__diagnostic_operation';
   static const _requestKey = '__diagnostic_request';
+  static const _inferredKey = '__diagnostic_inferred';
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     options.extra[_startKey] = Stopwatch()..start();
     options.extra[_traceKey] = logger.currentTraceId ?? logger.newTraceId();
+    options.extra[_inferredKey] =
+        logger.currentTraceId == null || logger.currentTraceInferred;
     options.extra[_requestKey] = logger.newTraceId();
     // Capture context here: asynchronous Dio callbacks need not run in the
     // caller's zone, and each physical request still keeps its own request ID.
@@ -52,12 +55,18 @@ class DioLogInterceptor extends Interceptor {
   }
 
   Map<String, Object?> _fields(RequestOptions options, {int? status}) => {
+    ...diagnosticServiceIdentity(
+      service: options.extra['diagnostic_service'] as String? ?? tag,
+      method: options.method,
+      uri: options.uri,
+    ),
     'net': true,
     'method': options.method,
     'uri': sanitizeUriForLogging(options.uri),
     'duration_ms':
         ?(options.extra[_startKey] as Stopwatch?)?.elapsedMilliseconds,
     'trace_id': options.extra[_traceKey],
+    'operation_inferred': options.extra[_inferredKey] == true,
     'request_id': options.extra[_requestKey],
     if (options.extra['diagnostic_retry_group_id'] is String)
       'retry_group_id': options.extra['diagnostic_retry_group_id'],
@@ -113,6 +122,7 @@ class DioLogInterceptor extends Interceptor {
     }
     return {
       if (headers.isNotEmpty) 'response_headers': headers,
+      ...diagnosticCloudflareDetails(response),
       'body_omitted_reason': 'privacy_policy',
     };
   }
@@ -145,7 +155,9 @@ class DioLogInterceptor extends Interceptor {
         '请求完成',
         fields: {
           ..._fields(options, status: status),
-          if (!_expectedStatus(options, status)) 'diagnostic_kind': 'attempt',
+          if (!_expectedStatus(options, status) &&
+              options.extra['diagnostic_validate_response'] != true)
+            'diagnostic_kind': 'attempt',
           'outcome': 'succeeded',
           'status': 'success',
         },
@@ -153,6 +165,38 @@ class DioLogInterceptor extends Interceptor {
     }
     handler.next(response);
   }
+
+  /// API payload checks run after Dio's transport interceptor has returned.
+  void logValidationFailure(Response response, Object error, StackTrace stack) {
+    logger.info(
+      tag,
+      '接口响应校验失败',
+      error: error,
+      stackTrace: stack,
+      fields: {
+        ..._fields(response.requestOptions, status: response.statusCode),
+        'diagnostic_kind': 'attempt',
+        'outcome': 'failed',
+        'error_category': 'DATA_PARSE_FAILED',
+        'validation_failed': true,
+      },
+    );
+  }
+
+  void logValidatedResponse(Response response) {
+    logger.logServiceSuccess(
+      tag,
+      service:
+          response.requestOptions.extra['diagnostic_service'] as String? ?? tag,
+      method: response.requestOptions.method,
+      uri: response.requestOptions.uri,
+      statusCode: response.statusCode,
+      fields: _fields(response.requestOptions, status: response.statusCode),
+    );
+  }
+
+  Map<String, Object?> responseContext(Response response) =>
+      _fields(response.requestOptions, status: response.statusCode);
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
