@@ -69,25 +69,23 @@ void main() {
     expect(coverage.complete, isFalse);
   });
 
-  test('只有日期窗口内的每一周均缓存时才算覆盖完整', () {
-    final schedules = [
-      for (var week = 1; week <= 10; week++) scheduleForWeek(week),
-    ];
-    final complete = evaluateCourseReminderCoverage(
-      schedules: schedules,
-      now: DateTime(2026, 8, 20),
-      horizon: DateTime(2026, 10, 19),
-    );
-    final incomplete = evaluateCourseReminderCoverage(
-      schedules: schedules.take(9),
-      now: DateTime(2026, 8, 20),
-      horizon: DateTime(2026, 10, 19),
-    );
+  for (final scenario in [
+    (name: '日期窗口内每周均缓存时覆盖完整', cachedWeeks: 10, complete: true),
+    (name: '日期窗口内缺少一周缓存时覆盖不完整', cachedWeeks: 9, complete: false),
+  ]) {
+    test(scenario.name, () {
+      final coverage = evaluateCourseReminderCoverage(
+        schedules: [
+          for (var week = 1; week <= scenario.cachedWeeks; week++)
+            scheduleForWeek(week),
+        ],
+        now: DateTime(2026, 8, 20),
+        horizon: DateTime(2026, 10, 19),
+      );
 
-    expect(complete.expectedWeekCount, 10);
-    expect(complete.cachedWeekCount, 10);
-    expect(complete.complete, isTrue);
-    expect(incomplete.cachedWeekCount, 9);
-    expect(incomplete.complete, isFalse);
-  });
+      expect(coverage.expectedWeekCount, 10);
+      expect(coverage.cachedWeekCount, scenario.cachedWeeks);
+      expect(coverage.complete, scenario.complete);
+    });
+  }
 }

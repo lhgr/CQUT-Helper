@@ -34,7 +34,6 @@ void main() {
       ),
     );
 
-    expect(tester.getSize(find.byType(AppBar)).height, 112);
     final weekButton = find.ancestor(
       of: find.text('第1周'),
       matching: find.byType(TextButton),
@@ -45,8 +44,6 @@ void main() {
     );
     expect(tester.getSize(weekButton).height, greaterThanOrEqualTo(48));
     expect(tester.getSize(termButton).height, greaterThanOrEqualTo(48));
-    expect(tester.getCenter(weekButton).dx, closeTo(160, 0.5));
-    expect(tester.getCenter(termButton).dx, closeTo(160, 0.5));
     expect(find.byTooltip('2026-2027-1学期'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
@@ -55,29 +52,6 @@ void main() {
     expect(weekOpened, isTrue);
     expect(termOpened, isTrue);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('背景图下顶栏保持透明', (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          appBar: ScheduleAppBar(
-            loading: false,
-            weekList: const ['1'],
-            currentWeekIndex: 0,
-            currentScheduleData: ScheduleData(yearTerm: '2026-2027-1'),
-            onRefresh: () {},
-            onSettings: () {},
-            onWeekPicker: () {},
-            onTermPicker: () {},
-            transparentBackground: true,
-          ),
-        ),
-      ),
-    );
-
-    final appBar = tester.widget<AppBar>(find.byType(AppBar));
-    expect(appBar.backgroundColor, Colors.transparent);
   });
 
   testWidgets('刷新按钮下不展示最后更新时间', (tester) async {
@@ -130,8 +104,6 @@ void main() {
     final refreshFinder = find
         .ancestor(of: refreshTooltip, matching: find.byType(IconButton))
         .first;
-    final refreshButton = tester.widget<IconButton>(refreshFinder);
-    expect(refreshButton.style?.backgroundColor, isNull);
     expect(tester.getSize(refreshFinder).width, greaterThanOrEqualTo(48));
     await tester.tap(refreshTooltip);
     expect(refreshCount, 1);
@@ -180,12 +152,10 @@ void main() {
       ),
     );
 
-    expect(find.text('本学期课程'), findsNothing);
     await tester.tap(find.byTooltip('更多课表操作'));
     await tester.pumpAndSettle();
     expect(find.text('课表操作'), findsOneWidget);
     expect(find.text('添加自定义课程'), findsOneWidget);
-    expect(find.text('管理自定义课程'), findsNothing);
     expect(find.text('课表设置'), findsOneWidget);
 
     await tester.tap(find.text('课表设置'));

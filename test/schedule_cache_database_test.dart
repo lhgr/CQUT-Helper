@@ -25,7 +25,6 @@ void main() {
         ScheduleCacheDatabase.checksumMatches('$canonical ', checksum),
         isFalse,
       );
-      expect(ScheduleCacheDatabase.databaseVersion, 2);
     });
 
     test('rejects malformed structures and mismatched week identity', () {

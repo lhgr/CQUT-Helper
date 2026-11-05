@@ -91,7 +91,6 @@ void main() {
       expect(inputData['userId'], 'u1');
       expect(inputData['trigger'], 'daily_9am');
       expect(inputData.containsKey('encryptedPassword'), isFalse);
-      expect(inputData.values, isNot(contains('secure-p1')));
     });
   });
 

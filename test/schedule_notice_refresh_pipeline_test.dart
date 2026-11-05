@@ -325,74 +325,48 @@ void main() {
       );
     });
 
-    test('未明确开启时不读取凭证且不访问调课服务', () async {
-      SharedPreferences.setMockInitialValues({
-        'account': 'u1',
-        ScheduleSettingsManager.backgroundPollingEnabledKey: false,
+    for (final testCase in [
+      (name: '未明确开启时不读取凭证且不访问调课服务', enabled: false),
+      (name: '旧版开关没有新版隐私同意时不访问调课服务', enabled: true),
+    ]) {
+      test(testCase.name, () async {
+        SharedPreferences.setMockInitialValues({
+          'account': 'u1',
+          ScheduleSettingsManager.backgroundPollingEnabledKey: testCase.enabled,
+        });
+        final fakeApi = _FakeScheduleApi(
+          response: const ScheduleNoticePollData(
+            env: 'prod',
+            yearTerm: '2024-2025-2',
+            generatedAt: '2026-01-01 10:00:00',
+            notices: <ScheduleNotice>[],
+          ),
+        );
+        final credentialStore = _FakePipelineCredentialStore(
+          value: 'secure-p1',
+        );
+        final pipeline = ScheduleNoticeRefreshPipeline(
+          scheduleApi: fakeApi,
+          credentialStore: credentialStore,
+          refreshWeek: (_, _) async {},
+          nowProvider: () => DateTime(2026, 4, 14, 10),
+        );
+
+        final result = await pipeline.run(
+          currentData: ScheduleData(
+            yearTerm: '2024-2025-2',
+            weekNum: '1',
+            weekList: const <String>['1'],
+          ),
+        );
+
+        expect(fakeApi.requestedYearTerm, isNull);
+        expect(fakeApi.requestedEncryptedPassword, isNull);
+        expect(credentialStore.readCalls, 0);
+        expect(result.changes, isEmpty);
+        expect(result.apiClosed, isFalse);
+        expect(result.skipReason, 'disabled');
       });
-      final fakeApi = _FakeScheduleApi(
-        response: const ScheduleNoticePollData(
-          env: 'prod',
-          yearTerm: '2024-2025-2',
-          generatedAt: '2026-01-01 10:00:00',
-          notices: <ScheduleNotice>[],
-        ),
-      );
-      final credentialStore = _FakePipelineCredentialStore(value: 'secure-p1');
-      final pipeline = ScheduleNoticeRefreshPipeline(
-        scheduleApi: fakeApi,
-        credentialStore: credentialStore,
-        refreshWeek: (_, _) async {},
-        nowProvider: () => DateTime(2026, 4, 14, 10),
-      );
-
-      final result = await pipeline.run(
-        currentData: ScheduleData(
-          yearTerm: '2024-2025-2',
-          weekNum: '1',
-          weekList: const <String>['1'],
-        ),
-      );
-
-      expect(fakeApi.requestedYearTerm, isNull);
-      expect(fakeApi.requestedEncryptedPassword, isNull);
-      expect(credentialStore.readCalls, 0);
-      expect(result.changes, isEmpty);
-      expect(result.apiClosed, isFalse);
-      expect(result.skipReason, 'disabled');
-    });
-
-    test('旧版开关没有新版隐私同意时不访问调课服务', () async {
-      SharedPreferences.setMockInitialValues({
-        'account': 'u1',
-        ScheduleSettingsManager.backgroundPollingEnabledKey: true,
-      });
-      final fakeApi = _FakeScheduleApi(
-        response: const ScheduleNoticePollData(
-          env: 'prod',
-          yearTerm: '2024-2025-2',
-          generatedAt: '2026-01-01 10:00:00',
-          notices: <ScheduleNotice>[],
-        ),
-      );
-      final credentialStore = _FakePipelineCredentialStore(value: 'secure-p1');
-      final pipeline = ScheduleNoticeRefreshPipeline(
-        scheduleApi: fakeApi,
-        credentialStore: credentialStore,
-        refreshWeek: (_, _) async {},
-        nowProvider: () => DateTime(2026, 4, 14, 10),
-      );
-
-      await pipeline.run(
-        currentData: ScheduleData(
-          yearTerm: '2024-2025-2',
-          weekNum: '1',
-          weekList: const <String>['1'],
-        ),
-      );
-
-      expect(fakeApi.requestedYearTerm, isNull);
-      expect(credentialStore.readCalls, 0);
-    });
+    }
   });
 }

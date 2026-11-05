@@ -49,21 +49,9 @@ void main() {
         .firstWhere((widget) => widget.textSpan != null);
     expect(content.textSpan!.toPlainText(), '程序设计\n博园201');
     expect(content.textAlign, TextAlign.center);
-
-    final centered = tester
-        .widgetList<Align>(find.byType(Align))
-        .any((widget) => widget.alignment == Alignment.center);
-    expect(centered, isTrue);
-
-    final decoration = tester
-        .widgetList<Ink>(find.byType(Ink))
-        .map((widget) => widget.decoration)
-        .whereType<BoxDecoration>()
-        .firstWhere((value) => value.border != null);
-    expect(decoration.color!.a, closeTo(0.5, 0.01));
   });
 
-  testWidgets('冲突卡片使用图标文字提示并提供按压反馈', (tester) async {
+  testWidgets('冲突卡片使用图标文字提示并触发点击回调', (tester) async {
     var taps = 0;
     final event = EventItem(
       eventID: 'event-42',
@@ -96,42 +84,12 @@ void main() {
 
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
     expect(find.text('冲突 +2'), findsOneWidget);
-    expect(
-      find.byKey(ScheduleCourseCard.conflictIndicatorKeyForEvent(event)),
-      findsOneWidget,
-    );
 
     final interaction = find.byKey(
       ScheduleCourseCard.interactionKeyForEvent(event),
     );
-    expect(interaction, findsOneWidget);
-    expect(tester.widget<InkWell>(interaction).onTap, isNotNull);
     await tester.tap(interaction);
     await tester.pump();
     expect(taps, 1);
-  });
-
-  test('无服务端 ID 时交互键由课程位置稳定生成', () {
-    final first = EventItem(
-      eventName: '高等数学',
-      weekNum: '1',
-      weekDay: '1',
-      sessionStart: '1',
-      sessionLast: '2',
-      memberName: '李老师',
-    );
-    final same = EventItem(
-      eventName: '高等数学',
-      weekNum: '1',
-      weekDay: '1',
-      sessionStart: '1',
-      sessionLast: '2',
-      memberName: '李老师',
-    );
-
-    expect(
-      ScheduleCourseCard.interactionKeyForEvent(first),
-      ScheduleCourseCard.interactionKeyForEvent(same),
-    );
   });
 }

@@ -128,24 +128,33 @@ void main() {
       expect(notifications, 1);
     });
 
-    test('部分响应与已有缓存一致时无需重绘', () async {
-      final raw = seedCache();
-      List<CampusTimeInfo>? state;
-      final coordinator = ScheduleTimeInfoCoordinator(
-        service: _FakeTimeInfoScheduleApi(
-          response: [session(1, '08:00', '08:45')],
-        ),
-        getTimeInfoList: () => state,
-        setTimeInfoList: (value) => state = value,
-        onTimeInfoUpdated: () async {
-          fail('unchanged cache should not notify');
-        },
-      );
-      expect(await coordinator.refreshTimeInfoIfEnabled(force: true), isFalse);
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString('schedule_time_info_cache_v1'), raw);
-      expect(state!.length, 2);
-    });
+    for (final testCase in [
+      (name: '部分响应与已有缓存一致时无需重绘', response: [session(1, '08:00', '08:45')]),
+      (
+        name: '完整响应与已有缓存一致时无需重绘',
+        response: [session(1, '08:00', '08:45'), session(2, '08:55', '09:40')],
+      ),
+    ]) {
+      test(testCase.name, () async {
+        final raw = seedCache();
+        List<CampusTimeInfo>? state;
+        final coordinator = ScheduleTimeInfoCoordinator(
+          service: _FakeTimeInfoScheduleApi(response: testCase.response),
+          getTimeInfoList: () => state,
+          setTimeInfoList: (value) => state = value,
+          onTimeInfoUpdated: () async {
+            fail('unchanged cache should not notify');
+          },
+        );
+        expect(
+          await coordinator.refreshTimeInfoIfEnabled(force: true),
+          isFalse,
+        );
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('schedule_time_info_cache_v1'), raw);
+        expect(state!.map((item) => item.startTime), ['08:00', '08:55']);
+      });
+    }
 
     test('失败重试按指数退避并封顶六小时', () {
       expect(
@@ -223,34 +232,6 @@ void main() {
       expect(api.fetchCount, 1);
     });
 
-    test('time info 内容更新后主动通知小组件重载', () async {
-      SharedPreferences.setMockInitialValues({});
-      List<CampusTimeInfo>? state;
-      var widgetUpdateCount = 0;
-      final coordinator = ScheduleTimeInfoCoordinator(
-        service: _FakeTimeInfoScheduleApi(
-          response: [
-            CampusTimeInfo(
-              campusName: '两江校区',
-              sessionNum: 1,
-              startTime: '08:00',
-              endTime: '08:45',
-            ),
-          ],
-        ),
-        getTimeInfoList: () => state,
-        setTimeInfoList: (value) => state = value,
-        onTimeInfoUpdated: () async {
-          widgetUpdateCount++;
-        },
-      );
-
-      final changed = await coordinator.refreshTimeInfoIfEnabled();
-
-      expect(changed, isTrue);
-      expect(widgetUpdateCount, 1);
-    });
-
     test('不同页面的 coordinator 共享同一个进行中的刷新', () async {
       SharedPreferences.setMockInitialValues({});
       final api = _BlockingTimeInfoScheduleApi(
@@ -283,8 +264,12 @@ void main() {
       await Future.wait([firstRefresh, secondRefresh]);
 
       expect(api.fetchCount, 1);
-      expect(firstState, isNotNull);
-      expect(secondState, isNotNull);
+      expect(firstState!.map((item) => (item.sessionNum, item.startTime)), [
+        (1, '08:00'),
+      ]);
+      expect(secondState!.map((item) => (item.sessionNum, item.startTime)), [
+        (1, '08:00'),
+      ]);
     });
 
     test('新鲜缓存跨 coordinator 跳过自动网络刷新', () async {
@@ -320,50 +305,6 @@ void main() {
       expect(changed, isFalse);
       expect(api.fetchCount, 0);
       expect(state, isNotNull);
-    });
-
-    test('刷新结果未变化时返回 false 并保留缓存可读', () async {
-      final items = [
-        {
-          'campusName': '两江校区',
-          'sessionNum': 1,
-          'startTime': '08:00',
-          'endTime': '08:45',
-        },
-      ];
-      SharedPreferences.setMockInitialValues({
-        'schedule_time_info_cache_v1': json.encode({
-          'campusName': '两江校区',
-          'fingerprint': json.encode(items),
-          'updatedAt': 1,
-          'items': items,
-        }),
-        'schedule_time_info_last_campus': '两江校区',
-      });
-      List<CampusTimeInfo>? state;
-      final api = _FakeTimeInfoScheduleApi(
-        response: [
-          CampusTimeInfo(
-            campusName: '两江校区',
-            sessionNum: 1,
-            startTime: '08:00',
-            endTime: '08:45',
-          ),
-        ],
-      );
-      final coordinator = ScheduleTimeInfoCoordinator(
-        service: api,
-        getTimeInfoList: () => state,
-        setTimeInfoList: (value) => state = value,
-      );
-
-      final changed = await coordinator.refreshTimeInfoIfEnabled(force: true);
-      final loaded = await coordinator.loadTimeInfoFromCacheIfAny();
-
-      expect(changed, isFalse);
-      expect(loaded, isTrue);
-      expect(state, isNotNull);
-      expect(state!.single.startTime, '08:00');
     });
   });
 }

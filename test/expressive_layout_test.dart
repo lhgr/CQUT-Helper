@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
-import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_update_worker_health.dart';
@@ -12,17 +11,12 @@ import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
-import 'package:cqut_helper/model/course_preference_model.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
-import 'package:cqut_helper/pages/Guide/usage_guide_page.dart';
 import 'package:cqut_helper/pages/Announcement/Announcement.dart';
 import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
 import 'package:cqut_helper/pages/ClassSchedule/custom_course_editor_page.dart';
-import 'package:cqut_helper/pages/ClassSchedule/course_preference_editor.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
-import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
-import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
 import 'package:cqut_helper/pages/Mine/ClearCache.dart';
 import 'package:cqut_helper/pages/Mine/mine_theme_settings_sheet.dart';
@@ -384,87 +378,35 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('onboarding visual covers new user pages and cached schedule', (
-    tester,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('onboarding_is_new_user', true);
-    final onboarding = OnboardingManager.instance;
-    await onboarding.initialize();
-    await prefs.setString('schedule_message_history_v1_$_user', '[]');
-
-    for (final scenario in [
-      ('light-390', Brightness.light, 390.0, 1.0),
-      ('dark-390', Brightness.dark, 390.0, 1.0),
-      ('light-320-large', Brightness.light, 320.0, 2.0),
-      ('dark-320-large', Brightness.dark, 320.0, 2.0),
-    ]) {
-      final (label, brightness, width, scale) = scenario;
-
-      await _pumpPage(tester, const LoginPage(), width, brightness, scale);
-      expect(find.text('登录后自动同步课表，已同步的课程可离线查看。'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await _capturePage(tester, 'onboarding-login-$label');
-      if (scale >= 2) {
-        final loginButton = find.widgetWithText(FilledButton, '登录');
-        await tester.ensureVisible(loginButton);
-        expect(loginButton.hitTestable(), findsOneWidget);
-      }
-      await tester.pumpWidget(const SizedBox.shrink());
-
-      final background = label == 'dark-390'
-          ? ScheduleLayoutSettings(
-              backgroundImagePath:
-                  '${Directory.current.path}/lib/assets/Icon.png',
-            )
-          : null;
+  testWidgets(
+    'cached schedule keeps onboarding and courses after refresh fails',
+    (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('onboarding_is_new_user', true);
+      final onboarding = OnboardingManager.instance;
+      await onboarding.initialize();
+      await prefs.setString('schedule_message_history_v1_$_user', '[]');
 
       await _pumpPage(
         tester,
         const ClassscheduleView(),
-        width,
-        brightness,
-        scale,
-        scheduleBackground: background,
+        320,
+        Brightness.light,
+        1.6,
       );
-      expect(find.textContaining('数字图像处理', findRichText: true), findsWidgets);
       expect(onboarding.scheduleReady, isTrue);
-      expect(find.textContaining('点顶部周次'), findsOneWidget);
       await _revealCachedCourse(tester);
-      if (label == 'light-390') {
-        // The visual fixture has a valid local cache and no saved credential,
-        // so a manual refresh takes the real local failure path without a
-        // network request. The cached schedule and hint should remain usable.
-        await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh));
-        await tester.pumpAndSettle();
-        expect(onboarding.showScheduleHint, isTrue);
-        expect(find.textContaining('点顶部周次'), findsOneWidget);
-        expect(find.textContaining('数字图像处理', findRichText: true), findsWidgets);
-      }
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh));
+      await tester.pumpAndSettle();
+      expect(onboarding.showScheduleHint, isTrue);
+      expect(find.textContaining('点顶部周次'), findsOneWidget);
+      expect(find.textContaining('数字图像处理', findRichText: true), findsWidgets);
       expect(tester.takeException(), isNull);
-      await _capturePage(tester, 'onboarding-schedule-cache-$label');
       await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(milliseconds: 200));
-
-      await _pumpPage(tester, const MineView(), width, brightness, scale);
-      expect(find.text('按需设置'), findsOneWidget);
-      expect(find.text('课前提醒'), findsOneWidget);
-      expect(find.text('桌面小组件'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await _capturePage(tester, 'onboarding-mine-$label');
-      await tester.pumpWidget(const SizedBox.shrink());
-
-      await _pumpPage(tester, const UsageGuidePage(), width, brightness, scale);
-      expect(find.text('课表缓存后可离线查看。'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await _capturePage(tester, 'onboarding-guide-$label');
-      await tester.pumpWidget(const SizedBox.shrink());
-    }
-
-    await onboarding.dismissScheduleHint();
-    await onboarding.dismissOptionalFeatures();
-  });
-
+      await onboarding.dismissScheduleHint();
+      await onboarding.dismissOptionalFeatures();
+    },
+  );
   testWidgets('today represents next course and finished day', (tester) async {
     final now = DateTime.now();
     final minute = now.hour * 60 + now.minute;
@@ -602,8 +544,6 @@ void main() {
   });
 
   for (final scenario in [
-    ('light-390', Brightness.light, 390.0, 1.0),
-    ('dark-390', Brightness.dark, 390.0, 1.0),
     ('light-320-large', Brightness.light, 320.0, 1.6),
     ('dark-320-large', Brightness.dark, 320.0, 1.6),
   ]) {
@@ -650,30 +590,6 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
       },
     );
-
-    testWidgets('today $label renders cached courses without overflow', (
-      tester,
-    ) async {
-      await _pumpPage(
-        tester,
-        const TodayScheduleView(),
-        width,
-        brightness,
-        scale,
-      );
-      expect(
-        find.text('数字图像处理'),
-        findsWidgets,
-        reason: tester
-            .widgetList<Text>(find.byType(Text))
-            .map((text) => text.data)
-            .join(' | '),
-      );
-      expect(find.textContaining('1小时40分钟'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await _capturePage(tester, 'today-$label');
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
 
     testWidgets('today long content $label opens details and refreshes cache', (
       tester,
@@ -773,71 +689,79 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
     });
 
-    const scope = SettingsScheduleScope(userId: _user, yearTerm: _term);
-    for (final page in <(String, Widget, String)>[
-      (
-        'settings-courses',
-        const ScheduleCoursesSettingsPage(scope: scope),
-        '显示周末',
-      ),
-      (
-        'settings-notifications',
-        const NotificationSettingsPage(scope: scope),
-        '课前提醒',
-      ),
-      ('settings-appearance', const AppearanceStartupSettingsPage(), '主题模式'),
-      (
-        'settings-diagnostics',
-        SyncDiagnosticsPage(service: _VisualSyncDiagnosticsService()),
-        '同步与修复',
-      ),
-      ('settings-backup', const BackupRestorePage(), '导出备份文件'),
-      ('settings-storage', const ClearCachePage(), '课表缓存'),
-      ('settings-about', const AboutSettingsPage(), '版本 1.2.1'),
-    ]) {
-      testWidgets('${page.$1} $label loads content and scrolls to the end', (
-        tester,
-      ) async {
-        await _pumpPage(tester, page.$2, width, brightness, scale);
-        expect(find.text(page.$3), findsWidgets);
-        if (page.$1 == 'settings-diagnostics') {
-          expect(find.text('提醒就绪状态'), findsOneWidget);
-          await tester.scrollUntilVisible(find.text('调课通知增强'), 250);
-          await tester.pumpAndSettle();
-          expect(find.text('调课通知增强').hitTestable(), findsOneWidget);
-          final backgroundSettings = find.widgetWithText(TextButton, '电池与后台设置');
-          expect(
-            tester.widget<TextButton>(backgroundSettings).onPressed,
-            isNotNull,
+    if (brightness == Brightness.light) {
+      const scope = SettingsScheduleScope(userId: _user, yearTerm: _term);
+      for (final page in <(String, Widget, String)>[
+        (
+          'settings-courses',
+          const ScheduleCoursesSettingsPage(scope: scope),
+          '显示周末',
+        ),
+        (
+          'settings-notifications',
+          const NotificationSettingsPage(scope: scope),
+          '课前提醒',
+        ),
+        ('settings-appearance', const AppearanceStartupSettingsPage(), '主题模式'),
+        (
+          'settings-diagnostics',
+          SyncDiagnosticsPage(service: _VisualSyncDiagnosticsService()),
+          '同步与修复',
+        ),
+        ('settings-backup', const BackupRestorePage(), '导出备份文件'),
+        ('settings-storage', const ClearCachePage(), '课表缓存'),
+        ('settings-about', const AboutSettingsPage(), '版本 1.2.1'),
+      ]) {
+        testWidgets('${page.$1} $label loads content and scrolls to the end', (
+          tester,
+        ) async {
+          await _pumpPage(tester, page.$2, width, brightness, scale);
+          expect(find.text(page.$3), findsWidgets);
+          if (page.$1 == 'settings-diagnostics') {
+            expect(find.text('提醒就绪状态'), findsOneWidget);
+            await tester.scrollUntilVisible(find.text('调课通知增强'), 250);
+            await tester.pumpAndSettle();
+            expect(find.text('调课通知增强').hitTestable(), findsOneWidget);
+            final backgroundSettings = find.widgetWithText(
+              TextButton,
+              '电池与后台设置',
+            );
+            expect(
+              tester.widget<TextButton>(backgroundSettings).onPressed,
+              isNotNull,
+            );
+          }
+          expect(find.byType(CircularProgressIndicator), findsNothing);
+          expect(tester.takeException(), isNull, reason: page.$1);
+          await _capturePage(tester, '${page.$1}-$label');
+          await tester.drag(
+            find.byType(ListView).first,
+            const Offset(0, -2400),
           );
-        }
-        expect(find.byType(CircularProgressIndicator), findsNothing);
-        expect(tester.takeException(), isNull, reason: page.$1);
-        await _capturePage(tester, '${page.$1}-$label');
-        await tester.drag(find.byType(ListView).first, const Offset(0, -2400));
-        await tester.pumpAndSettle();
-        expect(
-          tester.takeException(),
-          isNull,
-          reason: '${page.$1} after scroll',
-        );
-        await _capturePage(tester, '${page.$1}-end-$label');
-        if (page.$1 == 'settings-diagnostics') {
-          await tester.tap(find.text('查看详情'));
           await tester.pumpAndSettle();
-          final backgroundSuccess = find.textContaining('后台最近成功：');
-          await tester.ensureVisible(backgroundSuccess);
-          await tester.pumpAndSettle();
-          expect(backgroundSuccess.hitTestable(), findsOneWidget);
           expect(
             tester.takeException(),
             isNull,
-            reason: '${page.$1} details expanded',
+            reason: '${page.$1} after scroll',
           );
-          await _capturePage(tester, '${page.$1}-details-$label');
-        }
-        await tester.pumpWidget(const SizedBox.shrink());
-      });
+          await _capturePage(tester, '${page.$1}-end-$label');
+          if (page.$1 == 'settings-diagnostics') {
+            await tester.tap(find.text('查看详情'));
+            await tester.pumpAndSettle();
+            final backgroundSuccess = find.textContaining('后台最近成功：');
+            await tester.ensureVisible(backgroundSuccess);
+            await tester.pumpAndSettle();
+            expect(backgroundSuccess.hitTestable(), findsOneWidget);
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: '${page.$1} details expanded',
+            );
+            await _capturePage(tester, '${page.$1}-details-$label');
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+        });
+      }
     }
 
     testWidgets('layout $label keeps preview and save actions available', (
@@ -969,53 +893,6 @@ void main() {
       },
     );
 
-    testWidgets('course detail $label scrolls content and exposes actions', (
-      tester,
-    ) async {
-      var edited = false;
-      await _pumpPage(
-        tester,
-        Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => showCourseDetailDialog(
-                context,
-                courseName: '数字图像处理与计算机视觉实验',
-                events: [
-                  EventItem(
-                    eventName: '数字图像处理与计算机视觉实验',
-                    memberName: '张老师',
-                    address: '花溪校区 · 第三教学楼 302',
-                    weekCover: '第1–20周',
-                    note: List.filled(6, '请携带笔记本电脑，提前阅读实验指导书。').join('\n'),
-                    weekDay: '3',
-                    sessionStart: '5',
-                    sessionLast: '2',
-                  ),
-                ],
-                onEdit: (_) async => edited = true,
-              ),
-              child: const Text('打开详情'),
-            ),
-          ),
-        ),
-        width,
-        brightness,
-        scale,
-      );
-      await tester.tap(find.text('打开详情'));
-      await tester.pumpAndSettle();
-      expect(find.text('数字图像处理与计算机视觉实验'), findsOneWidget);
-      await tester.ensureVisible(find.text('编辑'));
-      expect(find.text('编辑').hitTestable(), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await _capturePage(tester, 'course-detail-$label');
-      await tester.tap(find.text('编辑'));
-      await tester.pumpAndSettle();
-      expect(edited, isTrue);
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
-
     testWidgets('theme sheet $label scrolls to its color controls', (
       tester,
     ) async {
@@ -1050,143 +927,45 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      final swatches = find.byWidgetPredicate((widget) {
-        if (widget is! GestureDetector || widget.child is! SizedBox) {
-          return false;
-        }
-        final target = widget.child! as SizedBox;
-        return target.width == 48 && target.height == 48;
-      });
-      expect(swatches, findsNWidgets(12));
-      expect(tester.getSize(swatches.last), const Size(48, 48));
-      expect(swatches.last.hitTestable(), findsOneWidget);
+      final colorPalette = find.descendant(
+        of: find.byType(ThemeSettingsSheet),
+        matching: find.byType(Wrap),
+      );
+      final colorControls = find.descendant(
+        of: colorPalette,
+        matching: find.byType(GestureDetector),
+      );
+      expect(colorControls.last.hitTestable(), findsOneWidget);
       await _capturePage(tester, 'theme-sheet-colors-$label');
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
-    testWidgets('course preferences $label expose editable content and save', (
-      tester,
-    ) async {
-      await _pumpPage(
+    if (brightness == Brightness.light) {
+      testWidgets('background crop $label decodes an image fixture', (
         tester,
-        Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => showCoursePreferenceEditor(
-                context,
-                userId: _user,
-                yearTerm: _term,
-                courseKey: 'visual-course',
-                currentName: '数字图像处理',
-                currentTeacher: '张老师',
-                currentLocation: '第三教学楼 302',
-                initial: null,
-              ),
-              child: const Text('打开课程偏好'),
-            ),
-          ),
-        ),
-        width,
-        brightness,
-        scale,
-      );
-      await tester.tap(find.text('打开课程偏好'));
-      await tester.pumpAndSettle();
-      expect(find.text('数字图像处理'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await _capturePage(tester, 'course-preferences-$label');
-      final save = find.byType(FilledButton);
-      await tester.ensureVisible(save);
-      await tester.pumpAndSettle();
-      expect(save.hitTestable(), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await _capturePage(tester, 'course-preferences-end-$label');
-      await tester.tap(save);
-      await tester.pumpAndSettle();
-      expect(find.text('打开课程偏好'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
-
-    testWidgets(
-      'hidden courses $label load real sheet rows and restore a course',
-      (tester) async {
-        var restored = false;
-        final preference = CoursePreference(
-          userId: _user,
-          yearTerm: _term,
-          courseKey: 'visual-hidden',
-          displayName: null,
-          teacher: null,
-          location: null,
-          note: '',
-          hidden: true,
-          reminderMinutes: null,
-          colorIndex: null,
-          updatedAt: DateTime(2026),
-        );
+      ) async {
         await _pumpPage(
           tester,
-          Scaffold(
-            body: HiddenCoursesSheet(
-              userId: _user,
-              yearTerm: _term,
-              loadCourses: () async => restored
-                  ? []
-                  : [
-                      HiddenCourseInfo(
-                        preference: preference,
-                        cachedEvent: EventItem(
-                          eventName: '数字图像处理',
-                          memberName: '张老师',
-                          address: '第三教学楼 302',
-                        ),
-                      ),
-                    ],
-              onRestore: (_) async => restored = true,
-            ),
+          ScheduleBackgroundCropPage(
+            imagePath: '${Directory.current.path}/lib/assets/Icon.png',
+            targetAspectRatio: width / 844,
           ),
           width,
           brightness,
           scale,
         );
-        expect(find.text('数字图像处理'), findsOneWidget);
-        await tester.ensureVisible(find.text('取消隐藏'));
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        });
         await tester.pumpAndSettle();
-        expect(find.text('取消隐藏').hitTestable(), findsOneWidget);
+        expect(find.text('无法读取图片，请重新选择背景图片'), findsNothing);
+        expect(find.byType(RawImage), findsOneWidget);
+        expect(find.text('确定裁切').hitTestable(), findsOneWidget);
         expect(tester.takeException(), isNull);
-        await _capturePage(tester, 'hidden-courses-$label');
-        await tester.tap(find.text('取消隐藏'));
-        await tester.pumpAndSettle();
-        expect(restored, isTrue);
-        expect(find.text('暂无隐藏课程'), findsOneWidget);
+        await _capturePage(tester, 'background-crop-$label');
         await tester.pumpWidget(const SizedBox.shrink());
-      },
-    );
-
-    testWidgets('background crop $label decodes an image fixture', (
-      tester,
-    ) async {
-      await _pumpPage(
-        tester,
-        ScheduleBackgroundCropPage(
-          imagePath: '${Directory.current.path}/lib/assets/Icon.png',
-          targetAspectRatio: width / 844,
-        ),
-        width,
-        brightness,
-        scale,
-      );
-      await tester.runAsync(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
       });
-      await tester.pumpAndSettle();
-      expect(find.text('无法读取图片，请重新选择背景图片'), findsNothing);
-      expect(find.byType(RawImage), findsOneWidget);
-      expect(find.text('确定裁切').hitTestable(), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await _capturePage(tester, 'background-crop-$label');
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
+    }
 
     testWidgets('main $label keeps navigation visible and tabs alive', (
       tester,

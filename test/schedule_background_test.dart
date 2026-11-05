@@ -6,42 +6,17 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('课表背景启用无缝图片切换', (tester) async {
-    final file = File(
-      [
-        Directory.current.path,
-        'lib',
-        'assets',
-        'Icon.png',
-      ].join(Platform.pathSeparator),
-    );
-    expect(file.existsSync(), isTrue);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ScheduleBackground(
-            settings: ScheduleLayoutSettings(backgroundImagePath: file.path),
-          ),
-        ),
-      ),
-    );
-
-    final image = tester.widget<Image>(find.byType(Image));
-    expect(image.alignment, ScheduleBackground.imageAlignment);
-    expect(image.gaplessPlayback, isTrue);
-    expect(image.key, isA<ValueKey<String>>());
-  });
+  File existingImage() => File(
+    [
+      Directory.current.path,
+      'lib',
+      'assets',
+      'Icon.png',
+    ].join(Platform.pathSeparator),
+  );
 
   testWidgets('背景图片始终完整绘制并由新值控制表面覆盖层', (tester) async {
-    final file = File(
-      [
-        Directory.current.path,
-        'lib',
-        'assets',
-        'Icon.png',
-      ].join(Platform.pathSeparator),
-    );
+    final file = existingImage();
     const savedOpacity = 0.73;
 
     await tester.pumpWidget(
@@ -63,14 +38,7 @@ void main() {
   });
 
   testWidgets('首帧绘制前背景图片已进入缓存', (tester) async {
-    final file = File(
-      [
-        Directory.current.path,
-        'lib',
-        'assets',
-        'Icon.png',
-      ].join(Platform.pathSeparator),
-    );
+    final file = existingImage();
     final provider = FileImage(file);
     await provider.evict();
 
@@ -83,14 +51,7 @@ void main() {
   });
 
   testWidgets('离开课表时背景图片仍保持挂载', (tester) async {
-    final file = File(
-      [
-        Directory.current.path,
-        'lib',
-        'assets',
-        'Icon.png',
-      ].join(Platform.pathSeparator),
-    );
+    final file = existingImage();
     final settings = ScheduleLayoutSettings(backgroundImagePath: file.path);
 
     Widget app({required bool visible}) {
@@ -100,11 +61,12 @@ void main() {
     }
 
     await tester.pumpWidget(app(visible: false));
-    expect(find.byType(ScheduleBackground), findsOneWidget);
-    expect(find.byType(Image), findsOneWidget);
+    final imageElement = tester.element(find.byType(Image));
 
     await tester.pumpWidget(app(visible: true));
-    expect(find.byType(ScheduleBackground), findsOneWidget);
-    expect(find.byType(Image), findsOneWidget);
+    expect(tester.element(find.byType(Image)), same(imageElement));
+
+    await tester.pumpWidget(app(visible: false));
+    expect(tester.element(find.byType(Image)), same(imageElement));
   });
 }

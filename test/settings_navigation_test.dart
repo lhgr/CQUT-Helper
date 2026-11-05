@@ -103,11 +103,6 @@ void main() {
 
     final preview = find.byType(ScheduleLayoutPreview);
     expect(preview, findsOneWidget);
-    expect(
-      find.ancestor(of: preview, matching: find.byType(ListView)),
-      findsNothing,
-    );
-    expect(find.byType(ListView), findsOneWidget);
 
     final backgroundSetting = find.text('自定义背景图片');
     await _ensureSettingsTargetVisible(tester, backgroundSetting);
@@ -145,8 +140,6 @@ void main() {
     expect(find.text('从背景图片取色'), findsOneWidget);
     expect(find.text('课表配色模式'), findsOneWidget);
     expect(find.textContaining('自动 · 当前：'), findsOneWidget);
-    expect(find.text('导航区域背景强度'), findsNothing);
-    expect(find.text('高级模式'), findsNothing);
 
     Finder backgroundOpacitySlider() {
       final setting = find

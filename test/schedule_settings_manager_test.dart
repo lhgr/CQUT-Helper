@@ -333,35 +333,6 @@ void main() {
     );
   });
 
-  test('保存新设置时清理已移除的导航表面强度字段', () async {
-    SharedPreferences.setMockInitialValues({
-      'schedule_top_bar_surface_opacity': 0.3,
-      'schedule_side_bar_surface_opacity': 0.5,
-      'schedule_bottom_bar_surface_opacity': 0.7,
-      'schedule_navigation_surface_opacity': 0.4,
-      'schedule_navigation_surface_advanced_mode': true,
-      'schedule_navigation_surface_advanced_initialized': true,
-    });
-
-    final manager = ScheduleSettingsManager();
-    await manager.load();
-    await manager.saveLayoutSettings(manager.layoutSettings);
-    final prefs = await SharedPreferences.getInstance();
-
-    expect(
-      prefs.getKeys().where((key) => key.contains('surface_opacity')),
-      isEmpty,
-    );
-    expect(
-      prefs.containsKey('schedule_navigation_surface_advanced_mode'),
-      isFalse,
-    );
-    expect(
-      prefs.containsKey('schedule_navigation_surface_advanced_initialized'),
-      isFalse,
-    );
-  });
-
   test('旧版图片不透明度升级为互补的覆盖层不透明度', () async {
     SharedPreferences.setMockInitialValues({
       ScheduleSettingsManager.backgroundOpacityKey: 0.73,

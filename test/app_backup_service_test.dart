@@ -41,12 +41,15 @@ void main() {
     );
   });
 
-  test('课表局部配色设置可被备份识别并完整恢复', () async {
+  test('课表配色与背景不透明度语义版本可完整备份恢复', () async {
     SharedPreferences.setMockInitialValues({
       'account': 'source-account',
       'schedule_grid_line_opacity': 0.65,
       ScheduleSettingsManager.scheduleColorModeKey: 'dark',
       ScheduleSettingsManager.analyzedBackgroundBrightnessKey: 'light',
+      ScheduleSettingsManager.backgroundOpacityKey: 0.65,
+      ScheduleSettingsManager.backgroundOpacitySemanticsVersionKey:
+          ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
       'academic_calendar_snapshot_v1_2026-2027-1': '{"revision":"r1"}',
       'not_allowed': 'must-not-be-backed-up',
     });
@@ -57,6 +60,15 @@ void main() {
     );
 
     expect(backedUpSettings['schedule_grid_line_opacity'], 0.65);
+    expect(
+      backedUpSettings[ScheduleSettingsManager.backgroundOpacityKey],
+      0.65,
+    );
+    expect(
+      backedUpSettings[ScheduleSettingsManager
+          .backgroundOpacitySemanticsVersionKey],
+      ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
+    );
     expect(
       backedUpSettings[ScheduleSettingsManager.scheduleColorModeKey],
       'dark',
@@ -85,57 +97,18 @@ void main() {
       account: 'target-account',
     );
 
-    expect(restoredCount, 3);
+    expect(restoredCount, 5);
     expect(targetPreferences.getDouble('schedule_grid_line_opacity'), 0.65);
 
     final manager = ScheduleSettingsManager();
     await manager.load();
     expect(manager.layoutSettings.gridLineOpacity, 0.65);
     expect(manager.layoutSettings.colorMode, ScheduleColorMode.dark);
+    expect(manager.layoutSettings.backgroundOpacity, 0.65);
     expect(
       manager.layoutSettings.analyzedBackgroundBrightness,
       Brightness.light,
     );
-  });
-
-  test('新版背景图片不透明度语义版本随备份完整恢复', () async {
-    SharedPreferences.setMockInitialValues({
-      'account': 'source-account',
-      ScheduleSettingsManager.backgroundOpacityKey: 0.65,
-      ScheduleSettingsManager.backgroundOpacitySemanticsVersionKey:
-          ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
-    });
-    final sourcePreferences = await SharedPreferences.getInstance();
-    final backedUpSettings = AppBackupService.collectSettingsForTesting(
-      sourcePreferences,
-      'source-account',
-    );
-
-    expect(
-      backedUpSettings[ScheduleSettingsManager.backgroundOpacityKey],
-      0.65,
-    );
-    expect(
-      backedUpSettings[ScheduleSettingsManager
-          .backgroundOpacitySemanticsVersionKey],
-      ScheduleSettingsManager.currentBackgroundOpacitySemanticsVersion,
-    );
-
-    final serializedSettings = (jsonDecode(jsonEncode(backedUpSettings)) as Map)
-        .cast<String, dynamic>();
-    SharedPreferences.setMockInitialValues({'account': 'target-account'});
-    final targetPreferences = await SharedPreferences.getInstance();
-    final restoredCount = await AppBackupService.restoreSettingsForTesting(
-      prefs: targetPreferences,
-      settings: serializedSettings,
-      sourceAccount: 'source-account',
-      account: 'target-account',
-    );
-
-    expect(restoredCount, 2);
-    final manager = ScheduleSettingsManager();
-    await manager.load();
-    expect(manager.layoutSettings.backgroundOpacity, 0.65);
   });
 
   test('提醒偏好会备份恢复，系统授权状态保持设备本地', () async {
