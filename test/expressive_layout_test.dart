@@ -34,6 +34,8 @@ import 'package:cqut_helper/pages/Settings/settings_schedule_scope.dart';
 import 'package:cqut_helper/pages/Settings/sync_diagnostics_page.dart';
 import 'package:cqut_helper/pages/Settings/sync_diagnostics_service.dart';
 import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
+import 'package:cqut_helper/utils/widget_navigation.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart';
@@ -407,6 +409,61 @@ void main() {
       await onboarding.dismissOptionalFeatures();
     },
   );
+  testWidgets('today widget cold navigation resolves a cross-week teaching date', (tester) async {
+    final now = DateTime.now();
+    final target = now.add(const Duration(days: 8));
+    await _setCalendar([
+      AcademicCalendarDay(
+        date: target,
+        kind: AcademicCalendarDayKind.teachingDay,
+        scheduleDate: DateTime(now.year, now.month, now.day),
+        label: '调休安排',
+      ),
+    ]);
+    WidgetNavigation.request.value = WidgetNavigationRequest(
+      token: 10001,
+      dayOffset: 0,
+      date: DateTime(target.year, target.month, target.day),
+    );
+    addTearDown(() => WidgetNavigation.request.value = null);
+    await _pumpPage(tester, const TodayScheduleView(), 390, Brightness.light, 1);
+    expect(find.text('${target.month}月${target.day}日课表'), findsOneWidget);
+    expect(find.text('数字图像处理'), findsOneWidget);
+    expect(find.textContaining('调休：原'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('回到今日'));
+    await tester.pumpAndSettle();
+    expect(find.text('今日'), findsOneWidget);
+    expect(find.text('今日课程'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('today widget pending sync runs once after an empty initial load', (tester) async {
+    _scheduleAvailable = false;
+    final states = <String>[];
+    WidgetUpdater.debugIsIOSOverride = true;
+    WidgetUpdater.debugMethodInvoker = (_, arguments) async {
+      final snapshot = jsonDecode(arguments['snapshotJson'] as String) as Map;
+      states.add(snapshot['refresh']['state'] as String);
+    };
+    WidgetNavigation.request.value = const WidgetNavigationRequest(
+      token: 10002,
+      dayOffset: 0,
+      action: 'sync',
+    );
+    addTearDown(() {
+      WidgetUpdater.resetDebugOverrides();
+      WidgetNavigation.request.value = null;
+    });
+    await _pumpPage(tester, const TodayScheduleView(), 390, Brightness.light, 1);
+    expect(states, ['loading', 'credential_invalid']);
+    await tester.pump(const Duration(seconds: 1));
+    expect(states, hasLength(2));
+    expect(find.text('重新登录'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('today represents next course and finished day', (tester) async {
     final now = DateTime.now();
     final minute = now.hour * 60 + now.minute;

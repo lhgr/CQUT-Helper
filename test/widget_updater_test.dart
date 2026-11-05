@@ -1,10 +1,46 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   tearDown(WidgetUpdater.resetDebugOverrides);
+
+  test(
+    'iOS writes one atomic account-scoped snapshot and orders logout',
+    () async {
+      SharedPreferences.setMockInitialValues({'account': 'student'});
+      WidgetUpdater.debugIsAndroidOverride = false;
+      WidgetUpdater.debugIsIOSOverride = true;
+      final firstStarted = Completer<void>();
+      final releaseFirst = Completer<void>();
+      final users = <String>[];
+      WidgetUpdater.debugMethodInvoker = (method, arguments) async {
+        expect(method, 'updateTodayWidget');
+        final snapshot = jsonDecode(arguments['snapshotJson'] as String) as Map;
+        users.add(snapshot['activeUserId'] as String);
+        if (users.length == 1) {
+          firstStarted.complete();
+          await releaseFirst.future;
+        }
+      };
+      final first = WidgetUpdater.updateTodayWidget();
+      await firstStarted.future;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('account');
+      final logout = WidgetUpdater.updateTodayWidget(trigger: 'logout');
+      expect(users, ['student']);
+      releaseFirst.complete();
+      expect(await first, WidgetUpdateResult.accepted);
+      expect(await logout, WidgetUpdateResult.accepted);
+      expect(users, ['student', '']);
+    },
+  );
 
   test('retries a transient platform bridge failure', () async {
     WidgetUpdater.debugIsAndroidOverride = true;

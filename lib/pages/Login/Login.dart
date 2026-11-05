@@ -3,6 +3,7 @@ import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
 import 'package:cqut_helper/utils/diagnostic_operation.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -101,6 +102,7 @@ class _LoginPageState extends State<LoginPage> {
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('account', account);
+        await WidgetUpdater.updateTodayWidget(trigger: 'login');
         await prefs.setInt(
           'schedule_notice_login_marker_$account',
           DateTime.now().millisecondsSinceEpoch,

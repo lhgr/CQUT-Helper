@@ -78,20 +78,12 @@ jobs:
         env:
           IPA_FILENAME: ${{ steps.version.outputs.ipa_filename }}
         run: |
+          python3 tool/verify_ios_widgets.py build/ios/iphoneos/Runner.app
           mkdir -p build/ios-sideload/Payload
           cp -R build/ios/iphoneos/Runner.app build/ios-sideload/Payload/
           cd build/ios-sideload
           zip -qry "$IPA_FILENAME" Payload
-          python3 - "$IPA_FILENAME" <<'PY'
-          import sys
-          import zipfile
-          with zipfile.ZipFile(sys.argv[1]) as ipa:
-              if "Payload/Runner.app/Info.plist" not in ipa.namelist():
-                  raise SystemExit("IPA missing Payload/Runner.app/Info.plist")
-              bad_entry = ipa.testzip()
-              if bad_entry:
-                  raise SystemExit(f"IPA contains a corrupt entry: {bad_entry}")
-          PY
+          python3 ../../tool/verify_ios_widgets.py Payload/Runner.app --ipa "$IPA_FILENAME"
           shasum -a 256 "$IPA_FILENAME" > SHA256SUMS.txt
 
       - name: Upload unsigned IPA

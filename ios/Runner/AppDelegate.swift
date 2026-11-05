@@ -27,6 +27,15 @@ import UserNotifications
         self?.documents.handle(call, result: result)
       }
     }
+    WidgetBridge.shared.register(messenger: registrar.messenger())
+  }
+
+  override func application(
+    _ app: UIApplication, open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    if WidgetBridge.shared.receive(url) { return true }
+    return super.application(app, open: url, options: options)
   }
 }
 

@@ -28,7 +28,7 @@
 | --- | --- |
 | **今日与周课表** | 查看当天课程和完整周课表，支持周次切换、周末显示和离线缓存 |
 | **假期与调休校历** | 根据学校通知的放假与调休日期将调休当天映射到对应课表安排 |
-| **桌面小组件** | Android 提供今日课程、日视图、近日课程、超小课程和垂直列表等样式 |
+| **桌面小组件** | Android 和 iPhone 提供今日课程、日视图、近日课程、超小课程和垂直列表五种样式 |
 | **课前提醒** | 根据本机课表安排课程通知，可设置默认提前时间 |
 | **调课通知增强** | 可选查询当前学期调课信息，记录新增、变更和撤销，并刷新受影响教学周。iOS 在打开应用或手动同步时查询 |
 | **课程个性化** | 支持课程别名、备注、颜色、隐藏状态，以及课程卡片和课表布局调整 |
@@ -63,7 +63,7 @@
 | 登录、今日与周课表、缓存、校历、个性化、主题、备份 | 支持 | 支持 |
 | 课表与调课同步 | 前台、手动及系统安排的后台任务 | 启动、返回前台、手动同步 |
 | 课前提醒 | 通知及精确闹钟授权后安排 | 通知授权后安排近期本地提醒 |
-| 桌面小组件 | 支持 | 本期未实现 |
+| 桌面小组件 | 五种样式 | 五种 WidgetKit 样式，iOS 15+ 展示，iOS 17+ 支持组件内日期切换 |
 | 课程期间自动勿扰或静音 | 支持的 Android 设备可开启 | 本期未实现 |
 
 iOS 按最近课程时间优先安排本地通知，待发送通知总数最多 64 条。设置中的
@@ -105,6 +105,12 @@ iOS 按最近课程时间优先安排本地通知，待发送通知总数最多 
 6. 按所用账号和侧载工具的有效期要求续签。应用内“查看发行版”打开发行页，更新时
    下载对应 IPA 并重新签名安装。
 
+个人签名时需保留 `Runner.app/PlugIns/CQUTWidgetsExtension.appex`。应用与扩展必须由
+同一开发团队签名，并使用该团队已配置、配置描述文件允许的同一 App Group。
+重新签名时需同时保留或调整两者的 App Group entitlement 与 `Info.plist` 中
+`CQUTWidgetAppGroup`，所有值使用相同标识才能共享课表。所用账号与侧载工具能否保留
+扩展和 App Group，需按实际签名配置验证。
+
 侧载工具说明见 [Sideloadly 官网](https://sideloadly.io/)。
 
 ## 🚀 首次使用
@@ -112,9 +118,21 @@ iOS 按最近课程时间优先安排本地通知，待发送通知总数最多 
 1. 使用学校账号登录，进入课表并完成首次同步。
 2. 按需调整周末显示、课程卡片、主题和课表背景。
 3. 如需课前提醒，在“设置 → 通知与提醒”中开启相关权限。
-4. Android 添加桌面小组件后，如果显示“课表尚未同步”，请回到应用同步一次课表。
+4. 添加桌面小组件后，如果显示“课表尚未同步”，请回到应用同步一次课表。iPhone 在主屏幕长按空白处，添加小组件并搜索“CQUT”，选择样式及尺寸。
 5. 按需在通知设置或课表设置中开启“调课通知增强”。iOS 会在启动、返回前台和手动同步时检查。
 6. iPhone 开启课前提醒后，在“同步与修复”确认实际提醒覆盖，定期打开应用更新。
+
+### iPhone 桌面小组件
+
+先打开应用完成登录与课表同步，再在主屏幕添加 CQUT 小组件。长按已添加的组件并选择
+“编辑小组件”，可选择显示日期、外观及同步提醒天数。课程别名等信息沿用应用设置。
+组件使用应用同步到本机的
+共享快照，打开应用、同步课表或修改相关设置后会请求刷新，实际刷新时间由 iOS 安排。
+
+五种样式覆盖今日课程、日视图、近日课程、超小课程和垂直列表。iOS 17+ 的日期按钮
+可直接切换查看日期。同一样式且配置相同的组件共享切换状态。iOS 15/16 点击组件会打开
+应用。列表按组件尺寸显示固定数量的课程，
+超出部分显示剩余数量，点击组件进入完整课表。退出登录会清除共享课程快照。
 
 ## 🔒 隐私与网络请求
 
@@ -189,12 +207,20 @@ mkdir -p build/ios-sideload/Payload
 cp -R build/ios/iphoneos/Runner.app build/ios-sideload/Payload/
 cd build/ios-sideload
 zip -qry "$ipa_filename" Payload
+python3 ../../tool/verify_ios_widgets.py Payload/Runner.app --ipa "$ipa_filename"
 shasum -a 256 "$ipa_filename" > SHA256SUMS.txt
 ```
 
 CI 与发布 workflow 均固定使用 Flutter 3.47.7。`Quality Gate` 在 push、Pull Request
 和默认手动运行时执行分析、测试与 Release 构建。iOS 在独立 macOS 作业中执行
-`flutter build ios --release --no-codesign`，构建日志上传为 `ios-release-build-log`。
+`flutter build ios --release --no-codesign`，构建日志上传为 `ios-release-build-log`。构建后校验主应用与嵌入的小组件扩展版本、
+App Group 和扩展可执行文件，随后在可用 iPhone 模拟器运行 `WidgetSnapshotTests`，
+结果上传为 `ios-widget-tests`。未签名 IPA 打包也会校验扩展是否保留。
+
+Xcode 中 `Runner` 与 `CQUTWidgetsExtension` 使用同一签名团队，为两个 bundle ID
+启用同一 App Group。默认标识为 `group.com.dawndrizzle.wing.cqut`，可通过共同的
+`CQUT_WIDGET_APP_GROUP` build setting 覆盖。该设置同时用于两个 target 的 entitlements
+和运行时 `CQUTWidgetAppGroup`。扩展与主应用均使用 Flutter 数字版本和 build，最低 iOS 15。
 
 需要查看 iOS 界面时，手动运行 `Quality Gate` 并勾选 `capture_ios_screenshots`。
 该参数默认关闭，开启后额外构建 Debug 模拟器应用、启动 iPhone 模拟器并安装运行，
@@ -218,6 +244,9 @@ Alpha、Beta 后缀用于展示和文件名，原生构建版本始终采用 `pu
 macOS CI 已通过 iOS 模拟器编译、安装与启动验收，截图确认登录页正常显示，
 设备 Release 未签名 IPA 构建通过，下载产物的 SHA-256 校验匹配。
 [查看 CI 验收记录](https://github.com/lhgr/CQUT-Helper/actions/runs/42015154561)。
+
+小组件扩展、共享快照、日期切换与打包校验已接入源码及 CI。本次改动尚待 macOS CI
+编译与原生测试验收，组件添加、系统刷新、交互与 App Group 重签名仍待 iPhone 真机验证。
 
 核心业务已有自动测试覆盖。iPhone 真机登录与同步、通知授权与锁屏提醒、个人签名安装
 及续签、文件系统交互仍待真机验证。

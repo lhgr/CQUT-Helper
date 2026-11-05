@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/widget_snapshot.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -19,6 +20,11 @@ class WidgetUpdater {
   static bool? debugIsAndroidOverride;
 
   @visibleForTesting
+  static bool? debugIsIOSOverride;
+
+  static Future<void> _iosUpdates = Future<void>.value();
+
+  @visibleForTesting
   static WidgetMethodInvoker? debugMethodInvoker;
 
   @visibleForTesting
@@ -27,16 +33,26 @@ class WidgetUpdater {
   static Future<WidgetUpdateResult> updateTodayWidget({
     String? themeMode,
     String? trigger,
-  }) => AppLogger.I.runWithTraceIdAsync(
-    AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
-    () => _updateTodayWidget(themeMode: themeMode, trigger: trigger),
-  );
+  }) {
+    final isIOS = debugIsIOSOverride ?? Platform.isIOS;
+    Future<WidgetUpdateResult> update() => AppLogger.I.runWithTraceIdAsync(
+      AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+      () => _updateTodayWidget(themeMode: themeMode, trigger: trigger),
+    );
+    if (!isIOS) return update();
+    // Build after earlier deliveries complete so retries cannot overwrite a
+    // newer account, logout, customization, or theme snapshot.
+    final result = _iosUpdates.then((_) => update());
+    _iosUpdates = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
 
   static Future<WidgetUpdateResult> _updateTodayWidget({
     String? themeMode,
     String? trigger,
   }) async {
-    if (!(debugIsAndroidOverride ?? Platform.isAndroid)) {
+    final isIOS = debugIsIOSOverride ?? Platform.isIOS;
+    if (!(debugIsAndroidOverride ?? Platform.isAndroid) && !isIOS) {
       return WidgetUpdateResult.notSupported;
     }
     final arguments = <String, Object?>{
@@ -53,6 +69,11 @@ class WidgetUpdater {
 
     for (var attempt = 1; attempt <= 2; attempt++) {
       try {
+        if (isIOS) {
+          arguments['snapshotJson'] = await WidgetSnapshot.encode(
+            themeMode: themeMode,
+          );
+        }
         await invoke('updateTodayWidget', arguments);
         AppLogger.I.info(
           'WidgetUpdater',
@@ -104,6 +125,7 @@ class WidgetUpdater {
   @visibleForTesting
   static void resetDebugOverrides() {
     debugIsAndroidOverride = null;
+    debugIsIOSOverride = null;
     debugMethodInvoker = null;
     debugDelay = null;
   }

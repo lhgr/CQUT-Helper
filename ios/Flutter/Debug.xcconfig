@@ -1,1 +1,2 @@
 #include "Generated.xcconfig"
+CQUT_WIDGET_APP_GROUP = group.com.dawndrizzle.wing.cqut

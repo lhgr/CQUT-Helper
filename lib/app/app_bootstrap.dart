@@ -10,6 +10,7 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -54,6 +55,9 @@ class _DiagnosticLifecycleObserver extends WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(AppLogger.I.pruneLogs());
+      if (LocalNotifications.isIOS) {
+        unawaited(WidgetUpdater.updateTodayWidget(trigger: 'app_resumed'));
+      }
     } else if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {

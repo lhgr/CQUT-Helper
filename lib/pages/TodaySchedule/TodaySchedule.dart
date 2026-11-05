@@ -12,6 +12,7 @@ import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:material_ui/material_ui.dart';
@@ -36,6 +37,12 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   AcademicCalendarSnapshot? _academicCalendar;
   String? _academicCalendarTerm;
   int _lastHandledWidgetNavigationToken = 0;
+  bool _handlingWidgetNavigation = false;
+  DateTime? _widgetDate;
+  DateTime get _displayDate => _widgetDate ?? DateTime.now();
+  bool get _displayingToday =>
+      academicCalendarDateKey(_displayDate) ==
+      academicCalendarDateKey(DateTime.now());
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
   int _quoteRefreshToken = 0;
@@ -102,12 +109,12 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     AcademicCalendarSnapshot calendar,
   ) async {
     final data = _scheduleData;
-    final rule = calendar.dayAt(DateTime.now());
+    final rule = calendar.dayAt(_displayDate);
     final sourceDate = rule?.isTeachingDay == true ? rule!.scheduleDate : null;
     if (data == null || sourceDate == null) return;
     final range = ScheduleDate.tryExtractWeekRange(
       data.weekDayList,
-      reference: DateTime.now(),
+      reference: _displayDate,
     );
     final currentWeek = int.tryParse((data.weekNum ?? '').trim());
     final term = (data.yearTerm ?? '').trim();
@@ -154,50 +161,112 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     _onWidgetNavigation();
   }
 
-  void _onWidgetNavigation() {
+  Future<void> _onWidgetNavigation() async {
     final navigation = WidgetNavigation.request.value;
-    final data = _scheduleData;
     if (!mounted ||
-        data == null ||
+        !widget.isActive ||
+        _loading ||
+        _handlingWidgetNavigation ||
         navigation == null ||
-        !navigation.hasCourse ||
         navigation.token == _lastHandledWidgetNavigationToken) {
       return;
     }
-    final eventId = navigation.eventId?.trim() ?? '';
-    final eventName = navigation.eventName?.trim() ?? '';
-    final targetWeekDay = DateTime.now()
-        .add(Duration(days: navigation.dayOffset))
-        .weekday
-        .toString();
-    final events = (data.eventList ?? const <EventItem>[])
-        .where((event) {
-          final sameCourse = eventId.isNotEmpty
-              ? (event.eventID ?? '').trim() == eventId
-              : (event.eventName ?? '').trim() == eventName;
-          return sameCourse && (event.weekDay ?? '').trim() == targetWeekDay;
-        })
-        .toList(growable: false);
-    if (events.isEmpty) return;
-
-    _lastHandledWidgetNavigationToken = navigation.token;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _handlingWidgetNavigation = true;
+    try {
+      if (WidgetNavigation.consumeSyncAction(navigation)) {
+        await _loadSchedule(forceRefresh: true, widgetSync: true);
+      }
       if (!mounted) return;
-      showCourseDetailDialog(
-        context,
-        courseName: (events.first.eventName ?? '').trim(),
-        events: events,
+      final data = _scheduleData;
+      if (data == null) return;
+      _lastHandledWidgetNavigationToken = navigation.token;
+      final target = navigation.targetDate();
+      final term = (data.yearTerm ?? '').trim();
+      final calendar = await AcademicCalendarManager.instance.loadCached(term);
+      if (!mounted) return;
+      setState(() => _academicCalendar = calendar);
+      final sourceDate = calendar?.dayAt(target)?.scheduleDate ?? target;
+      final week = ScheduleDate.weekNumberForDate(data, sourceDate);
+      if (week != null && !_controller.weekCache.containsKey(week)) {
+        await _controller.ensureWeekLoaded(
+          week.toString(),
+          term,
+          updateLastViewed: false,
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        _widgetDate =
+            academicCalendarDateKey(target) ==
+                academicCalendarDateKey(DateTime.now())
+            ? null
+            : target;
+      });
+      if (!navigation.hasCourse) return;
+      final resolved = resolveAcademicCalendarDay(
+        actualDate: target,
+        schedules: {..._controller.weekCache.values, data},
+        calendar: calendar,
       );
-    });
+      final eventId = navigation.eventId?.trim() ?? '';
+      final eventName = navigation.eventName?.trim() ?? '';
+      final events = resolved.events
+          .map((item) => item.event)
+          .where(
+            (event) => eventId.isNotEmpty
+                ? (event.eventID ?? '').trim() == eventId
+                : (event.eventName ?? '').trim() == eventName,
+          )
+          .toList(growable: false);
+      if (events.isEmpty) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showCourseDetailDialog(
+          context,
+          courseName: (events.first.eventName ?? '').trim(),
+          events: events,
+        );
+      });
+    } catch (error, stackTrace) {
+      AppLogger.I.warn(
+        'TodaySchedule',
+        'widget navigation failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      _handlingWidgetNavigation = false;
+      if (WidgetNavigation.request.value?.token != navigation.token) {
+        unawaited(_onWidgetNavigation());
+      }
+    }
   }
 
-  Future<void> _loadSchedule({bool forceRefresh = false}) =>
-      AppLogger.I.runWithTraceIdAsync(
-        AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
-        () => _loadScheduleInOperation(forceRefresh: forceRefresh),
+  @override
+  void didUpdateWidget(covariant TodayScheduleView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _onWidgetNavigation(),
       );
+    }
+  }
 
-  Future<void> _loadScheduleInOperation({required bool forceRefresh}) async {
+  Future<void> _loadSchedule({
+    bool forceRefresh = false,
+    bool widgetSync = false,
+  }) => AppLogger.I.runWithTraceIdAsync(
+    AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+    () => _loadScheduleInOperation(
+      forceRefresh: forceRefresh,
+      widgetSync: widgetSync,
+    ),
+  );
+
+  Future<void> _loadScheduleInOperation({
+    required bool forceRefresh,
+    required bool widgetSync,
+  }) async {
     if (!mounted) return;
     setState(() {
       if (forceRefresh) {
@@ -210,6 +279,11 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
 
     ScheduleData? cached;
     try {
+      if (widgetSync) {
+        await _controller.loadCredentials();
+        await ScheduleRefreshState.markLoading(_controller.userId ?? '');
+        await WidgetUpdater.updateTodayWidget(trigger: 'widget_manual_loading');
+      }
       if (!forceRefresh) {
         cached = await _controller.loadFromCache();
         if (cached != null && mounted) {
@@ -261,6 +335,14 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         unawaited(_loadAcademicCalendar(term, checkDue: true));
       }
     } catch (e, stackTrace) {
+      if (widgetSync) {
+        await ScheduleRefreshState.markFailure(
+          _controller.userId ?? '',
+          failure: ScheduleRefreshState.looksLikeCredentialFailure(e)
+              ? ScheduleWidgetRefreshFailure.credentialInvalid
+              : ScheduleWidgetRefreshFailure.generic,
+        );
+      }
       AppLogger.I.logOperationOutcome(
         'TodaySchedule',
         'Failed to load today schedule',
@@ -288,10 +370,16 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
         _error = _mapError(e);
       });
     } finally {
+      if (widgetSync) {
+        await WidgetUpdater.updateTodayWidget(
+          trigger: 'widget_manual_complete',
+        );
+      }
       if (mounted) {
         setState(() {
           _loading = false;
         });
+        unawaited(_onWidgetNavigation());
       }
     }
   }
@@ -348,7 +436,10 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
 
   List<EventItem> _todayEvents(ScheduleData data) {
     final resolved = _resolvedToday(data);
-    if (resolved != null && _academicCalendar != null) {
+    if (resolved != null &&
+        (resolved.sourceSchedule != null ||
+            _academicCalendar != null ||
+            !_displayingToday)) {
       final events = resolved.events
           .map((item) {
             if (!item.isMapped) return item.event;
@@ -370,7 +461,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       });
       return events;
     }
-    final weekDay = DateTime.now().weekday.toString();
+    final weekDay = _displayDate.weekday.toString();
     final events = (data.eventList ?? const <EventItem>[])
         .where((event) => (event.weekDay ?? '').trim() == weekDay)
         .toList(growable: false);
@@ -387,7 +478,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   AcademicCalendarResolvedDay? _resolvedToday(ScheduleData data) {
     final schedules = <ScheduleData>{..._controller.weekCache.values, data};
     return resolveAcademicCalendarDay(
-      actualDate: DateTime.now(),
+      actualDate: _displayDate,
       schedules: schedules,
       calendar: _academicCalendar,
     );
@@ -504,7 +595,10 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   }
 
   bool _isTodayCovered(ScheduleData data) {
-    return ScheduleDate.dataCoversDate(data, DateTime.now());
+    return {
+      ..._controller.weekCache.values,
+      data,
+    }.any((schedule) => ScheduleDate.dataCoversDate(schedule, _displayDate));
   }
 
   String _weekDayLabel(int weekDay) {
@@ -566,7 +660,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       );
     }
 
-    final now = DateTime.now();
+    final now = _displayDate;
     final weekDayNum = now.weekday;
     final coveredToday = _isTodayCovered(data);
     final resolvedToday = _academicCalendar == null
@@ -580,14 +674,26 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
             !calendarMissingSource
         ? _todayEvents(data)
         : const <EventItem>[];
-    final moment = events.isEmpty ? null : _courseMoment(events);
+    final moment = events.isEmpty || !_displayingToday
+        ? null
+        : _courseMoment(events);
     final hasCourseCount =
         calendarHoliday ||
         (!calendarMissingSource &&
             (coveredToday || resolvedToday?.isTeachingDay == true));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('今日'), centerTitle: true),
+      appBar: AppBar(
+        title: Text(_displayingToday ? '今日' : '${now.month}月${now.day}日课表'),
+        centerTitle: true,
+        actions: [
+          if (!_displayingToday)
+            TextButton(
+              onPressed: () => setState(() => _widgetDate = null),
+              child: const Text('回到今日'),
+            ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: () => _loadSchedule(forceRefresh: true),
         child: ListView(
@@ -600,8 +706,8 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               termText: data.yearTerm?.trim().isNotEmpty == true
                   ? data.yearTerm!.trim()
                   : '当前学期',
-              weekText: data.weekNum?.trim().isNotEmpty == true
-                  ? '第${data.weekNum!.trim()}周'
+              weekText: ScheduleDate.weekNumberForDate(data, now) != null
+                  ? '第${ScheduleDate.weekNumberForDate(data, now)}周'
                   : '本周',
               freshnessText: _freshnessText,
             ),
@@ -635,7 +741,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               children: [
                 Expanded(
                   child: Text(
-                    '今日课程',
+                    _displayingToday ? '今日课程' : '当日课程',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
@@ -652,10 +758,10 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
             if (calendarHoliday)
               _EmptyState(
                 icon: Icons.event_busy_outlined,
-                title: '今日放假',
+                title: _displayingToday ? '今日放假' : '当日放假',
                 message: resolvedToday!.label.isEmpty
-                    ? '今天没有课程安排。'
-                    : '${resolvedToday.label}，今天没有课程安排。',
+                    ? '当天没有课程安排。'
+                    : '${resolvedToday.label}，当天没有课程安排。',
               )
             else if (calendarMissingSource)
               _EmptyState(
@@ -672,12 +778,12 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               const _EmptyState(
                 icon: Icons.event_note_outlined,
                 title: '当前不在教学周',
-                message: '今天不在当前课表对应的教学周范围内。',
+                message: '当天不在已加载课表对应的教学周范围内。',
               )
             else if (events.isEmpty)
-              const _EmptyState(
+              _EmptyState(
                 icon: Icons.free_breakfast_outlined,
-                title: '今天没课',
+                title: _displayingToday ? '今天没课' : '当天没课',
               )
             else
               ...events.indexed.expand(

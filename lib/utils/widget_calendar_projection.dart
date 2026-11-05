@@ -4,7 +4,7 @@ import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 
-/// The compact, already-resolved schedule representation consumed by Android
+/// The compact, already-resolved schedule representation consumed by native
 /// widgets. Native code must not apply academic-calendar rules itself: this
 /// projection keeps the Flutter resolver as the single source of truth.
 class WidgetCalendarProjection {
