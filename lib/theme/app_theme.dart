@@ -1,4 +1,5 @@
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:material_ui/material_ui.dart';
 
 /// Centralized visual language for the app.
@@ -69,6 +70,7 @@ abstract final class AppTheme {
           TargetPlatform.android: predictiveBackEnabled
               ? const PredictiveBackPageTransitionsBuilder()
               : const ZoomPageTransitionsBuilder(),
+          TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
         },
       ),
       scaffoldBackgroundColor: colorScheme.surface,

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -72,6 +73,13 @@ class CourseReminderMode {
   }
 
   static Future<CourseReminderPermissionStatus> getStatus() async {
+    if (!_isAndroid && LocalNotifications.isIOS) {
+      return CourseReminderPermissionStatus(
+        supported: true,
+        notificationGranted: await LocalNotifications.areNotificationsEnabled(),
+        exactAlarmGranted: true,
+      );
+    }
     if (!_isAndroid) return const CourseReminderPermissionStatus();
     final map = await _invoke<Map<Object?, Object?>>('getStatus');
     if (map == null) throw StateError('Missing reminder permission status');
@@ -79,7 +87,12 @@ class CourseReminderMode {
   }
 
   static Future<bool> openSettings(String kind) async {
-    if (!_isAndroid) return false;
+    if (!_isAndroid) {
+      if (LocalNotifications.isIOS && kind == 'notifications') {
+        return LocalNotifications.openNotificationSettings();
+      }
+      return false;
+    }
     return await _invoke<bool>('openSettings', {'kind': kind}) ?? false;
   }
 

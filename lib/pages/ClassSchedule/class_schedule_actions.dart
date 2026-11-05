@@ -360,7 +360,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
         content: result.content,
         fileName: 'CQUT-$safeTerm.ics',
       );
-      if (!mounted) return;
+      if (!mounted || path == null) return;
       final suffix = failedWeeks.isEmpty
           ? ''
           : '（第${failedWeeks.join('、')}周读取失败）';
@@ -375,7 +375,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('导出 ICS 失败，请检查下载目录后重试。')));
+          .showSnackBar(const SnackBar(content: Text('导出 ICS 失败，请稍后重试。')));
     } finally {
       final dialogContext = loadingContext;
       if (dialogContext != null && dialogContext.mounted) {

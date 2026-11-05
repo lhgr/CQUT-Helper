@@ -6,10 +6,10 @@
 
 **西唯兵学子的课表小帮手**
 
-面向重庆理工大学同学的第三方 Android 课表助手。
+面向重庆理工大学同学的第三方 Android / iPhone 课表助手。
 
 [![Release](https://img.shields.io/github/v/release/lhgr/CQUT-Helper?style=flat-square)](https://github.com/lhgr/CQUT-Helper/releases)
-![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=flat-square&logo=android&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%2015%2B-3DDC84?style=flat-square&logo=android&logoColor=white)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square)](LICENSE)
 
 [下载最新版本](https://github.com/lhgr/CQUT-Helper/releases) ·
@@ -28,9 +28,9 @@
 | --- | --- |
 | **今日与周课表** | 查看当天课程和完整周课表，支持周次切换、周末显示和离线缓存 |
 | **假期与调休校历** | 根据学校通知的放假与调休日期将调休当天映射到对应课表安排 |
-| **桌面小组件** | 提供今日课程、日视图、近日课程、超小课程和垂直列表等样式 |
+| **桌面小组件** | Android 提供今日课程、日视图、近日课程、超小课程和垂直列表等样式 |
 | **课前提醒** | 根据本机课表安排课程通知，可设置默认提前时间 |
-| **调课通知增强** | 可选查询当前学期调课信息，记录新增、变更和撤销，并刷新受影响教学周 |
+| **调课通知增强** | 可选查询当前学期调课信息，记录新增、变更和撤销，并刷新受影响教学周。iOS 在打开应用或手动同步时查询 |
 | **课程个性化** | 支持课程别名、备注、颜色、隐藏状态，以及课程卡片和课表布局调整 |
 | **主题与背景** | 支持亮色、深色、Material 3 动态取色、自选主题色和课表背景 |
 | **备份与恢复** | 导出或恢复课表布局、主题、提醒和课程个性化设置，不包含登录凭据 |
@@ -56,7 +56,23 @@
   </tr>
 </table>
 
+## 平台支持
+
+| 能力 | Android | iOS 15+ iPhone |
+| --- | --- | --- |
+| 登录、今日与周课表、缓存、校历、个性化、主题、备份 | 支持 | 支持 |
+| 课表与调课同步 | 前台、手动及系统安排的后台任务 | 启动、返回前台、手动同步 |
+| 课前提醒 | 通知及精确闹钟授权后安排 | 通知授权后安排近期本地提醒 |
+| 桌面小组件 | 支持 | 本期未实现 |
+| 课程期间自动勿扰或静音 | 支持的 Android 设备可开启 | 本期未实现 |
+
+iOS 按最近课程时间优先安排本地通知，待发送通知总数最多 64 条。设置中的
+“同步与修复”显示已安排数量、下一条提醒与实际覆盖截至时间。课程较多时覆盖时间
+会短于计划窗口，需定期打开应用同步并续排。已经安排的通知由系统发送。
+
 ## 📦 下载安装
+
+### Android
 
 前往 [GitHub Releases](https://github.com/lhgr/CQUT-Helper/releases) 下载 APK：
 
@@ -73,13 +89,30 @@
 > 从 v1.0.0 开始，应用启用了新的长期正式签名，无法从 v0.3.0 及更早版本直接覆盖安装。
 > 请先确认账号密码可用，再卸载旧版本并安装新版。卸载会清除旧版本保存在本机的登录状态、课表缓存和设置。
 
+### iPhone 个人侧载
+
+1. 在 GitHub Actions 中手动运行 `Build unsigned iOS IPA`，选择需要的分支。
+2. 下载成功运行的 `CQUT-Helper-unsigned-ios` artifact，解压得到
+   `CQUT-Helper-unsigned.ipa`。
+3. 在 Windows 安装 Sideloadly，并按工具要求安装 Apple 设备驱动。连接 iPhone，
+   在手机上信任这台电脑。
+4. 在 Sideloadly 选择设备、该 IPA 和自己的 Apple ID，按工具提示完成个人签名及安装。
+   可使用自己的开发者账号与证书。安装包本身为未签名产物，签名由侧载工具完成。
+5. 在 iPhone 的“设置 → 通用 → VPN 与设备管理”中信任签名账号。
+   iOS 16 及以上按系统提示开启开发者模式，之后启动应用。
+6. 按所用账号和侧载工具的有效期要求续签。应用内“查看发行版”打开发行页，更新时
+   下载对应 IPA 并重新签名安装。
+
+侧载工具说明见 [Sideloadly 官网](https://sideloadly.io/)。
+
 ## 🚀 首次使用
 
 1. 使用学校账号登录，进入课表并完成首次同步。
 2. 按需调整周末显示、课程卡片、主题和课表背景。
 3. 如需课前提醒，在“设置 → 通知与提醒”中开启相关权限。
-4. 添加桌面小组件后，如果显示“课表尚未同步”，请回到应用同步一次课表。
-5. 如需后台获取调课变化，可在通知设置或课表设置中主动开启“调课通知增强”。
+4. Android 添加桌面小组件后，如果显示“课表尚未同步”，请回到应用同步一次课表。
+5. 按需在通知设置或课表设置中开启“调课通知增强”。iOS 会在启动、返回前台和手动同步时检查。
+6. iPhone 开启课前提醒后，在“同步与修复”确认实际提醒覆盖，定期打开应用更新。
 
 ## 🔒 隐私与网络请求
 
@@ -100,13 +133,13 @@ CQUT Helper 不接入 Firebase，也不包含遥测或用户行为统计服务�
 
 ## ❓ 常见问题
 
-### 小组件没有及时刷新
+### Android 小组件没有及时刷新
 
 先打开应用确认登录状态并手动同步课表，再点击小组件刷新。如果仍无改善，请在
 “设置 → 同步与修复”中检查后台状态，并根据手机系统设置允许应用自启动、后台运行
 和忽略电池优化。
 
-### 小组件显示“课表可能已过期”
+### Android 小组件显示“课表可能已过期”
 
 这表示本机缓存较长时间没有得到成功同步确认。检查网络和登录状态后主动刷新即可。
 如果最近已经成功同步，但当前不属于教学周，小组件会显示“当前不在教学周”。
@@ -118,8 +151,9 @@ CQUT Helper 不接入 Firebase，也不包含遥测或用户行为统计服务�
 
 ### 收不到课前提醒或调课通知
 
-检查通知权限、后台运行限制和电池优化设置。调课通知还需要主动开启“调课通知增强”，
-并确保所选服务通过“检查服务可用性”。
+Android 检查通知权限、后台运行限制和电池优化设置。iPhone 检查系统通知授权，
+并在“同步与修复”查看已安排数量和覆盖截至时间，打开应用同步续排。调课通知需要
+主动开启“调课通知增强”，并确保所选服务通过“检查服务可用性”。
 
 ### 备份会保存密码吗？
 
@@ -140,7 +174,28 @@ flutter pub get
 flutter build apk --release
 ```
 
-CI 与发布 workflow 均固定使用 Flutter 3.47.7。
+iOS 构建在 macOS 和 Xcode 环境执行。项目以 iOS 15 为最低版本，仅面向 iPhone。
+
+```bash
+flutter pub get
+flutter build ios --simulator --debug
+flutter build ios --release --no-codesign
+mkdir -p build/ios-sideload/Payload
+cp -R build/ios/iphoneos/Runner.app build/ios-sideload/Payload/
+cd build/ios-sideload
+zip -qry CQUT-Helper-unsigned.ipa Payload
+```
+
+CI 与发布 workflow 均固定使用 Flutter 3.47.7。`Quality Gate` 在独立 macOS 作业中
+构建 iOS 模拟器应用，启动 iPhone 模拟器、安装并运行，上传构建日志、运行日志和
+截图。手动 workflow 单独构建供个人签名侧载的设备 Release IPA，Android CI 和
+Android 发布沿用现有流程。手动运行 `Quality Gate` 也会同时调用未签名 IPA
+打包作业，可在同一次运行下载模拟器验收记录与设备安装包。
+
+当前 iOS 验收状态为已提供原生工程、平台适配、macOS CI 和未签名打包流程。
+尚未取得 iOS CI 成功运行记录，也尚未完成 iPhone 真机登录、通知授权、锁屏提醒、
+文件分享及侧载续签验收。模拟器启动记录只能确认
+应用构建与启动，账号同步和实际课程提醒需在设备上继续验证。
 
 有关课表数据接口的分析可参阅
 [课表 API 相关文章](https://blog.dawndrizzle.top/blog/reverse-timetable)。

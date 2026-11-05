@@ -10,10 +10,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeScheduleApi extends ScheduleApi {
-  _FakeScheduleApi({required this.response, this.failure});
+  _FakeScheduleApi({required this.response, this.failure, this.beforeResponse});
 
   final ScheduleNoticePollData response;
   final Object? failure;
+  final Future<void> Function()? beforeResponse;
   String? requestedYearTerm;
   String? requestedEncryptedPassword;
 
@@ -28,6 +29,7 @@ class _FakeScheduleApi extends ScheduleApi {
     requestedYearTerm = yearTerm;
     requestedEncryptedPassword = encryptedPassword;
     if (failure != null) throw failure!;
+    await beforeResponse?.call();
     return response;
   }
 }
@@ -59,6 +61,74 @@ class _NoopSecureSecretStore implements SecureSecretStore {
 
 void main() {
   group('ScheduleNoticeRefreshPipeline', () {
+    test('iOS前台主动同步在深夜仍查询，后台保留夜间暂停', () async {
+      SharedPreferences.setMockInitialValues({
+        'account': 'u1',
+        ScheduleSettingsManager.backgroundPollingEnabledKey: true,
+        ScheduleSettingsManager.noticePrivacyConsentVersionKey:
+            ScheduleSettingsManager.currentNoticePrivacyConsentVersion,
+      });
+      final api = _FakeScheduleApi(
+        response: const ScheduleNoticePollData(
+          env: 'prod',
+          yearTerm: '2026-2027-1',
+          generatedAt: '',
+          notices: [],
+        ),
+      );
+      final pipeline = ScheduleNoticeRefreshPipeline(
+        scheduleApi: api,
+        credentialStore: _FakePipelineCredentialStore(value: 'secret'),
+        refreshWeek: (_, _) async {},
+        nowProvider: () => DateTime(2026, 11, 5, 2),
+      );
+      final data = ScheduleData(yearTerm: '2026-2027-1', weekList: ['1']);
+      expect((await pipeline.run(currentData: data)).skipReason, 'deep_night');
+      expect(api.requestedYearTerm, isNull);
+      expect(
+        (await pipeline.run(
+          currentData: data,
+          respectQuietHours: false,
+        )).skipReason,
+        isNull,
+      );
+      expect(api.requestedYearTerm, '2026-2027-1');
+    });
+
+    test('调课请求期间退出账号不落地旧账号通知快照', () async {
+      SharedPreferences.setMockInitialValues({
+        'account': 'u1',
+        ScheduleSettingsManager.backgroundPollingEnabledKey: true,
+        ScheduleSettingsManager.noticePrivacyConsentVersionKey:
+            ScheduleSettingsManager.currentNoticePrivacyConsentVersion,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final api = _FakeScheduleApi(
+        response: const ScheduleNoticePollData(
+          env: 'prod',
+          yearTerm: '2026-2027-1',
+          generatedAt: '',
+          notices: [],
+        ),
+        beforeResponse: () => prefs.remove('account'),
+      );
+      final pipeline = ScheduleNoticeRefreshPipeline(
+        scheduleApi: api,
+        credentialStore: _FakePipelineCredentialStore(value: 'secret'),
+        refreshWeek: (_, _) async =>
+            fail('stale account must not refresh weeks'),
+        nowProvider: () => DateTime(2026, 11, 5, 10),
+      );
+      final result = await pipeline.run(
+        currentData: ScheduleData(yearTerm: '2026-2027-1', weekList: ['1']),
+      );
+      expect(result.skipReason, 'stale_account');
+      expect(
+        prefs.containsKey('schedule_notice_state_u1_2026-2027-1'),
+        isFalse,
+      );
+    });
+
     test('透传当前学期到调课通知接口', () async {
       SharedPreferences.setMockInitialValues({
         'account': 'u1',

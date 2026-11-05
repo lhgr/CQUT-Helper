@@ -83,6 +83,77 @@ jobs:
       - name: Build release APK as smoke test
         run: flutter build apk --release
 
+  ios:
+    name: iOS simulator smoke test
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.7'
+          cache: true
+
+      - name: Inspect Xcode and simulator runtimes
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+          flutter doctor -v
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build simulator app
+        run: |
+          set -o pipefail
+          mkdir -p build/ios-smoke
+          flutter build ios --simulator --debug 2>&1 | tee build/ios-smoke/build.log
+
+      - name: Boot iPhone simulator and launch app
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(device["udid"] for runtime,devices in data["devices"].items() if "iOS" in runtime for device in devices if device["name"].startswith("iPhone")))')
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          DEVICE_STATE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; target=sys.argv[1]; print(next(device["state"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["udid"] == target))' "$DEVICE_ID")
+          if [ "$DEVICE_STATE" != "Booted" ]; then
+            xcrun simctl boot "$DEVICE_ID"
+          fi
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          APP=build/ios/iphonesimulator/Runner.app
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")
+          xcrun simctl install "$DEVICE_ID" "$APP"
+          xcrun simctl launch --terminate-running-process "$DEVICE_ID" "$BUNDLE_ID" | tee build/ios-smoke/launch.log
+          sleep 15
+          xcrun simctl spawn "$DEVICE_ID" launchctl list | tee build/ios-smoke/processes.log
+          awk -v bundle="$BUNDLE_ID" '$1 ~ /^[0-9]+$/ && index($3, bundle) { alive=1 } END { exit !alive }' build/ios-smoke/processes.log
+          xcrun simctl io "$DEVICE_ID" screenshot build/ios-smoke/launch.png
+
+      - name: Collect simulator diagnostics
+        if: always()
+        run: |
+          mkdir -p build/ios-smoke
+          if [ -n "${DEVICE_ID:-}" ]; then
+            xcrun simctl spawn "$DEVICE_ID" log show --last 5m --style compact > build/ios-smoke/system.log 2>&1 || true
+            xcrun simctl io "$DEVICE_ID" screenshot build/ios-smoke/final.png || true
+          fi
+
+      - name: Upload iOS smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-smoke
+          path: build/ios-smoke/
+          if-no-files-found: warn
+
+  ios-package:
+    name: Build unsigned IPA on manual validation
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/ios-sideload.yml
+
   backend:
     name: Notice service checks
     runs-on: ubuntu-latest

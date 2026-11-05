@@ -113,6 +113,23 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  testWidgets('iOS 仅显示通知授权与前台同步能力', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.remindersEnabledKey: true,
+    });
+    mockStatus(notificationGranted: true);
+    await pumpPage(tester);
+    expect(find.text('通知权限'), findsOneWidget);
+    expect(find.text('打开应用更新课表与提醒'), findsOneWidget);
+    expect(find.text('上课勿扰与静音'), findsNothing);
+    expect(find.text('精确闹钟'), findsNothing);
+    expect(find.text('电池优化'), findsNothing);
+    expect(find.text('自启动设置'), findsNothing);
+    await tester.scrollUntilVisible(find.text('调课通知增强'), 300);
+    expect(find.text('调课通知增强'), findsOneWidget);
+    expect(find.text('高级设置'), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   testWidgets('返回应用时刷新系统权限状态', (tester) async {
     SharedPreferences.setMockInitialValues({});
     var notificationGranted = false;
@@ -162,6 +179,7 @@ void main() {
 
   testWidgets('首次授权状态读取失败后恢复时重建已开启的提醒', (tester) async {
     SharedPreferences.setMockInitialValues({
+      'account': 'test-user',
       'schedule_course_reminders_enabled': true,
       'schedule_course_reminder_ids_v1': '[]',
     });

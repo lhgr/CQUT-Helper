@@ -28,18 +28,35 @@ class LocalNotifications {
   static const String payloadScheduleUpdate = 'schedule_update';
 
   static bool _initialized = false;
+  static Future<void>? _initializing;
   static bool _timezoneInitialized = false;
+  static final ValueNotifier<int> courseReminderOpened = ValueNotifier<int>(0);
 
   @visibleForTesting
   static bool? debugIsAndroidOverride;
 
   @visibleForTesting
-  static void debugResetInitialization() => _initialized = false;
+  static bool? debugIsIOSOverride;
+
+  @visibleForTesting
+  static void debugResetInitialization() {
+    _initialized = false;
+    _initializing = null;
+  }
 
   static bool get _isAndroid => debugIsAndroidOverride ?? Platform.isAndroid;
+  static bool get isIOS => debugIsIOSOverride ?? Platform.isIOS;
+  static bool get isSupported => _isAndroid || isIOS;
+  static bool get requiresExactAlarms => _isAndroid;
 
-  static Future<void> initialize() async {
-    if (!_isAndroid) return;
+  static Future<void> initialize() {
+    if (!isSupported || _initialized) return Future.value();
+    return _initializing ??= _initialize().whenComplete(() {
+      _initializing = null;
+    });
+  }
+
+  static Future<void> _initialize() async {
     if (_initialized) return;
     if (!_timezoneInitialized) {
       tz_data.initializeTimeZones();
@@ -49,6 +66,11 @@ class LocalNotifications {
 
     const initSettings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/launcher_icon'),
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      ),
     );
 
     await _plugin.initialize(
@@ -100,8 +122,16 @@ class LocalNotifications {
   }
 
   static Future<bool> ensurePermission() async {
-    if (!_isAndroid) return false;
+    if (!isSupported) return false;
     await initialize();
+    if (isIOS) {
+      return await _plugin
+              .resolvePlatformSpecificImplementation<
+                IOSFlutterLocalNotificationsPlugin
+              >()
+              ?.requestPermissions(alert: true, badge: true, sound: true) ??
+          false;
+    }
     final android = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -112,8 +142,16 @@ class LocalNotifications {
   }
 
   static Future<bool> areNotificationsEnabled() async {
-    if (!_isAndroid) return false;
+    if (!isSupported) return false;
     await initialize();
+    if (isIOS) {
+      final settings = await _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >()
+          ?.checkPermissions();
+      return settings?.isEnabled ?? false;
+    }
     final android = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -123,6 +161,7 @@ class LocalNotifications {
   }
 
   static Future<bool> canScheduleExactNotifications() async {
+    if (isIOS) return true;
     if (!_isAndroid) return false;
     await initialize();
     final android = _plugin
@@ -133,7 +172,22 @@ class LocalNotifications {
     return await android.canScheduleExactNotifications() ?? false;
   }
 
+  static Future<bool> openNotificationSettings() async {
+    if (!isIOS) return false;
+    await initialize();
+    return await _plugin
+            .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin
+            >()
+            ?.openAppNotificationSettings() ??
+        false;
+  }
+
   static Future<bool> ensureCourseReminderPermissions() async {
+    if (isIOS) {
+      if (!await areNotificationsEnabled()) await ensurePermission();
+      return areNotificationsEnabled();
+    }
     if (!_isAndroid) return false;
     await initialize();
     final android = _plugin
@@ -171,7 +225,7 @@ class LocalNotifications {
   }
 
   static Future<void> cancelAll() async {
-    if (!_isAndroid) return;
+    if (!isSupported) return;
     await initialize();
     await _plugin.cancelAll();
     final prefs = await SharedPreferences.getInstance();
@@ -183,6 +237,7 @@ class LocalNotifications {
     if ((payload ?? '').startsWith('course_reminder|')) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefsKeyOpenCourseReminder, true);
+      courseReminderOpened.value++;
       return;
     }
     if (payload != payloadScheduleUpdate) return;
@@ -197,10 +252,11 @@ class LocalNotifications {
     String? payload,
     int? id,
   }) async {
-    if (!_isAndroid) return;
+    if (!isSupported) return;
     await initialize();
 
     final details = NotificationDetails(
+      iOS: const DarwinNotificationDetails(),
       android: AndroidNotificationDetails(
         _channelId,
         _channelName,
@@ -226,10 +282,11 @@ class LocalNotifications {
     String? payload,
     int? id,
   }) async {
-    if (!_isAndroid) return;
+    if (!isSupported) return;
     await initialize();
 
     final details = NotificationDetails(
+      iOS: const DarwinNotificationDetails(),
       android: AndroidNotificationDetails(
         _systemChannelId,
         _systemChannelName,
@@ -249,16 +306,17 @@ class LocalNotifications {
     );
   }
 
-  static Future<void> scheduleCourseReminder({
+  static Future<bool> scheduleCourseReminder({
     required int id,
     required String title,
     required String body,
     required DateTime scheduledAt,
     String? payload,
   }) async {
-    if (!_isAndroid || !scheduledAt.isAfter(DateTime.now())) return;
+    if (!isSupported || !scheduledAt.isAfter(DateTime.now())) return false;
     await initialize();
     final details = NotificationDetails(
+      iOS: const DarwinNotificationDetails(),
       android: AndroidNotificationDetails(
         _courseChannelId,
         _courseChannelName,
@@ -279,10 +337,17 @@ class LocalNotifications {
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: payload,
     );
+    return true;
+  }
+
+  static Future<List<PendingNotificationRequest>> pendingRequests() async {
+    if (!isSupported) return const [];
+    await initialize();
+    return _plugin.pendingNotificationRequests();
   }
 
   static Future<void> cancelIds(Iterable<int> ids) async {
-    if (!_isAndroid) return;
+    if (!isSupported) return;
     await initialize();
     for (final id in ids) {
       await _plugin.cancel(id: id);

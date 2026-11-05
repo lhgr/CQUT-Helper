@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Mine/ClearCache.dart';
@@ -170,12 +171,15 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
     final conditions = [
       data.accountCondition,
       data.reminderCondition,
-      if (data.enhancementEnabled) data.backgroundCondition,
+      if (data.enhancementEnabled &&
+          defaultTargetPlatform != TargetPlatform.iOS)
+        data.backgroundCondition,
     ];
     final problems = <String>[
       if (data.accountCondition == DiagnosticCondition.problem) '登录',
       if (data.reminderCondition == DiagnosticCondition.problem) '课前提醒',
       if (data.enhancementEnabled &&
+          defaultTargetPlatform != TargetPlatform.iOS &&
           data.backgroundCondition == DiagnosticCondition.problem)
         '调课通知增强',
       if (data.refresh?.widgetState == ScheduleWidgetRefreshState.failed &&
@@ -354,14 +358,18 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
   Widget _reminderStatus(SyncDiagnosticsSnapshot data) {
     String detail;
     if (data.remindersEnabled == false) {
-      detail = '开启后会根据课表生成未来 60 天提醒';
+      detail = defaultTargetPlatform == TargetPlatform.iOS
+          ? '开启后根据课表安排近期提醒，打开应用时续排'
+          : '开启后会根据课表生成未来 60 天提醒';
     } else if (data.remindersEnabled == null ||
         data.failures.contains(DiagnosticRead.reminders) ||
         data.failures.contains(DiagnosticRead.notifications) ||
         data.failures.contains(DiagnosticRead.exactAlarm)) {
       detail = '暂时无法获取，请重试';
     } else if (data.notifications == false || data.exactAlarm == false) {
-      detail = '通知或精确闹钟权限未授予，请修复提醒或检查系统设置';
+      detail = defaultTargetPlatform == TargetPlatform.iOS
+          ? '通知权限未授予，请修复提醒或检查系统设置'
+          : '通知或精确闹钟权限未授予，请修复提醒或检查系统设置';
     } else if (data.reminders?.updatedAt == null ||
         data.reminders?.enabled != true) {
       detail = '尚未建立提醒计划，可修复提醒';
@@ -413,8 +421,13 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
         if (data.remindersEnabled == true) ...[
           const SizedBox(height: 8),
           Text('下一条提醒：${_time(data.reminders?.nextReminderAt)}'),
+          if (defaultTargetPlatform == TargetPlatform.iOS) ...[
+            Text('实际覆盖截至：${_time(data.reminders?.coveredUntil)}'),
+            const Text('iOS 最多保留 64 条待发送本地通知，定期打开应用可续排。'),
+          ],
         ],
-        if (data.enhancementEnabled) ...[
+        if (data.enhancementEnabled &&
+            defaultTargetPlatform != TargetPlatform.iOS) ...[
           const SizedBox(height: 8),
           Text(
             '后台最近执行：${data.failures.contains(DiagnosticRead.background) ? '暂时无法获取' : _time(data.background?.lastRunAt)}',
@@ -488,31 +501,37 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
-                _heading('课表与组件'),
+                _heading(
+                  defaultTargetPlatform == TargetPlatform.iOS
+                      ? '课表同步'
+                      : '课表与组件',
+                ),
                 _card([
                   _scheduleStatus(data),
                   if (data.accountCondition != DiagnosticCondition.normal) ...[
                     const Divider(height: 1),
                     _accountStatus(data),
                   ],
-                  const Divider(height: 1),
-                  _status(
-                    icon: Icons.widgets_outlined,
-                    title: '桌面组件',
-                    detail: switch (_widgetResult) {
-                      WidgetUpdateResult.accepted => '本页最近刷新请求已提交，显示结果请查看桌面',
-                      WidgetUpdateResult.failed => '本页最近刷新请求失败，可再次立即同步',
-                      WidgetUpdateResult.notSupported => '当前平台不支持桌面组件',
-                      null => '本页暂无刷新请求记录，可立即同步后查看桌面',
-                    },
-                    condition: _widgetResult == WidgetUpdateResult.failed
-                        ? DiagnosticCondition.problem
-                        : DiagnosticCondition.pending,
-                    action: _widgetResult == WidgetUpdateResult.failed
-                        ? '立即同步'
-                        : null,
-                    onAction: () => _run(() => _service.synchronize(data)),
-                  ),
+                  if (defaultTargetPlatform != TargetPlatform.iOS) ...[
+                    const Divider(height: 1),
+                    _status(
+                      icon: Icons.widgets_outlined,
+                      title: '桌面组件',
+                      detail: switch (_widgetResult) {
+                        WidgetUpdateResult.accepted => '本页最近刷新请求已提交，显示结果请查看桌面',
+                        WidgetUpdateResult.failed => '本页最近刷新请求失败，可再次立即同步',
+                        WidgetUpdateResult.notSupported => '当前平台不支持桌面组件',
+                        null => '本页暂无刷新请求记录，可立即同步后查看桌面',
+                      },
+                      condition: _widgetResult == WidgetUpdateResult.failed
+                          ? DiagnosticCondition.problem
+                          : DiagnosticCondition.pending,
+                      action: _widgetResult == WidgetUpdateResult.failed
+                          ? '立即同步'
+                          : null,
+                      onAction: () => _run(() => _service.synchronize(data)),
+                    ),
+                  ],
                 ]),
                 _heading('课前提醒'),
                 _card([
@@ -557,7 +576,11 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
                   label: Text(_working ? '正在处理…' : '立即同步'),
                 ),
                 const SizedBox(height: 8),
-                const Text('更新课表、请求刷新桌面组件，并更新已开启的课前提醒。'),
+                Text(
+                  defaultTargetPlatform == TargetPlatform.iOS
+                      ? '更新课表与已开启的课前提醒，启动和返回前台时也会同步。'
+                      : '更新课表、请求刷新桌面组件，并更新已开启的课前提醒。',
+                ),
                 if (_result case final result?) ...[
                   _heading('本次操作结果'),
                   _card([
@@ -594,7 +617,22 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
                     ),
                   ]),
                 ],
-                if (data.enhancementEnabled) ...[
+                if (data.enhancementEnabled &&
+                    defaultTargetPlatform == TargetPlatform.iOS) ...[
+                  _heading('调课通知增强'),
+                  _card([
+                    _status(
+                      icon: Icons.sync_outlined,
+                      title: '打开应用时检查',
+                      detail: '启动、返回前台和手动同步时查询调课通知，并更新受影响周。',
+                      condition: DiagnosticCondition.normal,
+                      action: '通知设置',
+                      onAction: _openNotifications,
+                    ),
+                  ]),
+                ],
+                if (data.enhancementEnabled &&
+                    defaultTargetPlatform != TargetPlatform.iOS) ...[
                   _heading('调课通知增强'),
                   _card([
                     _status(

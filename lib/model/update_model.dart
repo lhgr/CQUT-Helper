@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class UpdateModel {
   final String tagName;
   final String body;
@@ -14,12 +16,11 @@ class UpdateModel {
   factory UpdateModel.fromJson(Map<String, dynamic> json) {
     String downloadUrl = "";
     // 尝试查找 apk 资源
-    if (json['assets'] != null) {
+    if (defaultTargetPlatform != TargetPlatform.iOS && json['assets'] != null) {
       final assets = json['assets'] as List;
-      final apkAsset = assets.firstWhere(
-        (asset) => asset['name'].toString().endsWith('.apk'),
-        orElse: () => null,
-      );
+      final apkAsset = assets
+          .where((asset) => asset['name'].toString().endsWith('.apk'))
+          .firstOrNull;
       if (apkAsset != null) {
         downloadUrl = apkAsset['browser_download_url'];
       }

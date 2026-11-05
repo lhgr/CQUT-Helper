@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
+import 'package:cqut_helper/utils/document_file_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -114,10 +116,17 @@ class ScheduleIcsService {
     );
   }
 
-  static Future<String> exportToDownloads({
+  static Future<String?> exportToDownloads({
     required String content,
     required String fileName,
   }) async {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return DocumentFileService.saveText(
+        fileName: fileName,
+        mimeType: 'text/calendar',
+        content: content,
+      );
+    }
     final temp = await getTemporaryDirectory();
     final file = File('${temp.path}${Platform.pathSeparator}$fileName');
     await file.writeAsString(content, flush: true);

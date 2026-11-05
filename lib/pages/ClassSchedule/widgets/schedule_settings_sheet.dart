@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
@@ -212,11 +214,13 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
           builder: (context) {
             return AlertDialog(
               title: const Text('开启“调课通知增强”'),
-              content: const Text(
-                '开启后，应用会将你的学号、教务系统加密密码和当前学期发送到所配置的调课服务，用于代你查询调课通知，并在后台刷新受影响周。\n\n'
-                'CQUT Helper 官方调课服务仅使用上述信息完成查询，不会储存你的学号、密码、学期等隐私数据；若使用自定义服务，其数据处理方式由服务提供者决定。\n\n'
-                '普通课表和桌面小组件不依赖此服务；保持关闭或服务不可用时，仍可正常查看和手动刷新课表。\n\n'
-                '继续后还会申请通知权限，并引导你设置电池优化和自启动。',
+              content: Text(
+                defaultTargetPlatform == TargetPlatform.iOS
+                    ? '开启后，应用会在启动、返回前台和手动同步时向所配置的调课服务发送学号、教务系统加密密码和当前学期，用于查询调课通知并更新受影响周。\n\n官方服务仅使用上述信息完成查询，不储存这些隐私数据。自定义服务的数据处理方式由服务提供者决定。继续后会申请通知权限。'
+                    : '开启后，应用会将你的学号、教务系统加密密码和当前学期发送到所配置的调课服务，用于代你查询调课通知，并在后台刷新受影响周。\n\n'
+                          'CQUT Helper 官方调课服务仅使用上述信息完成查询，不会储存你的学号、密码、学期等隐私数据；若使用自定义服务，其数据处理方式由服务提供者决定。\n\n'
+                          '普通课表和桌面小组件不依赖此服务；保持关闭或服务不可用时，仍可正常查看和手动刷新课表。\n\n'
+                          '继续后还会申请通知权限，并引导你设置电池优化和自启动。',
               ),
               actions: [
                 TextButton(
@@ -244,6 +248,10 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
       return false;
     }
 
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      setState(() => _sheetNoticeMessage = '调课查询已开启，打开应用或手动同步时检查。');
+      return true;
+    }
     final prepared = await showBackgroundPollingSetupDialog(context);
     if (!prepared || !mounted) return false;
 
@@ -481,7 +489,11 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                   ListTile(
                     title: Text('调课通知增强（可选）'),
                     subtitle: Text(
-                      !backgroundPollingEnabled
+                      defaultTargetPlatform == TargetPlatform.iOS
+                          ? (backgroundPollingEnabled
+                                ? '打开应用和手动同步时检查调课通知'
+                                : '关闭时不会访问调课服务')
+                          : !backgroundPollingEnabled
                           ? '关闭时不会访问调课服务，普通课表仍可正常刷新'
                           : _healthSnapshot == null
                           ? '后台检查调课通知，并只更新受影响周'

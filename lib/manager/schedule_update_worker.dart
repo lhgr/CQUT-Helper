@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/academic_calendar_manager.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_notice_refresh_pipeline.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
@@ -43,6 +47,16 @@ class ScheduleUpdateWorker {
   static const String _triggerFallbackNoon = 'fallback_noon';
   static const String _timeZoneOffset = '+08:00';
   static bool _loggerReady = false;
+  static Future<void>? _foregroundSync;
+  static String? _foregroundUser;
+  static String? _lastForegroundUser;
+  static DateTime? _lastForegroundSyncAt;
+  static int _foregroundGeneration = 0;
+
+  @visibleForTesting
+  static bool? debugIsAndroidOverride;
+  static bool get _isAndroid => debugIsAndroidOverride ?? Platform.isAndroid;
+
   static String pendingKeyForUser(String userId) =>
       scheduleUpdateWorkerPendingKeyForUser(userId);
 
@@ -151,6 +165,7 @@ class ScheduleUpdateWorker {
   }
 
   static Future<void> initialize() async {
+    if (!_isAndroid) return;
     await Workmanager().initialize(scheduleUpdateCallbackDispatcher);
   }
 
@@ -159,10 +174,23 @@ class ScheduleUpdateWorker {
   }
 
   static Future<ScheduleBackgroundPollHealthSnapshot> loadHealthSnapshot() {
+    if (LocalNotifications.isIOS) {
+      return Future.value(
+        const ScheduleBackgroundPollHealthSnapshot(
+          status: ScheduleBackgroundPollHealthStatus.observing,
+          title: '前台同步',
+          detail: '启动、返回前台或手动刷新时检查课表变化与校历。',
+        ),
+      );
+    }
     return loadScheduleUpdateWorkerHealthSnapshot();
   }
 
   static Future<void> syncFromPreferences() async {
+    if (!_isAndroid) {
+      if (LocalNotifications.isIOS) await _syncForegroundFromPreferences();
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
     final userId = (prefs.getString('account') ?? '').trim();
     final encryptedPassword =
@@ -213,8 +241,122 @@ class ScheduleUpdateWorker {
     );
   }
 
+  static Future<void> _syncForegroundFromPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = (prefs.getString('account') ?? '').trim();
+    if (userId.isEmpty) {
+      _foregroundGeneration++;
+      _foregroundUser = null;
+      _lastForegroundUser = null;
+      _lastForegroundSyncAt = null;
+      await CourseReminderScheduler.cancelAll();
+      return;
+    }
+    final pending = _foregroundSync;
+    if (pending != null) {
+      if (_foregroundUser == userId) return pending;
+      _foregroundGeneration++;
+      await pending;
+      // Re-read the account after the previous account's request completes.
+      return _syncForegroundFromPreferences();
+    }
+    if (_lastForegroundUser == userId &&
+        _lastForegroundSyncAt != null &&
+        DateTime.now().difference(_lastForegroundSyncAt!) <
+            const Duration(seconds: 30)) {
+      // Coalesce network checks while still replenishing the local iOS queue
+      // whenever the user returns to the foreground.
+      try {
+        await CourseReminderScheduler.rescheduleForUser(userId);
+      } catch (error, stackTrace) {
+        AppLogger.I.warn(
+          'ScheduleUpdateWorker',
+          'foreground reminder replenishment failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      return;
+    }
+    final generation = _foregroundGeneration;
+    _foregroundUser = userId;
+    final future = _refreshForeground(userId, generation);
+    _foregroundSync = future;
+    try {
+      await future;
+      if (generation == _foregroundGeneration) {
+        _lastForegroundUser = userId;
+        _lastForegroundSyncAt = DateTime.now();
+      }
+    } finally {
+      if (identical(_foregroundSync, future)) {
+        _foregroundSync = null;
+        _foregroundUser = null;
+      }
+    }
+  }
+
+  static Future<void> _refreshForeground(String userId, int generation) async {
+    final prefs = await SharedPreferences.getInstance();
+    bool isCurrentAccount() =>
+        generation == _foregroundGeneration &&
+        (prefs.getString('account') ?? '').trim() == userId;
+    try {
+      // Replenish cached reminders even when the network is unavailable.
+      try {
+        await CourseReminderScheduler.rescheduleForUser(userId);
+      } catch (error, stackTrace) {
+        AppLogger.I.warn(
+          'ScheduleUpdateWorker',
+          'cached reminder rebuild failed before foreground sync',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      final encryptedPassword =
+          (await CredentialStore().readEncryptedPassword() ?? '').trim();
+      if (!isCurrentAccount()) return;
+      if (encryptedPassword.isNotEmpty) {
+        try {
+          await loadCurrentWeekAndUpdateWidgetPin(
+            scheduleApi: ScheduleApi(),
+            userId: userId,
+            encryptedPassword: encryptedPassword,
+            notifyWidget: false,
+          );
+        } catch (error, stackTrace) {
+          AppLogger.I.warn(
+            'ScheduleUpdateWorker',
+            'foreground timetable refresh failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
+      if (!isCurrentAccount()) return;
+      await AcademicCalendarManager.instance.initializeFromPreferences();
+      if (!isCurrentAccount()) return;
+      // The existing notice pipeline owns consent and service availability.
+      if (ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs) &&
+          encryptedPassword.isNotEmpty) {
+        await _runTask(_taskName, {'userId': userId, 'trigger': 'foreground'});
+      }
+      if (!isCurrentAccount()) return;
+      await CourseReminderScheduler.rescheduleForUser(userId);
+      ScheduleUpdateIntents.requestScheduleUpdated();
+    } catch (error, stackTrace) {
+      AppLogger.I.warn(
+        'ScheduleUpdateWorker',
+        'foreground sync failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   @pragma('vm:entry-point')
   static void callbackDispatcher() {
+    if (!_isAndroid) return;
     Workmanager().executeTask((task, inputData) async {
       WidgetsFlutterBinding.ensureInitialized();
       AppLogger.I.installGlobalErrorHandlers();
@@ -236,6 +378,10 @@ class ScheduleUpdateWorker {
     Future<void> Function()? followUp,
   }) async {
     final logger = AppLogger.I;
+    final isForeground = inputData?['trigger'] == 'foreground';
+    final operationStage = isForeground
+        ? 'foreground_refresh'
+        : 'background_refresh';
     final refreshId = inputData?['refreshId'] is String
         ? (inputData!['refreshId'] as String).trim()
         : '';
@@ -246,13 +392,13 @@ class ScheduleUpdateWorker {
           final elapsed = Stopwatch()..start();
           final stageClock = Stopwatch()..start();
           final durations = <String, int>{};
-          var stage = 'background_refresh';
+          var stage = operationStage;
           final diagnosticOutcome = <String, Object?>{
             'outcome': 'failed',
             'reason': 'unhandled_failure',
             'stage': stage,
             'task': task,
-            'lifecycle': 'background_task',
+            'lifecycle': isForeground ? 'foreground_sync' : 'background_task',
             'lifecycle_id': logger.newTraceId(),
             'data_source': 'none',
             'network_outcome': 'not_attempted',
@@ -279,7 +425,9 @@ class ScheduleUpdateWorker {
 
           logger.info(
             'ScheduleUpdateWorker',
-            'background task started',
+            isForeground
+                ? 'foreground sync started'
+                : 'background task started',
             fields: {
               ...diagnosticOutcome,
               'diagnostic_kind': 'operation',
@@ -319,7 +467,7 @@ class ScheduleUpdateWorker {
                 (durations[stage] ?? 0) + stageClock.elapsedMilliseconds;
             final fields = <String, Object?>{
               ...diagnosticOutcome,
-              'stage': 'background_refresh',
+              'stage': operationStage,
               'duration_ms': elapsed.elapsedMilliseconds,
               'stage_durations_ms': {
                 if (diagnosticOutcome['stage_durations_ms'] is Map)
@@ -330,7 +478,9 @@ class ScheduleUpdateWorker {
             };
             logger.logOperationOutcome(
               'ScheduleUpdateWorker',
-              'background task finished',
+              isForeground
+                  ? 'foreground sync finished'
+                  : 'background task finished',
               outcome: diagnosticOutcome['outcome'] as String,
               error: taskError,
               stackTrace: taskStack,
@@ -418,7 +568,7 @@ class ScheduleUpdateWorker {
         for (final key in ['apiClosed', 'changes', 'skip_reason'])
           if (fields.containsKey(key)) key: fields[key],
       });
-      if (scheduleFollowUp) {
+      if (scheduleFollowUp && (followUp != null || _isAndroid)) {
         enterStage('schedule_follow_up');
         final clock = Stopwatch()..start();
         try {
@@ -526,7 +676,9 @@ class ScheduleUpdateWorker {
         !ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs)) {
       return done(status: 'skip_disabled');
     }
-    if (_isDeepNight() && trigger != _triggerWidgetManual) {
+    if (_isDeepNight() &&
+        trigger != _triggerWidgetManual &&
+        trigger != 'foreground') {
       return done(status: 'skip_deep_night', scheduleFollowUp: true);
     }
     final scheduledUserId = ((inputData?['userId'] ?? '').toString()).trim();
@@ -790,7 +942,11 @@ class ScheduleUpdateWorker {
     ScheduleNoticeRefreshResult result;
     enterStage('run_pipeline');
     try {
-      result = await pipeline.run(currentData: currentData, headless: true);
+      result = await pipeline.run(
+        currentData: currentData,
+        headless: true,
+        respectQuietHours: trigger != 'foreground',
+      );
     } catch (e, st) {
       diagnosticOutcome.addAll(pipeline.diagnosticProgress);
       return done(
@@ -803,6 +959,11 @@ class ScheduleUpdateWorker {
     }
 
     diagnosticOutcome.addAll(pipeline.diagnosticProgress);
+    if (!_isAndroid &&
+        ((prefs.getString('account') ?? '').trim() != userId ||
+            !ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs))) {
+      return done(status: 'skip_stale_account');
+    }
     if (result.apiClosed || result.changes.isEmpty) {
       if (!result.apiClosed && result.skipReason == null) {
         await recordScheduleUpdateWorkerSuccessfulRun();

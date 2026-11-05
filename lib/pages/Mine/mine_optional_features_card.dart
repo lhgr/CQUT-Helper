@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/pages/Guide/usage_guide_page.dart';
 import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
@@ -42,27 +43,31 @@ class MineOptionalFeaturesCard extends StatelessWidget {
                   _OptionalFeatureEntry(
                     icon: Icons.notifications_active_outlined,
                     title: '课前提醒',
-                    description: '上课前收到提醒。',
+                    description: defaultTargetPlatform == TargetPlatform.iOS
+                        ? '授权通知后安排近期课程提醒，打开应用可续排。'
+                        : '上课前收到提醒。',
                     action: '去设置',
                     onTap: () => openAppSettings(
                       context,
                       section: AppSettingsSection.notifications,
                     ),
                   ),
-                  const Divider(height: 1),
-                  _OptionalFeatureEntry(
-                    icon: Icons.widgets_outlined,
-                    title: '桌面小组件',
-                    description: '在手机桌面查看课程。',
-                    action: '查看添加方法',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const UsageGuidePage(
-                          initialChapter: UsageGuideChapter.widgets,
+                  if (defaultTargetPlatform != TargetPlatform.iOS) ...[
+                    const Divider(height: 1),
+                    _OptionalFeatureEntry(
+                      icon: Icons.widgets_outlined,
+                      title: '桌面小组件',
+                      description: '在手机桌面查看课程。',
+                      action: '查看添加方法',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const UsageGuidePage(
+                            initialChapter: UsageGuideChapter.widgets,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

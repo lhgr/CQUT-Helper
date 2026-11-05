@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
@@ -29,6 +30,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
     with WidgetsBindingObserver {
   final ScheduleSettingsManager _manager = ScheduleSettingsManager();
   final TextEditingController _serviceController = TextEditingController();
+  bool get _isIOS => defaultTargetPlatform == TargetPlatform.iOS;
   bool _loading = true;
   bool _working = false;
   bool _remindersEnabled = false;
@@ -298,7 +300,9 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       if (value &&
           !await LocalNotifications.ensureCourseReminderPermissions()) {
         if (!mounted) return;
-        _showMessage('当前未同时获得通知和精确闹钟权限；请允许通知及“闹钟与提醒”，再重试。');
+        _showMessage(
+          _isIOS ? '请允许系统通知后重试。' : '当前未同时获得通知和精确闹钟权限；请允许通知及“闹钟与提醒”，再重试。',
+        );
         return;
       }
       if (!mounted) return;
@@ -505,10 +509,12 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('开启“调课通知增强”'),
-            content: const Text(
-              '开启后，应用会将你的学号、教务系统加密密码和当前学期发送到所配置的调课服务，用于代你查询调课通知，并在后台刷新受影响周。\n\n'
-              'CQUT Helper 官方调课服务仅使用上述信息完成查询，不会储存你的学号、密码、学期等隐私数据；若使用自定义服务，其数据处理方式由服务提供者决定。\n\n'
-              '普通课表和桌面小组件不依赖此服务。继续后还会申请通知权限，并引导你设置电池优化和自启动。',
+            content: Text(
+              _isIOS
+                  ? '开启后，应用会在启动、返回前台和手动同步时向所配置的调课服务发送学号、教务系统加密密码和当前学期，用于查询调课通知并更新受影响周。\n\n官方服务仅使用上述信息完成查询，不储存这些隐私数据。自定义服务的数据处理方式由服务提供者决定。继续后会申请通知权限。'
+                  : '开启后，应用会将你的学号、教务系统加密密码和当前学期发送到所配置的调课服务，用于代你查询调课通知，并在后台刷新受影响周。\n\n'
+                        'CQUT Helper 官方调课服务仅使用上述信息完成查询，不会储存你的学号、密码、学期等隐私数据；若使用自定义服务，其数据处理方式由服务提供者决定。\n\n'
+                        '普通课表和桌面小组件不依赖此服务。继续后还会申请通知权限，并引导你设置电池优化和自启动。',
             ),
             actions: [
               TextButton(
@@ -532,6 +538,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       return false;
     }
     if (!mounted) return false;
+    if (_isIOS) return true;
     return showBackgroundPollingSetupDialog(context);
   }
 
@@ -702,64 +709,81 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
                             onChanged: _working ? null : _changeReminderChoice,
                           ),
                         ),
-                        const Divider(height: 1),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: AppSelectField<CourseAutoMode>(
-                            value: _courseAutoMode,
-                            labelText: '上课勿扰与静音',
-                            sheetTitle: '选择上课勿扰与静音',
-                            options: const [
-                              AppSelectOption(
-                                value: CourseAutoMode.off,
-                                label: '关闭',
-                                description: '上课时不调整系统模式',
-                              ),
-                              AppSelectOption(
-                                value: CourseAutoMode.dnd,
-                                label: '勿扰模式',
-                                description: '上课期间开启系统勿扰模式',
-                              ),
-                              AppSelectOption(
-                                value: CourseAutoMode.silent,
-                                label: '静音',
-                                description: '上课期间将设备设为静音',
-                              ),
-                            ],
-                            onChanged:
-                                !_working &&
-                                    _permissionStatus?.supported == true
-                                ? _changeCourseAutoMode
-                                : null,
-                          ),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.schedule_outlined),
-                          title: Text(
-                            _permissionStatus?.autoModeStatus ??
-                                (_courseAutoMode == CourseAutoMode.off
-                                    ? '上课勿扰与静音已关闭'
-                                    : '等待状态更新'),
-                          ),
-                          subtitle: const Text('课程结束后恢复原系统状态'),
-                        ),
-                        if (_courseAutoMode != CourseAutoMode.off &&
-                            _permissionStatus?.supported == true &&
-                            !_permissionStatus!.dndGranted)
-                          ListTile(
-                            leading: const Icon(Icons.do_not_disturb_on),
-                            title: const Text('需要勿扰权限'),
-                            subtitle: const Text('允许应用管理系统勿扰模式'),
-                            trailing: TextButton(
-                              onPressed: () => _openPermissionSettings('dnd'),
-                              child: const Text('去设置'),
+                        if (!_isIOS) ...[
+                          const Divider(height: 1),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: AppSelectField<CourseAutoMode>(
+                              value: _courseAutoMode,
+                              labelText: '上课勿扰与静音',
+                              sheetTitle: '选择上课勿扰与静音',
+                              options: const [
+                                AppSelectOption(
+                                  value: CourseAutoMode.off,
+                                  label: '关闭',
+                                  description: '上课时不调整系统模式',
+                                ),
+                                AppSelectOption(
+                                  value: CourseAutoMode.dnd,
+                                  label: '勿扰模式',
+                                  description: '上课期间开启系统勿扰模式',
+                                ),
+                                AppSelectOption(
+                                  value: CourseAutoMode.silent,
+                                  label: '静音',
+                                  description: '上课期间将设备设为静音',
+                                ),
+                              ],
+                              onChanged:
+                                  !_working &&
+                                      _permissionStatus?.supported == true
+                                  ? _changeCourseAutoMode
+                                  : null,
                             ),
                           ),
+                          ListTile(
+                            leading: const Icon(Icons.schedule_outlined),
+                            title: Text(
+                              _permissionStatus?.autoModeStatus ??
+                                  (_courseAutoMode == CourseAutoMode.off
+                                      ? '上课勿扰与静音已关闭'
+                                      : '等待状态更新'),
+                            ),
+                            subtitle: const Text('课程结束后恢复原系统状态'),
+                          ),
+                          if (_courseAutoMode != CourseAutoMode.off &&
+                              _permissionStatus?.supported == true &&
+                              !_permissionStatus!.dndGranted)
+                            ListTile(
+                              leading: const Icon(Icons.do_not_disturb_on),
+                              title: const Text('需要勿扰权限'),
+                              subtitle: const Text('允许应用管理系统勿扰模式'),
+                              trailing: TextButton(
+                                onPressed: () => _openPermissionSettings('dnd'),
+                                child: const Text('去设置'),
+                              ),
+                            ),
+                        ],
                       ],
-                      if (_permissionStatus?.supported == true) ...[
+                      if (_isIOS && _permissionStatus != null) ...[
+                        _permissionTile(
+                          icon: Icons.notifications_outlined,
+                          title: '通知权限',
+                          granted: _permissionStatus!.notificationGranted,
+                          kind: 'notifications',
+                        ),
+                        const ListTile(
+                          leading: Icon(Icons.sync),
+                          title: Text('打开应用更新课表与提醒'),
+                          subtitle: Text(
+                            '启动、返回前台和手动刷新时同步。iOS 最多保留 64 条待发送本地通知，请在“同步与修复”查看实际覆盖并定期打开应用续排。',
+                          ),
+                        ),
+                      ],
+                      if (!_isIOS && _permissionStatus?.supported == true) ...[
                         const Divider(height: 1),
                         _permissionTile(
                           icon: Icons.notifications_outlined,
@@ -830,7 +854,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
                       SwitchListTile(
                         title: const Text('调课通知增强'),
                         subtitle: Text(
-                          !_pollingEnabled
+                          _isIOS
+                              ? (_pollingEnabled
+                                    ? '启动、返回前台和手动同步时检查调课通知'
+                                    : '关闭时不会访问调课服务')
+                              : !_pollingEnabled
                               ? '关闭时不会访问调课服务'
                               : _health == null
                               ? '后台检查调课通知'

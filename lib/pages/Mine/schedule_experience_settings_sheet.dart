@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
@@ -43,7 +44,9 @@ class _ScheduleExperienceSettingsSheetState
   Future<void> _load() async {
     await _manager.load();
     final exactAlarmGranted = _manager.remindersEnabled
-        ? await LocalNotifications.canScheduleExactNotifications()
+        ? defaultTargetPlatform == TargetPlatform.iOS
+              ? await LocalNotifications.areNotificationsEnabled()
+              : await LocalNotifications.canScheduleExactNotifications()
         : false;
     if (!mounted) return;
     setState(() {
@@ -62,9 +65,15 @@ class _ScheduleExperienceSettingsSheetState
           await LocalNotifications.ensureCourseReminderPermissions();
       if (!granted) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('需要通知和“闹钟与提醒”权限才能启用课前提醒')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              defaultTargetPlatform == TargetPlatform.iOS
+                  ? '需要通知授权才能启用课前提醒'
+                  : '需要通知和“闹钟与提醒”权限才能启用课前提醒',
+            ),
+          ),
+        );
         return;
       }
     }
@@ -85,8 +94,15 @@ class _ScheduleExperienceSettingsSheetState
         _saving = false;
         _exactAlarmGranted = false;
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请先允许通知和“闹钟与提醒”权限')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            defaultTargetPlatform == TargetPlatform.iOS
+                ? '请先允许通知权限'
+                : '请先允许通知和“闹钟与提醒”权限',
+          ),
+        ),
+      );
       return;
     }
     await _manager.saveExperienceSettings(
@@ -126,7 +142,9 @@ class _ScheduleExperienceSettingsSheetState
             Text('课程与体验', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(
-              '课前提醒依据本机已同步的课表安排；调课通知增强可在通知设置中单独开启。',
+              defaultTargetPlatform == TargetPlatform.iOS
+                  ? '课前提醒依据本机已同步课表安排，打开应用时同步并续排近期提醒。'
+                  : '课前提醒依据本机已同步的课表安排；调课通知增强可在通知设置中单独开启。',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -135,7 +153,11 @@ class _ScheduleExperienceSettingsSheetState
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('课前提醒'),
-              subtitle: const Text('课程同步或编辑后自动重建未来 60 天提醒'),
+              subtitle: Text(
+                defaultTargetPlatform == TargetPlatform.iOS
+                    ? '课程同步或编辑后重建近期提醒，最多 64 条'
+                    : '课程同步或编辑后自动重建未来 60 天提醒',
+              ),
               value: _remindersEnabled,
               onChanged: _toggleReminders,
             ),
@@ -162,7 +184,13 @@ class _ScheduleExperienceSettingsSheetState
                       color: Theme.of(context).colorScheme.error,
                     ),
                     const SizedBox(width: 8),
-                    const Expanded(child: Text('尚未获得精确闹钟权限，课程提醒不会生效')),
+                    Expanded(
+                      child: Text(
+                        defaultTargetPlatform == TargetPlatform.iOS
+                            ? '尚未获得通知授权，课程提醒不会生效'
+                            : '尚未获得精确闹钟权限，课程提醒不会生效',
+                      ),
+                    ),
                   ],
                 ),
               ),

@@ -31,6 +31,7 @@ class CourseReminderScheduler {
   }
 
   static Future<void>? _pending;
+  static int _generation = 0;
   static Future<void> _serialize(Future<void> Function() action) {
     final previous = _pending;
     final result = previous == null
@@ -52,32 +53,84 @@ class CourseReminderScheduler {
   static Future<void> rescheduleForUser(
     String userId, {
     AcademicCalendarSnapshot? calendar,
-  }) => _serialize(() async {
-    try {
-      await _rescheduleForUser(userId, calendar: calendar);
-    } catch (error, stackTrace) {
-      AppLogger.I.error(
-        'CourseReminderScheduler',
-        'reminder rebuild failed',
-        error: error,
-        stackTrace: stackTrace,
-        fields: {
-          'hasAccount': userId.trim().isNotEmpty,
-          'hasProvidedCalendar': calendar != null,
-        },
-      );
-      await CourseReminderMode.cancelAndRestore();
-      rethrow;
-    }
-  });
+  }) {
+    final generation = _generation;
+    return _serialize(() async {
+      try {
+        await _rescheduleForUser(
+          userId,
+          generation: generation,
+          calendar: calendar,
+        );
+      } catch (error, stackTrace) {
+        AppLogger.I.error(
+          'CourseReminderScheduler',
+          'reminder rebuild failed',
+          error: error,
+          stackTrace: stackTrace,
+          fields: {
+            'hasAccount': userId.trim().isNotEmpty,
+            'hasProvidedCalendar': calendar != null,
+          },
+        );
+        final prefs = await SharedPreferences.getInstance();
+        try {
+          await _cancelPrevious(prefs);
+        } catch (cleanupError, cleanupStack) {
+          AppLogger.I.warn(
+            'CourseReminderScheduler',
+            'failed reminder cleanup will be retried',
+            error: cleanupError,
+            stackTrace: cleanupStack,
+          );
+        }
+        var remainingCount = 0;
+        if (LocalNotifications.isIOS) {
+          try {
+            remainingCount = (await LocalNotifications.pendingRequests())
+                .where(
+                  (request) =>
+                      (request.payload ?? '').startsWith('course_reminder|'),
+                )
+                .length;
+          } catch (_) {}
+        }
+        await _saveStatus(
+          prefs,
+          CourseReminderStatus(
+            enabled:
+                prefs.getBool(ScheduleSettingsManager.remindersEnabledKey) ??
+                false,
+            ready: false,
+            reason: '提醒计划重建失败，请重试',
+            scheduledCount: remainingCount,
+            updatedAt: DateTime.now(),
+          ),
+        );
+        try {
+          await CourseReminderMode.cancelAndRestore();
+        } catch (_) {}
+        rethrow;
+      }
+    });
+  }
+
   static Future<void> _rescheduleForUser(
     String userId, {
+    required int generation,
     AcademicCalendarSnapshot? calendar,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await _cancelPrevious(prefs);
     final enabled =
         prefs.getBool(ScheduleSettingsManager.remindersEnabledKey) ?? false;
+    bool isCurrentRequest() =>
+        generation == _generation &&
+        (prefs.getString('account') ?? '').trim() == userId.trim();
+    if (generation != _generation ||
+        (enabled && userId.trim().isNotEmpty && !isCurrentRequest())) {
+      return;
+    }
+    await _cancelPrevious(prefs);
     if (!enabled || userId.trim().isEmpty) {
       await CourseReminderMode.cancelAndRestore();
       await _saveStatus(
@@ -96,7 +149,8 @@ class CourseReminderScheduler {
     // requests belong to the settings UI; background work only checks the
     // permission that has already been granted.
     final granted = await LocalNotifications.areNotificationsEnabled();
-    if (!await LocalNotifications.canScheduleExactNotifications()) {
+    if (LocalNotifications.requiresExactAlarms &&
+        !await LocalNotifications.canScheduleExactNotifications()) {
       await CourseReminderMode.cancelAndRestore();
       await _saveStatus(
         prefs,
@@ -184,34 +238,55 @@ class CourseReminderScheduler {
           prefs.getBool(ScheduleSettingsManager.defaultReminderAtStartKey) ??
           false,
     );
-    final occurrences = granted
+    final plannedOccurrences = granted
         ? plan.notifications
         : <CourseReminderOccurrence>[];
+    var occurrences = plannedOccurrences;
+    if (LocalNotifications.isIOS) {
+      final pending = await LocalNotifications.pendingRequests();
+      final otherCount = pending
+          .where(
+            (request) =>
+                !(request.payload ?? '').startsWith('course_reminder|'),
+          )
+          .length;
+      occurrences = plannedOccurrences
+          .take((64 - otherCount).clamp(0, 64))
+          .toList();
+    }
+    final pendingLimitReached = occurrences.length < plannedOccurrences.length;
     final modeName = prefs.getString(ScheduleSettingsManager.courseAutoModeKey);
     final mode = CourseAutoMode.values.firstWhere(
       (mode) => mode.name == modeName,
       orElse: () => CourseAutoMode.off,
     );
     final scheduledIds = <int>[];
-    // Android is the only supported platform. Do not silently truncate at 64:
-    // a dense 60-day timetable can exceed that number and would otherwise
-    // miss later reminders without telling the user.
     try {
       for (final occurrence in occurrences) {
-        await LocalNotifications.scheduleCourseReminder(
+        if (!isCurrentRequest()) break;
+        // Persist before scheduling so a failed platform operation can be
+        // cancelled on this rebuild or the next app launch.
+        scheduledIds.add(occurrence.id);
+        await prefs.setString(_scheduledIdsKey, jsonEncode(scheduledIds));
+        final scheduled = await LocalNotifications.scheduleCourseReminder(
           id: occurrence.id,
           title: occurrence.title,
           body: occurrence.body,
           scheduledAt: occurrence.notifyAt,
           payload: occurrence.payload,
         );
-        scheduledIds.add(occurrence.id);
+        if (!scheduled) scheduledIds.remove(occurrence.id);
       }
     } catch (_) {
       await LocalNotifications.cancelIds(scheduledIds);
+      await prefs.remove(_scheduledIdsKey);
       rethrow;
     }
     await prefs.setString(_scheduledIdsKey, jsonEncode(scheduledIds));
+    if (!isCurrentRequest()) {
+      await _cancelPrevious(prefs);
+      return;
+    }
     if (schedules.isEmpty) {
       await CourseReminderMode.cancelAndRestore();
     } else {
@@ -225,21 +300,37 @@ class CourseReminderScheduler {
       prefs,
       CourseReminderStatus(
         enabled: true,
-        ready: granted && coverage.complete,
+        ready:
+            granted &&
+            coverage.complete &&
+            (!pendingLimitReached || scheduledIds.isNotEmpty),
         reason: !granted
             ? '通知权限未授予'
             : !coverage.measurable
             ? '尚未缓存可用于提醒的当前学期课表'
             : !coverage.complete
             ? '课表覆盖不完整，请联网后点击重建以补齐'
+            : pendingLimitReached && scheduledIds.isEmpty
+            ? '通知预约已达系统上限，暂无可用课前提醒名额'
+            : pendingLimitReached
+            ? '已预约最近 ${scheduledIds.length} 条提醒，重新打开应用将继续补齐'
             : occurrences.isEmpty
             ? '未来 60 天没有需要提醒的课程'
             : '提醒计划正常',
         scheduledCount: scheduledIds.length,
+        pendingLimitReached: pendingLimitReached,
         cachedWeekCount: coverage.cachedWeekCount,
         expectedWeekCount: coverage.expectedWeekCount,
-        nextReminderAt: occurrences.isEmpty ? null : occurrences.first.notifyAt,
-        coveredUntil: coverage.coveredUntil,
+        nextReminderAt: occurrences
+            .where((item) => scheduledIds.contains(item.id))
+            .firstOrNull
+            ?.notifyAt,
+        coveredUntil: pendingLimitReached
+            ? occurrences
+                  .where((item) => scheduledIds.contains(item.id))
+                  .lastOrNull
+                  ?.notifyAt
+            : coverage.coveredUntil,
         updatedAt: DateTime.now(),
       ),
     );
@@ -306,13 +397,28 @@ class CourseReminderScheduler {
     return (newest.first.schedule.yearTerm ?? '').trim();
   }
 
-  static Future<void> cancelAll() => _serialize(() async {
-    await CourseReminderMode.cancelAndRestore();
-    final prefs = await SharedPreferences.getInstance();
-    await _cancelPrevious(prefs);
-  });
+  static Future<void> cancelAll() {
+    _generation++;
+    return _serialize(() async {
+      await CourseReminderMode.cancelAndRestore();
+      final prefs = await SharedPreferences.getInstance();
+      await _cancelPrevious(prefs);
+      await _saveStatus(prefs, const CourseReminderStatus.empty());
+    });
+  }
 
   static Future<void> _cancelPrevious(SharedPreferences prefs) async {
+    if (LocalNotifications.isIOS) {
+      final pending = await LocalNotifications.pendingRequests();
+      await LocalNotifications.cancelIds(
+        pending
+            .where(
+              (request) =>
+                  (request.payload ?? '').startsWith('course_reminder|'),
+            )
+            .map((request) => request.id),
+      );
+    }
     final raw = prefs.getString(_scheduledIdsKey);
     if (raw != null) {
       try {
@@ -656,6 +762,7 @@ class CourseReminderStatus {
   final bool ready;
   final String reason;
   final int scheduledCount;
+  final bool pendingLimitReached;
   final int cachedWeekCount;
   final int expectedWeekCount;
   final DateTime? nextReminderAt;
@@ -667,6 +774,7 @@ class CourseReminderStatus {
     required this.ready,
     required this.reason,
     this.scheduledCount = 0,
+    this.pendingLimitReached = false,
     this.cachedWeekCount = 0,
     this.expectedWeekCount = 0,
     this.nextReminderAt,
@@ -679,6 +787,7 @@ class CourseReminderStatus {
       ready = false,
       reason = '尚未建立提醒计划',
       scheduledCount = 0,
+      pendingLimitReached = false,
       cachedWeekCount = 0,
       expectedWeekCount = 0,
       nextReminderAt = null,
@@ -693,6 +802,7 @@ class CourseReminderStatus {
       ready: json['ready'] == true,
       reason: (json['reason'] ?? '尚未建立提醒计划').toString(),
       scheduledCount: (json['scheduledCount'] as num?)?.toInt() ?? 0,
+      pendingLimitReached: json['pendingLimitReached'] == true,
       cachedWeekCount: (json['cachedWeekCount'] as num?)?.toInt() ?? 0,
       expectedWeekCount: (json['expectedWeekCount'] as num?)?.toInt() ?? 0,
       nextReminderAt: time('nextReminderAt'),
@@ -706,6 +816,7 @@ class CourseReminderStatus {
     'ready': ready,
     'reason': reason,
     'scheduledCount': scheduledCount,
+    'pendingLimitReached': pendingLimitReached,
     'cachedWeekCount': cachedWeekCount,
     'expectedWeekCount': expectedWeekCount,
     'nextReminderAt': nextReminderAt?.toIso8601String(),

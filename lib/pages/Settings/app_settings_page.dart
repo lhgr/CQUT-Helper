@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/pages/Mine/ClearCache.dart';
 import 'package:material_ui/material_ui.dart';
@@ -79,7 +80,9 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   }
 
   String get _notificationSummary {
-    return '课前提醒与调课通知增强';
+    return defaultTargetPlatform == TargetPlatform.iOS
+        ? '通知授权与课前提醒、调课查询'
+        : '课前提醒与调课通知增强';
   }
 
   String get _appearanceSummary {

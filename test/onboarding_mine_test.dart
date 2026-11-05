@@ -44,6 +44,28 @@ void main() {
         .setMockMethodCallHandler(_courseReminderChannel, null);
   });
 
+  testWidgets('iOS 推荐和指南只呈现可用提醒与前台同步', (tester) async {
+    await manager.initialize();
+    await manager.markScheduleReady();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MineOptionalFeaturesCard(manager: manager)),
+      ),
+    );
+    expect(find.text('课前提醒'), findsOneWidget);
+    expect(find.text('桌面小组件'), findsNothing);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: UsageGuidePage(initialChapter: UsageGuideChapter.widgets),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('桌面小组件'), findsNothing);
+    expect(find.textContaining('返回前台'), findsOneWidget);
+    expect(find.textContaining('64 条'), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   testWidgets('推荐入口导航不会关闭卡片，只有关闭操作会持久隐藏', (tester) async {
     await manager.initialize();
     await manager.markScheduleReady();

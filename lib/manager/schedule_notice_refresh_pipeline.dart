@@ -105,6 +105,7 @@ class ScheduleNoticeRefreshPipeline {
     required ScheduleData currentData,
     String envName = 'prod',
     bool headless = true,
+    bool respectQuietHours = true,
   }) async {
     _stageDurations.clear();
     _stageClock.stop();
@@ -114,7 +115,7 @@ class ScheduleNoticeRefreshPipeline {
     _networkOutcome = 'not_attempted';
     final now = nowProvider();
     final nowHour = now.hour;
-    if (nowHour >= 0 && nowHour < 7) {
+    if (respectQuietHours && nowHour >= 0 && nowHour < 7) {
       return _skip('deep_night', apiClosed: true);
     }
     final yearTerm = (currentData.yearTerm ?? '').trim();
@@ -138,6 +139,10 @@ class ScheduleNoticeRefreshPipeline {
     if (userId.isEmpty || encryptedPassword.isEmpty) {
       return _skip('missing_credentials');
     }
+    bool isCurrentAccount() =>
+        (prefs.getString('account') ?? '').trim() == userId &&
+        ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs);
+    if (!isCurrentAccount()) return _skip('stale_account');
 
     _completedStages.add(_stage);
     _enterStage('fetch_notices');
@@ -158,6 +163,7 @@ class ScheduleNoticeRefreshPipeline {
     }
     _completedStages.add(_stage);
     _enterStage('compare_notices');
+    if (!isCurrentAccount()) return _skip('stale_account');
     final polledYearTerm = pollData.yearTerm.trim();
     if (polledYearTerm.isNotEmpty && polledYearTerm != yearTerm) {
       throw StateError(
@@ -246,6 +252,7 @@ class ScheduleNoticeRefreshPipeline {
     _completedStages.add(_stage);
     _enterStage('refresh_affected_weeks');
     for (final week in affectedWeeks) {
+      if (!isCurrentAccount()) return _skip('stale_account');
       await refreshWeek(week, yearTerm);
       _refreshedWeekCount++;
     }
@@ -263,6 +270,7 @@ class ScheduleNoticeRefreshPipeline {
     });
 
     _enterStage('write_notice_state');
+    if (!isCurrentAccount()) return _skip('stale_account');
     final newState = <String, dynamic>{
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
       'generatedAt': pollData.generatedAt,

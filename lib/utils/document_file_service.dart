@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class DocumentFileService {
@@ -10,7 +11,10 @@ class DocumentFileService {
     required String mimeType,
     required String content,
   }) async {
-    if (!Platform.isAndroid) return null;
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return null;
+    }
     return _channel.invokeMethod<String>('createTextDocument', {
       'fileName': fileName,
       'mimeType': mimeType,
@@ -21,8 +25,24 @@ class DocumentFileService {
   static Future<String?> openText({
     String mimeType = 'application/json',
   }) async {
-    if (!Platform.isAndroid) return null;
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return null;
+    }
     return _channel.invokeMethod<String>('openTextDocument', {
+      'mimeType': mimeType,
+    });
+  }
+
+  static Future<String?> exportFile({
+    required String path,
+    String? fileName,
+    String mimeType = 'text/plain',
+  }) async {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return path;
+    return _channel.invokeMethod<String>('exportFile', {
+      'path': path,
+      'fileName': fileName ?? File(path).uri.pathSegments.last,
       'mimeType': mimeType,
     });
   }

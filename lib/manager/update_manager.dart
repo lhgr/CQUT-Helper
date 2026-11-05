@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/model/update_model.dart';
 import 'package:cqut_helper/widgets/release_notes_markdown.dart';
@@ -101,6 +102,8 @@ class UpdateManager {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('当前版本: $currentVersion'),
+                if (defaultTargetPlatform == TargetPlatform.iOS)
+                  const Text('下载 iOS 安装包后，使用个人签名工具签名并侧载。'),
                 SizedBox(height: 8),
                 Text('更新内容:', style: TextStyle(fontWeight: FontWeight.bold)),
                 SizedBox(height: 4),
@@ -119,9 +122,16 @@ class UpdateManager {
             FilledButton(
               onPressed: () {
                 Navigator.pop(context);
-                _launchExternalUrl(context, info.downloadUrl);
+                _launchExternalUrl(
+                  context,
+                  defaultTargetPlatform == TargetPlatform.iOS
+                      ? info.htmlUrl
+                      : info.downloadUrl,
+                );
               },
-              child: Text('立即更新'),
+              child: Text(
+                defaultTargetPlatform == TargetPlatform.iOS ? '查看发行版' : '立即更新',
+              ),
             ),
           ],
         );
@@ -145,6 +155,8 @@ class UpdateManager {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('当前版本: $currentVersion'),
+                if (defaultTargetPlatform == TargetPlatform.iOS)
+                  const Text('下载 iOS 安装包后，使用个人签名工具签名并侧载。'),
                 SizedBox(height: 8),
                 Text('版本日志:', style: TextStyle(fontWeight: FontWeight.bold)),
                 SizedBox(height: 4),

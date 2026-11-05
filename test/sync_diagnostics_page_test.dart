@@ -190,6 +190,27 @@ void main() {
 
   setUp(preferences);
 
+  testWidgets('iOS 同步跳过 Android 组件与闹钟，展示实际提醒覆盖', (tester) async {
+    preferences(enhancement: true);
+    final service = _Service();
+    final result = await service.synchronize(await service.load());
+    expect(result.hasFailure, isFalse);
+    expect(result.completedStages, 3);
+    expect(service.widgetCalls, 0);
+    expect(service.exactReads, 0);
+    await pumpPage(tester, service);
+    expect(find.text('课表同步'), findsOneWidget);
+    expect(find.text('桌面组件'), findsNothing);
+    await tester.scrollUntilVisible(find.text('打开应用时检查'), 250);
+    expect(find.text('电池与后台设置'), findsNothing);
+    expect(find.text('自启动设置'), findsNothing);
+    await tester.scrollUntilVisible(find.text('查看详情'), 250);
+    await tester.tap(find.text('查看详情'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.textContaining('实际覆盖截至'), 250);
+    expect(find.textContaining('实际覆盖截至'), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   test('全周强制同步，分别确认课表、组件请求与提醒阶段', () async {
     final service = _Service();
     final result = await service.synchronize(await service.load());

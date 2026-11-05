@@ -58,6 +58,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       _onOpenFromSystemNotification,
     );
     WidgetNavigation.request.addListener(_onWidgetNavigation);
+    LocalNotifications.courseReminderOpened.addListener(
+      _onCourseReminderOpened,
+    );
     ScheduleSettingsManager.settingsEpoch.addListener(
       _loadScheduleLayoutSettings,
     );
@@ -73,6 +76,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       _onOpenFromSystemNotification,
     );
     WidgetNavigation.request.removeListener(_onWidgetNavigation);
+    LocalNotifications.courseReminderOpened.removeListener(
+      _onCourseReminderOpened,
+    );
     ScheduleSettingsManager.settingsEpoch.removeListener(
       _loadScheduleLayoutSettings,
     );
@@ -86,12 +92,8 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     }
     if (state == AppLifecycleState.resumed) {
       _markActive();
-      ScheduleUpdateWorker.syncFromPreferences();
-      LocalNotifications.consumeOpenCourseReminderFlag().then((open) {
-        if (open && mounted && _currentIndex != 0) {
-          setState(() => _currentIndex = 0);
-        }
-      });
+      unawaited(ScheduleUpdateWorker.syncFromPreferences());
+      unawaited(_onCourseReminderOpened());
     }
   }
 
@@ -145,7 +147,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       UpdateManager().checkUpdate(context);
       AnnouncementManager().checkAndShow(context);
-      ScheduleUpdateWorker.syncFromPreferences();
+      unawaited(ScheduleUpdateWorker.syncFromPreferences());
       _markActive();
       final open = await LocalNotifications.consumeOpenScheduleUpdateFlag();
       if (open) {
@@ -157,6 +159,14 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         setState(() => _currentIndex = 0);
       }
     });
+  }
+
+  Future<void> _onCourseReminderOpened() async {
+    if (_isCheckingLogin) return;
+    final open = await LocalNotifications.consumeOpenCourseReminderFlag();
+    if (open && mounted && !_isCheckingLogin && _currentIndex != 0) {
+      setState(() => _currentIndex = 0);
+    }
   }
 
   void _onOpenFromSystemNotification() {

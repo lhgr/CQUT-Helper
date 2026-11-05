@@ -1,0 +1,65 @@
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-sideload-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package unsigned iPhone app
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.7'
+          cache: true
+
+      - name: Inspect Xcode
+        run: xcodebuild -version
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build unsigned device release
+        run: |
+          set -o pipefail
+          mkdir -p build/ios-sideload
+          flutter build ios --release --no-codesign 2>&1 | tee build/ios-sideload/build.log
+
+      - name: Package IPA for personal signing
+        run: |
+          mkdir -p build/ios-sideload/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios-sideload/Payload/
+          cd build/ios-sideload
+          zip -qry CQUT-Helper-unsigned.ipa Payload
+          shasum -a 256 CQUT-Helper-unsigned.ipa > SHA256SUMS.txt
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CQUT-Helper-unsigned-ios
+          path: |
+            build/ios-sideload/CQUT-Helper-unsigned.ipa
+            build/ios-sideload/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-device-build-log
+          path: build/ios-sideload/build.log
+          if-no-files-found: warn

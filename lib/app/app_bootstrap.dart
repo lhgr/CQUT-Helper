@@ -44,7 +44,9 @@ Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
   unawaited(ScheduleUpdateWorker.syncFromPreferences());
   // Calendar service is deliberately slow and independent of notice
   // enhancement. Start it after the first frame without blocking startup.
-  unawaited(AcademicCalendarManager.instance.initializeFromPreferences());
+  if (!LocalNotifications.isIOS) {
+    unawaited(AcademicCalendarManager.instance.initializeFromPreferences());
+  }
 }
 
 class _DiagnosticLifecycleObserver extends WidgetsBindingObserver {

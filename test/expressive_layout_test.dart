@@ -101,6 +101,7 @@ class _VisualSyncDiagnosticsService extends SyncDiagnosticsService {
   @override
   void logFailure(String operation, Object error, StackTrace stack) {}
 }
+
 DatabaseFactory? _originalDatabaseFactory;
 
 class _VisualWorkmanager extends WorkmanagerPlatform {

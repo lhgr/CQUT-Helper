@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:cqut_helper/utils/course_reminder_mode.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
@@ -177,8 +179,9 @@ class SyncDiagnosticsService {
       AndroidBackgroundRestrictions.openBatteryOptimizationSettings();
   Future<bool> openAutoStartSettings() =>
       AndroidBackgroundRestrictions.openAutoStartSettings();
-  Future<bool> openAppSettings() =>
-      AndroidBackgroundRestrictions.openAppDetailsSettings();
+  Future<bool> openAppSettings() => defaultTargetPlatform == TargetPlatform.iOS
+      ? CourseReminderMode.openSettings('notifications')
+      : AndroidBackgroundRestrictions.openAppDetailsSettings();
 
   void logFailure(String operation, Object error, StackTrace stack) {
     AppLogger.I.logOperationFailure(
@@ -232,7 +235,9 @@ class SyncDiagnosticsService {
     ScheduleRefreshSnapshot? refresh;
     CourseReminderStatus? reminders;
     bool? notifications;
-    bool? exactAlarm;
+    bool? exactAlarm = defaultTargetPlatform == TargetPlatform.iOS
+        ? true
+        : null;
     ScheduleBackgroundPollHealthSnapshot? background;
     bool? battery;
     bool? restriction;
@@ -267,11 +272,13 @@ class SyncDiagnosticsService {
             readNotifications,
           );
         })(),
-      if (remindersEnabled == true)
+      if (remindersEnabled == true &&
+          defaultTargetPlatform != TargetPlatform.iOS)
         (() async {
           exactAlarm = await read(DiagnosticRead.exactAlarm, readExactAlarm);
         })(),
-      if (enhancementEnabled) ...[
+      if (enhancementEnabled &&
+          defaultTargetPlatform != TargetPlatform.iOS) ...[
         (() async {
           background = await read(DiagnosticRead.background, readBackground);
         })(),
@@ -350,7 +357,11 @@ class SyncDiagnosticsService {
         return SyncActionResult(details: details, hasFailure: true);
       }
       if (!granted) {
-        details.add('提醒权限未授予，请在系统设置中允许通知与精确闹钟后重试');
+        details.add(
+          defaultTargetPlatform == TargetPlatform.iOS
+              ? '提醒权限未授予，请在系统设置中允许通知后重试'
+              : '提醒权限未授予，请在系统设置中允许通知与精确闹钟后重试',
+        );
         return SyncActionResult(
           details: details,
           hasFailure: true,
@@ -398,7 +409,7 @@ class SyncDiagnosticsService {
       if (!currentLoaded) details.add('全学期同步未开始，需先完成当前课表同步');
       controller?.dispose();
     }
-    if (!repairReminders) {
+    if (!repairReminders && defaultTargetPlatform != TargetPlatform.iOS) {
       await stage('组件刷新请求', () async {
         widgetResult = await refreshWidget();
         switch (widgetResult!) {
@@ -415,10 +426,16 @@ class SyncDiagnosticsService {
     }
     if (remindersEnabled == true) {
       await stage('提醒更新', () async {
-        if (!await readNotifications() || !await readExactAlarm()) {
+        if (!await readNotifications() ||
+            (defaultTargetPlatform != TargetPlatform.iOS &&
+                !await readExactAlarm())) {
           failed = true;
           permissionDenied = true;
-          details.add('提醒权限未授予，请在系统设置中允许通知与精确闹钟后修复提醒');
+          details.add(
+            defaultTargetPlatform == TargetPlatform.iOS
+                ? '提醒权限未授予，请在系统设置中允许通知后修复提醒'
+                : '提醒权限未授予，请在系统设置中允许通知与精确闹钟后修复提醒',
+          );
           return;
         }
         if (account == null || account.isEmpty) {
@@ -431,7 +448,11 @@ class SyncDiagnosticsService {
         if (status.ready) {
           completedStages++;
           details.add(
-            status.scheduledCount == 0 ? '提醒已就绪，未来 60 天没有需要提醒的课程' : '课前提醒已更新',
+            defaultTargetPlatform == TargetPlatform.iOS
+                ? status.reason
+                : status.scheduledCount == 0
+                ? '提醒已就绪，未来 60 天没有需要提醒的课程'
+                : '课前提醒已更新',
           );
         } else {
           failed = true;

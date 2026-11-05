@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 enum UsageGuideChapter { schedule, reminders, widgets }
@@ -23,7 +24,8 @@ class _UsageGuidePageState extends State<UsageGuidePage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         Scrollable.ensureVisible(
-          _keyFor(widget.initialChapter!).currentContext!,
+          (_keyFor(widget.initialChapter!).currentContext ??
+              _scheduleKey.currentContext)!,
           alignment: 0.08,
           duration: const Duration(milliseconds: 250),
         );
@@ -50,25 +52,35 @@ class _UsageGuidePageState extends State<UsageGuidePage> {
               key: _scheduleKey,
               icon: Icons.calendar_month_outlined,
               title: '查看课表',
-              paragraphs: const ['点周次切换要查看的周，点课程可查看课程详情。', '课表缓存后可离线查看。'],
+              paragraphs: [
+                '点周次切换要查看的周，点课程可查看课程详情。',
+                '课表缓存后可离线查看。',
+                if (defaultTargetPlatform == TargetPlatform.iOS)
+                  '启动、返回前台和手动刷新时同步课表，请定期打开应用更新课程与提醒。',
+              ],
             ),
             const SizedBox(height: 12),
             _GuideChapter(
               key: _remindersKey,
               icon: Icons.notifications_none_rounded,
               title: '课前提醒',
-              paragraphs: const ['前往“设置 → 通知与提醒 → 课前提醒”进行设置。'],
-            ),
-            const SizedBox(height: 12),
-            _GuideChapter(
-              key: _widgetsKey,
-              icon: Icons.widgets_outlined,
-              title: '桌面小组件',
-              paragraphs: const [
-                '长按手机桌面空白处 → 打开小组件列表 → 找到 CQUT Helper → 选择样式并添加。',
-                '不同桌面的入口名称可能不同。',
+              paragraphs: [
+                '前往“设置 → 通知与提醒 → 课前提醒”进行设置。',
+                if (defaultTargetPlatform == TargetPlatform.iOS) '允许系统通知后安排近期课程提醒。iOS 最多保留 64 条待发送本地通知，实际覆盖可在“同步与修复”查看，打开应用会续排。',
               ],
             ),
+            if (defaultTargetPlatform != TargetPlatform.iOS) ...[
+              const SizedBox(height: 12),
+              _GuideChapter(
+                key: _widgetsKey,
+                icon: Icons.widgets_outlined,
+                title: '桌面小组件',
+                paragraphs: const [
+                  '长按手机桌面空白处 → 打开小组件列表 → 找到 CQUT Helper → 选择样式并添加。',
+                  '不同桌面的入口名称可能不同。',
+                ],
+              ),
+            ],
           ],
         ),
       ),

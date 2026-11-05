@@ -1,5 +1,6 @@
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/document_file_service.dart';
 import 'package:material_ui/material_ui.dart';
 
 class ClearCachePage extends StatefulWidget {
@@ -126,8 +127,9 @@ class _ClearCachePageState extends State<ClearCachePage> {
     if (_exporting || _clearing) return;
     setState(() => _exporting = true);
     try {
-      final path = await AppLogger.I.exportLogs();
-      if (!mounted) return;
+      final sourcePath = await AppLogger.I.exportLogs();
+      final path = await DocumentFileService.exportFile(path: sourcePath);
+      if (!mounted || path == null) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: SelectableText('问题日志已保存：\n$path'),
