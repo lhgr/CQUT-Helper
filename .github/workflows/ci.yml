@@ -5,6 +5,12 @@ on:
     branches: [main, dev]
   pull_request:
   workflow_dispatch:
+    inputs:
+      capture_ios_screenshots:
+        description: Build and launch the iOS simulator to capture screenshots
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -84,7 +90,7 @@ jobs:
         run: flutter build apk --release
 
   ios:
-    name: iOS simulator smoke test
+    name: iOS release build
     runs-on: macos-15
     timeout-minutes: 40
     steps:
@@ -98,23 +104,39 @@ jobs:
           flutter-version: '3.47.7'
           cache: true
 
-      - name: Select Xcode 26.3 and inspect simulator runtimes
+      - name: Select Xcode 26.3 and inspect environment
         run: |
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
-          xcrun simctl list runtimes
           flutter doctor -v
 
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Build unsigned device release
+        run: |
+          set -o pipefail
+          mkdir -p build/ios-ci
+          flutter build ios --release --no-codesign 2>&1 | tee build/ios-ci/release-build.log
+
+      - name: Upload iOS release build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-build-log
+          path: build/ios-ci/release-build.log
+          if-no-files-found: warn
+
       - name: Build simulator app
+        if: github.event_name == 'workflow_dispatch' && inputs.capture_ios_screenshots
         run: |
           set -o pipefail
           mkdir -p build/ios-smoke
+          xcrun simctl list runtimes
           flutter build ios --simulator --debug 2>&1 | tee build/ios-smoke/build.log
 
       - name: Boot iPhone simulator and launch app
+        if: github.event_name == 'workflow_dispatch' && inputs.capture_ios_screenshots
         run: |
           set -euo pipefail
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(device["udid"] for runtime,devices in data["devices"].items() if "iOS" in runtime for device in devices if device["name"].startswith("iPhone")))')
@@ -134,7 +156,7 @@ jobs:
           xcrun simctl io "$DEVICE_ID" screenshot build/ios-smoke/launch.png
 
       - name: Collect simulator diagnostics
-        if: always()
+        if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.capture_ios_screenshots }}
         run: |
           mkdir -p build/ios-smoke
           if [ -n "${DEVICE_ID:-}" ]; then
@@ -143,17 +165,12 @@ jobs:
           fi
 
       - name: Upload iOS smoke evidence
-        if: always()
+        if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.capture_ios_screenshots }}
         uses: actions/upload-artifact@v4
         with:
           name: ios-simulator-smoke
           path: build/ios-smoke/
           if-no-files-found: warn
-
-  ios-package:
-    name: Build unsigned IPA on manual validation
-    if: github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/ios-sideload.yml
 
   backend:
     name: Notice service checks

@@ -2,7 +2,6 @@ name: Build unsigned iOS IPA
 
 on:
   workflow_dispatch:
-  workflow_call:
 
 permissions:
   contents: read

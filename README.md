@@ -179,7 +179,6 @@ iOS 构建需要 macOS 15.6+ 和 Xcode 26+，CI 明确使用 Xcode 26.3。
 
 ```bash
 flutter pub get
-flutter build ios --simulator --debug
 flutter build ios --release --no-codesign
 mkdir -p build/ios-sideload/Payload
 cp -R build/ios/iphoneos/Runner.app build/ios-sideload/Payload/
@@ -187,11 +186,17 @@ cd build/ios-sideload
 zip -qry CQUT-Helper-unsigned.ipa Payload
 ```
 
-CI 与发布 workflow 均固定使用 Flutter 3.47.7。`Quality Gate` 在独立 macOS 作业中
-构建 iOS 模拟器应用，启动 iPhone 模拟器、安装并运行，上传构建日志、运行日志和
-截图。手动 workflow 单独构建供个人签名侧载的设备 Release IPA，Android CI 和
-Android 发布沿用现有流程。手动运行 `Quality Gate` 也会同时调用未签名 IPA
-打包作业，可在同一次运行下载模拟器验收记录与设备安装包。
+CI 与发布 workflow 均固定使用 Flutter 3.47.7。`Quality Gate` 在 push、Pull Request
+和默认手动运行时执行分析、测试与 Release 构建。iOS 在独立 macOS 作业中执行
+`flutter build ios --release --no-codesign`，构建日志上传为 `ios-release-build-log`。
+
+需要查看 iOS 界面时，手动运行 `Quality Gate` 并勾选 `capture_ios_screenshots`。
+该参数默认关闭，开启后额外构建 Debug 模拟器应用、启动 iPhone 模拟器并安装运行，
+将截图与模拟器日志上传为 `ios-simulator-smoke`。本地模拟器构建命令为
+`flutter build ios --simulator --debug`。
+
+个人侧载 IPA 由独立的 `Build unsigned iOS IPA` 手动 workflow 生成，下载
+`CQUT-Helper-unsigned-ios` artifact 后自行签名安装。Android CI 与发布使用现有流程。
 
 macOS CI 已通过 iOS 模拟器编译、安装与启动验收，截图确认登录页正常显示，
 设备 Release 未签名 IPA 构建通过，下载产物的 SHA-256 校验匹配。
