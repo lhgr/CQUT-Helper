@@ -94,12 +94,15 @@ class _RootLink {
     required this.at,
     this.errorCategory,
     this.operationInferred = false,
+    this.compactTransport = false,
   });
   final String eventId;
   final String operationId;
   final DateTime at;
   final String? errorCategory;
   final bool operationInferred;
+  final bool compactTransport;
+  bool emitted = false;
   bool valid = true;
 }
 
@@ -111,6 +114,7 @@ class _RetryIncident {
   String? firstAttemptId, lastAttemptId;
   DateTime lastAttemptAt;
   bool recovered = false;
+  bool validatedSuccess = false;
 }
 
 /// A retry invocation is narrower than an operation. Request ordinal separates
@@ -119,8 +123,10 @@ class _RetryGroup {
   _RetryGroup(this.id);
   final String id;
   final incidents = <String, _RetryIncident>{};
+  final transportIncidents = <String, _RetryIncident>{};
   final ordinals = <String, int>{};
   int unmatched = 0;
+  bool lastFailureWasTransport = false;
 
   String requestKey(Map<String, Object?> fields) {
     final endpoint = '${fields['method']}|${fields['uri']}';
@@ -324,6 +330,36 @@ class AppLogger {
     } finally {
       _retryGroups.remove(group.id);
       try {
+        for (final incident in group.transportIncidents.values) {
+          if (incident.recovered) {
+            incident.link.valid = false;
+            if (!incident.validatedSuccess) {
+              final fields = incident.record['fields'] as Map;
+              logOperationOutcome(
+                incident.record['module'].toString(),
+                '网络请求成功',
+                outcome: 'succeeded',
+                fields: {
+                  'stage': 'request',
+                  'operation_id': incident.link.operationId,
+                  'operation_inferred': incident.link.operationInferred,
+                  'retry_group_id': group.id,
+                  'attempts': incident.attempts + 1,
+                  for (final key in [
+                    'method',
+                    'uri',
+                    'service',
+                    'origin',
+                    'route',
+                  ])
+                    if (fields.containsKey(key)) key: fields[key],
+                },
+              );
+            }
+          } else {
+            _emitTransportIncident(incident);
+          }
+        }
         for (final incident in group.incidents.values) {
           final recovered = succeeded && incident.recovered;
           final record = incident.record;
@@ -371,6 +407,24 @@ class AppLogger {
       'firstSeen': incident.link.at.toUtc().toIso8601String(),
       'lastSeen': incident.lastAttemptAt.toUtc().toIso8601String(),
     });
+    _enqueue(record, rootLink: incident.link);
+  }
+
+  void _emitTransportIncident(_RetryIncident incident) {
+    final record = incident.record;
+    final at = _now();
+    record.addAll({
+      'timestamp': at.toUtc().toIso8601String(),
+      'local_time': at.toLocal().toIso8601String(),
+      'local_offset_minutes': at.toLocal().timeZoneOffset.inMinutes,
+      'sequence': ++_sequence,
+      'attempts': incident.attempts,
+      'firstSeen': incident.link.at.toUtc().toIso8601String(),
+      'lastSeen': incident.lastAttemptAt.toUtc().toIso8601String(),
+    });
+    record['fingerprint'] = _fingerprint(record);
+    _bound(record);
+    incident.link.emitted = true;
     _enqueue(record, rootLink: incident.link);
   }
 
@@ -514,6 +568,11 @@ class AppLogger {
     StackTrace? stackTrace,
     Map<String, Object?> fields = const {},
   }) {
+    final retryGroupId = fields['retry_group_id'] ?? currentRetryGroupId;
+    if (fields['stage'] == 'retry_wait' &&
+        _retryGroups[retryGroupId]?.lastFailureWasTransport == true) {
+      return;
+    }
     final cause = error;
     if (cause != null &&
         !(cause is DioException && cause.type == DioExceptionType.cancel)) {
@@ -599,6 +658,7 @@ class AppLogger {
       final link =
           links[currentTraceId ?? sessionId] ?? links['*'] ?? links.values.last;
       if (!link.valid) return;
+      if (link.compactTransport && !link.emitted) return;
       info(
         tag,
         message,
@@ -683,7 +743,15 @@ class AppLogger {
     final previousRoot = error != null && _expandoKey(error)
         ? (links?[scope] ?? links?['*'])
         : null;
-    final root = previousRoot?.valid == true ? previousRoot!.eventId : null;
+    if (previousRoot?.compactTransport == true &&
+        safeFields['diagnostic_kind'] != 'operation_outcome') {
+      return;
+    }
+    final root =
+        previousRoot?.valid == true &&
+            (!previousRoot!.compactTransport || previousRoot.emitted)
+        ? previousRoot.eventId
+        : null;
     if (root != null && level == LogLevel.error) level = LogLevel.warn;
     final retryDecision = safeFields['diagnostic_kind'] == 'retry_decision';
     if (retryDecision) failure = false;
@@ -945,9 +1013,38 @@ class AppLogger {
     if (!failed) {
       if (safe['outcome'] == 'succeeded' || safe['status'] == 'success') {
         group?.incidents[key]?.recovered = true;
+        final transport = group?.transportIncidents[key];
+        if (transport != null) {
+          transport.recovered = true;
+          transport.validatedSuccess = safe['network_validated'] == true;
+        }
       }
       return false;
     }
+    final category =
+        safe['error_category'] ??
+        classifyDiagnosticError(
+          error,
+          stage: safe['validation_failed'] == true
+              ? 'response_decode'
+              : 'request',
+          module: tag,
+          statusCode: status is int ? status : null,
+        );
+    final compact = _isCompactableTransportFailure(
+      error,
+      category?.toString(),
+      status is int ? status : null,
+    );
+    if (group != null) group.lastFailureWasTransport = compact;
+    if (compact) {
+      _recordTransportFailure(tag, message, error, safe, category, group, key);
+      return true;
+    }
+    // A validated payload/HTTP failure supersedes the preceding transport
+    // failure for this request. Its full diagnostic evidence remains separate.
+    final superseded = group?.transportIncidents.remove(key);
+    superseded?.link.valid = false;
     final at = _now();
     _flushExpiredIssues();
     _pruneRecent();
@@ -1165,6 +1262,117 @@ class AppLogger {
     return true;
   }
 
+  void _recordTransportFailure(
+    String tag,
+    String message,
+    Object? error,
+    Map<String, Object?> fields,
+    Object? category,
+    _RetryGroup? group,
+    String? key,
+  ) {
+    final at = _now();
+    final operation = fields['trace_id'] ?? currentTraceId;
+    final scope = (operation ?? sessionId).toString();
+    var incident = group?.transportIncidents[key];
+    if (incident == null) {
+      final eventId =
+          '$sessionId-${(++_sequence).toRadixString(36).padLeft(4, '0')}';
+      final link = _RootLink(
+        eventId,
+        operationId: (operation ?? eventId).toString(),
+        at: at,
+        operationInferred:
+            operation == null ||
+            fields['operation_inferred'] == true ||
+            currentTraceInferred,
+        compactTransport: true,
+      );
+      incident = _RetryIncident({}, link);
+      if (group != null && group.transportIncidents.length < 32) {
+        group.transportIncidents[key!] = incident;
+      }
+    }
+    incident.attempts = max(
+      incident.attempts + 1,
+      fields['attempt'] as int? ?? 1,
+    );
+    incident.lastAttemptAt = at;
+    incident.recovered = false;
+    incident.validatedSuccess = false;
+    final link = incident.link;
+    // Replace terminal data as a unit so earlier HTTP/Cloudflare metadata
+    // cannot leak into a later connection failure.
+    incident.record
+      ..clear()
+      ..addAll({
+        'schema': 5,
+        'timestamp': at.toUtc().toIso8601String(),
+        'local_time': at.toLocal().toIso8601String(),
+        'local_offset_minutes': at.toLocal().timeZoneOffset.inMinutes,
+        'version': _version,
+        'source': _source,
+        'level': 'error',
+        'kind': 'incident',
+        'sessionId': sessionId,
+        'eventId': link.eventId,
+        'sequence': _sequence,
+        'operationId': link.operationId,
+        if (link.operationInferred) 'operationInferred': true,
+        'rootEventId': link.eventId,
+        'module': _clip(tag, 256),
+        'stage': 'request',
+        'message': _clip(_redact(message), 2048),
+        'reason': _clip(
+          _redact(
+            (fields['reason'] ??
+                    (error == null
+                        ? 'HTTP ${fields['status_code']}'
+                        : safeDiagnosticErrorSummary(error)))
+                .toString(),
+          ),
+          2048,
+        ),
+        if (error != null) 'errorType': error.runtimeType.toString(),
+        'errorCategory': category,
+        'stackTrace': '',
+        'context': <Object?>[],
+        'outcome': 'failed',
+        'fields': {
+          for (final entry in fields.entries)
+            if (!const {
+              'diagnostic_kind',
+              'reason',
+              'error_category',
+              'error_type',
+              'dio_message',
+              'trace_id',
+              'operation_id',
+              'operation_inferred',
+              'action',
+              'stage',
+              'outcome',
+              'status',
+            }.contains(entry.key))
+              entry.key: entry.value,
+          'retry_count': max(
+            0,
+            ((fields['attempt'] as int?) ?? incident.attempts) - 1,
+          ),
+        },
+      });
+    if (error != null && _expandoKey(error)) {
+      final links = {...?_rootEvents[error], scope: link};
+      while (links.length > 8) {
+        links.remove(links.keys.first);
+      }
+      _rootEvents[error] = links;
+    }
+    if (group == null || !identical(group.transportIncidents[key], incident)) {
+      _emitTransportIncident(incident);
+    }
+  }
+
   void _pruneRecent() {
     final cutoff = _now().subtract(_contextLifetime);
     while (_recent.isNotEmpty &&
@@ -1358,6 +1566,7 @@ class AppLogger {
     _templates.clear();
     for (final group in _retryGroups.values) {
       group.incidents.clear();
+      group.transportIncidents.clear();
     }
     _retryGroups.clear();
     _sessionId = '';
@@ -1397,6 +1606,7 @@ class AppLogger {
     _templates.clear();
     for (final group in _retryGroups.values) {
       group.incidents.clear();
+      group.transportIncidents.clear();
     }
     _retryGroups.clear();
     if (failure != null) {
@@ -1523,6 +1733,33 @@ class AppLogger {
       dio.interceptors.add(dioInterceptor(tag: tag));
     }
   }
+}
+
+bool _isCompactableTransportFailure(
+  Object? error,
+  String? category,
+  int? statusCode,
+) {
+  if (category == 'DATA_PARSE_FAILED') return false;
+  if ((statusCode ?? 0) >= 500 && (error == null || error is DioException)) {
+    return true;
+  }
+  if (error is DioException && error.response == null) {
+    return switch (error.type) {
+      DioExceptionType.connectionTimeout ||
+      DioExceptionType.receiveTimeout ||
+      DioExceptionType.sendTimeout ||
+      DioExceptionType.connectionError ||
+      DioExceptionType.badCertificate => true,
+      DioExceptionType.unknown =>
+        error.error is SocketException || error.error is HandshakeException,
+      _ => false,
+    };
+  }
+  return error is SocketException ||
+      error is HttpException ||
+      error is HandshakeException ||
+      (category == 'HTTP_SERVER_ERROR' && (error == null || error is Response));
 }
 
 String sanitizeUriForLogging(Uri uri) {

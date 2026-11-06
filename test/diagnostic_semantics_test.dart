@@ -225,6 +225,204 @@ void main() {
     },
   );
 
+  DioException networkAttempt(
+    int number, {
+    int? status,
+    String path = '/network',
+  }) {
+    final options = RequestOptions(path: 'https://example.test$path');
+    final error = DioException(
+      requestOptions: options,
+      type: status == null
+          ? DioExceptionType.connectionTimeout
+          : DioExceptionType.badResponse,
+      response: status == null
+          ? null
+          : Response(requestOptions: options, statusCode: status),
+      message: status == null ? 'timed out' : 'HTTP $status',
+    );
+    logger.info(
+      'HTTP',
+      'network failed',
+      error: error,
+      fields: {
+        'diagnostic_kind': 'attempt',
+        'method': 'GET',
+        'uri': options.path,
+        'attempt': number,
+        'status_code': ?status,
+        if (status != null) 'response_headers': {'cf-ray': 'ray-$number'},
+        if (status == 530) 'cloudflare_error_code': '1033',
+        'service': 'CalendarApi',
+        'origin': 'https://example.test',
+        'route': path,
+      },
+    );
+    return error;
+  }
+
+  test('compact terminal data replaces status and Cloudflare details in both directions', () async {
+    await logger.runWithRetryGroup(() async {
+      networkAttempt(1);
+      networkAttempt(2, status: 530);
+    });
+    await logger.runWithRetryGroup(() async {
+      networkAttempt(1, status: 530);
+      networkAttempt(2);
+    });
+    networkAttempt(1);
+    await logger.flush();
+    expect(storage.rows, hasLength(3));
+    final server = storage.rows.first;
+    expect(server['errorCategory'], 'HTTP_SERVER_ERROR');
+    expect(server['reason'], contains('530'));
+    expect((server['fields'] as Map)['cloudflare_error_code'], '1033');
+    final timeout = storage.rows[1];
+    final fields = timeout['fields'] as Map;
+    expect(timeout['errorCategory'], 'NETWORK_CONNECT_TIMEOUT');
+    expect(fields.containsKey('status_code'), isFalse);
+    expect(fields.containsKey('response_headers'), isFalse);
+    expect(fields.containsKey('cloudflare_error_code'), isFalse);
+    expect(timeout['fingerprint'], storage.rows.last['fingerprint']);
+    for (final row in storage.rows) {
+      expect(row['stackTrace'], isEmpty);
+      expect(row.containsKey('stackReferenceEventId'), isFalse);
+      expect(row.containsKey('firstAttemptEventId'), isFalse);
+      expect(row.containsKey('lastAttemptEventId'), isFalse);
+    }
+  });
+
+  test('pending compact failures export no attempts and keep business terminals without dangling roots', () async {
+    final gate = Completer<void>();
+    late DioException error;
+    final action = logger.runWithTraceIdAsync(
+      'worker',
+      () => logger.runWithRetryGroup(() async {
+        error = networkAttempt(1);
+        final mapped = StateError('mapped timeout');
+        logger.linkFailure(mapped, error);
+        failure(mapped);
+        logger.logOperationOutcome(
+          'Worker',
+          'worker failed',
+          outcome: 'failed',
+          error: mapped,
+          fields: {'stage': 'background_task', 'lifecycle': 'background_task'},
+        );
+        await gate.future;
+      }),
+    );
+    await logger.flush();
+    expect(storage.rows, hasLength(1));
+    expect(storage.rows.single['kind'], 'operation_outcome');
+    expect(storage.rows.single.containsKey('rootEventId'), isFalse);
+    final pending = await logger.exportLogs();
+    expect(
+      await File(pending).readAsString(),
+      isNot(contains('"kind":"attempt"')),
+    );
+    gate.complete();
+    await action;
+    logger.runWithTraceId(
+      'worker',
+      () => logger.logOperationOutcome(
+        'Worker',
+        'final failure',
+        outcome: 'failed',
+        error: error,
+      ),
+    );
+    logger.logRecovery('HTTP', 'later recovery', cause: error);
+    await logger.flush();
+    final root = storage.rows.singleWhere((r) => r['kind'] == 'incident');
+    final finalOutcome = storage.rows.singleWhere(
+      (r) => r['message'] == 'final failure',
+    );
+    expect(finalOutcome['rootEventId'], root['eventId']);
+    expect(
+      storage.rows.singleWhere(
+        (r) => r['kind'] == 'recovery',
+      )['resolvesIncidentId'],
+      root['eventId'],
+    );
+    expect(storage.rows.where((r) => r['kind'] == 'derived'), isEmpty);
+  });
+
+  test('error type switches preserve payload evidence and discard superseded transport summaries', () async {
+    for (final finalTransport in [false, true]) {
+      await logger.runWithRetryGroup(() async {
+        networkAttempt(1);
+        attempt(
+          2,
+          error: const FormatException('invalid payload'),
+          path: '/network',
+        );
+        if (finalTransport) networkAttempt(3);
+      });
+    }
+    await logger.flush();
+    final roots = storage.rows.where((r) => r['kind'] == 'incident').toList();
+    expect(roots, hasLength(3));
+    final payloads = roots.where((r) => r['errorType'] == 'FormatException');
+    expect(payloads, hasLength(2));
+    expect(
+      payloads.every(
+        (r) =>
+            (r['stackTrace'] as String).isNotEmpty ||
+            r['stackReferenceEventId'] != null,
+      ),
+      isTrue,
+    );
+    final transport = roots.singleWhere(
+      (r) => r['errorType'] == 'DioException',
+    );
+    expect(transport['errorCategory'], 'NETWORK_CONNECT_TIMEOUT');
+    expect(transport['stackTrace'], isEmpty);
+    expect(storage.rows.where((r) => r['kind'] == 'attempt'), hasLength(2));
+  });
+
+  test('compact capacity overflow retains a summary and clear removes pending failures', () async {
+    await logger.runWithRetryGroup(() async {
+      for (var i = 0; i < 33; i++) {
+        networkAttempt(1, path: '/network-$i');
+      }
+    });
+    await logger.flush();
+    expect(storage.rows, hasLength(33));
+    expect(storage.rows.every((r) => r['kind'] == 'incident'), isTrue);
+    await logger.runWithRetryGroup(() async {
+      networkAttempt(1);
+      await logger.clearLogFiles();
+    });
+    await logger.flush();
+    expect(storage.rows, isEmpty);
+  });
+
+  test(
+    'recovered request remains successful when another request fails the group',
+    () async {
+      await expectLater(
+        logger.runWithRetryGroup<void>(() async {
+          networkAttempt(1);
+          attempt(2, path: '/network');
+          networkAttempt(1, path: '/other');
+          throw StateError('other request failed');
+        }),
+        throwsStateError,
+      );
+      await logger.flush();
+      expect(storage.rows, hasLength(2));
+      final root = storage.rows.singleWhere((r) => r['kind'] == 'incident');
+      expect((root['fields'] as Map)['route'], '/other');
+      final success = storage.rows.singleWhere(
+        (r) => r['kind'] == 'operation_outcome',
+      );
+      expect(success['outcome'], 'succeeded');
+      expect((success['fields'] as Map)['route'], '/network');
+      expect(success.containsKey('rootEventId'), isFalse);
+    },
+  );
+
   test(
     'operation outcomes persist reason without adding affected operations',
     () async {

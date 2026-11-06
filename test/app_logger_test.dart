@@ -486,9 +486,10 @@ void main() {
       ObservedErrorHandler(),
     );
     await logger.flush();
-    final attempt = storage.rows.singleWhere((r) => r['kind'] == 'attempt');
-    final incident = storage.rows.singleWhere((r) => r['kind'] == 'incident');
-    final fields = attempt['fields'] as Map;
+    final incident = storage.rows.single;
+    expect(incident['kind'], 'incident');
+    expect(incident['stackTrace'], isEmpty);
+    final fields = incident['fields'] as Map;
     expect(fields['uri'], 'https://example.test/data');
     expect(fields['method'], 'GET');
     expect(fields['duration_ms'], isA<int>());

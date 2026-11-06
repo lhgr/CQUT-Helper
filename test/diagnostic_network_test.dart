@@ -282,7 +282,7 @@ void main() {
   );
 
   test(
-    'actual retry helper records per-request attempt and related recovery',
+    'actual retry helper retains only final successful requests',
     () async {
       final temporary = await Directory.systemTemp.createTemp(
         'cqut-network-diagnostics-',
@@ -327,38 +327,25 @@ void main() {
         });
         await logger.flush();
         final rows = await storage.snapshot();
-        final failures = rows
-            .where((row) => row['kind'] == 'incident')
-            .toList();
+        final failures = rows.where((row) => row['kind'] == 'incident').toList();
         final recoveries = rows
             .where((row) => row['kind'] == 'recovery')
             .toList();
 
         expect(firstAdapter.attempts, 2);
         expect(secondAdapter.attempts, 2);
-        expect(failures, hasLength(2));
-        expect(recoveries, hasLength(2));
-        expect(failures.map((row) => row['errorCategory']).toSet(), {
-          'NETWORK_CONNECT_TIMEOUT',
-        });
-        expect(
-          recoveries
-              .map((row) => (row['fields'] as Map)['related_root_event_id'])
-              .toSet(),
-          failures.map((row) => row['eventId']).toSet(),
-        );
-        expect(recoveries.map((row) => row['operationId']).toSet(), {
-          'network-operation',
-        });
+        expect(failures, isEmpty);
+        expect(recoveries, isEmpty);
+        expect(rows, hasLength(2));
+        expect(rows.every((row) => row['kind'] == 'operation_outcome'), isTrue);
+        expect(rows.every((row) => row['outcome'] == 'succeeded'), isTrue);
 
         final starts = logger.recent
             .where((event) => event.message == '请求开始')
             .toList();
         expect(starts, hasLength(4));
         expect(starts.map((event) => event.fields?['attempt']).toSet(), {1, 2});
-        expect(starts.map((event) => event.fields?['max_attempts']).toSet(), {
-          2,
-        });
+        expect(starts.map((event) => event.fields?['max_attempts']).toSet(), {2});
         expect(starts.map((event) => event.fields?['trace_id']).toSet(), {
           'network-operation',
         });
@@ -370,34 +357,8 @@ void main() {
         final decisions = rows
             .where((row) => row['kind'] == 'retry_decision')
             .toList();
-        expect(decisions, hasLength(2));
-        expect(
-          decisions.every(
-            (row) => (row['fields'] as Map)['will_retry'] == true,
-          ),
-          isTrue,
-        );
-        expect(
-          decisions.every(
-            (row) =>
-                (row['fields'] as Map)['retry_policy'] == 'exponential_backoff',
-          ),
-          isTrue,
-        );
-        final waits = rows
-            .where((row) => row['stage'] == 'retry_wait')
-            .toList();
-        expect(waits, hasLength(2));
-        expect(
-          waits.every(
-            (row) => ((row['fields'] as Map)['actual_backoff_ms'] as int) >= 7,
-          ),
-          isTrue,
-        );
-        expect(
-          decisions.every((row) => (row['fields'] as Map)['backoff_ms'] == 7),
-          isTrue,
-        );
+        expect(decisions, isEmpty);
+        expect(rows.where((row) => row['stage'] == 'retry_wait'), isEmpty);
         expect(
           starts.map((event) => event.fields?['retry_group_id']).toSet(),
           hasLength(2),
@@ -469,52 +430,22 @@ void main() {
       final recoveries = rows
           .where((row) => row['kind'] == 'recovery')
           .toList();
-      Map<String, Object?> responseAttempt(String id) => attempts.singleWhere(
-        (row) =>
-            ((row['fields'] as Map)['response_headers']
-                as Map)['x-request-id'] ==
-            id,
-      );
-      final a1 = responseAttempt('a-1');
-      final b1 = responseAttempt('b-1');
-      final b2 = responseAttempt('b-2');
-      expect(attempts, hasLength(3));
-      expect(incidents, hasLength(2));
-      expect(
-        attempts.map(
-          (row) =>
-              ((row['fields'] as Map)['response_headers']
-                  as Map)['x-request-id'],
-        ),
-        ['b-1', 'a-1', 'b-2'],
-      );
-      expect(b2['rootEventId'], b1['rootEventId']);
-      expect(b2['rootEventId'], isNot(a1['rootEventId']));
-      expect(
-        (b2['fields'] as Map)['retry_request_slot'],
-        (b1['fields'] as Map)['retry_request_slot'],
-      );
-      expect(
-        (a1['fields'] as Map)['retry_request_slot'],
-        isNot((b1['fields'] as Map)['retry_request_slot']),
-      );
-      final recovered = incidents.singleWhere(
-        (row) => row['eventId'] == a1['rootEventId'],
-      );
-      final failed = incidents.singleWhere(
-        (row) => row['eventId'] == b1['rootEventId'],
-      );
-      expect(recovered['outcome'], 'recovered');
-      expect(recovered['attempts'], 1);
+      expect(attempts, isEmpty);
+      expect(recoveries, isEmpty);
+      expect(incidents, hasLength(1));
+      final failed = incidents.single;
       expect(failed['outcome'], 'failed');
       expect(failed['attempts'], 2);
-      expect(failed['firstAttemptEventId'], b1['eventId']);
-      expect(failed['lastAttemptEventId'], b2['eventId']);
-      expect(recoveries, hasLength(1));
+      expect(failed.containsKey('firstAttemptEventId'), isFalse);
+      expect(failed.containsKey('lastAttemptEventId'), isFalse);
       expect(
-        (recoveries.single['fields'] as Map)['related_root_event_id'],
-        recovered['eventId'],
+        ((failed['fields'] as Map)['response_headers'] as Map)['x-request-id'],
+        'b-2',
       );
+      final success = rows.singleWhere(
+        (row) => row['kind'] == 'operation_outcome',
+      );
+      expect((success['fields'] as Map)['attempts'], 2);
     } finally {
       await logger.dispose();
       await temporary.delete(recursive: true);
@@ -522,7 +453,7 @@ void main() {
   });
 
   test(
-    'exhausted retries retain attempts and decisions under one incident',
+    'exhausted retries retain one terminal network summary',
     () async {
       final temporary = await Directory.systemTemp.createTemp(
         'cqut-network-exhaustion-',
@@ -559,9 +490,7 @@ void main() {
         }
         await logger.flush();
         final rows = await storage.snapshot();
-        final failures = rows
-            .where((row) => row['kind'] == 'incident')
-            .toList();
+        final failures = rows.where((row) => row['kind'] == 'incident').toList();
         final attempts = rows.where((row) => row['kind'] == 'attempt').toList();
         final decisions = rows
             .where((row) => row['kind'] == 'retry_decision')
@@ -575,27 +504,17 @@ void main() {
         expect(caught, same(adapter.errors.last));
         expect(failures, hasLength(1));
         expect(failures.single['attempts'], 3);
-        expect(attempts, hasLength(3));
-        expect(decisions, hasLength(3));
-        expect(decisions.map((row) => (row['fields'] as Map)['will_retry']), [
-          true,
-          true,
-          false,
-        ]);
-        expect(
-          (decisions.last['fields'] as Map)['retry_reason'],
-          'attempts_exhausted',
-        );
+        expect(attempts, isEmpty);
+        expect(decisions, isEmpty);
+        expect(rows, hasLength(1));
+        expect(failures.single['stackTrace'], isEmpty);
+        expect((failures.single['fields'] as Map)['retry_count'], 2);
         expect(recoveries, isEmpty);
         final operationIds = failures
             .map((row) => row['operationId'] as String?)
             .toSet();
         expect(operationIds, hasLength(1));
         expect(operationIds.single, isNotEmpty);
-        expect(
-          attempts.map((row) => (row['fields'] as Map)['request_id']).toSet(),
-          hasLength(3),
-        );
       } finally {
         await logger.dispose();
         await temporary.delete(recursive: true);
@@ -603,7 +522,7 @@ void main() {
     },
   );
 
-  test('retry rejection records a final decision without changing callbacks or error', () async {
+  test('retry rejection retains one summary without changing callbacks or error', () async {
     final temporary = await Directory.systemTemp.createTemp(
       'cqut-network-rejected-',
     );
@@ -639,15 +558,12 @@ void main() {
       }
       await logger.flush();
       final rows = await storage.snapshot();
-      final decision = rows.singleWhere(
-        (row) => row['kind'] == 'retry_decision',
-      );
+      expect(rows, hasLength(1));
+      expect(rows.single['kind'], 'incident');
       expect(adapter.attempts, 1);
       expect(caught, same(adapter.errors.single));
       expect(callbacks, ['error:1', 'predicate']);
-      expect((decision['fields'] as Map)['will_retry'], isFalse);
-      expect((decision['fields'] as Map)['retry_reason'], 'retry_rejected');
-      expect((decision['fields'] as Map)['backoff_ms'], 0);
+      expect((rows.single['fields'] as Map)['retry_count'], 0);
     } finally {
       await logger.dispose();
       await temporary.delete(recursive: true);
@@ -655,7 +571,7 @@ void main() {
   });
 
   test(
-    'notice API immediate retry records one incident and both decisions',
+    'notice API immediate retry records one terminal summary',
     () async {
       SharedPreferences.setMockInitialValues({});
       final temporary = await Directory.systemTemp.createTemp(
@@ -692,9 +608,7 @@ void main() {
         );
         await logger.flush();
         final rows = await storage.snapshot();
-        final incidents = rows
-            .where((row) => row['kind'] == 'incident')
-            .toList();
+        final incidents = rows.where((row) => row['kind'] == 'incident').toList();
         final attempts = rows.where((row) => row['kind'] == 'attempt').toList();
         final decisions = rows
             .where((row) => row['kind'] == 'retry_decision')
@@ -702,19 +616,10 @@ void main() {
         expect(adapter.attempts, 2);
         expect(incidents, hasLength(1));
         expect(incidents.single['attempts'], 2);
-        expect(attempts, hasLength(2));
-        expect(decisions, hasLength(2));
-        expect(decisions.map((row) => (row['fields'] as Map)['will_retry']), [
-          true,
-          false,
-        ]);
-        expect(
-          decisions.every((row) => (row['fields'] as Map)['backoff_ms'] == 0),
-          isTrue,
-        );
-        expect(attempts.map((row) => row['rootEventId']).toSet(), {
-          incidents.single['eventId'],
-        });
+        expect(attempts, isEmpty);
+        expect(decisions, isEmpty);
+        expect(incidents.single['stackTrace'], isEmpty);
+        expect((incidents.single['fields'] as Map)['retry_count'], 1);
         expect(rows.where((row) => row['kind'] == 'recovery'), isEmpty);
         expect(jsonEncode(rows), isNot(contains('private-password')));
         expect(jsonEncode(rows), isNot(contains('20260001')));
@@ -771,7 +676,7 @@ void main() {
               .where((row) => row['kind'] == 'attempt')
               .toList();
           expect(incidents, hasLength(1));
-          expect(attempts, hasLength(1));
+          expect(attempts, isEmpty);
           expect(incidents.single['operationInferred'], isTrue);
           final rootFields = incidents.single['fields'] as Map;
           expect(rootFields['service'], 'NetworkHeaders');
@@ -779,7 +684,7 @@ void main() {
           expect(rootFields['route'], '/fails');
           expect(rootFields['request_id'], isNotEmpty);
           expect(rootFields['duration_ms'], isNonNegative);
-          final fields = attempts.single['fields'] as Map;
+          final fields = incidents.single['fields'] as Map;
           expect(fields['status_code'], 502);
           expect(fields['body_omitted_reason'], 'privacy_policy');
           final headers = fields['response_headers'] as Map;

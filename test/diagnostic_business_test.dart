@@ -271,7 +271,7 @@ void main() {
   );
 
   test(
-    'mapped network timeout retains Dio root and linked business outcomes',
+    'mapped network timeout retains only the compact Dio summary',
     () async {
       ApiClient().dio.httpClientAdapter = _ResponseAdapter((options) {
         if (options.path.endsWith('listWeekEvents')) {
@@ -293,14 +293,9 @@ void main() {
 
       final rows = await records();
       final root = rows.singleWhere((row) => row['kind'] == 'incident');
-      final outcome = rows.singleWhere((row) => row['kind'] == 'derived');
       expect(root['errorType'], 'DioException');
-      expect(outcome['rootEventId'], root['eventId']);
-      expect(outcome['causeEventId'], root['eventId']);
-      expect(outcome['operationId'], root['operationId']);
-      expect(outcome['reason'], isNull);
-      expect(outcome['errorCategory'], isNull);
-      expect(outcome['stackTrace'], anyOf(isNull, isEmpty));
+      expect(root['stackTrace'], isEmpty);
+      expect(rows.where((row) => row['kind'] == 'derived'), isEmpty);
       expect(jsonEncode(rows), isNot(contains('private-credential')));
     },
   );
