@@ -37,7 +37,9 @@ void main() {
     await openNotice(tester);
     expect(find.text('Alpha 测试版本'), findsOneWidget);
     expect(
-      find.text('当前为 iOS Alpha 测试版本，部分功能可能尚不完善，使用过程中可能出现异常。'),
+      find.text(
+        '当前为 iOS Alpha 测试版本。iOS 相关代码主要由 AI 编写，尚未经过实机测试，无法保证各项功能正常运行，请谨慎使用。',
+      ),
       findsOneWidget,
     );
     await tester.tapAt(const Offset(5, 5));

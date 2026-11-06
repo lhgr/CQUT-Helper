@@ -47,7 +47,7 @@ jobs:
       - name: Verify formatting
         run: >-
           dart format --output=none --set-exit-if-changed
-          lib test packages/cqut_widget_bridge/lib
+          lib test tool/ios_release_metadata.dart packages/cqut_widget_bridge/lib
 
       - name: Analyze
         run: flutter analyze

@@ -7,5 +7,7 @@ void main(List<String> arguments) {
       !RegExp(r'^\d+\.\d+\.\d+$').hasMatch(arguments.single)) {
     throw ArgumentError('Provide a numeric version in x.y.z format');
   }
-  stdout.writeln('ipa_filename=${currentIosRelease.ipaFileName(arguments.single)}');
+  stdout.writeln(
+    'ipa_filename=${currentIosRelease.ipaFileName(arguments.single)}',
+  );
 }

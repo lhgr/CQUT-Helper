@@ -29,7 +29,9 @@ Future<void> showIosPrereleaseNotice(
       canPop: false,
       child: AlertDialog(
         title: Text('${release.label} 测试版本'),
-        content: Text('当前为 iOS ${release.label} 测试版本，部分功能可能尚不完善，使用过程中可能出现异常。'),
+        content: Text(
+          '当前为 iOS ${release.label} 测试版本。iOS 相关代码主要由 AI 编写，尚未经过实机测试，无法保证各项功能正常运行，请谨慎使用。',
+        ),
         actions: [
           FilledButton(
             onPressed: () async {
