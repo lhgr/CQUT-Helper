@@ -281,94 +281,91 @@ void main() {
     },
   );
 
-  test(
-    'actual retry helper retains only final successful requests',
-    () async {
-      final temporary = await Directory.systemTemp.createTemp(
-        'cqut-network-diagnostics-',
-      );
-      final logger = AppLogger.I;
-      final storage = FileDiagnosticStorage(
-        Directory('${temporary.path}/records'),
-        'foreground',
-      );
-      await logger.init(
-        enableConsole: false,
-        storage: storage,
-        exportDirectory: Directory('${temporary.path}/exports'),
-      );
+  test('actual retry helper retains only final successful requests', () async {
+    final temporary = await Directory.systemTemp.createTemp(
+      'cqut-network-diagnostics-',
+    );
+    final logger = AppLogger.I;
+    final storage = FileDiagnosticStorage(
+      Directory('${temporary.path}/records'),
+      'foreground',
+    );
+    await logger.init(
+      enableConsole: false,
+      storage: storage,
+      exportDirectory: Directory('${temporary.path}/exports'),
+    );
 
-      final firstAdapter = _RetryOnceAdapter();
-      final secondAdapter = _RetryOnceAdapter();
-      final firstDio = Dio(BaseOptions(baseUrl: 'https://example.test'))
-        ..httpClientAdapter = firstAdapter;
-      final secondDio = Dio(BaseOptions(baseUrl: 'https://example.test'))
-        ..httpClientAdapter = secondAdapter;
-      logger.attachToDio(firstDio, tag: 'NetworkFirst');
-      logger.attachToDio(secondDio, tag: 'NetworkSecond');
+    final firstAdapter = _RetryOnceAdapter();
+    final secondAdapter = _RetryOnceAdapter();
+    final firstDio = Dio(BaseOptions(baseUrl: 'https://example.test'))
+      ..httpClientAdapter = firstAdapter;
+    final secondDio = Dio(BaseOptions(baseUrl: 'https://example.test'))
+      ..httpClientAdapter = secondAdapter;
+    logger.attachToDio(firstDio, tag: 'NetworkFirst');
+    logger.attachToDio(secondDio, tag: 'NetworkSecond');
 
-      Future<Response<Map<String, dynamic>>> request(Dio dio, String path) =>
-          retryWithExponentialBackoff<Response<Map<String, dynamic>>>(
-            () => dio.get<Map<String, dynamic>>(
-              path,
-              queryParameters: {'token': 'private-query-token'},
-            ),
-            maxAttempts: 2,
-            initialDelay: const Duration(milliseconds: 7),
-            jitterMs: 0,
-          );
-
-      try {
-        await logger.runWithTraceIdAsync('network-operation', () async {
-          await Future.wait([
-            request(firstDio, '/same-endpoint'),
-            request(secondDio, '/same-endpoint'),
-          ]);
-        });
-        await logger.flush();
-        final rows = await storage.snapshot();
-        final failures = rows.where((row) => row['kind'] == 'incident').toList();
-        final recoveries = rows
-            .where((row) => row['kind'] == 'recovery')
-            .toList();
-
-        expect(firstAdapter.attempts, 2);
-        expect(secondAdapter.attempts, 2);
-        expect(failures, isEmpty);
-        expect(recoveries, isEmpty);
-        expect(rows, hasLength(2));
-        expect(rows.every((row) => row['kind'] == 'operation_outcome'), isTrue);
-        expect(rows.every((row) => row['outcome'] == 'succeeded'), isTrue);
-
-        final starts = logger.recent
-            .where((event) => event.message == '请求开始')
-            .toList();
-        expect(starts, hasLength(4));
-        expect(starts.map((event) => event.fields?['attempt']).toSet(), {1, 2});
-        expect(starts.map((event) => event.fields?['max_attempts']).toSet(), {2});
-        expect(starts.map((event) => event.fields?['trace_id']).toSet(), {
-          'network-operation',
-        });
-        expect(
-          starts.map((event) => event.fields?['request_id']).toSet(),
-          hasLength(4),
+    Future<Response<Map<String, dynamic>>> request(Dio dio, String path) =>
+        retryWithExponentialBackoff<Response<Map<String, dynamic>>>(
+          () => dio.get<Map<String, dynamic>>(
+            path,
+            queryParameters: {'token': 'private-query-token'},
+          ),
+          maxAttempts: 2,
+          initialDelay: const Duration(milliseconds: 7),
+          jitterMs: 0,
         );
-        expect(jsonEncode(rows), isNot(contains('private-query-token')));
-        final decisions = rows
-            .where((row) => row['kind'] == 'retry_decision')
-            .toList();
-        expect(decisions, isEmpty);
-        expect(rows.where((row) => row['stage'] == 'retry_wait'), isEmpty);
-        expect(
-          starts.map((event) => event.fields?['retry_group_id']).toSet(),
-          hasLength(2),
-        );
-      } finally {
-        await logger.dispose();
-        await temporary.delete(recursive: true);
-      }
-    },
-  );
+
+    try {
+      await logger.runWithTraceIdAsync('network-operation', () async {
+        await Future.wait([
+          request(firstDio, '/same-endpoint'),
+          request(secondDio, '/same-endpoint'),
+        ]);
+      });
+      await logger.flush();
+      final rows = await storage.snapshot();
+      final failures = rows.where((row) => row['kind'] == 'incident').toList();
+      final recoveries = rows
+          .where((row) => row['kind'] == 'recovery')
+          .toList();
+
+      expect(firstAdapter.attempts, 2);
+      expect(secondAdapter.attempts, 2);
+      expect(failures, isEmpty);
+      expect(recoveries, isEmpty);
+      expect(rows, hasLength(2));
+      expect(rows.every((row) => row['kind'] == 'operation_outcome'), isTrue);
+      expect(rows.every((row) => row['outcome'] == 'succeeded'), isTrue);
+
+      final starts = logger.recent
+          .where((event) => event.message == '请求开始')
+          .toList();
+      expect(starts, hasLength(4));
+      expect(starts.map((event) => event.fields?['attempt']).toSet(), {1, 2});
+      expect(starts.map((event) => event.fields?['max_attempts']).toSet(), {2});
+      expect(starts.map((event) => event.fields?['trace_id']).toSet(), {
+        'network-operation',
+      });
+      expect(
+        starts.map((event) => event.fields?['request_id']).toSet(),
+        hasLength(4),
+      );
+      expect(jsonEncode(rows), isNot(contains('private-query-token')));
+      final decisions = rows
+          .where((row) => row['kind'] == 'retry_decision')
+          .toList();
+      expect(decisions, isEmpty);
+      expect(rows.where((row) => row['stage'] == 'retry_wait'), isEmpty);
+      expect(
+        starts.map((event) => event.fields?['retry_group_id']).toSet(),
+        hasLength(2),
+      );
+    } finally {
+      await logger.dispose();
+      await temporary.delete(recursive: true);
+    }
+  });
 
   test('same endpoint retry slots follow request start order despite reversed responses', () async {
     final temporary = await Directory.systemTemp.createTemp(
@@ -452,79 +449,9 @@ void main() {
     }
   });
 
-  test(
-    'exhausted retries retain one terminal network summary',
-    () async {
-      final temporary = await Directory.systemTemp.createTemp(
-        'cqut-network-exhaustion-',
-      );
-      final logger = AppLogger.I;
-      final storage = FileDiagnosticStorage(
-        Directory('${temporary.path}/records'),
-        'foreground',
-      );
-      await logger.init(
-        enableConsole: false,
-        storage: storage,
-        exportDirectory: Directory('${temporary.path}/exports'),
-      );
-
-      final adapter = _RetryOnceAdapter(failuresBeforeSuccess: 3);
-      final dio = Dio(BaseOptions(baseUrl: 'https://example.test'))
-        ..httpClientAdapter = adapter;
-      logger.attachToDio(dio, tag: 'NetworkExhausted');
-      final retryAttempts = <int>[];
-
-      try {
-        Object? caught;
-        try {
-          await retryWithExponentialBackoff(
-            () => dio.get<void>('/fails'),
-            maxAttempts: 3,
-            initialDelay: Duration.zero,
-            jitterMs: 0,
-            onError: (attempt, _) => retryAttempts.add(attempt),
-          );
-        } catch (error) {
-          caught = error;
-        }
-        await logger.flush();
-        final rows = await storage.snapshot();
-        final failures = rows.where((row) => row['kind'] == 'incident').toList();
-        final attempts = rows.where((row) => row['kind'] == 'attempt').toList();
-        final decisions = rows
-            .where((row) => row['kind'] == 'retry_decision')
-            .toList();
-        final recoveries = rows
-            .where((row) => row['kind'] == 'recovery')
-            .toList();
-
-        expect(adapter.attempts, 3);
-        expect(retryAttempts, [1, 2, 3]);
-        expect(caught, same(adapter.errors.last));
-        expect(failures, hasLength(1));
-        expect(failures.single['attempts'], 3);
-        expect(attempts, isEmpty);
-        expect(decisions, isEmpty);
-        expect(rows, hasLength(1));
-        expect(failures.single['stackTrace'], isEmpty);
-        expect((failures.single['fields'] as Map)['retry_count'], 2);
-        expect(recoveries, isEmpty);
-        final operationIds = failures
-            .map((row) => row['operationId'] as String?)
-            .toSet();
-        expect(operationIds, hasLength(1));
-        expect(operationIds.single, isNotEmpty);
-      } finally {
-        await logger.dispose();
-        await temporary.delete(recursive: true);
-      }
-    },
-  );
-
-  test('retry rejection retains one summary without changing callbacks or error', () async {
+  test('exhausted retries retain one terminal network summary', () async {
     final temporary = await Directory.systemTemp.createTemp(
-      'cqut-network-rejected-',
+      'cqut-network-exhaustion-',
     );
     final logger = AppLogger.I;
     final storage = FileDiagnosticStorage(
@@ -536,34 +463,53 @@ void main() {
       storage: storage,
       exportDirectory: Directory('${temporary.path}/exports'),
     );
+
     final adapter = _RetryOnceAdapter(failuresBeforeSuccess: 3);
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test'))
       ..httpClientAdapter = adapter;
-    logger.attachToDio(dio, tag: 'NetworkRejected');
-    final callbacks = <String>[];
+    logger.attachToDio(dio, tag: 'NetworkExhausted');
+    final retryAttempts = <int>[];
+
     try {
       Object? caught;
       try {
         await retryWithExponentialBackoff(
-          () => dio.get<void>('/rejected'),
+          () => dio.get<void>('/fails'),
           maxAttempts: 3,
-          onError: (attempt, _) => callbacks.add('error:$attempt'),
-          shouldRetry: (_) {
-            callbacks.add('predicate');
-            return false;
-          },
+          initialDelay: Duration.zero,
+          jitterMs: 0,
+          onError: (attempt, _) => retryAttempts.add(attempt),
         );
       } catch (error) {
         caught = error;
       }
       await logger.flush();
       final rows = await storage.snapshot();
+      final failures = rows.where((row) => row['kind'] == 'incident').toList();
+      final attempts = rows.where((row) => row['kind'] == 'attempt').toList();
+      final decisions = rows
+          .where((row) => row['kind'] == 'retry_decision')
+          .toList();
+      final recoveries = rows
+          .where((row) => row['kind'] == 'recovery')
+          .toList();
+
+      expect(adapter.attempts, 3);
+      expect(retryAttempts, [1, 2, 3]);
+      expect(caught, same(adapter.errors.last));
+      expect(failures, hasLength(1));
+      expect(failures.single['attempts'], 3);
+      expect(attempts, isEmpty);
+      expect(decisions, isEmpty);
       expect(rows, hasLength(1));
-      expect(rows.single['kind'], 'incident');
-      expect(adapter.attempts, 1);
-      expect(caught, same(adapter.errors.single));
-      expect(callbacks, ['error:1', 'predicate']);
-      expect((rows.single['fields'] as Map)['retry_count'], 0);
+      expect(failures.single['stackTrace'], isEmpty);
+      expect((failures.single['fields'] as Map)['retry_count'], 2);
+      expect(recoveries, isEmpty);
+      final operationIds = failures
+          .map((row) => row['operationId'] as String?)
+          .toSet();
+      expect(operationIds, hasLength(1));
+      expect(operationIds.single, isNotEmpty);
     } finally {
       await logger.dispose();
       await temporary.delete(recursive: true);
@@ -571,11 +517,10 @@ void main() {
   });
 
   test(
-    'notice API immediate retry records one terminal summary',
+    'retry rejection retains one summary without changing callbacks or error',
     () async {
-      SharedPreferences.setMockInitialValues({});
       final temporary = await Directory.systemTemp.createTemp(
-        'cqut-notice-network-',
+        'cqut-network-rejected-',
       );
       final logger = AppLogger.I;
       final storage = FileDiagnosticStorage(
@@ -587,48 +532,97 @@ void main() {
         storage: storage,
         exportDirectory: Directory('${temporary.path}/exports'),
       );
-      final adapter = _ServerFailureAdapter();
-      final api = NoticeApi(
-        accessEnabled: () async => true,
-        dioFactory: (baseUrl) {
-          final dio = Dio(BaseOptions(baseUrl: baseUrl))
-            ..httpClientAdapter = adapter;
-          logger.attachToDio(dio, tag: 'NoticeApi');
-          return dio;
-        },
-      );
+      final adapter = _RetryOnceAdapter(failuresBeforeSuccess: 3);
+      final dio = Dio(BaseOptions(baseUrl: 'https://example.test'))
+        ..httpClientAdapter = adapter;
+      logger.attachToDio(dio, tag: 'NetworkRejected');
+      final callbacks = <String>[];
       try {
-        await expectLater(
-          api.fetchTermScheduleNotices(
-            username: '20260001',
-            encryptedPassword: 'private-password',
-            yearTerm: '2026-2027-1',
-          ),
-          throwsA(isA<DioException>()),
-        );
+        Object? caught;
+        try {
+          await retryWithExponentialBackoff(
+            () => dio.get<void>('/rejected'),
+            maxAttempts: 3,
+            onError: (attempt, _) => callbacks.add('error:$attempt'),
+            shouldRetry: (_) {
+              callbacks.add('predicate');
+              return false;
+            },
+          );
+        } catch (error) {
+          caught = error;
+        }
         await logger.flush();
         final rows = await storage.snapshot();
-        final incidents = rows.where((row) => row['kind'] == 'incident').toList();
-        final attempts = rows.where((row) => row['kind'] == 'attempt').toList();
-        final decisions = rows
-            .where((row) => row['kind'] == 'retry_decision')
-            .toList();
-        expect(adapter.attempts, 2);
-        expect(incidents, hasLength(1));
-        expect(incidents.single['attempts'], 2);
-        expect(attempts, isEmpty);
-        expect(decisions, isEmpty);
-        expect(incidents.single['stackTrace'], isEmpty);
-        expect((incidents.single['fields'] as Map)['retry_count'], 1);
-        expect(rows.where((row) => row['kind'] == 'recovery'), isEmpty);
-        expect(jsonEncode(rows), isNot(contains('private-password')));
-        expect(jsonEncode(rows), isNot(contains('20260001')));
+        expect(rows, hasLength(1));
+        expect(rows.single['kind'], 'incident');
+        expect(adapter.attempts, 1);
+        expect(caught, same(adapter.errors.single));
+        expect(callbacks, ['error:1', 'predicate']);
+        expect((rows.single['fields'] as Map)['retry_count'], 0);
       } finally {
         await logger.dispose();
         await temporary.delete(recursive: true);
       }
     },
   );
+
+  test('notice API immediate retry records one terminal summary', () async {
+    SharedPreferences.setMockInitialValues({});
+    final temporary = await Directory.systemTemp.createTemp(
+      'cqut-notice-network-',
+    );
+    final logger = AppLogger.I;
+    final storage = FileDiagnosticStorage(
+      Directory('${temporary.path}/records'),
+      'foreground',
+    );
+    await logger.init(
+      enableConsole: false,
+      storage: storage,
+      exportDirectory: Directory('${temporary.path}/exports'),
+    );
+    final adapter = _ServerFailureAdapter();
+    final api = NoticeApi(
+      accessEnabled: () async => true,
+      dioFactory: (baseUrl) {
+        final dio = Dio(BaseOptions(baseUrl: baseUrl))
+          ..httpClientAdapter = adapter;
+        logger.attachToDio(dio, tag: 'NoticeApi');
+        return dio;
+      },
+    );
+    try {
+      await expectLater(
+        api.fetchTermScheduleNotices(
+          username: '20260001',
+          encryptedPassword: 'private-password',
+          yearTerm: '2026-2027-1',
+        ),
+        throwsA(isA<DioException>()),
+      );
+      await logger.flush();
+      final rows = await storage.snapshot();
+      final incidents = rows.where((row) => row['kind'] == 'incident').toList();
+      final attempts = rows.where((row) => row['kind'] == 'attempt').toList();
+      final decisions = rows
+          .where((row) => row['kind'] == 'retry_decision')
+          .toList();
+      expect(adapter.attempts, 2);
+      expect(incidents, hasLength(1));
+      expect(incidents.single['attempts'], 2);
+      expect(attempts, isEmpty);
+      expect(decisions, isEmpty);
+      expect(incidents.single['stackTrace'], isEmpty);
+      expect((incidents.single['fields'] as Map)['retry_count'], 1);
+      expect(rows.where((row) => row['kind'] == 'recovery'), isEmpty);
+      expect(jsonEncode(rows), isNot(contains('private-password')));
+      expect(jsonEncode(rows), isNot(contains('20260001')));
+    } finally {
+      await logger.dispose();
+      await temporary.delete(recursive: true);
+    }
+  });
 
   for (final acceptErrorStatus in [false, true]) {
     test(

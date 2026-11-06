@@ -270,35 +270,32 @@ void main() {
     },
   );
 
-  test(
-    'mapped network timeout retains only the compact Dio summary',
-    () async {
-      ApiClient().dio.httpClientAdapter = _ResponseAdapter((options) {
-        if (options.path.endsWith('listWeekEvents')) {
-          return DioException(
-            requestOptions: options,
-            type: DioExceptionType.receiveTimeout,
-            error: 'simulated receive timeout',
-          );
-        }
-        return {'code': 200, 'msg': '登录成功！'};
-      });
-      await expectLater(
-        CourseApi().fetchWeekEvents(
-          userId: 'private-account',
-          encryptedPassword: 'private-credential',
-        ),
-        throwsA(isA<CourseApiException>()),
-      );
+  test('mapped network timeout retains only the compact Dio summary', () async {
+    ApiClient().dio.httpClientAdapter = _ResponseAdapter((options) {
+      if (options.path.endsWith('listWeekEvents')) {
+        return DioException(
+          requestOptions: options,
+          type: DioExceptionType.receiveTimeout,
+          error: 'simulated receive timeout',
+        );
+      }
+      return {'code': 200, 'msg': '登录成功！'};
+    });
+    await expectLater(
+      CourseApi().fetchWeekEvents(
+        userId: 'private-account',
+        encryptedPassword: 'private-credential',
+      ),
+      throwsA(isA<CourseApiException>()),
+    );
 
-      final rows = await records();
-      final root = rows.singleWhere((row) => row['kind'] == 'incident');
-      expect(root['errorType'], 'DioException');
-      expect(root['stackTrace'], isEmpty);
-      expect(rows.where((row) => row['kind'] == 'derived'), isEmpty);
-      expect(jsonEncode(rows), isNot(contains('private-credential')));
-    },
-  );
+    final rows = await records();
+    final root = rows.singleWhere((row) => row['kind'] == 'incident');
+    expect(root['errorType'], 'DioException');
+    expect(root['stackTrace'], isEmpty);
+    expect(rows.where((row) => row['kind'] == 'derived'), isEmpty);
+    expect(jsonEncode(rows), isNot(contains('private-credential')));
+  });
 
   NoticeApi closedNoticeApi() => NoticeApi(
     accessEnabled: () async => true,
