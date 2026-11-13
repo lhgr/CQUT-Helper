@@ -115,8 +115,23 @@ class AnnouncementManager {
 
   @visibleForTesting
   AnnouncementManager.forTesting({
-    required Future<AnnouncementModel?> Function() loadLatest,
-  }) : _loadLatestOverride = loadLatest;
+    Future<AnnouncementModel?> Function()? loadLatest,
+    Future<List<AnnouncementModel>> Function(String version, bool activeOnly)?
+    loadList,
+    Future<String> Function()? appVersion,
+    DateTime Function()? now,
+  }) : _loadLatestOverride = loadLatest,
+       _loadListOverride = loadList,
+       _appVersion =
+           appVersion ??
+           (() async => (await PackageInfo.fromPlatform()).version),
+       _now = now ?? DateTime.now;
+
+  Future<List<AnnouncementModel>> Function(String, bool)? _loadListOverride;
+  Future<String> Function() _appVersion = () async =>
+      (await PackageInfo.fromPlatform()).version;
+  DateTime Function() _now = DateTime.now;
+  final Map<String, Future<AnnouncementListResult>> _pendingLists = {};
 
   Future<AnnouncementModel?> Function()? _loadLatestOverride;
   Future<AnnouncementModel?>? _pendingRequest;
@@ -124,19 +139,9 @@ class AnnouncementManager {
 
   final ApiService _apiService = ApiService();
 
-  static const _cacheItemsKey = 'announcement_cache_items_v1';
-  static const _cacheTsKey = 'announcement_cache_ts_v1';
   static const _latestPopupIdKey = 'announcement_latest_popup_id_v1';
   static const _readIdsKey = 'announcement_read_ids_v1';
   static const _cacheTtlMs = 6 * 60 * 60 * 1000;
-
-  Future<void> _purgeExpiredCache(SharedPreferences prefs, int nowMs) async {
-    final cachedTs = prefs.getInt(_cacheTsKey) ?? 0;
-    if (cachedTs > 0 && nowMs - cachedTs >= _cacheTtlMs) {
-      await prefs.remove(_cacheItemsKey);
-      await prefs.remove(_cacheTsKey);
-    }
-  }
 
   Future<AnnouncementHealthResult> checkHealth() async {
     try {
@@ -161,11 +166,38 @@ class AnnouncementManager {
     bool forceRefresh = false,
     bool activeOnly = true,
   }) async {
+    final version = await _appVersion();
+    final key =
+        'announcement_list_${Uri.encodeComponent(version)}_${activeOnly ? 1 : 0}_200';
+    final pending = _pendingLists[key];
+    if (pending != null) {
+      final result = await pending;
+      if (forceRefresh && result.fromCache && result.failure == null) {
+        return getAnnouncements(forceRefresh: true, activeOnly: activeOnly);
+      }
+      return result;
+    }
+    final request = _getAnnouncements(key, version, forceRefresh, activeOnly);
+    _pendingLists[key] = request;
+    try {
+      return await request;
+    } finally {
+      _pendingLists.remove(key);
+    }
+  }
+
+  Future<AnnouncementListResult> _getAnnouncements(
+    String key,
+    String version,
+    bool forceRefresh,
+    bool activeOnly,
+  ) async {
+    final cacheItemsKey = '${key}_items';
+    final cacheTsKey = '${key}_ts';
     final prefs = await SharedPreferences.getInstance();
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await _purgeExpiredCache(prefs, now);
-    final cachedTs = prefs.getInt(_cacheTsKey) ?? 0;
-    final cachedRaw = prefs.getString(_cacheItemsKey);
+    final now = _now().millisecondsSinceEpoch;
+    final cachedTs = prefs.getInt(cacheTsKey) ?? 0;
+    final cachedRaw = prefs.getString(cacheItemsKey);
 
     if (!forceRefresh &&
         cachedRaw != null &&
@@ -183,18 +215,19 @@ class AnnouncementManager {
     }
 
     try {
-      final packageInfo = await PackageInfo.fromPlatform();
-      final items = await _apiService.announcement.getList(
-        appVersion: packageInfo.version,
-        activeOnly: activeOnly,
-        limit: 200,
-      );
+      final items =
+          await (_loadListOverride?.call(version, activeOnly) ??
+              _apiService.announcement.getList(
+                appVersion: version,
+                activeOnly: activeOnly,
+                limit: 200,
+              ));
 
       await prefs.setString(
-        _cacheItemsKey,
+        cacheItemsKey,
         jsonEncode(items.map((e) => e.toJson()).toList()),
       );
-      await prefs.setInt(_cacheTsKey, now);
+      await prefs.setInt(cacheTsKey, _now().millisecondsSinceEpoch);
 
       return AnnouncementListResult(items: items, fromCache: false);
     } on DioException catch (e) {

@@ -197,7 +197,7 @@ jobs:
           if-no-files-found: warn
 
   backend:
-    name: Notice service checks
+    name: Schedule notice API checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -223,4 +223,4 @@ jobs:
         run: python tool/test_release_metadata.py
 
       - name: Run backend tests
-        run: python -m unittest discover -s FastAPI -p 'test_*.py'
+        run: python -m unittest FastAPI.test_jwxt_automation FastAPI.test_public_boundaries

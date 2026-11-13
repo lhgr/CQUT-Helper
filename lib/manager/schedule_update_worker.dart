@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cqut_helper/utils/notice_service_clock.dart';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/academic_calendar_manager.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
@@ -1374,7 +1375,6 @@ class ScheduleUpdateWorker {
 
   @visibleForTesting
   static bool isDeepNightAt(DateTime instantUtc) {
-    final hour = instantUtc.toUtc().add(const Duration(hours: 8)).hour;
-    return hour >= 0 && hour < 7;
+    return isNoticeServiceQuietHours(instantUtc);
   }
 }

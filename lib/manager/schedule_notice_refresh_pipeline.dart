@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cqut_helper/utils/notice_service_clock.dart';
 import 'package:cqut_helper/api/notice/notice_api.dart';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
@@ -117,8 +118,7 @@ class ScheduleNoticeRefreshPipeline {
     _refreshedWeekCount = 0;
     _networkOutcome = 'not_attempted';
     final now = nowProvider();
-    final nowHour = now.hour;
-    if (respectQuietHours && nowHour >= 0 && nowHour < 7) {
+    if (respectQuietHours && isNoticeServiceQuietHours(now)) {
       return _skip('deep_night', apiClosed: true);
     }
     final yearTerm = (currentData.yearTerm ?? '').trim();

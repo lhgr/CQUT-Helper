@@ -63,7 +63,7 @@ class NoticeApi {
       BaseOptions(
         baseUrl: baseUrl,
         connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 100),
         sendTimeout: const Duration(seconds: 15),
         headers: {'Content-Type': 'application/json'},
       ),
@@ -333,9 +333,9 @@ class NoticeApi {
           } on DioException catch (e, st) {
             final code = e.response?.statusCode;
             final willRetry =
-                code != 403 &&
-                code != 429 &&
-                (attempt < _maxRetryPerDomain || i + 1 < candidates.length);
+                e.response == null &&
+                e.type == DioExceptionType.connectionTimeout &&
+                attempt < _maxRetryPerDomain;
             _logRetryDecision(
               e,
               baseUrl: baseUrl,
@@ -347,7 +347,9 @@ class NoticeApi {
                   ? 'rate_limited'
                   : willRetry
                   ? 'retry_allowed'
-                  : 'attempts_exhausted',
+                  : e.type == DioExceptionType.connectionTimeout
+                  ? 'attempts_exhausted'
+                  : 'request_may_have_been_sent',
             );
             if (code == 403) {
               throw NoticeApiForbiddenException('调课通知接口夜间关闭(403)');
@@ -357,19 +359,19 @@ class NoticeApi {
               AppLogger.I.linkFailure(mapped, e);
               throw mapped;
             }
+            if (!willRetry) rethrow;
             lastError = e;
             lastStackTrace = st;
           } catch (e, st) {
             lastError = e;
             lastStackTrace = st;
-            final willRetry =
-                attempt < _maxRetryPerDomain || i + 1 < candidates.length;
+            const willRetry = false;
             _logRetryDecision(
               e,
               baseUrl: baseUrl,
               attempt: attempt,
               willRetry: willRetry,
-              reason: willRetry ? 'retry_allowed' : 'attempts_exhausted',
+              reason: 'non_connection_failure',
             );
             // Validation failures already have the request's causal root.
             AppLogger.I.warn(
@@ -383,6 +385,7 @@ class NoticeApi {
                 'retryLimit': _maxRetryPerDomain,
               },
             );
+            rethrow;
           }
         }
       }
@@ -426,7 +429,7 @@ class NoticeApi {
         'backoff_ms': 0,
         'actual_backoff_ms': 0,
         'retry_policy': 'immediate',
-        'retry_filter': 'except_403_429',
+        'retry_filter': 'connection_establishment_only',
       },
     );
   }

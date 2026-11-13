@@ -70,13 +70,12 @@ Android 可在**设置 → 同步与修复**查看后台注册状态、最近运
 需要 Python、pip，以及可安装 `requirements.txt` 的环境。从仓库根目录运行：
 
 ```bash
-cd FastAPI
-python -m pip install -r requirements.txt
+python -m pip install -r FastAPI/requirements.txt
 python -m playwright install chromium
-uvicorn jwxt_automation:app --host 127.0.0.1 --port 8001
+python -m uvicorn FastAPI.main:app --host 127.0.0.1 --port 8001 --no-proxy-headers
 ```
 
-Chromium 用于上游登录流程需要浏览器签名时的处理。服务默认只监听本机回环地址；若要让手机访问，应通过你管理的 HTTPS 入口转发到该端口，并避免记录请求体。应用设置中填写 HTTPS 根地址，不要附加 `/api/jwxt/term-schedule-notices` 路径。
+服务先尝试 HTTP 查询，不执行下载的 Node.js 脚本；需要浏览器时使用无头 Chromium 且强制启用 Chromium 沙箱。沙箱启动失败会返回查询失败，不会禁用沙箱重试。服务默认只监听本机回环地址；若要让手机访问，应通过你管理的 HTTPS 入口转发到该端口，并避免记录请求体。应用设置中填写 HTTPS 根地址，不要附加 `/api/jwxt/term-schedule-notices` 路径。
 
 上游地址默认指向学校认证和教务系统。确需覆盖时，可在启动服务的进程环境中设置以下变量；项目不会自动读取 `.env` 文件：
 
@@ -86,7 +85,51 @@ Chromium 用于上游登录流程需要浏览器签名时的处理。服务默�
 | `JWXT_CAS_DO_LOGIN` | 统一认证登录提交地址 |
 | `JWXT_DBSY_PAGE` | 教务系统待办页面地址 |
 
-其他可选运行参数包括 `JWXT_PIPELINE_TIMEOUT_SEC`（查询流水线超时，默认 90 秒，范围 10–300）、`JWXT_RATE_LIMIT_PER_MINUTE`（每个客户端每分钟请求数，默认 12）及 `JWXT_MAX_CONCURRENT_PIPELINES`（并行查询上限，默认 2）。如果反向代理需要服务端按客户端转发地址限流，可设置 `JWXT_TRUST_PROXY_HEADERS=true`；仅应在可信代理覆盖转发头并且后端不可被绕过时启用。
+可选运行参数包括 `JWXT_PIPELINE_TIMEOUT_SEC`（默认 90 秒，范围 10–300）、`JWXT_RATE_LIMIT_PER_MINUTE`（每 IP 每分钟默认 12 次）和 `JWXT_MAX_CONCURRENT_PIPELINES`（默认 2）。每账号每分钟最多 6 次；同账号、同学期已有查询时返回 409，不创建第二个进程。账号限流只存 SHA-256 摘要，不保存密码；限流身份表各最多 4096 项，满时拒绝新身份直至过期项释放。以上计数与并发上限是单进程的，部署使用一个 Uvicorn worker。
+
+调课请求体上限 20 KiB，其余路径 64 KiB；按流式块计数，读取总预算 10 秒，超限返回 413，读取超时返回 408。
+
+默认只使用 TCP 对端 IP，忽略转发头。代理部署必须保留 `--no-proxy-headers`，并将 `JWXT_TRUSTED_PROXY_CIDRS` 设为实际代理出口 CIDR（例如仅 `127.0.0.1/32`）。应用从 X-Forwarded-For 的右侧逐跳剥除可信代理，首个不可信地址作为客户端；不能把任意左侧值当作客户端。只在 Cloudflare Tunnel 入口不可绕过、代理覆盖并清除用户提交的身份头时，才额外设 `JWXT_TRUST_CF_CONNECTING_IP=true`；这时优先使用受信 TCP 对端提供的 CF-Connecting-IP。不要设置全网 CIDR。
+
+### 公网容器运行
+
+公开查询容器应独立于校历管理容器，不挂载校历数据库、私有源码或管理配置，不传入管理令牌。浏览器和查询工作进程只接收运行所需环境变量白名单，但环境白名单不能替代文件权限与容器隔离。保留旧私有容器的 `/data` 和属主，在新容器运行公开查询服务，无需修改旧数据库权限。
+
+仓库提供 `FastAPI/Dockerfile`，基础镜像为 Python 3.12 / Debian 12；构建时安装现有 `requirements.txt` 和匹配的 Chromium、系统库。镜像仅复制公开查询源码，不包含校历模块或数据库，默认 UID/GID 均为 10001。无需在宿主安装 Node.js。
+
+以下命令在仓库根目录执行。构建需要访问 Python、Debian 和 Playwright 的下载源：
+
+```bash
+docker build -f FastAPI/Dockerfile -t cqut-notice:local .
+```
+
+本目录已附带 Playwright 官方 seccomp 配置 `FastAPI/seccomp_profile.json`，来源固定于 [ae935a43](https://github.com/microsoft/playwright/blob/ae935a43d9e376e4759548f6b3c6905c7b282333/utils/docker/seccomp_profile.json)。它保留默认拒绝策略，并允许 Chromium 创建沙箱所需的用户命名空间。宿主内核也必须支持非特权用户命名空间，面板须支持非 root 用户、seccomp 和资源上限。
+
+先执行离线浏览器检查。该命令不访问学校，也不会禁用沙箱重试：
+
+```bash
+docker run --rm --init --user 10001:10001 \
+  --cpus 2 --memory 1536m --pids-limit 256 \
+  --read-only --tmpfs /tmp:rw,nosuid,size=512m,mode=1777 \
+  --shm-size 256m --security-opt seccomp=./FastAPI/seccomp_profile.json \
+  cqut-notice:local python -m FastAPI.check_browser_sandbox
+```
+
+检查成功后启动服务：
+
+```bash
+docker run -d --name cqut-notice --restart unless-stopped \
+  --user 10001:10001 --init --cpus 2 --memory 1536m --pids-limit 256 \
+  --read-only --tmpfs /tmp:rw,nosuid,size=512m,mode=1777 \
+  --shm-size 256m --security-opt seccomp=./FastAPI/seccomp_profile.json \
+  -p 127.0.0.1:8001:8001 cqut-notice:local
+```
+
+通过现有 HTTPS 代理将调课路径转发到本机 8001。若已有私有容器占用 8001，可把公开容器映射改成 `127.0.0.1:8002:8001`，并相应调整调课路径的代理目标。不要给公开容器传管理令牌或挂载旧 `/data`。代理等待时间至少 110 秒，覆盖默认查询预算与进程树清理；禁用请求体日志。不添加 `--no-sandbox` 或 privileged。
+
+需要按实际客户端 IP 限流时，将实际代理出口 CIDR 通过 `-e JWXT_TRUSTED_PROXY_CIDRS=...` 注入新容器。Docker 网络下应用看到的 TCP 对端通常是网桥网关或代理容器地址，不一定是 `127.0.0.1`，须按实际网络设置，不要照抄回环示例。
+
+部署前须执行上述离线检查，确认镜像、宿主用户命名空间和 Chromium 沙箱可用。检查失败先修复宿主或面板运行配置，不能关闭 Chromium 沙箱绕过。
 
 ### 接口
 
@@ -107,7 +150,7 @@ Chromium 用于上游登录流程需要浏览器签名时的处理。服务默�
 }
 ```
 
-`username`、`encrypted_password` 和 `year_term` 必填；学期格式为 `YYYY-YYYY-1` 或 `YYYY-YYYY-2`，结束年份须比开始年份大一。`env` 可为 `dev`、`test` 或 `prod`，默认 `prod`；`headless` 默认 `true`。
+`username`、`encrypted_password` 和 `year_term` 必填；学期格式为 `YYYY-YYYY-1` 或 `YYYY-YYYY-2`，结束年份须比开始年份大一。保留接收旧客户端的 `env` 和 `headless` 字段，但服务端忽略其值，固定使用服务端上游配置与无头浏览器。
 
 成功响应外层为 `{"success":true,"data":{...}}`。`data` 包含 `year_term`、`generated_at`、`term_schedule_notices_complete`、`term_schedule_notices` 和查询计数等字段。客户端要求 `term_schedule_notices_complete` 为 `true`，且通知列表必须是数组；空数组表示一次完整查询未发现可用调课通知。
 
@@ -125,3 +168,11 @@ Chromium 用于上游登录流程需要浏览器签名时的处理。服务默�
 | `数据完整性未确认` | 更新服务至兼容实现，并确认查询返回完整结果。 |
 
 调课信息用于辅助同步，请以学校官方通知和教务系统安排为准。
+
+## 离线验证
+
+在仓库根目录运行，不访问学校上游：
+
+```bash
+python -m unittest FastAPI.test_jwxt_automation FastAPI.test_public_boundaries
+```

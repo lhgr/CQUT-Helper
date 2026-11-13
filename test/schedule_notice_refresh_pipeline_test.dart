@@ -80,7 +80,7 @@ void main() {
         scheduleApi: api,
         credentialStore: _FakePipelineCredentialStore(value: 'secret'),
         refreshWeek: (_, _) async {},
-        nowProvider: () => DateTime(2026, 11, 5, 2),
+        nowProvider: () => DateTime.parse('2026-11-05T02:00:00+08:00'),
       );
       final data = ScheduleData(yearTerm: '2026-2027-1', weekList: ['1']);
       expect((await pipeline.run(currentData: data)).skipReason, 'deep_night');

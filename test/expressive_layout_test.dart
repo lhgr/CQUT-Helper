@@ -226,8 +226,8 @@ void main() {
       'schedule_time_info_enabled': false,
       'schedule_show_weekend': true,
       'schedule_polling_guide_shown_$_user': true,
-      'announcement_cache_ts_v1': now.millisecondsSinceEpoch,
-      'announcement_cache_items_v1': jsonEncode([
+      'announcement_list_1.2.1_0_200_ts': now.millisecondsSinceEpoch,
+      'announcement_list_1.2.1_0_200_items': jsonEncode([
         {
           'id': 'visual-announcement',
           'title': '秋季学期课表使用说明',

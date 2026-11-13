@@ -6,7 +6,18 @@
 
 # Python / FastAPI generated files
 *.pyc
-FastAPI/__pycache__/
+FastAPI/**/__pycache__/
+FastAPI/**/.pytest_cache/
+FastAPI/**/*.db
+FastAPI/**/*.db-wal
+FastAPI/**/*.db-shm
+FastAPI/**/*.sqlite
+FastAPI/**/*.sqlite-wal
+FastAPI/**/*.sqlite-shm
+FastAPI/**/*.sqlite3
+FastAPI/**/*.sqlite3-wal
+FastAPI/**/*.sqlite3-shm
+FastAPI/**/.venv/
 
 # Flutter / Dart / Pub
 **/doc/api/
@@ -55,12 +66,22 @@ android/app/upload-keystore.jks
 **/*.jks
 
 # Local project data and environment files
-workers
+workers/**/node_modules/
+workers/**/.wrangler/
+workers/**/dist/
+workers/**/.dev.vars
+workers/**/wrangler.local.toml
 .env
 docs
 APIs/
 .claude/
 key/
 assets/dev/
-FastAPI/calendar/
 /AGENT.md
+
+# Root Worker local secrets and Wrangler state
+/.dev.vars
+/.wrangler/
+
+# Local private services repository
+/private-services/

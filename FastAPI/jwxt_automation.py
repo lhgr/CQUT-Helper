@@ -1,21 +1,21 @@
-import json
 import logging
 import multiprocessing
 import os
 import queue
+import signal
 import re
 import subprocess
-import tempfile
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
+import hashlib
+import ipaddress
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urljoin
 
 import requests
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, Request
 
 try:
     # pydantic v2
@@ -26,7 +26,7 @@ except ImportError:
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-from service_common import ServiceError, install_service_common
+from FastAPI.service_common import ServiceError
 
 logger = logging.getLogger("jwxt_automation")
 
@@ -147,104 +147,11 @@ class JwxtAutomation:
         resp.raise_for_status()
         body = resp.json()
         if body.get("code") != 200:
-            raise RuntimeError(f"统一认证失败: {body}")
+            raise RuntimeError("统一认证失败")
         self.session.get(self.config.cas_login_page, allow_redirects=True, timeout=self.config.timeout_sec)
         page_resp = self.session.get(self.config.dbsy_page, allow_redirects=True, timeout=self.config.timeout_sec)
         if page_resp.status_code >= 400:
             page_resp.raise_for_status()
-
-    def _extract_ts_material(self, html: str) -> Dict[str, str]:
-        src_match = re.search(r'<script[^>]+src="(/eZ[^"]+\.js)"', html)
-        if not src_match:
-            raise RuntimeError("未找到反爬脚本地址")
-        ts_match = re.search(r"\$_ts\.nsd=(\d+);.*?\$_ts\.cd=\"([^\"]+)\"", html, flags=re.S)
-        if not ts_match:
-            raise RuntimeError("未找到$_ts动态参数")
-        return {"js_src": src_match.group(1), "nsd": ts_match.group(1), "cd": ts_match.group(2)}
-
-    def _build_node_signer_script(self, nsd: str, cd: str, ts_js: str, target_url: str) -> str:
-        inline_js = f"$_ts=window['$_ts']||{{}};$_ts.nsd={nsd};$_ts.cd={json.dumps(cd)};"
-        return f"""
-process.on('uncaughtException', (e) => {{
-  console.log(JSON.stringify({{error: String(e && e.stack ? e.stack : e)}}));
-  process.exit(1);
-}});
-global.window = global;
-global.self = global;
-global.top = global;
-global.parent = global;
-global.navigator = {{userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}};
-global.location = {{href:'https://jwxt.cqut.edu.cn/jwglxt/xtgl/index_cxDbsy.html?flag=1', pathname:'/jwglxt/xtgl/index_cxDbsy.html', protocol:'https:'}};
-global.history = {{length: 1}};
-global.screen = {{width: 1920, height: 1080, availWidth: 1920, availHeight: 1040}};
-global.performance = {{now: function(){{ return Date.now() % 100000; }}}};
-global.localStorage = {{getItem:function(){{return null;}}, setItem:function(){{}}, removeItem:function(){{}}}};
-global.sessionStorage = {{getItem:function(){{return null;}}, setItem:function(){{}}, removeItem:function(){{}}}};
-global.document = {{
-  cookie: '',
-  referrer: '',
-  location: global.location,
-  getElementsByTagName: function(){{ return []; }},
-  getElementById: function(){{ return null; }},
-  querySelector: function(){{ return null; }},
-  createElement: function(){{ return {{style:{{}}, setAttribute:function(){{}}, appendChild:function(){{}}, addEventListener:function(){{}} }}; }},
-  documentElement: {{style:{{}}}},
-  body: {{appendChild:function(){{}}, removeChild:function(){{}}}}
-}};
-var __lastUrl = {json.dumps(target_url)};
-function __XHR(){{}}
-__XHR.prototype.open = function(method, url){{ __lastUrl = url; }};
-__XHR.prototype.send = function(){{}};
-__XHR.prototype.setRequestHeader = function(){{}};
-global.XMLHttpRequest = __XHR;
-if (typeof global.atob === 'undefined') {{
-  global.atob = function(s){{ return Buffer.from(String(s), 'base64').toString('binary'); }};
-}}
-if (typeof global.btoa === 'undefined') {{
-  global.btoa = function(s){{ return Buffer.from(String(s), 'binary').toString('base64'); }};
-}}
-eval({json.dumps(inline_js)});
-eval({json.dumps(ts_js)});
-var xhr = new XMLHttpRequest();
-xhr.open('POST', {json.dumps(target_url)}, true);
-console.log(JSON.stringify({{signedUrl: __lastUrl}}));
-"""
-
-    def _sign_url_by_node(self, dbsy_html: str, target_url: str) -> str:
-        material = self._extract_ts_material(dbsy_html)
-        js_url = urljoin("https://jwxt.cqut.edu.cn", material["js_src"])
-        ts_js = self.session.get(js_url, timeout=self.config.timeout_sec).text
-        node_script = self._build_node_signer_script(
-            nsd=material["nsd"],
-            cd=material["cd"],
-            ts_js=ts_js,
-            target_url=target_url,
-        )
-        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
-            f.write(node_script)
-            node_file = f.name
-        try:
-            res = subprocess.run(["node", node_file], capture_output=True, text=True, timeout=20)
-        finally:
-            try:
-                os.remove(node_file)
-            except OSError:
-                pass
-        if res.returncode != 0:
-            out = (res.stdout or "").strip()
-            err = (res.stderr or "").strip()
-            detail = err[:500] if err else out[:500]
-            raise RuntimeError(f"node签名执行失败: {detail}")
-        lines = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
-        if not lines:
-            raise RuntimeError("node签名执行无输出")
-        payload = json.loads(lines[-1])
-        signed = payload.get("signedUrl")
-        if not signed or "xqmeKlxm=" not in signed:
-            raise RuntimeError(f"未生成xqmeKlxm签名URL: {signed}")
-        if signed.startswith("/"):
-            signed = urljoin("https://jwxt.cqut.edu.cn", signed)
-        return signed
 
     def _probe_dbsy_query_url(self, url: str) -> bool:
         payload = self._dbsy_payload(sfyy=1, time_flag=0, page_no=1)
@@ -270,78 +177,77 @@ console.log(JSON.stringify({{signedUrl: __lastUrl}}));
     def capture_signed_urls_requests(self) -> Dict[str, str]:
         page_resp = self.session.get(self.config.dbsy_page, allow_redirects=True, timeout=self.config.timeout_sec)
         page_resp.raise_for_status()
-        html = page_resp.text
         base_target = "https://jwxt.cqut.edu.cn/jwglxt/xtgl/index_cxDbsy.html?doType=query"
         if self._probe_dbsy_query_url(base_target):
             signed = base_target
         else:
-            signed = self._sign_url_by_node(dbsy_html=html, target_url=base_target)
+            raise RuntimeError("HTTP查询不可用，需要浏览器")
         self.signed_urls = {"pending": signed, "read": signed}
         return self.signed_urls
 
     def capture_signed_urls(self, headless: bool = True) -> Dict[str, str]:
-        req_exc: Optional[Exception] = None
         try:
             return self.capture_signed_urls_requests()
-        except Exception as exc:
-            req_exc = exc
+        except Exception:
+            pass
         try:
             from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
             from playwright.sync_api import sync_playwright
         except ModuleNotFoundError as exc:
-            detail = str(req_exc) if req_exc else "未知错误"
-            raise RuntimeError(f"纯requests签名失败，且缺少playwright降级能力。requests错误: {detail}") from exc
+            raise RuntimeError("HTTP查询不可用且未安装浏览器组件") from exc
         captured: Dict[str, str] = {}
         encrypted_pwd = self.encrypted_password
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=headless)
-            context = browser.new_context()
-            page = context.new_page()
-
-            def on_request(req: Any) -> None:
-                url = req.url
-                if "jwxt.cqut.edu.cn/jwglxt/xtgl/index_cxDbsy.html?xqmeKlxm=" in url and req.method == "POST":
-                    post_data = req.post_data or ""
-                    if "sfyy=1" in post_data:
-                        captured["pending"] = url
-                    if "sfyy=2" in post_data:
-                        captured["read"] = url
-
-            page.on("request", on_request)
-            page.goto(self.config.cas_login_page, wait_until="domcontentloaded", timeout=self.config.timeout_sec * 1000)
-            payload = {
-                "name": self.username,
-                "pwd": encrypted_pwd,
-                "verifyCode": None,
-                "universityId": "100005",
-                "loginType": "login",
-            }
-            login_result = page.evaluate(
-                """async ({url, payload}) => {
-                    const r = await fetch(url, {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers: {'content-type': 'application/json, application/json;charset=UTF-8'},
-                        body: JSON.stringify(payload)
-                    });
-                    return await r.json();
-                }""",
-                {"url": self.config.cas_do_login, "payload": payload},
-            )
-            if login_result.get("code") != 200:
-                raise RuntimeError(f"浏览器登录失败: {login_result}")
-            page.goto(self.config.cas_login_page, wait_until="networkidle", timeout=self.config.timeout_sec * 1000)
-            page.goto(self.config.dbsy_page, wait_until="networkidle", timeout=self.config.timeout_sec * 1000)
+            browser = p.chromium.launch(headless=True, chromium_sandbox=True, env=_query_process_environment())
             try:
-                page.get_by_text("已阅事宜").click(timeout=5000)
-            except PlaywrightTimeoutError:
-                pass
-            page.wait_for_timeout(2500)
-            for c in context.cookies():
-                self.session.cookies.set(c["name"], c["value"], domain=c.get("domain"), path=c.get("path"))
-            browser.close()
+                context = browser.new_context()
+                page = context.new_page()
+
+                def on_request(req: Any) -> None:
+                    url = req.url
+                    if "jwxt.cqut.edu.cn/jwglxt/xtgl/index_cxDbsy.html?xqmeKlxm=" in url and req.method == "POST":
+                        post_data = req.post_data or ""
+                        if "sfyy=1" in post_data:
+                            captured["pending"] = url
+                        if "sfyy=2" in post_data:
+                            captured["read"] = url
+
+                page.on("request", on_request)
+                page.goto(self.config.cas_login_page, wait_until="domcontentloaded", timeout=self.config.timeout_sec * 1000)
+                payload = {
+                    "name": self.username,
+                    "pwd": encrypted_pwd,
+                    "verifyCode": None,
+                    "universityId": "100005",
+                    "loginType": "login",
+                }
+                login_result = page.evaluate(
+                    """async ({url, payload}) => {
+                        const r = await fetch(url, {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: {'content-type': 'application/json, application/json;charset=UTF-8'},
+                            body: JSON.stringify(payload)
+                        });
+                        return await r.json();
+                    }""",
+                    {"url": self.config.cas_do_login, "payload": payload},
+                )
+                if login_result.get("code") != 200:
+                    raise RuntimeError("浏览器登录失败")
+                page.goto(self.config.cas_login_page, wait_until="networkidle", timeout=self.config.timeout_sec * 1000)
+                page.goto(self.config.dbsy_page, wait_until="networkidle", timeout=self.config.timeout_sec * 1000)
+                try:
+                    page.get_by_text("已阅事宜").click(timeout=5000)
+                except PlaywrightTimeoutError:
+                    pass
+                page.wait_for_timeout(2500)
+                for c in context.cookies():
+                    self.session.cookies.set(c["name"], c["value"], domain=c.get("domain"), path=c.get("path"))
+            finally:
+                browser.close()
         if "pending" not in captured or "read" not in captured:
-            raise RuntimeError(f"未能捕获完整签名URL: {captured}")
+            raise RuntimeError("未能捕获完整查询地址")
         self.signed_urls = captured
         return captured
 
@@ -423,7 +329,6 @@ def merge_and_filter_term_notices(
     year_term: str,
 ) -> List[Dict[str, Any]]:
     merged = pending_items + read_items
-    merged.sort(key=lambda x: x.get("cjsj", ""))
     start, end = parse_year_term_range(year_term)
     results: List[Dict[str, Any]] = []
     for item in merged:
@@ -434,8 +339,8 @@ def merge_and_filter_term_notices(
         cjsj = item.get("cjsj", "")
         try:
             published_at = datetime.strptime(cjsj, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            continue
+        except (ValueError, TypeError) as exc:
+            raise ServiceError(502, "upstream_invalid_response", "调课通知发布时间缺失或无效，无法确认查询完整性") from exc
         if not (start <= published_at <= end):
             continue
         parsed = parse_notice_fields(content or title)
@@ -454,6 +359,7 @@ def merge_and_filter_term_notices(
                 "adjusted_classroom": parsed["adjusted_classroom"],
             }
         )
+    results.sort(key=lambda item: datetime.strptime(item["published_at"], "%Y-%m-%d %H:%M:%S"))
     return results
 
 
@@ -469,26 +375,29 @@ def run_pipeline(
         encrypted_password=encrypted_password,
         env_name=env_name,
     )
-    client.login()
-    client.capture_signed_urls(headless=headless)
-    pending = client.fetch_all_by_kind("pending")
-    read = client.fetch_all_by_kind("read")
-    notices = merge_and_filter_term_notices(pending, read, year_term=year_term)
+    try:
+        client.login()
+        client.capture_signed_urls(headless=headless)
+        pending = client.fetch_all_by_kind("pending")
+        read = client.fetch_all_by_kind("read")
+        notices = merge_and_filter_term_notices(pending, read, year_term=year_term)
 
-    result = {
-        "env": env_name,
-        "year_term": year_term,
-        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "signed_urls": client.signed_urls,
-        "counts": {
-            "pending_total": len(pending),
-            "read_total": len(read),
-            "term_schedule_notice_total": len(notices),
-        },
-        "term_schedule_notices_complete": True,
-        "term_schedule_notices": notices,
-    }
-    return result
+        result = {
+            "env": env_name,
+            "year_term": year_term,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "counts": {
+                "pending_total": len(pending),
+                "read_total": len(read),
+                "term_schedule_notice_total": len(notices),
+            },
+            "term_schedule_notices_complete": True,
+            "term_schedule_notices": notices,
+        }
+        return result
+
+    finally:
+        client.session.close()
 
 
 class PipelineRequest(BaseModel):
@@ -518,14 +427,15 @@ class SlidingWindowRateLimiter:
     def __init__(self, limit: int, window_seconds: int):
         self.limit = max(1, limit)
         self.window_seconds = max(1, window_seconds)
-        self._events: Dict[str, deque[float]] = defaultdict(deque)
+        self._events: Dict[str, deque[float]] = {}
+        self.max_identities = 4096
         self._lock = threading.Lock()
 
     def allow(self, identity: str, now: Optional[float] = None) -> bool:
         current = time.monotonic() if now is None else now
         cutoff = current - self.window_seconds
         with self._lock:
-            if len(self._events) > 4096:
+            if len(self._events) >= self.max_identities:
                 stale_identities = [
                     key
                     for key, values in self._events.items()
@@ -533,6 +443,10 @@ class SlidingWindowRateLimiter:
                 ]
                 for key in stale_identities:
                     self._events.pop(key, None)
+            if identity not in self._events:
+                if len(self._events) >= self.max_identities:
+                    return False
+                self._events[identity] = deque()
             events = self._events[identity]
             while events and events[0] <= cutoff:
                 events.popleft()
@@ -559,17 +473,45 @@ def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
+def _query_process_environment() -> Dict[str, str]:
+    allowed = {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE", "LOCALAPPDATA", "LANG", "LC_ALL", "DISPLAY", "XDG_RUNTIME_DIR", "PLAYWRIGHT_BROWSERS_PATH", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "JWXT_CAS_LOGIN_PAGE", "JWXT_CAS_DO_LOGIN", "JWXT_DBSY_PAGE"}
+    return {key: value for key, value in os.environ.items() if key.upper() in allowed}
+
+
 def _client_identity(request: Request) -> str:
-    if _env_bool("JWXT_TRUST_PROXY_HEADERS", False):
-        forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded:
-            return forwarded.split(",", 1)[0].strip()
-    return request.client.host if request.client is not None else "unknown"
+    peer = request.client.host if request.client is not None else "unknown"
+    try:
+        address = ipaddress.ip_address(peer)
+        networks = [ipaddress.ip_network(value.strip()) for value in os.getenv("JWXT_TRUSTED_PROXY_CIDRS", "").split(",") if value.strip()]
+    except ValueError:
+        return peer
+    if not any(address in network for network in networks):
+        return peer
+    if _env_bool("JWXT_TRUST_CF_CONNECTING_IP", False):
+        try:
+            return str(ipaddress.ip_address(request.headers.get("cf-connecting-ip", "")))
+        except ValueError:
+            return peer
+    try:
+        chain = [ipaddress.ip_address(item.strip()) for item in request.headers.get("x-forwarded-for", "").split(",") if item.strip()]
+    except ValueError:
+        return peer
+    for candidate in reversed(chain):
+        if not any(candidate in network for network in networks):
+            return str(candidate)
+    return peer
 
 
 def _pipeline_process_entry(result_queue: Any, kwargs: Dict[str, Any]) -> None:
+    if os.name != "nt":
+        os.setsid()
+    environment = _query_process_environment()
+    os.environ.clear()
+    os.environ.update(environment)
     try:
         result_queue.put({"ok": True, "data": run_pipeline(**kwargs)})
+    except ServiceError as exc:
+        result_queue.put({"ok": False, "status": exc.status_code, "code": exc.code, "message": exc.message})
     except requests.HTTPError as exc:
         status_code = exc.response.status_code if exc.response is not None else None
         if status_code == 403:
@@ -582,7 +524,7 @@ def _pipeline_process_entry(result_queue: Any, kwargs: Dict[str, Any]) -> None:
                 }
             )
         else:
-            logger.exception("upstream HTTP request failed")
+            logger.warning("upstream_http_failure status=%s", status_code)
             result_queue.put(
                 {
                     "ok": False,
@@ -592,7 +534,7 @@ def _pipeline_process_entry(result_queue: Any, kwargs: Dict[str, Any]) -> None:
                 }
             )
     except requests.RequestException:
-        logger.exception("upstream request failed")
+        logger.warning("upstream_request_failure")
         result_queue.put(
             {
                 "ok": False,
@@ -601,17 +543,17 @@ def _pipeline_process_entry(result_queue: Any, kwargs: Dict[str, Any]) -> None:
                 "message": "上游教务服务暂时不可用",
             }
         )
-    except ValueError as exc:
+    except ValueError:
         result_queue.put(
             {
                 "ok": False,
                 "status": 400,
                 "code": "invalid_request",
-                "message": str(exc),
+                "message": "请求参数不合法",
             }
         )
     except Exception:
-        logger.exception("isolated pipeline failed")
+        logger.warning("pipeline_failure")
         result_queue.put(
             {
                 "ok": False,
@@ -622,54 +564,57 @@ def _pipeline_process_entry(result_queue: Any, kwargs: Dict[str, Any]) -> None:
         )
 
 
-def run_pipeline_isolated(**kwargs: Any) -> Dict[str, Any]:
-    timeout_seconds = _env_int("JWXT_PIPELINE_TIMEOUT_SEC", 90, 10, 300)
+def _stop_process_tree(process: Any) -> None:
+    if os.name == "nt":
+        if process.is_alive():
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False)
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.join(5)
+    if process.is_alive():
+        process.kill()
+        process.join(2)
+
+
+def _run_pipeline_isolated(target: Any, timeout_seconds: float, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     context = multiprocessing.get_context("spawn")
     result_queue = context.Queue(maxsize=1)
-    process = context.Process(
-        target=_pipeline_process_entry,
-        args=(result_queue, kwargs),
-        daemon=True,
-    )
-    process.start()
-    deadline = time.monotonic() + timeout_seconds
-    outcome: Optional[Dict[str, Any]] = None
-    while time.monotonic() < deadline:
-        remaining = max(0.01, deadline - time.monotonic())
-        try:
-            outcome = result_queue.get(timeout=min(0.25, remaining))
-            break
-        except queue.Empty:
-            if not process.is_alive():
+    process = context.Process(target=target, args=(result_queue, kwargs), daemon=True)
+    try:
+        process.start()
+        deadline = time.monotonic() + timeout_seconds
+        outcome = None
+        while time.monotonic() < deadline:
+            try:
+                outcome = result_queue.get(timeout=min(0.25, max(0.01, deadline - time.monotonic())))
                 break
-
-    if outcome is None and process.is_alive():
-        process.terminate()
-        process.join(5)
-        if process.is_alive():
-            process.kill()
-            process.join(2)
+            except queue.Empty:
+                if not process.is_alive():
+                    break
+        if outcome is None:
+            if process.is_alive():
+                raise ServiceError(504, "pipeline_timeout", "调课查询超时，请稍后重试")
+            try:
+                outcome = result_queue.get(timeout=1)
+            except queue.Empty as exc:
+                raise ServiceError(500, "pipeline_failed", "调课查询处理失败") from exc
+        if outcome.get("ok") is True:
+            return outcome["data"]
+        raise ServiceError(int(outcome.get("status", 500)), str(outcome.get("code", "pipeline_failed")), str(outcome.get("message", "调课查询处理失败")))
+    finally:
+        if process.pid is not None:
+            process.join(0.1)
+            _stop_process_tree(process)
+            process.close()
         result_queue.close()
-        raise ServiceError(504, "pipeline_timeout", "调课查询超时，请稍后重试")
+        result_queue.join_thread()
 
-    process.join(5)
-    if outcome is None:
-        try:
-            outcome = result_queue.get(timeout=1)
-        except queue.Empty as exc:
-            raise ServiceError(500, "pipeline_failed", "调课查询处理失败") from exc
-        finally:
-            result_queue.close()
-    else:
-        result_queue.close()
 
-    if outcome.get("ok") is True:
-        return outcome["data"]
-    raise ServiceError(
-        int(outcome.get("status", 500)),
-        str(outcome.get("code", "pipeline_failed")),
-        str(outcome.get("message", "调课查询处理失败")),
-    )
+def run_pipeline_isolated(**kwargs: Any) -> Dict[str, Any]:
+    return _run_pipeline_isolated(_pipeline_process_entry, _env_int("JWXT_PIPELINE_TIMEOUT_SEC", 90, 10, 300), kwargs)
 
 
 _rate_limiter = SlidingWindowRateLimiter(
@@ -680,32 +625,38 @@ _pipeline_slots = threading.BoundedSemaphore(
     _env_int("JWXT_MAX_CONCURRENT_PIPELINES", 2, 1, 16)
 )
 
-app = FastAPI(title="JWXT Automation API", version="1.1.0")
-install_service_common(app, max_body_bytes=20480)
+_account_limiter = SlidingWindowRateLimiter(limit=6, window_seconds=60)
+_active_queries: set[tuple[str, str]] = set()
+_active_queries_lock = threading.Lock()
+
+router = APIRouter()
 
 
-@app.get("/health")
-def health() -> Dict[str, Any]:
-    return {"status": "ok", "ready": True}
-
-
-@app.post("/api/jwxt/term-schedule-notices")
+@router.post("/api/jwxt/term-schedule-notices")
 def fetch_term_schedule_notices(
     payload: PipelineRequest,
     request: Request,
 ) -> Dict[str, Any]:
-    if not _rate_limiter.allow(_client_identity(request)):
+    account = hashlib.sha256(payload.username.strip().encode("utf-8")).hexdigest()
+    if not _rate_limiter.allow(_client_identity(request)) or not _account_limiter.allow(account):
         raise ServiceError(429, "rate_limited", "请求过于频繁，请稍后再试")
-    if not _pipeline_slots.acquire(blocking=False):
-        raise ServiceError(503, "service_busy", "服务繁忙，请稍后再试")
+    key = (account, payload.year_term)
+    with _active_queries_lock:
+        if key in _active_queries:
+            raise ServiceError(409, "query_in_progress", "该账号学期正在查询，请稍后再试")
+        if not _pipeline_slots.acquire(blocking=False):
+            raise ServiceError(503, "service_busy", "服务繁忙，请稍后再试")
+        _active_queries.add(key)
     try:
         result = run_pipeline_isolated(
             username=payload.username,
             encrypted_password=payload.encrypted_password,
             year_term=payload.year_term,
-            env_name=payload.env,
-            headless=payload.headless,
+            env_name="prod",
+            headless=True,
         )
         return {"success": True, "data": result}
     finally:
+        with _active_queries_lock:
+            _active_queries.discard(key)
         _pipeline_slots.release()

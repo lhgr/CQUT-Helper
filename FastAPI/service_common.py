@@ -1,10 +1,11 @@
 """Shared HTTP behavior for FastAPI applications.
 
-This module deliberately contains no business state. Applications can install
-the same error envelope, validation response, security headers, and a specific
-request-body size limit.
+This module contains no business state. The application installs a shared
+error envelope, validation response, security headers, and path-specific
+request-body size limits.
 """
 
+import asyncio
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -34,33 +35,10 @@ def error_response(status_code: int, code: str, message: str) -> JSONResponse:
     )
 
 
-def install_service_common(app: FastAPI, *, max_body_bytes: int) -> None:
-    """Install the shared HTTP contract with a service-specific body limit."""
-    if max_body_bytes <= 0:
-        raise ValueError("max_body_bytes must be positive")
+def install_service_common(app: FastAPI) -> None:
+    """Install shared errors and route-specific request body limits."""
 
-    @app.middleware("http")
-    async def security_headers_and_body_limit(
-        request: Request, call_next: Any
-    ) -> Any:
-        content_length = request.headers.get("content-length", "").strip()
-        if content_length:
-            try:
-                if int(content_length) > max_body_bytes:
-                    return error_response(413, "request_too_large", "请求体过大")
-            except ValueError:
-                pass
-
-        # Content-Length is not guaranteed (for example for chunked HTTP), so
-        # also enforce the limit against the bytes Starlette actually receives.
-        body = await request.body()
-        if len(body) > max_body_bytes:
-            return error_response(413, "request_too_large", "请求体过大")
-
-        response = await call_next(request)
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        return response
+    app.add_middleware(BodyLimitMiddleware)
 
     @app.exception_handler(ServiceError)
     async def service_error_handler(
@@ -73,3 +51,53 @@ def install_service_common(app: FastAPI, *, max_body_bytes: int) -> None:
         _request: Request, _exc: RequestValidationError
     ) -> JSONResponse:
         return error_response(422, "validation_error", "请求参数不合法")
+
+
+class BodyLimitMiddleware:
+    def __init__(self, app: Any, read_timeout: float = 10.0):
+        self.app, self.read_timeout = app, read_timeout
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        maximum = 20480 if scope["path"].startswith("/api/jwxt/") else 65536
+        try:
+            declared = int(dict(scope.get("headers", [])).get(b"content-length", b"0"))
+        except ValueError:
+            declared = 0
+        if declared > maximum:
+            await error_response(413, "request_too_large", "请求体过大")(scope, receive, send)
+            return
+        chunks, size = [], 0
+        deadline = asyncio.get_running_loop().time() + self.read_timeout
+        while True:
+            try:
+                message = await asyncio.wait_for(receive(), max(0, deadline - asyncio.get_running_loop().time()))
+            except asyncio.TimeoutError:
+                await error_response(408, "request_timeout", "请求体读取超时")(scope, receive, send)
+                return
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                continue
+            size += len(message.get("body", b""))
+            if size > maximum:
+                await error_response(413, "request_too_large", "请求体过大")(scope, receive, send)
+                return
+            chunks.append(message)
+            if not message.get("more_body", False):
+                break
+        iterator = iter(chunks)
+        async def replay() -> Any:
+            try:
+                return next(iterator)
+            except StopIteration:
+                return await receive()
+        async def with_headers(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                message = dict(message)
+                message["headers"] = [(k, v) for k, v in message.get("headers", []) if k.lower() not in {b"cache-control", b"x-content-type-options"}]
+                message["headers"].extend([(b"cache-control", b"no-store"), (b"x-content-type-options", b"nosniff")])
+            await send(message)
+        await self.app(scope, replay, with_headers)
