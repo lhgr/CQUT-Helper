@@ -2,8 +2,10 @@ part of 'ClassSchedule.dart';
 
 extension _ClassScheduleLoading on _ClassscheduleViewState {
   Future<void> _loadInitialData() async {
+    final generation = _viewGeneration;
+    final elapsed = Stopwatch()..start();
     await _settingsManager.load();
-    if (!mounted) return;
+    if (!mounted || generation != _viewGeneration) return;
     _setState(() {});
 
     unawaited(
@@ -18,18 +20,33 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     );
 
     final cachedData = await _controller.loadFromCache();
+    if (!mounted || generation != _viewGeneration) return;
     var shouldRefreshCurrentWeek = true;
     var currentWeekScheduledPrefetch = false;
     if (cachedData != null) {
       _processLoadedData(cachedData, isInitial: true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        AppLogger.I.info(
+          'ClassSchedule',
+          'initial cached schedule displayed',
+          fields: {
+            'stage': 'initial_cached_schedule',
+            'duration_ms': elapsed.elapsedMilliseconds,
+          },
+        );
+      });
       await _syncToDeviceDate();
+      if (!mounted || generation != _viewGeneration) return;
       await _loadRefreshSnapshot();
+      if (!mounted || generation != _viewGeneration) return;
       final visibleData = _currentScheduleData ?? cachedData;
       final coversToday = ScheduleDate.dataCoversDate(
         visibleData,
         DateTime.now(),
       );
       final fresh = coversToday && await _controller.isFresh(visibleData);
+      if (!mounted || generation != _viewGeneration) return;
       if (fresh) {
         _controller.hydrateCurrentStatusFromCache(visibleData);
         shouldRefreshCurrentWeek = false;
@@ -42,10 +59,17 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     if (shouldRefreshCurrentWeek) {
       final refreshed = await _loadFromNetwork(fromInitialBoot: true);
       currentWeekScheduledPrefetch = refreshed != null;
+      if (refreshed == null &&
+          (_error == null || _currentScheduleData == null)) {
+        _initialBootRequestPending = false;
+        return;
+      }
     }
     _initialBootRequestPending = false;
 
+    final afterLoadGeneration = _viewGeneration;
     await _consumePendingChangesIfAny();
+    if (!mounted || afterLoadGeneration != _viewGeneration) return;
 
     if (_currentScheduleData != null) {
       final currentData = _currentScheduleData!;
@@ -73,6 +97,7 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
   }
 
   Future<void> _syncToDeviceDate() async {
+    final generation = _viewGeneration;
     final anchor = _currentScheduleData;
     final weeks = _weekList;
     if (!mounted || anchor == null || weeks == null) return;
@@ -94,7 +119,9 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       weekNum: targetWeek.toString(),
       yearTerm: term,
     );
-    if (!mounted || _currentTerm != term) return;
+    if (!mounted || generation != _viewGeneration || _currentTerm != term) {
+      return;
+    }
     if (target == null || !ScheduleDate.dataCoversDate(target, today)) {
       _setState(() {});
       return;
@@ -141,6 +168,12 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
   }
 
   Future<void> _runDeferredInitialSync(ScheduleData currentData) async {
+    final generation = _viewGeneration;
+    final selection = _controller.selectionVersion;
+    bool current() =>
+        mounted &&
+        generation == _viewGeneration &&
+        selection == _controller.selectionVersion;
     try {
       final changes = _settingsManager.backgroundPollingEnabled
           ? await _updateManager.checkForUpdates(
@@ -148,25 +181,49 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
               trigger: 'foreground_initial_sync',
             )
           : const <ScheduleWeekChange>[];
-      if (!mounted) return;
+      if (!current()) return;
       if (changes.isNotEmpty) {
         _showUpdateNotification(changes);
       } else {
         await _runSilentFallbackSync(currentData);
       }
     } finally {
-      if (mounted) {
+      if (current()) {
         _scheduleAllWeeksPrefetch(_currentScheduleData ?? currentData);
       }
     }
+  }
+
+  void _resetDeferredWork() {
+    _controller.cancelPrefetch();
+    _initialBackgroundSyncTimer?.cancel();
+    _allWeeksPrefetchTimer?.cancel();
+    _prefetchScope = null;
+    _prefetchWeekList = null;
+    _initialBackgroundSyncStarted = false;
+    _allWeeksPrefetchInFlight = false;
+    _allWeeksPrefetchComplete = false;
+    _allWeeksPrefetchAttempted = false;
+    _deferredBackgroundData = null;
   }
 
   void _scheduleAllWeeksPrefetch(
     ScheduleData currentData, {
     Duration delay = const Duration(milliseconds: 500),
   }) {
+    final scope = '${_controller.userId}|${currentData.yearTerm}';
+    if (_prefetchScope != scope) {
+      if (_prefetchScope != null) _resetDeferredWork();
+      _prefetchScope = scope;
+    }
+    final weekList = currentData.weekList?.join('|');
+    if (_prefetchWeekList != weekList) {
+      _prefetchWeekList = weekList;
+      _allWeeksPrefetchComplete = false;
+    }
     _deferredBackgroundData = currentData;
-    if (_weekPageScrolling ||
+    if (_allWeeksPrefetchAttempted ||
+        _weekPageScrolling ||
         _allWeeksPrefetchInFlight ||
         _allWeeksPrefetchComplete) {
       return;
@@ -184,39 +241,36 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
   }
 
   Future<void> _runAllWeeksPrefetch(ScheduleData currentData) async {
+    final scope = _prefetchScope;
     _allWeeksPrefetchInFlight = true;
-    final result = await _controller.prefetchAllWeeksInBackground(
-      currentData,
-      null,
-    );
-    _allWeeksPrefetchInFlight = false;
-    if (!mounted) return;
-    if (!result.completed) {
-      if (!_weekPageScrolling) {
-        _scheduleAllWeeksPrefetch(_currentScheduleData ?? currentData);
+    var resumeCancelled = false;
+    try {
+      final result = await _controller.prefetchAllWeeksInBackground(
+        currentData,
+        null,
+      );
+      if (!mounted || scope != _prefetchScope) return;
+      resumeCancelled = !result.completed && result.failedWeeks.isEmpty;
+      _allWeeksPrefetchAttempted = result.failedWeeks.isNotEmpty;
+      _allWeeksPrefetchComplete =
+          result.completed && result.failedWeeks.isEmpty;
+    } catch (error, stackTrace) {
+      if (!mounted || scope != _prefetchScope) return;
+      _allWeeksPrefetchAttempted = true;
+      AppLogger.I.error(
+        'ClassSchedule',
+        'background prefetch failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      if (scope == _prefetchScope) {
+        _allWeeksPrefetchInFlight = false;
+        if (resumeCancelled && mounted && !_weekPageScrolling) {
+          _scheduleAllWeeksPrefetch(_currentScheduleData ?? currentData);
+        }
       }
-      return;
     }
-    _allWeeksPrefetchComplete = true;
-    _scheduleReminderRebuild();
-  }
-
-  void _scheduleReminderRebuild({
-    Duration delay = const Duration(milliseconds: 750),
-  }) {
-    if (_weekPageScrolling ||
-        !_allWeeksPrefetchComplete ||
-        _reminderRebuildStarted) {
-      return;
-    }
-    _reminderRebuildTimer?.cancel();
-    _reminderRebuildTimer = Timer(delay, () {
-      if (!mounted || _weekPageScrolling || _reminderRebuildStarted) return;
-      final userId = _controller.userId;
-      if (userId == null || userId.trim().isEmpty) return;
-      _reminderRebuildStarted = true;
-      unawaited(CourseReminderScheduler.rescheduleForUser(userId));
-    });
   }
 
   void _onWeekPageScrollActivityChanged(bool scrolling) {
@@ -225,7 +279,6 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     if (scrolling) {
       _initialBackgroundSyncTimer?.cancel();
       _allWeeksPrefetchTimer?.cancel();
-      _reminderRebuildTimer?.cancel();
       _controller.cancelPrefetch();
       return;
     }
@@ -237,15 +290,16 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       _scheduleDeferredInitialWork(currentData);
     } else if (!_allWeeksPrefetchComplete) {
       _scheduleAllWeeksPrefetch(currentData);
-    } else {
-      _scheduleReminderRebuild();
     }
   }
 
   Future<void> _runSilentFallbackSync(ScheduleData currentData) async {
+    final generation = _viewGeneration;
     final silentChanges = await _controller
         .silentCheckRecentWeeksForChangesDetailed(currentData);
-    if (!mounted || silentChanges.isEmpty) return;
+    if (!mounted || generation != _viewGeneration || silentChanges.isEmpty) {
+      return;
+    }
     _syncCurrentWeekFromCache();
   }
 
@@ -332,23 +386,37 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     required bool updateWidgetPins,
     required bool fromInitialBoot,
   }) async {
-    if (_controller.weekCache.containsKey(int.tryParse(weekNum ?? "") ?? -1)) {}
+    final generation = ++_viewGeneration;
+    if (yearTerm != null && yearTerm != _currentTerm) _resetDeferredWork();
+    _allWeeksPrefetchAttempted = false;
 
     _setState(() {
       _loading = true;
       _error = null;
     });
 
+    int? selection;
+    var cancelled = false;
     try {
-      final data = await _controller.loadFromNetwork(
+      await _controller.loadCredentials();
+      if (!mounted || generation != _viewGeneration) return null;
+      final request = _controller.loadFromNetwork(
         weekNum: weekNum,
         yearTerm: yearTerm,
         updateWidgetPins: updateWidgetPins,
+        waitForSideEffects: false,
         trigger: fromInitialBoot
             ? 'schedule_initial_load'
             : 'schedule_manual_refresh',
       );
 
+      selection = _controller.selectionVersion;
+      final data = await request;
+      if (!mounted ||
+          generation != _viewGeneration ||
+          selection != _controller.selectionVersion) {
+        return null;
+      }
       final receivedAt = DateTime.now();
       _schoolTodayReceivedAt = receivedAt;
       _schoolTodayDate = null;
@@ -367,7 +435,9 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
             fromInitialBoot && _userChangedWeekDuringInitialBoot,
       );
       await _loadRefreshSnapshot();
+      if (!mounted || generation != _viewGeneration) return null;
       _schedulePrefetch(data);
+      if (!fromInitialBoot) _scheduleAllWeeksPrefetch(data);
 
       if (_controller.timeInfoList == null) {
         unawaited(
@@ -383,6 +453,15 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       }
       return data;
     } catch (e, stackTrace) {
+      if (e is DioException && e.type == DioExceptionType.cancel) {
+        cancelled = true;
+        return null;
+      }
+      if (!mounted ||
+          generation != _viewGeneration ||
+          (selection != null && selection != _controller.selectionVersion)) {
+        return null;
+      }
       AppLogger.I.logOperationOutcome(
         'ClassSchedule',
         'Failed to load schedule',
@@ -408,13 +487,19 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
       });
       return null;
     } finally {
-      _setState(() {
-        _loading = false;
-      });
+      if (!cancelled &&
+          mounted &&
+          generation == _viewGeneration &&
+          (selection == null || selection == _controller.selectionVersion)) {
+        _setState(() {
+          _loading = false;
+        });
+      }
     }
   }
 
   Future<void> _loadRefreshSnapshot() async {
+    final generation = _viewGeneration;
     final userId = _controller.userId;
     if (userId == null || userId.trim().isEmpty) {
       await _controller.loadCredentials();
@@ -422,7 +507,11 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     final resolvedUserId = _controller.userId;
     if (resolvedUserId == null || resolvedUserId.trim().isEmpty) return;
     final snapshot = await ScheduleRefreshState.load(resolvedUserId);
-    if (!mounted) return;
+    if (!mounted ||
+        generation != _viewGeneration ||
+        resolvedUserId != _controller.userId) {
+      return;
+    }
     _setState(() {
       _lastSuccessfulRefreshAt = snapshot.lastSuccessfulRefreshAt;
     });
@@ -436,13 +525,19 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
   }
 
   Future<void> _ensureWeekLoaded(String weekNum, String yearTerm) async {
+    final generation = _viewGeneration;
     final success = await _controller.ensureWeekLoaded(
       weekNum,
       yearTerm,
       updateLastViewed: true,
     );
     final wInt = int.tryParse(weekNum) ?? 0;
-    if (!mounted) return;
+    if (!mounted ||
+        generation != _viewGeneration ||
+        _currentTerm != yearTerm ||
+        _weekList?[_currentWeekIndex] != weekNum) {
+      return;
+    }
     if (_weekCache.containsKey(wInt)) {
       _setState(() {
         _currentScheduleData = _weekCache[wInt];

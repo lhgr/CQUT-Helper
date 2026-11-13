@@ -29,6 +29,8 @@ void main() {
   bool permission = true;
   bool launchFromCourse = false;
   int? failSchedulingAt;
+  bool failPendingOnce = false;
+  bool discardScheduledRequests = false;
   Completer<void>? schedulingGate;
   Completer<void>? schedulingStarted;
   int secureReads = 0;
@@ -44,6 +46,8 @@ void main() {
     permission = true;
     launchFromCourse = false;
     failSchedulingAt = null;
+    failPendingOnce = false;
+    discardScheduledRequests = false;
     schedulingGate = schedulingStarted = null;
     secureReads = 0;
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -111,6 +115,10 @@ void main() {
         case 'openAppNotificationSettings':
           return true;
         case 'pendingNotificationRequests':
+          if (failPendingOnce) {
+            failPendingOnce = false;
+            throw PlatformException(code: 'pending_failed');
+          }
           return pending.values.toList();
         case 'zonedSchedule':
           scheduledDates.add(
@@ -119,10 +127,12 @@ void main() {
           if (scheduledDates.length == failSchedulingAt) {
             throw PlatformException(code: 'schedule_failed');
           }
-          pending[args['id'] as int] = {
-            'id': args['id'],
-            'payload': args['payload'],
-          };
+          if (!discardScheduledRequests) {
+            pending[args['id'] as int] = {
+              'id': args['id'],
+              'payload': args['payload'],
+            };
+          }
           if (schedulingGate != null) {
             schedulingStarted?.complete();
             await schedulingGate!.future;
@@ -302,6 +312,97 @@ void main() {
     expect(status.scheduledCount, 0);
     expect(status.reason, contains('失败'));
   });
+
+  test(
+    'identical plan keeps complete appointments and repairs a missing one',
+    () async {
+      await CourseReminderScheduler.rescheduleForUser('ios-student');
+      final initialCalls = scheduledDates.length;
+      notificationCalls.clear();
+      await CourseReminderScheduler.rescheduleForUser('ios-student');
+      expect(scheduledDates.length, initialCalls);
+      expect(
+        notificationCalls.where((call) => call.method == 'cancel'),
+        isEmpty,
+      );
+      pending.remove(pending.keys.first);
+      await CourseReminderScheduler.rescheduleForUser('ios-student');
+      expect(pending, hasLength(64));
+      expect(scheduledDates.length, initialCalls + 64);
+      permission = false;
+      await CourseReminderScheduler.rescheduleForUser('ios-student');
+      expect(pending, isEmpty);
+      expect((await CourseReminderScheduler.loadStatus()).ready, isFalse);
+      permission = true;
+      await CourseReminderScheduler.rescheduleForUser('ios-student');
+      expect(pending, hasLength(64));
+    },
+  );
+
+  test('planning failure preserves previous appointments', () async {
+    await CourseReminderScheduler.rescheduleForUser('ios-student');
+    notificationCalls.clear();
+    failPendingOnce = true;
+    await expectLater(
+      CourseReminderScheduler.rescheduleForUser('ios-student'),
+      throwsA(isA<PlatformException>()),
+    );
+    expect(pending, hasLength(64));
+    expect(notificationCalls.where((call) => call.method == 'cancel'), isEmpty);
+    expect((await CourseReminderScheduler.loadStatus()).scheduledCount, 64);
+  });
+
+  test(
+    'platform success with missing appointments does not commit success',
+    () async {
+      discardScheduledRequests = true;
+      await expectLater(
+        CourseReminderScheduler.rescheduleForUser('ios-student'),
+        throwsStateError,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('schedule_course_reminder_plan_v1'), isNull);
+      expect((await CourseReminderScheduler.loadStatus()).ready, isFalse);
+      discardScheduledRequests = false;
+      await CourseReminderScheduler.rescheduleForUser('ios-student');
+      expect(pending, hasLength(64));
+      expect((await CourseReminderScheduler.loadStatus()).ready, isTrue);
+    },
+  );
+
+  test(
+    'batch commits final saved state on failure and closes delayed requests',
+    () async {
+      final gate = Completer<void>();
+      late Future<void> delayed;
+      final failure = StateError('later refresh failed');
+      await expectLater(
+        CourseReminderScheduler.batchForUser('ios-student', () async {
+          await CourseReminderScheduler.rescheduleForUser('ios-student');
+          final data = jsonDecode(rawSchedule) as Map<String, dynamic>;
+          data['eventList'] = (data['eventList'] as List).take(10).toList();
+          rawSchedule = jsonEncode(data);
+          await CourseReminderScheduler.batchForUser(
+            'ios-student',
+            () => CourseReminderScheduler.rescheduleForUser('ios-student'),
+          );
+          delayed = gate.future.then(
+            (_) => CourseReminderScheduler.rescheduleForUser('ios-student'),
+          );
+          expect(pending, isEmpty);
+          throw failure;
+        }),
+        throwsA(same(failure)),
+      );
+      expect(pending, hasLength(10));
+      expect(scheduledDates, hasLength(10));
+      pending.clear();
+      gate.complete();
+      await delayed;
+      expect(pending, hasLength(10));
+      expect(scheduledDates, hasLength(20));
+    },
+  );
 
   test(
     'logout cancellation invalidates active and queued iOS rebuilds',

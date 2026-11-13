@@ -52,6 +52,8 @@ class ScheduleUpdateWorker {
   static String? _lastForegroundUser;
   static DateTime? _lastForegroundSyncAt;
   static int _foregroundGeneration = 0;
+  static Future<void> _androidSync = Future<void>.value();
+  static int _androidSyncGeneration = 0;
 
   @visibleForTesting
   static bool? debugIsAndroidOverride;
@@ -122,44 +124,52 @@ class ScheduleUpdateWorker {
       persistLastViewed: false,
       updateWidgetPins: true,
       notifyWidget: false,
+      refreshReminders: false,
       refreshId: refreshId,
     );
-    final currentWeek = (current.weekNum ?? '').trim();
-    final currentTerm = (current.yearTerm ?? '').trim();
-    final weeks = current.weekList ?? const <String>[];
-    final currentIndex = weeks.indexWhere((week) => week.trim() == currentWeek);
-    if (currentTerm.isNotEmpty && currentIndex >= 0) {
-      final adjacentWeeks = <String>{
-        if (currentIndex > 0) weeks[currentIndex - 1].trim(),
-        if (currentIndex + 1 < weeks.length) weeks[currentIndex + 1].trim(),
-      }..removeWhere((week) => week.isEmpty || week == currentWeek);
-      for (final week in adjacentWeeks) {
-        try {
-          await scheduleApi.loadFromNetwork(
-            userId: userId,
-            encryptedPassword: encryptedPassword,
-            weekNum: week,
-            yearTerm: currentTerm,
-            persistLastViewed: false,
-            updateWidgetPins: false,
-            notifyWidget: false,
-            refreshId: refreshId,
-          );
-        } catch (error, stackTrace) {
-          // Current-week freshness is still valid. Keep the refresh usable and
-          // retry the optional projection during the next manual/background run.
-          AppLogger.I.warn(
-            'ScheduleUpdateWorker',
-            'adjacent widget week prefetch failed',
-            error: error,
-            stackTrace: stackTrace,
-            fields: {'week': week, 'term': currentTerm},
-          );
+    try {
+      final currentWeek = (current.weekNum ?? '').trim();
+      final currentTerm = (current.yearTerm ?? '').trim();
+      final weeks = current.weekList ?? const <String>[];
+      final currentIndex = weeks.indexWhere(
+        (week) => week.trim() == currentWeek,
+      );
+      if (currentTerm.isNotEmpty && currentIndex >= 0) {
+        final adjacentWeeks = <String>{
+          if (currentIndex > 0) weeks[currentIndex - 1].trim(),
+          if (currentIndex + 1 < weeks.length) weeks[currentIndex + 1].trim(),
+        }..removeWhere((week) => week.isEmpty || week == currentWeek);
+        for (final week in adjacentWeeks) {
+          try {
+            await scheduleApi.loadFromNetwork(
+              userId: userId,
+              encryptedPassword: encryptedPassword,
+              weekNum: week,
+              yearTerm: currentTerm,
+              persistLastViewed: false,
+              updateWidgetPins: false,
+              notifyWidget: false,
+              refreshReminders: false,
+              refreshId: refreshId,
+            );
+          } catch (error, stackTrace) {
+            // Current-week freshness is still valid. Keep the refresh usable and
+            // retry the optional projection during the next manual/background run.
+            AppLogger.I.warn(
+              'ScheduleUpdateWorker',
+              'adjacent widget week prefetch failed',
+              error: error,
+              stackTrace: stackTrace,
+              fields: {'week': week, 'term': currentTerm},
+            );
+          }
         }
       }
-    }
-    if (notifyWidget) {
-      await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+      if (notifyWidget) {
+        await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+      }
+    } finally {
+      await scheduleApi.refreshCourseReminders(userId);
     }
     return current;
   }
@@ -186,16 +196,35 @@ class ScheduleUpdateWorker {
     return loadScheduleUpdateWorkerHealthSnapshot();
   }
 
-  static Future<void> syncFromPreferences() async {
+  static Future<void> syncFromPreferences() {
     if (!_isAndroid) {
-      if (LocalNotifications.isIOS) await _syncForegroundFromPreferences();
-      return;
+      return LocalNotifications.isIOS
+          ? _syncForegroundFromPreferences()
+          : Future<void>.value();
     }
+    final generation = ++_androidSyncGeneration;
+    final result = _androidSync.then((_) async {
+      if (generation != _androidSyncGeneration) return;
+      await _syncAndroidFromPreferences(generation);
+    });
+    // A failed registration must not poison the next foreground sync.
+    _androidSync = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  static Future<void> _syncAndroidFromPreferences(int generation) async {
     final prefs = await SharedPreferences.getInstance();
     final userId = (prefs.getString('account') ?? '').trim();
     final encryptedPassword =
         ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
     final enabled = ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs);
+    if (generation != _androidSyncGeneration ||
+        (prefs.getString('account') ?? '').trim() != userId) {
+      return;
+    }
     await recordScheduleUpdateWorkerSyncState(
       status: 'sync_start',
       fields: {
@@ -205,9 +234,10 @@ class ScheduleUpdateWorker {
       },
     );
     // Calendar polling is independent from the optional notice enhancement.
-    await _scheduleCalendarTask();
+    await _scheduleCalendarTask(keepExisting: true);
     if (!enabled) {
       await _cancelAllScheduledTasks();
+      await prefs.remove('schedule_worker_registration_config_v1');
       await clearScheduleUpdateWorkerState(clearEnabledAt: true);
       await recordScheduleUpdateWorkerSyncState(
         status: 'sync_cancelled',
@@ -221,6 +251,7 @@ class ScheduleUpdateWorker {
     }
     if (userId.isEmpty || encryptedPassword.isEmpty) {
       await _cancelAllScheduledTasks();
+      await prefs.remove('schedule_worker_registration_config_v1');
       await clearScheduleUpdateWorkerState(clearEnabledAt: false);
       await recordScheduleUpdateWorkerSyncState(
         status: 'sync_cancelled',
@@ -232,9 +263,26 @@ class ScheduleUpdateWorker {
       );
       return;
     }
-    await _scheduleImmediateTask(userId: userId);
-    await _scheduleNextDailyTask(userId: userId);
-    await _scheduleFallbackFromStoredStateIfNeeded(userId: userId);
+    final configuration = jsonEncode([
+      userId,
+      enabled,
+      await ScheduleSettingsManager.loadNoticeApiBaseUrl(),
+    ]);
+    if (prefs.getString('schedule_worker_registration_config_v1') !=
+        configuration) {
+      await _cancelAllScheduledTasks();
+      await clearScheduleUpdateWorkerDailyState();
+    }
+    await _scheduleImmediateTask(userId: userId, keepExisting: true);
+    await _scheduleNextDailyTask(userId: userId, keepExisting: true);
+    await _scheduleFallbackFromStoredStateIfNeeded(
+      userId: userId,
+      keepExisting: true,
+    );
+    await prefs.setString(
+      'schedule_worker_registration_config_v1',
+      configuration,
+    );
     await recordScheduleUpdateWorkerSyncState(
       status: 'sync_registered',
       fields: {'nextDailyAt': _nextDaily9amUtc().toIso8601String()},
@@ -297,6 +345,25 @@ class ScheduleUpdateWorker {
   }
 
   static Future<void> _refreshForeground(String userId, int generation) async {
+    try {
+      await CourseReminderScheduler.batchForUser(
+        userId,
+        () => _refreshForegroundBatch(userId, generation),
+      );
+    } catch (error, stackTrace) {
+      AppLogger.I.warn(
+        'ScheduleUpdateWorker',
+        'foreground reminder batch failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  static Future<void> _refreshForegroundBatch(
+    String userId,
+    int generation,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     bool isCurrentAccount() =>
         generation == _foregroundGeneration &&
@@ -935,8 +1002,10 @@ class ScheduleUpdateWorker {
           yearTerm: yearTerm,
           weekNum: weekNum,
           jsonStr: json.encode(raw),
+          refreshReminders: false,
         );
       },
+      afterWeeksSaved: scheduleApi.refreshCourseReminders,
     );
 
     ScheduleNoticeRefreshResult result;
@@ -1018,13 +1087,15 @@ class ScheduleUpdateWorker {
     await Workmanager().cancelByUniqueName(_immediateTaskUniqueName);
   }
 
-  static Future<void> _scheduleCalendarTask() async {
+  static Future<void> _scheduleCalendarTask({bool keepExisting = false}) async {
     final runAtUtc = _nextDaily9amUtc();
     await Workmanager().registerOneOffTask(
       _calendarTaskUniqueName,
       _calendarTaskName,
       initialDelay: _delayUntilUtc(runAtUtc),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
+      existingWorkPolicy: keepExisting
+          ? ExistingWorkPolicy.keep
+          : ExistingWorkPolicy.replace,
       constraints: Constraints(networkType: NetworkType.connected),
       inputData: <String, Object>{
         'trigger': _triggerCalendarDaily,
@@ -1034,12 +1105,17 @@ class ScheduleUpdateWorker {
     );
   }
 
-  static Future<void> _scheduleImmediateTask({required String userId}) async {
+  static Future<void> _scheduleImmediateTask({
+    required String userId,
+    bool keepExisting = false,
+  }) async {
     await Workmanager().registerOneOffTask(
       _immediateTaskUniqueName,
       _taskName,
       initialDelay: const Duration(minutes: 1),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
+      existingWorkPolicy: keepExisting
+          ? ExistingWorkPolicy.keep
+          : ExistingWorkPolicy.replace,
       constraints: Constraints(networkType: NetworkType.connected),
       inputData: buildTaskInputData(
         userId: userId,
@@ -1049,13 +1125,18 @@ class ScheduleUpdateWorker {
     );
   }
 
-  static Future<void> _scheduleNextDailyTask({required String userId}) async {
+  static Future<void> _scheduleNextDailyTask({
+    required String userId,
+    bool keepExisting = false,
+  }) async {
     final runAtUtc = _nextDaily9amUtc();
     await Workmanager().registerOneOffTask(
       _dailyTaskUniqueName,
       _taskName,
       initialDelay: _delayUntilUtc(runAtUtc),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
+      existingWorkPolicy: keepExisting
+          ? ExistingWorkPolicy.keep
+          : ExistingWorkPolicy.replace,
       constraints: Constraints(networkType: NetworkType.connected),
       inputData: buildTaskInputData(
         userId: userId,
@@ -1069,12 +1150,15 @@ class ScheduleUpdateWorker {
   static Future<void> _scheduleFallbackTask({
     required String userId,
     required DateTime runAtUtc,
+    bool keepExisting = false,
   }) async {
     await Workmanager().registerOneOffTask(
       _fallbackTaskUniqueName,
       _taskName,
       initialDelay: _delayUntilUtc(runAtUtc),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
+      existingWorkPolicy: keepExisting
+          ? ExistingWorkPolicy.keep
+          : ExistingWorkPolicy.replace,
       constraints: Constraints(networkType: NetworkType.connected),
       inputData: buildTaskInputData(
         userId: userId,
@@ -1087,6 +1171,7 @@ class ScheduleUpdateWorker {
 
   static Future<void> _scheduleFallbackFromStoredStateIfNeeded({
     required String userId,
+    bool keepExisting = false,
   }) async {
     final dailyState = await loadScheduleUpdateWorkerDailyState();
     final today = _logicalDateBjtForInstant(_nowUtc());
@@ -1106,7 +1191,11 @@ class ScheduleUpdateWorker {
       return;
     }
     final fallbackAtUtc = _todayNoonUtc();
-    await _scheduleFallbackTask(userId: userId, runAtUtc: fallbackAtUtc);
+    await _scheduleFallbackTask(
+      userId: userId,
+      runAtUtc: fallbackAtUtc,
+      keepExisting: keepExisting,
+    );
     await patchScheduleUpdateWorkerDailyState(
       logicalDateBjt: today,
       retry: {

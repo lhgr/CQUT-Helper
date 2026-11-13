@@ -281,6 +281,7 @@ void main() {
         'schedule_notice_state_u1_2024-2025-2': originalState,
       });
       final failure = StateError('second week failed');
+      var reminderRebuilds = 0;
       final pipeline = ScheduleNoticeRefreshPipeline(
         scheduleApi: _FakeScheduleApi(
           response: const ScheduleNoticePollData(
@@ -293,6 +294,10 @@ void main() {
         credentialStore: _FakePipelineCredentialStore(value: 'secure-p1'),
         refreshWeek: (week, _) async {
           if (week == '2') throw failure;
+        },
+        afterWeeksSaved: (userId) async {
+          expect(userId, 'u1');
+          reminderRebuilds++;
         },
         nowProvider: () => DateTime(2026, 4, 14, 10),
       );
@@ -310,6 +315,7 @@ void main() {
         'refresh_affected_weeks',
       );
       expect(pipeline.diagnosticProgress['refreshed_week_count'], 1);
+      expect(reminderRebuilds, 1);
       expect(
         pipeline.diagnosticProgress['pipeline_completed_stages'],
         isNot(contains('refresh_affected_weeks')),

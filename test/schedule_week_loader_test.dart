@@ -15,6 +15,7 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
   ScheduleData? networkResult;
   Object? networkError;
   Completer<ScheduleData>? networkCompleter;
+  final Map<String, Completer<ScheduleData>> pending = {};
   int cacheCalls = 0;
   int networkCalls = 0;
   String? lastEncryptedPassword;
@@ -24,6 +25,7 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
     required String userId,
     String? weekNum,
     String? yearTerm,
+    bool waitForSideEffects = true,
   }) async {
     cacheCalls++;
     return cacheResults[weekNum] ?? cacheResult;
@@ -38,13 +40,15 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
     bool notifyWidget = true,
+    bool refreshReminders = true,
+    bool waitForSideEffects = true,
     String? refreshId,
   }) async {
     networkCalls++;
     if (networkError != null) throw networkError!;
     lastEncryptedPassword = encryptedPassword;
-    final pending = networkCompleter;
-    if (pending != null) return pending.future;
+    final request = pending['$userId|$yearTerm|$weekNum'] ?? networkCompleter;
+    if (request != null) return request.future;
     return networkResult!;
   }
 }
@@ -110,6 +114,113 @@ void main() {
       actualCurrentWeek = null;
       actualCurrentTerm = null;
     });
+
+    ScheduleData week(String number, String term) => ScheduleData(
+      weekNum: number,
+      yearTerm: term,
+      weekList: const ['1', '2', '3'],
+      eventList: const [],
+    );
+
+    test(
+      'later foreground selection owns last-viewed when responses reverse',
+      () async {
+        SharedPreferences.setMockInitialValues({'account': 'u1'});
+        final api = _FakeWeekLoaderScheduleApi();
+        final loader = buildLoader(
+          api,
+          credentialStore: _FakeWeekLoaderCredentialStore(value: 'p1'),
+        );
+        final secondWeek = Completer<ScheduleData>();
+        final thirdWeek = Completer<ScheduleData>();
+        api.pending['u1|term|2'] = secondWeek;
+        api.pending['u1|term|3'] = thirdWeek;
+        final old = loader.loadFromNetwork(weekNum: '2', yearTerm: 'term');
+        await Future<void>.delayed(Duration.zero);
+        final latest = loader.loadFromNetwork(weekNum: '3', yearTerm: 'term');
+        await Future<void>.delayed(Duration.zero);
+        thirdWeek.complete(week('3', 'term'));
+        await latest;
+        secondWeek.complete(week('2', 'term'));
+        await old;
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('schedule_last_week_u1'), '3');
+        expect(prefs.getString('schedule_last_term_u1'), 'term');
+      },
+    );
+
+    test(
+      'late background response cannot restore previous term or cache',
+      () async {
+        SharedPreferences.setMockInitialValues({'account': 'u1'});
+        final api = _FakeWeekLoaderScheduleApi();
+        final loader = buildLoader(
+          api,
+          credentialStore: _FakeWeekLoaderCredentialStore(value: 'p1'),
+        );
+        final pending = Completer<ScheduleData>();
+        api.pending['u1|old|2'] = pending;
+        loader.selectWeek('1', 'old');
+        final old = loader.ensureWeekLoaded('2', 'old');
+        await Future<void>.delayed(Duration.zero);
+        loader.selectWeek('1', 'new');
+        loader.processLoadedData(week('1', 'new'));
+        pending.complete(week('2', 'old'));
+        expect(await old, isFalse);
+        expect(currentTerm, 'new');
+        expect(weekCache.keys, [1]);
+        expect(weekCache[1]!.yearTerm, 'new');
+      },
+    );
+
+    test(
+      'account switch rejects old response and accepts first new-account load',
+      () async {
+        SharedPreferences.setMockInitialValues({'account': 'u1'});
+        final api = _FakeWeekLoaderScheduleApi();
+        final loader = buildLoader(
+          api,
+          credentialStore: _FakeWeekLoaderCredentialStore(value: 'p1'),
+        );
+        final pending = Completer<ScheduleData>();
+        api.pending['u1|term|2'] = pending;
+        final old = loader.ensureWeekLoaded('2', 'term');
+        await Future<void>.delayed(Duration.zero);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('account', 'u2');
+        api.networkResult = week('1', 'term');
+        final latest = await loader.loadFromNetwork(
+          weekNum: '1',
+          yearTerm: 'term',
+        );
+        loader.processLoadedData(latest);
+        pending.complete(week('2', 'term'));
+        expect(await old, isFalse);
+        expect(loader.userId, 'u2');
+        expect(weekCache.keys, [1]);
+        expect(prefs.getString('schedule_last_week_u2'), '1');
+        expect(prefs.getString('schedule_last_week_u1'), isNull);
+      },
+    );
+
+    test(
+      'memory hit must match term and remembers selected cached week',
+      () async {
+        SharedPreferences.setMockInitialValues({'account': 'u1'});
+        final api = _FakeWeekLoaderScheduleApi()
+          ..cacheResult = week('2', 'new');
+        final loader = buildLoader(api);
+        weekCache[2] = week('2', 'old');
+        expect(
+          await loader.ensureWeekLoaded('2', 'new', updateLastViewed: true),
+          isTrue,
+        );
+        expect(weekCache[2]!.yearTerm, 'new');
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('schedule_last_week_u1'), '2');
+        expect(prefs.getString('schedule_last_term_u1'), 'new');
+      },
+    );
 
     test('processLoadedData 在学期变化时清空旧缓存', () {
       final api = _FakeWeekLoaderScheduleApi();

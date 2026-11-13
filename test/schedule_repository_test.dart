@@ -19,6 +19,8 @@ class _BlockingScheduleApi extends ScheduleApi {
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
     bool notifyWidget = true,
+    bool refreshReminders = true,
+    bool waitForSideEffects = true,
     String? refreshId,
   }) {
     calls++;

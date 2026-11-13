@@ -219,5 +219,8 @@ jobs:
       - name: Compile backend
         run: python -m compileall -q FastAPI
 
+      - name: Run release metadata tests
+        run: python tool/test_release_metadata.py
+
       - name: Run backend tests
         run: python -m unittest discover -s FastAPI -p 'test_*.py'

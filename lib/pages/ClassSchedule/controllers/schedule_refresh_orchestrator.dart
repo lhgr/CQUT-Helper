@@ -23,6 +23,10 @@ class ScheduleRefreshOrchestrator {
   })
   ensureWeekLoaded;
   final Future<String?> Function() loadUserId;
+  final Future<void> Function(String userId)? refreshReminders;
+  final Map<String, Set<String>> _pendingWeeks = {};
+  final Map<String, Set<String>> _failedWeeks = {};
+  final Map<String, Set<String>> _knownWeeks = {};
   Timer? _prefetchTimer;
   int _backgroundPrefetchGeneration = 0;
   Future<void>? _foregroundFullRefreshInFlight;
@@ -31,12 +35,20 @@ class ScheduleRefreshOrchestrator {
     required this.isDisposed,
     required this.ensureWeekLoaded,
     required this.loadUserId,
+    this.refreshReminders,
   });
 
   static const int _foregroundFullRefreshCooldownMs = 6 * 60 * 60 * 1000;
 
   void dispose() {
     cancelPrefetch();
+  }
+
+  void resetPrefetchState() {
+    cancelPrefetch();
+    _pendingWeeks.clear();
+    _failedWeeks.clear();
+    _knownWeeks.clear();
   }
 
   void cancelPrefetch() {
@@ -63,6 +75,7 @@ class ScheduleRefreshOrchestrator {
     ScheduleData currentData,
     Function() onUpdate,
   ) async {
+    final generation = _backgroundPrefetchGeneration;
     final wList = currentData.weekList;
     final currentWeekStr = currentData.weekNum;
     final cTerm = currentData.yearTerm;
@@ -85,7 +98,9 @@ class ScheduleRefreshOrchestrator {
 
     if (futures.isEmpty) return;
     await Future.wait(futures);
-    onUpdate();
+    if (!isDisposed() && generation == _backgroundPrefetchGeneration) {
+      onUpdate();
+    }
   }
 
   Future<SchedulePrefetchResult> prefetchAllWeeksInBackground(
@@ -93,43 +108,70 @@ class ScheduleRefreshOrchestrator {
     void Function()? onUpdate, {
     Duration interval = const Duration(milliseconds: 150),
     bool forceRefresh = false,
+    bool refreshReminders = true,
   }) {
     final generation = ++_backgroundPrefetchGeneration;
     return Future(() async {
-      final failedWeeks = <String>[];
       final wList = currentData.weekList;
       final currentWeekStr = currentData.weekNum;
       final cTerm = currentData.yearTerm;
       if (wList == null || currentWeekStr == null || cTerm == null) {
         return SchedulePrefetchResult(completed: false);
       }
-
-      for (final week in wList) {
-        if (isDisposed() || generation != _backgroundPrefetchGeneration) {
-          return SchedulePrefetchResult(
-            completed: false,
-            failedWeeks: failedWeeks,
+      final userId = (await loadUserId() ?? '').trim();
+      if (userId.isEmpty) return SchedulePrefetchResult(completed: false);
+      final key = '$userId|$cTerm';
+      final pending = _pendingWeeks.putIfAbsent(
+        key,
+        () => wList.where((week) => week != currentWeekStr).toSet(),
+      );
+      if (forceRefresh) {
+        pending.addAll(wList.where((week) => week != currentWeekStr));
+      }
+      final known = _knownWeeks.putIfAbsent(key, () => <String>{});
+      final firstPass = known.isEmpty;
+      pending.addAll(
+        wList.where((week) => week != currentWeekStr && !known.contains(week)),
+      );
+      known.addAll(wList);
+      final failed = _failedWeeks.putIfAbsent(key, () => <String>{});
+      final shouldRebuildReminders = pending.isNotEmpty || firstPass;
+      bool cancelled() =>
+          isDisposed() || generation != _backgroundPrefetchGeneration;
+      try {
+        for (final week in pending.toList()) {
+          if (cancelled()) {
+            return SchedulePrefetchResult(
+              completed: false,
+              failedWeeks: failed,
+            );
+          }
+          final loaded = await ensureWeekLoaded(
+            week,
+            cTerm,
+            forceRefresh: forceRefresh || failed.contains(week),
           );
+          if (loaded) {
+            pending.remove(week);
+            failed.remove(week);
+          } else {
+            failed.add(week);
+          }
+          if (cancelled()) {
+            return SchedulePrefetchResult(
+              completed: false,
+              failedWeeks: failed,
+            );
+          }
+          onUpdate?.call();
+          if (interval > Duration.zero) await Future.delayed(interval);
         }
-        if (week == currentWeekStr) continue;
-        final loaded = await ensureWeekLoaded(
-          week,
-          cTerm,
-          forceRefresh: forceRefresh,
-        );
-        if (!loaded) failedWeeks.add(week);
-        if (isDisposed() || generation != _backgroundPrefetchGeneration) {
-          return SchedulePrefetchResult(
-            completed: false,
-            failedWeeks: failedWeeks,
-          );
-        }
-        onUpdate?.call();
-        if (interval > Duration.zero) {
-          await Future.delayed(interval);
+        return SchedulePrefetchResult(completed: true, failedWeeks: failed);
+      } finally {
+        if (shouldRebuildReminders && refreshReminders) {
+          await this.refreshReminders?.call(userId);
         }
       }
-      return SchedulePrefetchResult(completed: true, failedWeeks: failedWeeks);
     });
   }
 

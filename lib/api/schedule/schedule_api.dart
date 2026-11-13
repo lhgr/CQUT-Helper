@@ -21,6 +21,41 @@ class ScheduleApi {
   final ApiService _apiService = ApiService();
   final CourseApi _courseApi;
   final CredentialStore _credentialStore;
+  Future<void> _sideEffects = Future<void>.value();
+
+  /// Callers returning after persistence can explicitly await plugin completion.
+  Future<void> completePendingSideEffects() => _sideEffects;
+
+  Future<void> _queueSideEffects(
+    String userId,
+    Future<void> Function() action,
+  ) {
+    final pending = _sideEffects
+        .then((_) async {
+          final prefs = await SharedPreferences.getInstance();
+          if ((prefs.getString('account') ?? '').trim() != userId.trim()) {
+            return;
+          }
+          await action();
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          AppLogger.I.warn(
+            'ScheduleApi',
+            'post-persistence schedule update failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        });
+    _sideEffects = pending;
+    return pending;
+  }
+
+  Future<void> refreshCourseReminders(String userId) async {
+    await completePendingSideEffects();
+    final prefs = await SharedPreferences.getInstance();
+    if ((prefs.getString('account') ?? '').trim() != userId.trim()) return;
+    await _rescheduleCourseRemindersSafely(userId);
+  }
 
   ScheduleApi({CourseApi? courseApi, CredentialStore? credentialStore})
     : _courseApi = courseApi ?? ApiService().course,
@@ -47,10 +82,16 @@ class ScheduleApi {
     required String userId,
     String? weekNum,
     String? yearTerm,
+    bool waitForSideEffects = true,
   }) => runDiagnosticOperation(
     'ScheduleApi',
     'cache_read',
-    () => _loadFromCache(userId: userId, weekNum: weekNum, yearTerm: yearTerm),
+    () => _loadFromCache(
+      userId: userId,
+      weekNum: weekNum,
+      yearTerm: yearTerm,
+      waitForSideEffects: waitForSideEffects,
+    ),
     fields: {'week': weekNum, 'term': yearTerm},
   );
 
@@ -58,6 +99,7 @@ class ScheduleApi {
     required String userId,
     String? weekNum,
     String? yearTerm,
+    bool waitForSideEffects = true,
   }) async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -93,7 +135,11 @@ class ScheduleApi {
               schedule: merged,
             );
         if (updatesVisibleWidgetProjection.changed) {
-          await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+          final completion = _queueSideEffects(
+            userId,
+            () => WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh'),
+          );
+          if (waitForSideEffects) await completion;
         }
         return merged;
       }
@@ -125,6 +171,8 @@ class ScheduleApi {
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
     bool notifyWidget = true,
+    bool refreshReminders = true,
+    bool waitForSideEffects = true,
     String? refreshId,
   }) => runDiagnosticOperation(
     'ScheduleApi',
@@ -137,6 +185,8 @@ class ScheduleApi {
       persistLastViewed: persistLastViewed,
       updateWidgetPins: updateWidgetPins,
       notifyWidget: notifyWidget,
+      refreshReminders: refreshReminders,
+      waitForSideEffects: waitForSideEffects,
       refreshId: refreshId,
     ),
     fields: {'week': weekNum, 'term': yearTerm},
@@ -150,6 +200,8 @@ class ScheduleApi {
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
     bool notifyWidget = true,
+    bool refreshReminders = true,
+    bool waitForSideEffects = true,
     String? refreshId,
   }) async {
     final reqWeek = _norm(weekNum);
@@ -171,6 +223,10 @@ class ScheduleApi {
     }
 
     final data = _decodeNetworkSchedule(jsonMap);
+    final merged = await ScheduleCustomizationManager.instance.applyToSchedule(
+      userId: userId,
+      schedule: data,
+    );
 
     final dataWeek = _norm(data.weekNum);
     final dataTerm = _norm(data.yearTerm);
@@ -188,14 +244,13 @@ class ScheduleApi {
         rawJson: json.encode(jsonMap),
         fetchedAt: fetchedAt,
       );
-      final merged = await ScheduleCustomizationManager.instance
-          .applyToSchedule(userId: userId, schedule: data);
 
       if (persistLastViewed) {
         await prefs.setString(_lastViewedWeekKey(userId), saveWeek);
         await prefs.setString(_lastViewedTermKey(userId), saveTerm);
       }
-      if (updateWidgetPins) {
+      if (updateWidgetPins &&
+          (prefs.getString('account') ?? '').trim() == userId.trim()) {
         await prefs.setString(_widgetWeekKey(userId), saveWeek);
         await prefs.setString(_widgetTermKey(userId), saveTerm);
       }
@@ -225,18 +280,19 @@ class ScheduleApi {
         lastFetchAtKey(userId, saveTerm, saveWeek),
         fetchedAt.millisecondsSinceEpoch,
       );
-      if (updatesVisibleWidgetProjection.visible) {
-        if (notifyWidget) {
-          await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+      final completion = _queueSideEffects(userId, () async {
+        try {
+          if (updatesVisibleWidgetProjection.visible && notifyWidget) {
+            await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+          }
+        } finally {
+          if (refreshReminders) await _rescheduleCourseRemindersSafely(userId);
         }
-        await _rescheduleCourseRemindersSafely(userId);
-      }
+      });
+      if (waitForSideEffects) await completion;
     }
 
-    return await ScheduleCustomizationManager.instance.applyToSchedule(
-      userId: userId,
-      schedule: data,
-    );
+    return merged;
   }
 
   ScheduleData _decodeNetworkSchedule(Map<String, dynamic> data) {
@@ -468,6 +524,7 @@ class ScheduleApi {
     required String yearTerm,
     required String weekNum,
     required String jsonStr,
+    bool refreshReminders = true,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final normalizedTerm = _norm(yearTerm);
@@ -480,14 +537,11 @@ class ScheduleApi {
       rawJson: jsonStr,
       fetchedAt: fetchedAt,
     );
-    final stored = await ScheduleCacheDatabase.instance.load(
-      userId: userId,
-      yearTerm: normalizedTerm,
-      weekNum: normalizedWeek,
-    );
-    final decoded = json.decode(stored?.rawJson ?? jsonStr);
+    final decoded = json.decode(jsonStr) as Map<String, dynamic>;
+    decoded['yearTerm'] = normalizedTerm;
+    decoded['weekNum'] = normalizedWeek;
     var updatesVisibleWidgetProjection = (visible: false, changed: false);
-    if (decoded is Map<String, dynamic>) {
+    {
       final merged = await ScheduleCustomizationManager.instance
           .applyToSchedule(
             userId: userId,
@@ -506,9 +560,12 @@ class ScheduleApi {
       lastFetchAtKey(userId, normalizedTerm, normalizedWeek),
       fetchedAt.millisecondsSinceEpoch,
     );
-    if (updatesVisibleWidgetProjection.visible) {
-      await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
-      await _rescheduleCourseRemindersSafely(userId);
+    try {
+      if (updatesVisibleWidgetProjection.visible) {
+        await WidgetUpdater.updateTodayWidget(trigger: 'schedule_refresh');
+      }
+    } finally {
+      if (refreshReminders) await refreshCourseReminders(userId);
     }
   }
 
@@ -543,6 +600,9 @@ class ScheduleApi {
     required String weekNum,
     required ScheduleData schedule,
   }) async {
+    if ((prefs.getString('account') ?? '').trim() != userId.trim()) {
+      return (visible: false, changed: false);
+    }
     final pinnedWeek = _effectiveWidgetWeek(prefs, userId);
     final pinnedTerm = _effectiveWidgetTerm(prefs, userId);
     if (!isWidgetProjectionVisible(

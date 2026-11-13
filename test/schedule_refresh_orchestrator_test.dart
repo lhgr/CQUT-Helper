@@ -7,6 +7,122 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   group('ScheduleRefreshOrchestrator', () {
+    test(
+      'partial prefetch retries only failures and isolates account/term',
+      () async {
+        final calls = <String>[];
+        var account = 'u1';
+        var fail = true;
+        var reminders = 0;
+        final orchestrator = ScheduleRefreshOrchestrator(
+          isDisposed: () => false,
+          loadUserId: () async => account,
+          refreshReminders: (_) async {
+            reminders++;
+          },
+          ensureWeekLoaded:
+              (
+                week,
+                term, {
+                bool forceRefresh = false,
+                bool updateLastViewed = false,
+              }) async {
+                calls.add('$account|$term|$week');
+                return !(fail && week == '1');
+              },
+        );
+        ScheduleData data(String term) => ScheduleData(
+          weekNum: '2',
+          yearTerm: term,
+          weekList: const ['1', '2', '3'],
+        );
+        final first = await orchestrator.prefetchAllWeeksInBackground(
+          data('a'),
+          null,
+          interval: Duration.zero,
+        );
+        expect(first.failedWeeks, ['1']);
+        expect(calls, ['u1|a|1', 'u1|a|3']);
+        // A completed pass never schedules another pass on its own.
+        await Future<void>.delayed(Duration.zero);
+        expect(calls.length, 2);
+        fail = false;
+        final retry = await orchestrator.prefetchAllWeeksInBackground(
+          data('a'),
+          null,
+          interval: Duration.zero,
+        );
+        expect(retry.failedWeeks, isEmpty);
+        expect(calls, ['u1|a|1', 'u1|a|3', 'u1|a|1']);
+        await orchestrator.prefetchAllWeeksInBackground(
+          data('a'),
+          null,
+          interval: Duration.zero,
+        );
+        expect(calls.length, 3);
+        await orchestrator.prefetchAllWeeksInBackground(
+          data('b'),
+          null,
+          interval: Duration.zero,
+        );
+        account = 'u2';
+        await orchestrator.prefetchAllWeeksInBackground(
+          data('a'),
+          null,
+          interval: Duration.zero,
+        );
+        expect(calls.skip(3), ['u1|b|1', 'u1|b|3', 'u2|a|1', 'u2|a|3']);
+        expect(reminders, 4);
+      },
+    );
+
+    test('failed forced refresh retries network, new weeks and cache reset are loaded', () async {
+      final calls = <String>[];
+      var fail = true;
+      final orchestrator = ScheduleRefreshOrchestrator(
+        isDisposed: () => false,
+        loadUserId: () async => 'u1',
+        ensureWeekLoaded:
+            (
+              week,
+              term, {
+              bool forceRefresh = false,
+              bool updateLastViewed = false,
+            }) async {
+              calls.add('$week:$forceRefresh');
+              return !fail;
+            },
+      );
+      ScheduleData data(List<String> weeks) =>
+          ScheduleData(weekNum: '2', yearTerm: 'term', weekList: weeks);
+      await orchestrator.prefetchAllWeeksInBackground(
+        data(['1', '2']),
+        null,
+        interval: Duration.zero,
+        forceRefresh: true,
+      );
+      fail = false;
+      await orchestrator.prefetchAllWeeksInBackground(
+        data(['1', '2']),
+        null,
+        interval: Duration.zero,
+      );
+      expect(calls, ['1:true', '1:true']);
+      await orchestrator.prefetchAllWeeksInBackground(
+        data(['1', '2', '3']),
+        null,
+        interval: Duration.zero,
+      );
+      expect(calls.last, '3:false');
+      orchestrator.resetPrefetchState();
+      await orchestrator.prefetchAllWeeksInBackground(
+        data(['1', '2', '3']),
+        null,
+        interval: Duration.zero,
+      );
+      expect(calls.skip(3), ['1:false', '3:false']);
+    });
+
     test('schedulePrefetch 只预取相邻周', () async {
       SharedPreferences.setMockInitialValues({});
       final calls = <String>[];

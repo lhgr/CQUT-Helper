@@ -42,7 +42,20 @@ class ScheduleController {
     );
     _refreshOrchestrator = ScheduleRefreshOrchestrator(
       isDisposed: () => _disposed,
-      ensureWeekLoaded: ensureWeekLoaded,
+      ensureWeekLoaded:
+          (
+            week,
+            term, {
+            bool forceRefresh = false,
+            bool updateLastViewed = false,
+          }) => ensureWeekLoaded(
+            week,
+            term,
+            forceRefresh: forceRefresh,
+            updateLastViewed: updateLastViewed,
+            refreshReminders: false,
+          ),
+      refreshReminders: _service.refreshCourseReminders,
       loadUserId: () async {
         await _weekLoader.loadCredentials();
         return _weekLoader.userId;
@@ -71,10 +84,12 @@ class ScheduleController {
 
   void dispose() {
     _disposed = true;
+    _weekLoader.invalidateRequests();
     _refreshOrchestrator.dispose();
   }
 
   void reset() {
+    _weekLoader.invalidateRequests();
     weekCache.clear();
     currentTerm = null;
     weekList = null;
@@ -82,8 +97,20 @@ class ScheduleController {
     actualCurrentTermStr = null;
     nowInTeachingWeek = null;
     nowStatusLabel = null;
-    _refreshOrchestrator.cancelPrefetch();
+    _refreshOrchestrator.resetPrefetchState();
   }
+
+  int get selectionVersion => _weekLoader.selectionVersion;
+
+  void selectWeek(String? weekNum, String? yearTerm) {
+    if (yearTerm != null && yearTerm != currentTerm) {
+      _refreshOrchestrator.resetPrefetchState();
+    }
+    _weekLoader.selectWeek(weekNum, yearTerm);
+  }
+
+  Future<void> rememberSelection(ScheduleData data) =>
+      _weekLoader.rememberSelection(data);
 
   void cancelPrefetch() => _refreshOrchestrator.cancelPrefetch();
 
@@ -102,7 +129,13 @@ class ScheduleController {
     _weekLoader.hydrateCurrentStatusFromCache(data);
   }
 
-  Future<void> loadCredentials() => _weekLoader.loadCredentials();
+  Future<void> loadCredentials() async {
+    final account = userId;
+    await _weekLoader.loadCredentials();
+    if (account != null && account != userId) {
+      _refreshOrchestrator.resetPrefetchState();
+    }
+  }
 
   Future<bool> refreshTimeInfoIfEnabled({bool force = false}) {
     return _timeInfoCoordinator.refreshTimeInfoIfEnabled(force: force);
@@ -128,13 +161,20 @@ class ScheduleController {
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
     String trigger = 'schedule_load',
+    bool waitForSideEffects = true,
+    bool refreshReminders = true,
   }) {
+    if (yearTerm != null && yearTerm != currentTerm) {
+      _refreshOrchestrator.resetPrefetchState();
+    }
     return _weekLoader.loadFromNetwork(
       weekNum: weekNum,
       yearTerm: yearTerm,
       persistLastViewed: persistLastViewed,
       updateWidgetPins: updateWidgetPins,
       trigger: trigger,
+      waitForSideEffects: waitForSideEffects,
+      refreshReminders: refreshReminders,
     );
   }
 
@@ -205,12 +245,14 @@ class ScheduleController {
     void Function()? onUpdate, {
     Duration interval = const Duration(milliseconds: 150),
     bool forceRefresh = false,
+    bool refreshReminders = true,
   }) {
     return _refreshOrchestrator.prefetchAllWeeksInBackground(
       currentData,
       onUpdate,
       interval: interval,
       forceRefresh: forceRefresh,
+      refreshReminders: refreshReminders,
     );
   }
 
@@ -220,6 +262,7 @@ class ScheduleController {
     bool forceRefresh = false,
     bool updateLastViewed = false,
     bool rethrowOnFailure = false,
+    bool refreshReminders = true,
   }) {
     return _weekLoader.ensureWeekLoaded(
       weekNum,
@@ -227,6 +270,7 @@ class ScheduleController {
       forceRefresh: forceRefresh,
       updateLastViewed: updateLastViewed,
       rethrowOnFailure: rethrowOnFailure,
+      refreshReminders: refreshReminders,
     );
   }
 }

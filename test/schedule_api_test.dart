@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:cqut_helper/api/course/course_api.dart';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -269,6 +271,51 @@ void main() {
           prefs.getInt(ScheduleApi.lastFetchAtKey(userId, term, '5')),
           greaterThan(1),
         );
+      },
+    );
+
+    test(
+      'a saved week outside widget coverage still refreshes reminders',
+      () async {
+        final remote = {...schedule, 'weekNum': '8'};
+        final api = ScheduleApi(courseApi: _FakeCourseApi({'8': remote}));
+        await api.loadFromNetwork(
+          userId: userId,
+          encryptedPassword: 'secret',
+          yearTerm: term,
+          weekNum: '8',
+          persistLastViewed: false,
+        );
+        expect(broadcasts, 0);
+        expect((await CourseReminderScheduler.loadStatus()).reason, '课前提醒已关闭');
+      },
+    );
+
+    test(
+      'explicit side effect completion does not hold the persisted result',
+      () async {
+        final gate = Completer<void>();
+        WidgetUpdater.debugMethodInvoker = (_, _) => gate.future;
+        final api = ScheduleApi(courseApi: _FakeCourseApi({'5': schedule}));
+        final loaded = await api.loadFromNetwork(
+          userId: userId,
+          encryptedPassword: 'secret',
+          yearTerm: term,
+          weekNum: '5',
+          persistLastViewed: false,
+          refreshReminders: false,
+          waitForSideEffects: false,
+        );
+        expect(loaded.weekNum, '5');
+        var completed = false;
+        final pending = api.completePendingSideEffects().then(
+          (_) => completed = true,
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(completed, isFalse);
+        gate.complete();
+        await pending;
+        expect(completed, isTrue);
       },
     );
   });

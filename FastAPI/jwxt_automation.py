@@ -386,21 +386,33 @@ console.log(JSON.stringify({{signedUrl: __lastUrl}}));
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                if "items" in data:
+                if isinstance(data, dict) and isinstance(data.get("items"), list):
                     break
                 if attempt == 0:
                     self.capture_signed_urls(headless=True)
                     url = self.signed_urls[kind]
-            if data is None:
-                raise RuntimeError("拉取待阅/已阅数据失败")
-            items = data.get("items", [])
-            if total is None:
-                total = int(data.get("totalResult", len(items)))
-            if not items:
-                break
+            if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+                raise RuntimeError("拉取待阅/已阅数据失败：items缺失或格式错误")
+            items = data["items"]
+            if any(not isinstance(item, dict) for item in items):
+                raise RuntimeError("拉取待阅/已阅数据失败：条目格式错误")
+            raw_total = data.get("totalResult")
+            if isinstance(raw_total, bool) or not (
+                isinstance(raw_total, int)
+                or (isinstance(raw_total, str) and re.fullmatch(r"[0-9]+", raw_total))
+            ):
+                raise RuntimeError("拉取待阅/已阅数据失败：总条数缺失或格式错误")
+            page_total = int(raw_total)
+            if page_total < 0 or (total is not None and total != page_total):
+                raise RuntimeError("拉取待阅/已阅数据失败：总条数不一致")
+            total = page_total
             all_items.extend(items)
-            if len(items) < self.config.page_size:
+            if len(all_items) > total:
+                raise RuntimeError("拉取待阅/已阅数据失败：条目数超过总条数")
+            if len(all_items) == total:
                 break
+            if len(items) < self.config.page_size:
+                raise RuntimeError("拉取待阅/已阅数据失败：分页数据不完整")
             page_no += 1
         return all_items
 

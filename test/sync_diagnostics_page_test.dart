@@ -27,6 +27,8 @@ class _Controller extends ScheduleController {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    bool refreshReminders = true,
+    bool waitForSideEffects = true,
     String trigger = 'schedule_load',
   }) async {
     loads++;
@@ -44,6 +46,7 @@ class _Controller extends ScheduleController {
     void Function()? onUpdate, {
     Duration interval = const Duration(seconds: 5),
     bool forceRefresh = false,
+    bool refreshReminders = true,
   }) async {
     forced = forceRefresh;
     return prefetch;

@@ -382,7 +382,10 @@ class SyncDiagnosticsService {
       var currentLoaded = false;
       await stage('课表同步', () async {
         controller = createController();
-        final data = await controller!.loadFromNetwork(updateWidgetPins: true);
+        final data = await controller!.loadFromNetwork(
+          updateWidgetPins: true,
+          refreshReminders: false,
+        );
         currentLoaded = true;
         completedStages++;
         details.add('当前周课表已更新');
@@ -392,6 +395,7 @@ class SyncDiagnosticsService {
             () {},
             interval: Duration.zero,
             forceRefresh: true,
+            refreshReminders: false,
           );
           if (!result.completed || result.failedWeeks.isNotEmpty) {
             failed = true;

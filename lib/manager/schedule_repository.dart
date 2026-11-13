@@ -18,6 +18,8 @@ class ScheduleRepository {
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    bool waitForSideEffects = true,
+    bool refreshReminders = true,
   }) async {
     final key = [
       userId.trim(),
@@ -25,6 +27,8 @@ class ScheduleRepository {
       weekNum?.trim() ?? '',
       persistLastViewed,
       updateWidgetPins,
+      waitForSideEffects,
+      refreshReminders,
     ].join('|');
     final existing = _networkRequests[key];
     if (existing != null) return existing;
@@ -36,6 +40,8 @@ class ScheduleRepository {
       yearTerm: yearTerm,
       persistLastViewed: persistLastViewed,
       updateWidgetPins: updateWidgetPins,
+      waitForSideEffects: waitForSideEffects,
+      refreshReminders: refreshReminders,
     );
     _networkRequests[key] = request;
     try {

@@ -26,6 +26,8 @@ class _RecordingScheduleApi extends ScheduleApi {
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
     bool notifyWidget = true,
+    bool refreshReminders = true,
+    bool waitForSideEffects = true,
     String? refreshId,
   }) async {
     requests.add((

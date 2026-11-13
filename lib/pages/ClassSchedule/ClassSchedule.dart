@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
+
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
 import 'package:cqut_helper/manager/academic_calendar_manager.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
@@ -7,7 +9,6 @@ import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:cqut_helper/manager/schedule_update_manager.dart';
 import 'package:cqut_helper/manager/schedule_customization_manager.dart';
-import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/manager/schedule_message_center_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
@@ -39,10 +40,12 @@ part 'class_schedule_updates.dart';
 
 class ClassscheduleView extends StatefulWidget {
   final double floatingActionButtonBottomOffset;
+  final ScheduleController? controller;
 
   const ClassscheduleView({
     super.key,
     this.floatingActionButtonBottomOffset = 0,
+    this.controller,
   }) : assert(floatingActionButtonBottomOffset >= 0);
 
   @override
@@ -51,7 +54,7 @@ class ClassscheduleView extends StatefulWidget {
 
 class _ClassscheduleViewState extends State<ClassscheduleView>
     with WidgetsBindingObserver {
-  final ScheduleController _controller = ScheduleController();
+  late final ScheduleController _controller;
   final ScheduleSettingsManager _settingsManager = ScheduleSettingsManager();
   late final ScheduleUpdateManager _updateManager;
 
@@ -83,11 +86,13 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   bool _initialBackgroundSyncStarted = false;
   bool _allWeeksPrefetchInFlight = false;
   bool _allWeeksPrefetchComplete = false;
-  bool _reminderRebuildStarted = false;
+  bool _allWeeksPrefetchAttempted = false;
+  int _viewGeneration = 0;
+  String? _prefetchScope;
+  String? _prefetchWeekList;
   ScheduleData? _deferredBackgroundData;
   Timer? _initialBackgroundSyncTimer;
   Timer? _allWeeksPrefetchTimer;
-  Timer? _reminderRebuildTimer;
   Timer? _deviceDateTimer;
   bool _followDeviceWeek = true;
   DateTime? _schoolTodayDate;
@@ -99,6 +104,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   @override
   void initState() {
     super.initState();
+    _controller = widget.controller ?? ScheduleController();
     _updateManager = ScheduleUpdateManager(controller: _controller);
     WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openChangesSheet.addListener(_onOpenChangesSheet);
@@ -134,7 +140,6 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     _updateManager.dispose();
     _initialBackgroundSyncTimer?.cancel();
     _allWeeksPrefetchTimer?.cancel();
-    _reminderRebuildTimer?.cancel();
     _deviceDateTimer?.cancel();
     _controller.dispose();
     _pageController?.dispose();
@@ -182,6 +187,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     final epoch = CacheCleanupManager.timetableCacheEpoch.value;
     if (epoch == _lastTimetableCacheEpoch) return;
     _lastTimetableCacheEpoch = epoch;
+    _viewGeneration++;
+    _resetDeferredWork();
     _controller.reset();
     _schoolTodayDate = null;
     _schoolTodayReceivedAt = null;
@@ -221,12 +228,13 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   }
 
   Future<void> _onCustomizationChanged() async {
+    final generation = _viewGeneration;
     final current = _currentScheduleData;
     final week = (current?.weekNum ?? '').trim();
     final term = (current?.yearTerm ?? '').trim();
     if (week.isEmpty || term.isEmpty) return;
     await _controller.reloadMemoryCacheFromDisk(yearTerm: term);
-    if (!mounted) return;
+    if (!mounted || generation != _viewGeneration) return;
     final currentWeek = int.tryParse(week);
     final refreshed = currentWeek == null ? null : _weekCache[currentWeek];
     setState(() {
@@ -329,6 +337,11 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_syncToDeviceDate());
+      final current = _currentScheduleData;
+      if (current != null) {
+        _allWeeksPrefetchAttempted = false;
+        _scheduleAllWeeksPrefetch(current);
+      }
       _scheduleDeviceDateCheck();
       _consumePendingChangesIfAny();
     }

@@ -120,11 +120,13 @@ class ThemeManager extends ChangeNotifier {
     }
     _isSystemColor = isSystemColor;
     notifyListeners();
-    await WidgetUpdater.updateTodayWidget(
-      themeMode: _widgetModeValue(_themeMode),
-      trigger: 'init',
-    );
   }
+
+  Future<WidgetUpdateResult> syncWidgetTheme() =>
+      WidgetUpdater.updateTodayWidget(
+        themeMode: _widgetModeValue(_themeMode),
+        trigger: 'init',
+      );
 
   Future<void> setThemeMode(ThemeMode mode) async {
     if (kDebugMode) {

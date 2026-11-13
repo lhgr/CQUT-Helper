@@ -14,20 +14,28 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     final currentTerm = _currentScheduleData?.yearTerm ?? _currentTerm;
 
     final wInt = int.tryParse(targetWeek) ?? 0;
+    if (currentTerm == null) return;
+    if (userChangedWeek) {
+      _viewGeneration++;
+      _controller.selectWeek(targetWeek, currentTerm);
+    }
     final cachedWeek = _weekCache[wInt];
     _setState(() {
       _currentWeekIndex = index;
+      _loading = false;
+      _error = null;
       if (cachedWeek != null) _currentScheduleData = cachedWeek;
     });
     if (cachedWeek != null) {
+      unawaited(_controller.rememberSelection(cachedWeek));
       _schedulePrefetch(cachedWeek);
-    } else if (currentTerm != null) {
+    } else {
       _ensureWeekLoaded(targetWeek, currentTerm);
     }
   }
 
   void _changeTerm(String term) {
-    _weekCache.clear();
+    _resetDeferredWork();
     _loadFromNetwork(weekNum: '1', yearTerm: term);
   }
 

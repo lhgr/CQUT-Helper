@@ -41,6 +41,78 @@ class ScheduleWeekLoader {
   final void Function(String? value) setNowStatusLabel;
   String? _userId;
   String? _encryptedPassword;
+  int _scopeVersion = 0;
+  int _selectionVersion = 0;
+
+  int get selectionVersion => _selectionVersion;
+
+  void invalidateRequests() {
+    _scopeVersion++;
+    _selectionVersion++;
+    _weekLoadRequests.clear();
+  }
+
+  void selectWeek(String? weekNum, String? yearTerm) {
+    _selectionVersion++;
+    final term = yearTerm?.trim();
+    if (term != null && term.isNotEmpty && getCurrentTerm() != term) {
+      _scopeVersion++;
+      _weekLoadRequests.clear();
+      getWeekCache().clear();
+      setWeekList(null);
+      setCurrentTerm(term);
+    }
+  }
+
+  String? _syncAccount(SharedPreferences prefs) {
+    final account = prefs.getString('account')?.trim();
+    if (_userId != null && _userId != account) {
+      invalidateRequests();
+      getWeekCache().clear();
+      setCurrentTerm(null);
+      setWeekList(null);
+      setActualCurrentWeekStr(null);
+      setActualCurrentTermStr(null);
+    }
+    _userId = account;
+    return account;
+  }
+
+  bool _isCurrent(int scope, String? account) =>
+      scope == _scopeVersion && account == _userId;
+
+  Future<bool> _isCurrentAccount(int scope, String? account) async {
+    final prefs = await SharedPreferences.getInstance();
+    _syncAccount(prefs);
+    return _isCurrent(scope, account);
+  }
+
+  Future<void> _persistSelection(
+    ScheduleData data,
+    int selection,
+    int scope,
+    String? account,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    _syncAccount(prefs);
+    if (!_isCurrent(scope, account) ||
+        selection != _selectionVersion ||
+        account == null ||
+        account.isEmpty) {
+      return;
+    }
+    final week = (data.weekNum ?? '').trim();
+    final term = (data.yearTerm ?? '').trim();
+    if (week.isEmpty || term.isEmpty) return;
+    // Queue both writes together so a later selection writes after this one.
+    await Future.wait([
+      prefs.setString('schedule_last_week_$account', week),
+      prefs.setString('schedule_last_term_$account', term),
+    ]);
+  }
+
+  Future<void> rememberSelection(ScheduleData data) =>
+      _persistSelection(data, _selectionVersion, _scopeVersion, _userId);
   final Map<String, Future<_WeekLoadResult>> _weekLoadRequests = {};
 
   ScheduleWeekLoader({
@@ -61,9 +133,17 @@ class ScheduleWeekLoader {
 
   Future<void> loadCredentials() async {
     final prefs = await SharedPreferences.getInstance();
-    _userId = prefs.getString('account');
-    _hydrateCurrentAnchorFromPreferences(prefs, _userId);
-    _encryptedPassword = await credentialStore.readEncryptedPassword();
+    final account = _syncAccount(prefs);
+    final scope = _scopeVersion;
+    final password = await credentialStore.readEncryptedPassword();
+    if (!await _isCurrentAccount(scope, account)) {
+      throw DioException(
+        requestOptions: RequestOptions(path: '/schedule'),
+        type: DioExceptionType.cancel,
+      );
+    }
+    _encryptedPassword = password;
+    _hydrateCurrentAnchorFromPreferences(prefs, account);
   }
 
   String? get userId => _userId;
@@ -86,17 +166,20 @@ class ScheduleWeekLoader {
     String? yearTerm,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    _userId ??= prefs.getString('account');
+    _syncAccount(prefs);
 
     final userId = _userId;
     if (userId == null || userId.isEmpty) return null;
     _hydrateCurrentAnchorFromPreferences(prefs, userId);
 
-    return service.loadFromCache(
+    final scope = _scopeVersion;
+    final data = await service.loadFromCache(
       userId: userId,
       weekNum: weekNum,
       yearTerm: yearTerm,
+      waitForSideEffects: false,
     );
+    return await _isCurrentAccount(scope, userId) ? data : null;
   }
 
   void _hydrateCurrentAnchorFromPreferences(
@@ -119,6 +202,7 @@ class ScheduleWeekLoader {
   Future<int> reloadMemoryCacheFromDisk({required String yearTerm}) async {
     final normalizedTerm = yearTerm.trim();
     if (normalizedTerm.isEmpty) return 0;
+    final scope = _scopeVersion;
     final cache = getWeekCache();
     final weeks = cache.entries
         .where((entry) => (entry.value.yearTerm ?? '').trim() == normalizedTerm)
@@ -130,6 +214,10 @@ class ScheduleWeekLoader {
         weekNum: week.toString(),
         yearTerm: normalizedTerm,
       );
+      if (scope != _scopeVersion ||
+          (getCurrentTerm() != null && getCurrentTerm() != normalizedTerm)) {
+        return refreshedCount;
+      }
       if (refreshed == null ||
           (refreshed.yearTerm ?? '').trim() != normalizedTerm) {
         continue;
@@ -146,62 +234,102 @@ class ScheduleWeekLoader {
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
     String trigger = 'schedule_load',
-  }) => AppLogger.I.runWithTraceIdAsync(
-    AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
-    () async {
-      final elapsed = Stopwatch()..start();
-      try {
-        final data = await _loadFromNetwork(
-          weekNum: weekNum,
-          yearTerm: yearTerm,
-          persistLastViewed: persistLastViewed,
-          updateWidgetPins: updateWidgetPins,
-        );
-        AppLogger.I.logOperationOutcome(
-          'ScheduleWeekLoader',
-          'week load finished',
-          outcome: 'succeeded',
-          fields: {
-            'stage': 'load_week',
-            'trigger': trigger,
-            'data_source': 'network',
-            'network_outcome': 'succeeded',
-            'week': weekNum,
-            'term': yearTerm,
-            'duration_ms': elapsed.elapsedMilliseconds,
-          },
-        );
-        return data;
-      } catch (error, stackTrace) {
-        if (error is! _ScheduleCredentialsUnavailable &&
-            !(error is DioException && error.type == DioExceptionType.cancel)) {
+    bool waitForSideEffects = true,
+    bool refreshReminders = true,
+    bool select = true,
+  }) {
+    if (select) selectWeek(weekNum, yearTerm);
+    final selection = _selectionVersion;
+    final scope = _scopeVersion;
+    return AppLogger.I.runWithTraceIdAsync(
+      AppLogger.I.currentTraceId ?? AppLogger.I.newTraceId(),
+      () async {
+        final elapsed = Stopwatch()..start();
+        try {
+          final data = await _loadFromNetwork(
+            weekNum: weekNum,
+            yearTerm: yearTerm,
+            persistLastViewed: persistLastViewed,
+            updateWidgetPins: updateWidgetPins,
+            selection: selection,
+            scope: scope,
+            waitForSideEffects: waitForSideEffects,
+            refreshReminders: refreshReminders,
+          );
           AppLogger.I.logOperationOutcome(
             'ScheduleWeekLoader',
-            'week load failed',
-            outcome: 'failed',
-            error: error,
-            stackTrace: stackTrace,
+            'week load finished',
+            outcome: 'succeeded',
             fields: {
               'stage': 'load_week',
               'trigger': trigger,
-              'duration_ms': elapsed.elapsedMilliseconds,
+              'data_source': 'network',
+              'network_outcome': 'succeeded',
               'week': weekNum,
               'term': yearTerm,
+              'duration_ms': elapsed.elapsedMilliseconds,
             },
           );
+          return data;
+        } catch (error, stackTrace) {
+          if (error is! _ScheduleCredentialsUnavailable &&
+              !(error is DioException &&
+                  error.type == DioExceptionType.cancel)) {
+            AppLogger.I.logOperationOutcome(
+              'ScheduleWeekLoader',
+              'week load failed',
+              outcome: 'failed',
+              error: error,
+              stackTrace: stackTrace,
+              fields: {
+                'stage': 'load_week',
+                'trigger': trigger,
+                'duration_ms': elapsed.elapsedMilliseconds,
+                'week': weekNum,
+                'term': yearTerm,
+              },
+            );
+          }
+          rethrow;
         }
-        rethrow;
-      }
-    },
-  );
+      },
+    );
+  }
 
   Future<ScheduleData> _loadFromNetwork({
     String? weekNum,
     String? yearTerm,
     bool persistLastViewed = true,
     bool updateWidgetPins = false,
+    required int selection,
+    required int scope,
+    required bool waitForSideEffects,
+    required bool refreshReminders,
   }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final accountChanged =
+        _userId != null && _userId != prefs.getString('account')?.trim();
+    if (accountChanged) {
+      final stillSelected = selection == _selectionVersion;
+      _syncAccount(prefs);
+      if (!stillSelected) {
+        throw DioException(
+          requestOptions: RequestOptions(path: '/schedule'),
+          type: DioExceptionType.cancel,
+        );
+      }
+      selectWeek(weekNum, yearTerm);
+      scope = _scopeVersion;
+      selection = _selectionVersion;
+    }
     await loadCredentials();
+    final account = _userId;
+    if (scope != _scopeVersion) {
+      throw DioException(
+        requestOptions: RequestOptions(path: "/schedule"),
+        type: DioExceptionType.cancel,
+      );
+    }
 
     if (_userId == null || _userId!.isEmpty) {
       AppLogger.I.info(
@@ -235,8 +363,10 @@ class ScheduleWeekLoader {
       encryptedPassword: _encryptedPassword!,
       weekNum: weekNum,
       yearTerm: yearTerm,
-      persistLastViewed: persistLastViewed,
+      persistLastViewed: false,
       updateWidgetPins: shouldPinWidget,
+      waitForSideEffects: waitForSideEffects,
+      refreshReminders: refreshReminders,
     );
     final loadedWeek = (data.weekNum ?? '').trim();
     final loadedWeeks = data.weekList;
@@ -260,6 +390,15 @@ class ScheduleWeekLoader {
       throw error;
     }
 
+    if (!await _isCurrentAccount(scope, account)) {
+      throw DioException(
+        requestOptions: RequestOptions(path: "/schedule"),
+        type: DioExceptionType.cancel,
+      );
+    }
+    if (persistLastViewed) {
+      await _persistSelection(data, selection, scope, account);
+    }
     if (weekNum == null && yearTerm == null) {
       final now = DateTime.now();
       if (ScheduleDate.dataCoversDate(data, now)) {
@@ -315,12 +454,25 @@ class ScheduleWeekLoader {
     bool forceRefresh = false,
     bool updateLastViewed = false,
     bool rethrowOnFailure = false,
+    bool refreshReminders = true,
   }) async {
+    final prefs = await SharedPreferences.getInstance();
+    _syncAccount(prefs);
+    if (updateLastViewed) selectWeek(weekNum, yearTerm);
+    final term = getCurrentTerm();
+    if (term != null && term != yearTerm.trim()) return false;
+    final scope = _scopeVersion;
+    final account = _userId;
+    final selection = _selectionVersion;
     final requestKey = [
+      account,
+      scope,
+      if (updateLastViewed) selection,
       yearTerm.trim(),
       weekNum.trim(),
       forceRefresh,
       updateLastViewed,
+      refreshReminders,
     ].join('|');
     final existing = _weekLoadRequests[requestKey];
     final request =
@@ -332,6 +484,10 @@ class ScheduleWeekLoader {
             yearTerm,
             forceRefresh: forceRefresh,
             updateLastViewed: updateLastViewed,
+            scope: scope,
+            account: account,
+            selection: selection,
+            refreshReminders: refreshReminders,
           ),
         );
     _weekLoadRequests[requestKey] = request;
@@ -359,16 +515,35 @@ class ScheduleWeekLoader {
     String yearTerm, {
     required bool forceRefresh,
     required bool updateLastViewed,
+    required int scope,
+    required String? account,
+    required int selection,
+    required bool refreshReminders,
   }) async {
     final wInt = int.tryParse(weekNum) ?? 0;
     final cache = getWeekCache();
 
     if (!forceRefresh) {
-      if (cache.containsKey(wInt)) return const _WeekLoadResult.success();
+      final existing = cache[wInt];
+      if (existing != null && existing.yearTerm == yearTerm) {
+        if (updateLastViewed) {
+          await _persistSelection(existing, selection, scope, account);
+        }
+        return const _WeekLoadResult.success();
+      }
 
       final cached = await loadFromCache(weekNum: weekNum, yearTerm: yearTerm);
-      if (cached != null) {
+      if (!await _isCurrentAccount(scope, account)) {
+        return _WeekLoadResult.failure(
+          StateError('课表请求已取消'),
+          StackTrace.current,
+        );
+      }
+      if (cached != null && cached.yearTerm == yearTerm) {
         cache[wInt] = cached;
+        if (updateLastViewed) {
+          await _persistSelection(cached, selection, scope, account);
+        }
         return const _WeekLoadResult.success();
       }
     }
@@ -377,11 +552,23 @@ class ScheduleWeekLoader {
       final data = await loadFromNetwork(
         weekNum: weekNum,
         yearTerm: yearTerm,
-        persistLastViewed: updateLastViewed,
+        persistLastViewed: false,
         updateWidgetPins: false,
         trigger: 'ensure_week_loaded',
+        select: false,
+        waitForSideEffects: false,
+        refreshReminders: refreshReminders,
       );
+      if (!await _isCurrentAccount(scope, account)) {
+        return _WeekLoadResult.failure(
+          StateError('课表请求已取消'),
+          StackTrace.current,
+        );
+      }
       processLoadedData(data);
+      if (updateLastViewed) {
+        await _persistSelection(data, selection, scope, account);
+      }
       final uid = _userId;
       final term = (data.yearTerm ?? yearTerm).trim();
       final week = (data.weekNum ?? weekNum).trim();

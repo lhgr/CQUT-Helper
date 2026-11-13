@@ -8,6 +8,7 @@ import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/schedule_notice.dart';
 import 'package:cqut_helper/model/schedule_week_change.dart';
 import 'package:cqut_helper/utils/schedule_notice_parser.dart';
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ScheduleNoticeRefreshResult {
@@ -34,6 +35,7 @@ class ScheduleNoticeRefreshPipeline {
   final ScheduleApi scheduleApi;
   final CredentialStore credentialStore;
   final Future<void> Function(String weekNum, String yearTerm) refreshWeek;
+  final Future<void> Function(String userId)? afterWeeksSaved;
   final Future<SharedPreferences> Function() prefsProvider;
   final DateTime Function() nowProvider;
   String _stage = 'not_started';
@@ -86,6 +88,7 @@ class ScheduleNoticeRefreshPipeline {
 
   ScheduleNoticeRefreshPipeline({
     required this.refreshWeek,
+    this.afterWeeksSaved,
     ScheduleApi? scheduleApi,
     CredentialStore? credentialStore,
     Future<SharedPreferences> Function()? prefsProvider,
@@ -251,10 +254,27 @@ class ScheduleNoticeRefreshPipeline {
 
     _completedStages.add(_stage);
     _enterStage('refresh_affected_weeks');
-    for (final week in affectedWeeks) {
-      if (!isCurrentAccount()) return _skip('stale_account');
-      await refreshWeek(week, yearTerm);
-      _refreshedWeekCount++;
+    try {
+      for (final week in affectedWeeks) {
+        if (!isCurrentAccount()) return _skip('stale_account');
+        await refreshWeek(week, yearTerm);
+        _refreshedWeekCount++;
+      }
+    } finally {
+      // A later week may fail after earlier weeks were saved. Their reminders
+      // must still be rebuilt, without committing the notice snapshot early.
+      if (_refreshedWeekCount > 0 && isCurrentAccount()) {
+        try {
+          await afterWeeksSaved?.call(userId);
+        } catch (error, stackTrace) {
+          AppLogger.I.warn(
+            'ScheduleNoticeRefreshPipeline',
+            'reminder update failed after saved weeks',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
     }
     _completedStages.add(_stage);
 

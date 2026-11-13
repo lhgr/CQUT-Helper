@@ -16,6 +16,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
+  final startupTimer = Stopwatch()..start();
   AppLogger.I.installGlobalErrorHandlers();
   await AppLogger.I.init(
     minLevel: kDebugMode ? LogLevel.debug : LogLevel.info,
@@ -23,30 +24,105 @@ Future<void> bootstrapAndRunApp(Widget Function() rootBuilder) async {
     enableFile: true,
     source: 'foreground',
   );
+  AppLogger.I.info(
+    'App',
+    'startup stage completed',
+    fields: {
+      'stage': 'logger',
+      'duration_ms': startupTimer.elapsedMilliseconds,
+    },
+  );
   WidgetsBinding.instance.addObserver(_DiagnosticLifecycleObserver());
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  final staleBackgroundCleanup = BackgroundImageTempManager.cleanup();
+  await _runStartupStage(
+    'orientation',
+    () => SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+  );
   AppLogger.I.info(
     'App',
     'startup',
     fields: {'log_file': AppLogger.I.logFilePath},
   );
 
-  await ThemeManager().init();
-  await OnboardingManager.instance.initialize();
-  final scheduleBackgroundReady = _preloadScheduleBackground();
-  await LocalNotifications.initialize();
-  await ScheduleUpdateWorker.initialize();
-  await WidgetNavigation.initialize();
+  await _runStartupStage('theme', ThemeManager().init);
+  await _runStartupStage('onboarding', OnboardingManager.instance.initialize);
+  final scheduleBackgroundReady = _runStartupStage(
+    'schedule_background',
+    _preloadScheduleBackground,
+  );
+  await _runStartupStage('notifications', LocalNotifications.initialize);
+  await _runStartupStage('schedule_worker', ScheduleUpdateWorker.initialize);
+  await _runStartupStage('widget_navigation', WidgetNavigation.initialize);
   await scheduleBackgroundReady;
-  await staleBackgroundCleanup;
 
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    AppLogger.I.info(
+      'App',
+      'first frame completed',
+      fields: {
+        'stage': 'first_frame',
+        'duration_ms': startupTimer.elapsedMilliseconds,
+      },
+    );
+    unawaited(_runAfterFirstFrame());
+  });
   runApp(rootBuilder());
-  unawaited(ScheduleUpdateWorker.syncFromPreferences());
-  // Calendar service is deliberately slow and independent of notice
-  // enhancement. Start it after the first frame without blocking startup.
-  if (!LocalNotifications.isIOS) {
-    unawaited(AcademicCalendarManager.instance.initializeFromPreferences());
+}
+
+Future<void> _runAfterFirstFrame() async {
+  await Future.wait([
+    _runBackgroundStartupStage('background_temp_cleanup', () async {
+      await BackgroundImageTempManager.cleanup(throwOnFailure: true);
+    }),
+    _runBackgroundStartupStage('widget_theme', () async {
+      final result = await ThemeManager().syncWidgetTheme();
+      if (result == WidgetUpdateResult.failed) {
+        throw StateError('Initial widget theme publication failed');
+      }
+    }),
+    _runBackgroundStartupStage(
+      'schedule_preferences',
+      ScheduleUpdateWorker.syncFromPreferences,
+    ),
+    if (!LocalNotifications.isIOS)
+      _runBackgroundStartupStage(
+        'academic_calendar',
+        AcademicCalendarManager.instance.initializeFromPreferences,
+      ),
+  ]);
+}
+
+Future<void> _runBackgroundStartupStage(
+  String stage,
+  Future<void> Function() action,
+) async {
+  try {
+    await _runStartupStage(stage, action);
+  } catch (_) {
+    // Each optional stage reports its own error and cannot block the others.
+  }
+}
+
+Future<void> _runStartupStage(
+  String stage,
+  Future<void> Function() action,
+) async {
+  final timer = Stopwatch()..start();
+  try {
+    await action();
+    AppLogger.I.info(
+      'App',
+      'startup stage completed',
+      fields: {'stage': stage, 'duration_ms': timer.elapsedMilliseconds},
+    );
+  } catch (error, stackTrace) {
+    AppLogger.I.error(
+      'App',
+      'startup stage failed',
+      error: error,
+      stackTrace: stackTrace,
+      fields: {'stage': stage, 'duration_ms': timer.elapsedMilliseconds},
+    );
+    rethrow;
   }
 }
 

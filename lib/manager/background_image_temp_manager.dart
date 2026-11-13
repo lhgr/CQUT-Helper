@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -40,13 +41,24 @@ abstract final class BackgroundImageTempManager {
     }
   }
 
-  static Future<int> cleanup({Iterable<String> excluding = const []}) async {
+  static Future<int> cleanup({
+    Iterable<String> excluding = const [],
+    bool throwOnFailure = false,
+  }) async {
     try {
       return await cleanupIn(
         await getTemporaryDirectory(),
         excluding: excluding,
+        throwOnFailure: throwOnFailure,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      if (throwOnFailure) rethrow;
+      AppLogger.I.warn(
+        'BackgroundImageTempManager',
+        'temporary background cleanup failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return 0;
     }
   }
@@ -71,6 +83,7 @@ abstract final class BackgroundImageTempManager {
   static Future<int> cleanupIn(
     Directory tempDir, {
     Iterable<String> excluding = const [],
+    bool throwOnFailure = false,
   }) async {
     var removed = 0;
     for (final entity in await ownedArtifactsIn(
@@ -80,7 +93,15 @@ abstract final class BackgroundImageTempManager {
       try {
         await entity.delete(recursive: entity is Directory);
         removed++;
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        if (throwOnFailure) rethrow;
+        AppLogger.I.warn(
+          'BackgroundImageTempManager',
+          'temporary background artifact deletion failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
     return removed;
   }

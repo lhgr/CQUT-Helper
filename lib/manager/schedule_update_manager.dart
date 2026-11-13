@@ -1,4 +1,5 @@
 import 'package:cqut_helper/manager/schedule_notice_refresh_pipeline.dart';
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_update_effects.dart';
 import 'package:cqut_helper/manager/schedule_update_result.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
@@ -60,8 +61,10 @@ class ScheduleUpdateManager {
           forceRefresh: true,
           updateLastViewed: false,
           rethrowOnFailure: true,
+          refreshReminders: false,
         );
       },
+      afterWeeksSaved: CourseReminderScheduler.rescheduleForUser,
     );
     try {
       failuresBefore = await loadScheduleUpdateFailureCounter();

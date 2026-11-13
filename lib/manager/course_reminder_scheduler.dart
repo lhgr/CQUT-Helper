@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cqut_helper/utils/app_logger.dart';
@@ -16,6 +17,43 @@ class CourseReminderScheduler {
   static const String _scheduledIdsKey = 'schedule_course_reminder_ids_v1';
   static const String _timeInfoKey = 'schedule_time_info_cache_v1';
   static const String _statusKey = 'schedule_course_reminder_status_v1';
+  static const String _successfulPlanKey = 'schedule_course_reminder_plan_v1';
+  static final Object _batchKey = Object();
+
+  /// Calendar publication and timetable refreshes can both request a rebuild.
+  /// Commit their final persisted state once, including when a later step fails.
+  static Future<T> batchForUser<T>(
+    String userId,
+    Future<T> Function() action,
+  ) async {
+    final current = Zone.current[_batchKey] as _ReminderBatch?;
+    if (current != null && current.active && current.userId == userId.trim()) {
+      return action();
+    }
+    final batch = _ReminderBatch(userId.trim());
+    var actionFailed = false;
+    try {
+      return await runZoned(action, zoneValues: {_batchKey: batch});
+    } catch (_) {
+      actionFailed = true;
+      rethrow;
+    } finally {
+      batch.active = false;
+      if (batch.requested) {
+        try {
+          await rescheduleForUser(userId);
+        } catch (error, stackTrace) {
+          if (!actionFailed) rethrow;
+          AppLogger.I.warn(
+            'CourseReminderScheduler',
+            'reminder batch commit failed after refresh failure',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
+    }
+  }
 
   static Future<CourseReminderStatus> loadStatus() async {
     final prefs = await SharedPreferences.getInstance();
@@ -54,6 +92,11 @@ class CourseReminderScheduler {
     String userId, {
     AcademicCalendarSnapshot? calendar,
   }) {
+    final batch = Zone.current[_batchKey] as _ReminderBatch?;
+    if (batch != null && batch.active && batch.userId == userId.trim()) {
+      batch.requested = true;
+      return Future<void>.value();
+    }
     final generation = _generation;
     return _serialize(() async {
       try {
@@ -74,18 +117,9 @@ class CourseReminderScheduler {
           },
         );
         final prefs = await SharedPreferences.getInstance();
-        try {
-          await _cancelPrevious(prefs);
-        } catch (cleanupError, cleanupStack) {
-          AppLogger.I.warn(
-            'CourseReminderScheduler',
-            'failed reminder cleanup will be retried',
-            error: cleanupError,
-            stackTrace: cleanupStack,
-          );
-        }
+        await prefs.remove(_successfulPlanKey);
         var remainingCount = 0;
-        if (LocalNotifications.isIOS) {
+        if (LocalNotifications.isSupported) {
           try {
             remainingCount = (await LocalNotifications.pendingRequests())
                 .where(
@@ -107,9 +141,6 @@ class CourseReminderScheduler {
             updatedAt: DateTime.now(),
           ),
         );
-        try {
-          await CourseReminderMode.cancelAndRestore();
-        } catch (_) {}
         rethrow;
       }
     });
@@ -123,15 +154,24 @@ class CourseReminderScheduler {
     final prefs = await SharedPreferences.getInstance();
     final enabled =
         prefs.getBool(ScheduleSettingsManager.remindersEnabledKey) ?? false;
+    String configuration() => jsonEncode([
+      prefs.getBool(ScheduleSettingsManager.remindersEnabledKey) ?? false,
+      prefs.getInt(ScheduleSettingsManager.defaultReminderMinutesKey) ?? 10,
+      prefs.getBool(ScheduleSettingsManager.defaultReminderAtStartKey) ?? false,
+      prefs.getString(ScheduleSettingsManager.courseAutoModeKey),
+      prefs.getString(_timeInfoKey),
+    ]);
+    final requestedConfiguration = configuration();
     bool isCurrentRequest() =>
         generation == _generation &&
-        (prefs.getString('account') ?? '').trim() == userId.trim();
+        (prefs.getString('account') ?? '').trim() == userId.trim() &&
+        requestedConfiguration == configuration();
     if (generation != _generation ||
         (enabled && userId.trim().isNotEmpty && !isCurrentRequest())) {
       return;
     }
-    await _cancelPrevious(prefs);
     if (!enabled || userId.trim().isEmpty) {
+      await _cancelPrevious(prefs);
       await CourseReminderMode.cancelAndRestore();
       await _saveStatus(
         prefs,
@@ -151,6 +191,7 @@ class CourseReminderScheduler {
     final granted = await LocalNotifications.areNotificationsEnabled();
     if (LocalNotifications.requiresExactAlarms &&
         !await LocalNotifications.canScheduleExactNotifications()) {
+      await _cancelPrevious(prefs);
       await CourseReminderMode.cancelAndRestore();
       await _saveStatus(
         prefs,
@@ -169,6 +210,7 @@ class CourseReminderScheduler {
             .clamp(1, 120);
     final clocks = _loadClocks(prefs.getString(_timeInfoKey));
     if (clocks.isEmpty) {
+      await _cancelPrevious(prefs);
       await CourseReminderMode.cancelAndRestore();
       await _saveStatus(
         prefs,
@@ -242,8 +284,8 @@ class CourseReminderScheduler {
         ? plan.notifications
         : <CourseReminderOccurrence>[];
     var occurrences = plannedOccurrences;
+    final pending = await LocalNotifications.pendingRequests();
     if (LocalNotifications.isIOS) {
-      final pending = await LocalNotifications.pendingRequests();
       final otherCount = pending
           .where(
             (request) =>
@@ -260,14 +302,77 @@ class CourseReminderScheduler {
       (mode) => mode.name == modeName,
       orElse: () => CourseAutoMode.off,
     );
-    final scheduledIds = <int>[];
+    final schoolDay = now.toUtc().add(const Duration(hours: 8));
+    final fingerprint = jsonEncode({
+      'account': userId.trim(),
+      'date': '${schoolDay.year}-${schoolDay.month}-${schoolDay.day}',
+      'configuration': requestedConfiguration,
+      'permission': granted,
+      'term': activeTerm,
+      'notifications': [
+        for (final item in occurrences)
+          [
+            item.id,
+            item.notifyAt.millisecondsSinceEpoch,
+            item.title,
+            item.body,
+            item.payload,
+          ],
+      ],
+      'mode': mode.name,
+      'intervals': plan.intervals.map((item) => item.toMap()).toList(),
+      'coverage': [
+        coverage.cachedWeekCount,
+        coverage.expectedWeekCount,
+        coverage.complete,
+        pendingLimitReached,
+      ],
+    });
+    if (!isCurrentRequest()) return;
+    if (granted != await LocalNotifications.areNotificationsEnabled() ||
+        (LocalNotifications.requiresExactAlarms &&
+            !await LocalNotifications.canScheduleExactNotifications())) {
+      await prefs.remove(_successfulPlanKey);
+      return;
+    }
+    final actual = pending
+        .where(
+          (request) => (request.payload ?? '').startsWith('course_reminder|'),
+        )
+        .toList();
+    final appointmentsComplete =
+        actual.length == occurrences.length &&
+        occurrences.every(
+          (item) => actual.any(
+            (request) =>
+                request.id == item.id && request.payload == item.payload,
+          ),
+        );
+    if (prefs.getString(_successfulPlanKey) == fingerprint &&
+        appointmentsComplete) {
+      // Android's automatic mode has its own native state. Reassert it even
+      // when the notification queue is complete (e.g. after permission repair).
+      if (schedules.isEmpty) {
+        await CourseReminderMode.cancelAndRestore();
+      } else {
+        await CourseReminderMode.replaceSchedule(
+          mode: mode,
+          intervals: plan.intervals,
+        );
+      }
+      return;
+    }
+    await _cancelPrevious(
+      prefs,
+      pendingIds: actual.map((request) => request.id),
+    );
+    final scheduledIds = occurrences.map((item) => item.id).toList();
+    // Save the complete ownership set before platform writes so any partially
+    // applied plan can be cancelled without a preferences write per reminder.
+    await prefs.setString(_scheduledIdsKey, jsonEncode(scheduledIds));
     try {
       for (final occurrence in occurrences) {
         if (!isCurrentRequest()) break;
-        // Persist before scheduling so a failed platform operation can be
-        // cancelled on this rebuild or the next app launch.
-        scheduledIds.add(occurrence.id);
-        await prefs.setString(_scheduledIdsKey, jsonEncode(scheduledIds));
         final scheduled = await LocalNotifications.scheduleCourseReminder(
           id: occurrence.id,
           title: occurrence.title,
@@ -275,25 +380,52 @@ class CourseReminderScheduler {
           scheduledAt: occurrence.notifyAt,
           payload: occurrence.payload,
         );
-        if (!scheduled) scheduledIds.remove(occurrence.id);
+        if (!scheduled) {
+          throw StateError('Course reminder could not be scheduled');
+        }
+      }
+      if (isCurrentRequest()) {
+        final verified = (await LocalNotifications.pendingRequests())
+            .where(
+              (request) =>
+                  (request.payload ?? '').startsWith('course_reminder|'),
+            )
+            .toList();
+        if (verified.length != occurrences.length ||
+            !occurrences.every(
+              (item) => verified.any(
+                (request) =>
+                    request.id == item.id && request.payload == item.payload,
+              ),
+            )) {
+          throw StateError('Course reminder appointments are incomplete');
+        }
       }
     } catch (_) {
       await LocalNotifications.cancelIds(scheduledIds);
       await prefs.remove(_scheduledIdsKey);
+      await CourseReminderMode.cancelAndRestore();
       rethrow;
     }
     await prefs.setString(_scheduledIdsKey, jsonEncode(scheduledIds));
     if (!isCurrentRequest()) {
       await _cancelPrevious(prefs);
+      await CourseReminderMode.cancelAndRestore();
       return;
     }
-    if (schedules.isEmpty) {
-      await CourseReminderMode.cancelAndRestore();
-    } else {
-      await CourseReminderMode.replaceSchedule(
-        mode: mode,
-        intervals: plan.intervals,
-      );
+
+    try {
+      if (schedules.isEmpty) {
+        await CourseReminderMode.cancelAndRestore();
+      } else {
+        await CourseReminderMode.replaceSchedule(
+          mode: mode,
+          intervals: plan.intervals,
+        );
+      }
+    } catch (_) {
+      await _cancelPrevious(prefs);
+      rethrow;
     }
 
     await _saveStatus(
@@ -334,6 +466,9 @@ class CourseReminderScheduler {
         updatedAt: DateTime.now(),
       ),
     );
+    if (isCurrentRequest()) {
+      await prefs.setString(_successfulPlanKey, fingerprint);
+    }
   }
 
   /// Reads the immutable published calendar cache without making a network
@@ -407,8 +542,14 @@ class CourseReminderScheduler {
     });
   }
 
-  static Future<void> _cancelPrevious(SharedPreferences prefs) async {
-    if (LocalNotifications.isIOS) {
+  static Future<void> _cancelPrevious(
+    SharedPreferences prefs, {
+    Iterable<int>? pendingIds,
+  }) async {
+    await prefs.remove(_successfulPlanKey);
+    if (pendingIds != null) {
+      await LocalNotifications.cancelIds(pendingIds);
+    } else if (LocalNotifications.isSupported) {
       final pending = await LocalNotifications.pendingRequests();
       await LocalNotifications.cancelIds(
         pending
@@ -492,6 +633,13 @@ class CourseReminderScheduler {
   }
 
   static int _positiveId(String value) => value.hashCode & 0x7fffffff;
+}
+
+class _ReminderBatch {
+  final String userId;
+  bool active = true;
+  bool requested = false;
+  _ReminderBatch(this.userId);
 }
 
 class CourseReminderPlan {

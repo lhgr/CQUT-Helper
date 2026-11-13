@@ -67,6 +67,7 @@ class ScheduleRecentChangeDetector {
     if (encryptedPassword == null || encryptedPassword.isEmpty) return [];
 
     final prefs = await SharedPreferences.getInstance();
+    final selection = weekLoader.selectionVersion;
     final changed = <ScheduleWeekChange>[];
     final removedStableKeys = <String>{};
     var forceScanRemaining = false;
@@ -176,6 +177,10 @@ class ScheduleRecentChangeDetector {
         );
 
         final wInt = int.tryParse(afterData.weekNum!) ?? 0;
+        if (selection != weekLoader.selectionVersion ||
+            weekLoader.userId != userId) {
+          break;
+        }
         getWeekCache()[wInt] = afterData;
 
         if (beforeJson != null) {

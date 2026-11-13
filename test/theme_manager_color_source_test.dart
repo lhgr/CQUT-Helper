@@ -1,10 +1,39 @@
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
+import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  tearDown(WidgetUpdater.resetDebugOverrides);
+
+  test('initial theme is ready before explicit widget publication', () async {
+    SharedPreferences.setMockInitialValues({'theme_mode': 'dark'});
+    WidgetUpdater.debugIsAndroidOverride = true;
+    WidgetUpdater.debugIsIOSOverride = false;
+    final publications = <Map<String, Object?>>[];
+    WidgetUpdater.debugMethodInvoker = (method, arguments) async {
+      publications.add(arguments);
+    };
+    final manager = ThemeManager();
+
+    await manager.init();
+
+    expect(manager.themeMode, ThemeMode.dark);
+    expect(publications, isEmpty);
+    expect(await manager.syncWidgetTheme(), WidgetUpdateResult.accepted);
+    expect(publications.single['themeMode'], 'dark');
+    expect(publications.single['trigger'], 'init');
+
+    await manager.setThemeMode(ThemeMode.light);
+
+    expect(publications.last['themeMode'], 'light');
+    expect(publications.last['trigger'], 'app_theme_changed');
+    expect(publications, hasLength(2));
+  });
+
   test('removing the timetable background switches to system colors', () async {
     SharedPreferences.setMockInitialValues({
       ScheduleSettingsManager.backgroundImagePathKey: 'background.jpg',
