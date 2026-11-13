@@ -57,6 +57,9 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   const secure = MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
   setUp(() {
+    // The first construction selects the host implementation (including Linux
+    // on CI), so initialize the facade before installing the test platform.
+    Workmanager();
     original = WorkmanagerPlatform.instance;
     jobs = _Jobs();
     WorkmanagerPlatform.instance = jobs;
@@ -87,6 +90,14 @@ void main() {
   test('resume keeps pending daily and immediate jobs; account changes replace them', () async {
     await ScheduleUpdateWorker.syncFromPreferences();
     final first = Map<String, int>.of(jobs.pending);
+    expect(
+      first.keys,
+      unorderedEquals([
+        'academic_calendar_poll_daily',
+        'schedule_notice_poll_task_immediate',
+        'schedule_notice_poll_task_daily',
+      ]),
+    );
     jobs.cancelled.clear();
     jobs.requests.clear();
     await ScheduleUpdateWorker.syncFromPreferences();
