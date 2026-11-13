@@ -90,15 +90,23 @@ void main() {
 
   for (final recovers in [false, true]) {
     test(
-      'notice payload retry keeps one root and validated recovery=$recovers',
+      recovers
+          ? 'notice connection timeout recovers only after validated response'
+          : 'notice invalid payload stops without retry or success evidence',
       () async {
         var calls = 0;
         final api = NoticeApi(
           accessEnabled: () async => true,
           dioFactory: (baseUrl) =>
               Dio(BaseOptions(baseUrl: baseUrl))
-                ..httpClientAdapter = _ResponseAdapter((_) {
+                ..httpClientAdapter = _ResponseAdapter((options) {
                   calls++;
+                  if (recovers && calls == 1) {
+                    return DioException(
+                      requestOptions: options,
+                      type: DioExceptionType.connectionTimeout,
+                    );
+                  }
                   return {
                     'success': true,
                     'data': {
@@ -120,14 +128,17 @@ void main() {
           await expectLater(future, throwsA(isA<NoticeApiResponseException>()));
         }
         final rows = await records();
-        final root = rows.singleWhere((row) => row['kind'] == 'incident');
-        expect(root['attempts'], recovers ? 1 : 2);
-        expect(root['errorCategory'], 'DATA_PARSE_FAILED');
-        expect((root['fields'] as Map)['validation_failed'], isTrue);
-        expect(
-          rows.where((row) => row['kind'] == 'recovery'),
-          hasLength(recovers ? 1 : 0),
-        );
+        expect(calls, recovers ? 2 : 1);
+        final incidents = rows.where((row) => row['kind'] == 'incident');
+        if (recovers) {
+          expect(incidents, isEmpty);
+        } else {
+          final root = incidents.single;
+          expect(root['attempts'], 1);
+          expect(root['errorCategory'], 'DATA_PARSE_FAILED');
+          expect((root['fields'] as Map)['validation_failed'], isTrue);
+        }
+        expect(rows.where((row) => row['kind'] == 'recovery'), isEmpty);
         final successes = rows
             .where(
               (row) => (row['fields'] as Map?)?['network_validated'] == true,
@@ -135,6 +146,15 @@ void main() {
             .toList();
         expect(successes, hasLength(recovers ? 1 : 0));
         if (recovers) {
+          expect(successes.single['kind'], 'operation_outcome');
+          expect(successes.single['outcome'], 'succeeded');
+          final starts = logger.recent.where(
+            (event) => event.message == '请求开始',
+          );
+          expect(starts.map((event) => event.fields?['attempt']).toList(), [
+            1,
+            2,
+          ]);
           expect(successes.single['stage'], 'service_response');
           expect((successes.single['fields'] as Map)['service'], 'NoticeApi');
         }

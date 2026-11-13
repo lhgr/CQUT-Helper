@@ -567,7 +567,7 @@ void main() {
     },
   );
 
-  test('notice API immediate retry records one terminal summary', () async {
+  test('notice API HTTP failure stops with one terminal summary', () async {
     SharedPreferences.setMockInitialValues({});
     final temporary = await Directory.systemTemp.createTemp(
       'cqut-notice-network-',
@@ -608,13 +608,15 @@ void main() {
       final decisions = rows
           .where((row) => row['kind'] == 'retry_decision')
           .toList();
-      expect(adapter.attempts, 2);
+      expect(adapter.attempts, 1);
       expect(incidents, hasLength(1));
-      expect(incidents.single['attempts'], 2);
+      expect(incidents.single['attempts'], 1);
+      expect(incidents.single['errorCategory'], 'HTTP_SERVER_ERROR');
+      expect((incidents.single['fields'] as Map)['status_code'], 502);
       expect(attempts, isEmpty);
       expect(decisions, isEmpty);
       expect(incidents.single['stackTrace'], isEmpty);
-      expect((incidents.single['fields'] as Map)['retry_count'], 1);
+      expect((incidents.single['fields'] as Map)['retry_count'], 0);
       expect(rows.where((row) => row['kind'] == 'recovery'), isEmpty);
       expect(jsonEncode(rows), isNot(contains('private-password')));
       expect(jsonEncode(rows), isNot(contains('20260001')));
