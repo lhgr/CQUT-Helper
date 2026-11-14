@@ -549,11 +549,12 @@ class TodayCourseWidgetProvider : AppWidgetProvider() {
           val beforeToggle = WidgetRefreshRenderStateStore.capture(context)
           val currentOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
           val nextOffset = if (currentOffset == 0) 1 else 0
-          WidgetRefreshCoordinator.applyDayToggleRender(
+          WidgetRefreshCoordinator.applyInstanceConfigRender(
             previous = previous,
             current = beforeToggle,
-            saveDayOffset = {
+            saveConfig = {
               WidgetInstanceConfigStore.saveDayOffset(context, appWidgetId, nextOffset)
+              true
             },
             fullUpdate = {
               // Date or other widget state drift must rebind adapters before the

@@ -158,7 +158,8 @@ struct WidgetSnapshot: Decodable {
     if let day = day(date) {
       if day.kind == "missing_source" { return "补课课表加载失败" }
       if day.kind == "holiday" {
-        return (day.label ?? "").isEmpty ? "今日放假" : "今日放假 · \(day.label!)"
+        let label = (day.label ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return label.isEmpty ? "放假" : "放假 · \(label)"
       }
       if WidgetClock.calendar.isDate(date, inSameDayAs: now) {
         return day.events.isEmpty ? "今天没有课程" : "今日无待上课程"

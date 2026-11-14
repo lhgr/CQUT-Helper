@@ -66,6 +66,30 @@ class TodayWidgetDataTest {
   }
 
   @Test
+  fun `all courses started is different from a day without courses`() {
+    val course = TodayWidgetData.CourseItem(
+      eventId = "morning", courseKey = "数学", name = "数学", campus = "", classroom = "",
+      teacher = "", periods = "第1节", colorIndex = 0, sortOrder = 1,
+      startMinuteOfDay = 480,
+    )
+    val started = TodayWidgetData.courseDayFor(
+      0, listOf(course), beijingCalendar(2026, Calendar.DECEMBER, 31, 8).timeInMillis,
+    )
+    val empty = TodayWidgetData.courseDayFor(
+      0, emptyList(), beijingCalendar(2026, Calendar.DECEMBER, 31, 8).timeInMillis,
+    )
+    assertTrue(started.courses.isEmpty())
+    assertTrue(started.hadCourses)
+    assertFalse(empty.hadCourses)
+    assertEquals("今日无待上课程", TodayWidgetData.emptyStateTextFor(
+      TodayWidgetData.DayScheduleAvailability.COVERED, hadCourses = started.hadCourses,
+    ))
+    assertEquals("今天没有课程", TodayWidgetData.emptyStateTextFor(
+      TodayWidgetData.DayScheduleAvailability.COVERED, hadCourses = empty.hadCourses,
+    ))
+  }
+
+  @Test
   fun `enabling polling cannot conceal an expired successful sync`() {
     val day = 24L * 60 * 60 * 1000
     val lastSync = day

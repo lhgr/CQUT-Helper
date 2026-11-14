@@ -13,9 +13,8 @@ import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/utils/diagnostic_operation.dart';
-import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
-import 'package:cqut_helper/utils/widget_calendar_projection.dart';
+import 'package:cqut_helper/manager/widget_calendar_projection_store.dart';
 
 class ScheduleApi {
   final ApiService _apiService = ApiService();
@@ -586,12 +585,10 @@ class ScheduleApi {
   }
 
   String? _effectiveWidgetWeek(SharedPreferences prefs, String userId) =>
-      prefs.getString(_widgetWeekKey(userId))?.trim() ??
-      prefs.getString(_lastViewedWeekKey(userId))?.trim();
+      WidgetCalendarProjectionStore.pinnedValue(prefs, userId, 'week');
 
   String? _effectiveWidgetTerm(SharedPreferences prefs, String userId) =>
-      prefs.getString(_widgetTermKey(userId))?.trim() ??
-      prefs.getString(_lastViewedTermKey(userId))?.trim();
+      WidgetCalendarProjectionStore.pinnedValue(prefs, userId, 'term');
 
   Future<({bool visible, bool changed})> _writeWidgetProjectionIfPinned({
     required SharedPreferences prefs,
@@ -605,108 +602,45 @@ class ScheduleApi {
     }
     final pinnedWeek = _effectiveWidgetWeek(prefs, userId);
     final pinnedTerm = _effectiveWidgetTerm(prefs, userId);
-    if (!isWidgetProjectionVisible(
+    final inVisibleWindow = isWidgetProjectionVisible(
       yearTerm: yearTerm,
       weekNum: weekNum,
       pinnedYearTerm: pinnedTerm,
       pinnedWeekNum: pinnedWeek,
-    )) {
+    );
+    final calendar = WidgetCalendarProjectionStore.readCalendar(
+      prefs,
+      yearTerm,
+    );
+    final isCalendarSource =
+        pinnedTerm == yearTerm &&
+        WidgetCalendarProjectionStore.containsCalendarSource(
+          schedule,
+          calendar,
+        );
+    if (pinnedWeek == null || (!inVisibleWindow && !isCalendarSource)) {
       return (visible: false, changed: false);
     }
-    final scheduleKey = _scheduleKey(userId, yearTerm, weekNum);
-    final scheduleJson = json.encode(schedule.toJson());
-    final scheduleChanged = prefs.getString(scheduleKey) != scheduleJson;
-    if (scheduleChanged) {
-      await prefs.setString(scheduleKey, scheduleJson);
+    var scheduleChanged = false;
+    if (inVisibleWindow) {
+      final scheduleKey = _scheduleKey(userId, yearTerm, weekNum);
+      final scheduleJson = json.encode(schedule.toJson());
+      scheduleChanged = prefs.getString(scheduleKey) != scheduleJson;
+      if (scheduleChanged) await prefs.setString(scheduleKey, scheduleJson);
     }
-    final calendarChanged = await _writeCalendarProjection(
+    final calendarChanged = await WidgetCalendarProjectionStore.rebuild(
       prefs: prefs,
       userId: userId,
       yearTerm: yearTerm,
       centerWeek: pinnedWeek,
-      currentSchedule: schedule,
+      calendar: calendar,
+      customizeSchedules: (schedules) => ScheduleCustomizationManager.instance
+          .applyToSchedules(userId: userId, schedules: schedules),
     );
     return (visible: true, changed: scheduleChanged || calendarChanged);
   }
 
-  Future<bool> _writeCalendarProjection({
-    required SharedPreferences prefs,
-    required String userId,
-    required String yearTerm,
-    required String? centerWeek,
-    required ScheduleData currentSchedule,
-  }) async {
-    final schedules = <ScheduleData>[currentSchedule];
-    final adjacentSchedules = <ScheduleData>[];
-    final seenWeeks = <String>{_norm(currentSchedule.weekNum)};
-    for (final week in _projectionWeeks(centerWeek)) {
-      if (!seenWeeks.add(week)) continue;
-      final entry = await ScheduleCacheDatabase.instance.load(
-        userId: userId,
-        yearTerm: yearTerm,
-        weekNum: week,
-      );
-      if (entry == null) continue;
-      try {
-        final decoded = json.decode(entry.rawJson);
-        if (decoded is! Map) continue;
-        final source = ScheduleData.fromJson(decoded.cast<String, dynamic>());
-        adjacentSchedules.add(source);
-      } catch (error, stackTrace) {
-        // A corrupt adjacent week must not prevent the visible projection
-        // from being refreshed from the valid week we just saved.
-        AppLogger.I.logOperationFailure(
-          'ScheduleApi',
-          'adjacent cache decode failed',
-          error: error,
-          stackTrace: stackTrace,
-          level: LogLevel.warn,
-          fields: {
-            'stage': 'widget_projection_cache_decode',
-            'outcome': 'adjacent_week_ignored',
-            'week': week,
-            'term': yearTerm,
-          },
-        );
-      }
-    }
-    try {
-      schedules.addAll(
-        await ScheduleCustomizationManager.instance.applyToSchedules(
-          userId: userId,
-          schedules: adjacentSchedules,
-        ),
-      );
-    } catch (error, stackTrace) {
-      // The current week is already customized and can still be projected.
-      AppLogger.I.logOperationFailure(
-        'ScheduleApi',
-        'adjacent customization failed',
-        error: error,
-        stackTrace: stackTrace,
-        level: LogLevel.warn,
-        fields: const {
-          'stage': 'widget_projection_customize',
-          'outcome': 'current_week_preserved',
-        },
-      );
-    }
-    final calendar = _readCachedAcademicCalendar(prefs, yearTerm);
-    return await _storeCalendarProjection(
-      prefs: prefs,
-      userId: userId,
-      yearTerm: yearTerm,
-      schedules: schedules,
-      calendar: calendar,
-    );
-  }
-
-  /// Rebuilds the native-widget projection after a calendar revision changes.
-  ///
-  /// The source date of a teaching-day rule may be several weeks away from
-  /// the currently pinned week, so this scans the verified term cache and
-  /// selects every week containing either the visible window or a referenced
-  /// source date.
+  /// Uses the same source selection as ordinary refreshes and customization.
   Future<bool> rebuildWidgetCalendarProjection({
     required AcademicCalendarSnapshot calendar,
     String? userId,
@@ -726,95 +660,15 @@ class ScheduleApi {
         calendar.yearTerm != term) {
       return false;
     }
-
-    final sourceDates = calendar.days
-        .where((day) => day.isTeachingDay && day.scheduleDate != null)
-        .map((day) => academicCalendarDateKey(day.scheduleDate!))
-        .toSet();
-    final visibleWeeks = _projectionWeeks(centerWeek);
-    final sourceSchedules = <ScheduleData>[];
-    final entries = await ScheduleCacheDatabase.instance.loadAllForUser(
-      account,
-      yearTerm: term,
-    );
-    for (final entry in entries) {
-      if (!visibleWeeks.contains(_norm(entry.weekNum))) {
-        final schedule = _decodeCachedSchedule(entry.rawJson);
-        if (schedule == null ||
-            !_scheduleContainsAnyDate(schedule, sourceDates)) {
-          continue;
-        }
-        sourceSchedules.add(schedule);
-        continue;
-      }
-      final schedule = _decodeCachedSchedule(entry.rawJson);
-      if (schedule == null) continue;
-      sourceSchedules.add(schedule);
-    }
-
-    final schedules = await ScheduleCustomizationManager.instance
-        .applyToSchedules(userId: account, schedules: sourceSchedules);
-
-    await _storeCalendarProjection(
+    return WidgetCalendarProjectionStore.rebuild(
       prefs: prefs,
       userId: account,
       yearTerm: term,
-      schedules: schedules,
+      centerWeek: centerWeek,
       calendar: calendar,
+      customizeSchedules: (schedules) => ScheduleCustomizationManager.instance
+          .applyToSchedules(userId: account, schedules: schedules),
     );
-    return true;
-  }
-
-  ScheduleData? _decodeCachedSchedule(String rawJson) {
-    try {
-      final decoded = json.decode(rawJson);
-      if (decoded is Map) {
-        return ScheduleData.fromJson(decoded.cast<String, dynamic>());
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  bool _scheduleContainsAnyDate(ScheduleData schedule, Set<String> dates) {
-    if (dates.isEmpty) return false;
-    return academicCalendarScheduleDates(schedule).values
-        .any((date) => dates.contains(academicCalendarDateKey(date)));
-  }
-
-  Future<bool> _storeCalendarProjection({
-    required SharedPreferences prefs,
-    required String userId,
-    required String yearTerm,
-    required Iterable<ScheduleData> schedules,
-    required AcademicCalendarSnapshot? calendar,
-  }) async {
-    final key = _widgetCalendarProjectionKey(userId);
-    final projection = WidgetCalendarProjection.build(
-      yearTerm: yearTerm,
-      schedules: schedules,
-      calendar: calendar,
-    );
-    final previous = prefs.getString(key);
-    if (WidgetCalendarProjection.hasSameContent(previous, projection)) {
-      return false;
-    }
-    await prefs.setString(key, json.encode(projection));
-    return true;
-  }
-
-  AcademicCalendarSnapshot? _readCachedAcademicCalendar(
-    SharedPreferences prefs,
-    String yearTerm,
-  ) {
-    final raw = prefs.getString('academic_calendar_snapshot_v1_$yearTerm');
-    if (raw == null || raw.isEmpty) return null;
-    try {
-      final decoded = json.decode(raw);
-      if (decoded is Map<String, dynamic>) {
-        return AcademicCalendarSnapshot.fromJson(decoded);
-      }
-    } catch (_) {}
-    return null;
   }
 
   Future<void> _removeStaleWidgetProjections({
@@ -848,17 +702,6 @@ class ScheduleApi {
     return _projectionWeeks(pinnedWeekNum).contains(weekNum);
   }
 
-  static Set<String> _projectionWeeks(String? centerWeek) {
-    final parsed = int.tryParse(centerWeek ?? '');
-    if (parsed == null) {
-      return centerWeek == null || centerWeek.isEmpty
-          ? const <String>{}
-          : <String>{centerWeek};
-    }
-    return <String>{
-      if (parsed > 1) (parsed - 1).toString(),
-      parsed.toString(),
-      (parsed + 1).toString(),
-    };
-  }
+  static Set<String> _projectionWeeks(String? centerWeek) =>
+      WidgetCalendarProjectionStore.projectionWeeks(centerWeek);
 }

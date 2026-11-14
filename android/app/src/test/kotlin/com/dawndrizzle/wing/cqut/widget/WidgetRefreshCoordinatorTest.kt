@@ -131,12 +131,13 @@ class WidgetRefreshCoordinatorTest {
         var dayOffset = currentOffset
         val nextOffset = 1 - currentOffset
 
-        WidgetRefreshCoordinator.applyDayToggleRender(
+        WidgetRefreshCoordinator.applyInstanceConfigRender(
           previous = storedState,
           current = current,
-          saveDayOffset = {
+          saveConfig = {
             dayOffset = nextOffset
             events += "saved:$dayOffset"
+            true
           },
           fullUpdate = { events += "full:$dayOffset" },
           partialUpdate = { events += "partial:$dayOffset" },
@@ -156,12 +157,13 @@ class WidgetRefreshCoordinatorTest {
       var dayOffset = currentOffset
       val nextOffset = 1 - currentOffset
 
-      WidgetRefreshCoordinator.applyDayToggleRender(
+      WidgetRefreshCoordinator.applyInstanceConfigRender(
         previous = current,
         current = current.copy(),
-        saveDayOffset = {
+        saveConfig = {
           dayOffset = nextOffset
           events += "saved:$dayOffset"
+          true
         },
         fullUpdate = { events += "full:$dayOffset" },
         partialUpdate = { events += "partial:$dayOffset" },
@@ -191,12 +193,13 @@ class WidgetRefreshCoordinatorTest {
     val events = mutableListOf<String>()
     val offsets = mutableMapOf(7 to 0, 9 to 1)
 
-    WidgetRefreshCoordinator.applyDayToggleRender(
+    WidgetRefreshCoordinator.applyInstanceConfigRender(
       previous = previous,
       current = current,
-      saveDayOffset = {
+      saveConfig = {
         offsets[7] = 1
         events += "saved:${offsets[7]}:${offsets[9]}"
+        true
       },
       fullUpdate = { events += "full:${offsets[7]}:${offsets[9]}" },
       partialUpdate = { events += "partial:${offsets[7]}:${offsets[9]}" },
@@ -204,5 +207,53 @@ class WidgetRefreshCoordinatorTest {
     )
 
     assertEquals(listOf("saved:1:1", "full:1:1"), events)
+  }
+
+  @Test
+  fun `instance settings save repairs other widgets before recording global state`() {
+    val previous = WidgetRefreshRenderState("2026-11-15", "list:1:NORMAL|tiny:2:NORMAL", "course-a")
+    val changes = listOf(
+      previous.copy(logicalDate = "2026-11-16"),
+      previous.copy(presentationSignature = "list:1:NORMAL|tiny:2:STALE"),
+      previous.copy(contentSignature = "course-b"),
+    )
+    changes.forEach { beforeSave ->
+      val events = mutableListOf<String>()
+      var savedTheme = "LIGHT"
+      val saved = WidgetRefreshCoordinator.applyInstanceConfigRender(
+        previous = previous,
+        current = beforeSave,
+        saveConfig = {
+          savedTheme = "DARK"
+          events += "saved"
+          true
+        },
+        fullUpdate = { events += "all:$savedTheme" },
+        partialUpdate = { events += "one" },
+        recordRenderedState = { events += "record" },
+      )
+
+      assertTrue(saved)
+      assertEquals(listOf("saved", "all:DARK"), events)
+    }
+  }
+
+  @Test
+  fun `failed instance settings save never renders or records a global state`() {
+    val previous = WidgetRefreshRenderState("2026-11-15", "NORMAL", "course-a")
+    listOf(previous, previous.copy(logicalDate = "2026-11-16")).forEach { current ->
+      val events = mutableListOf<String>()
+      val saved = WidgetRefreshCoordinator.applyInstanceConfigRender(
+        previous = previous,
+        current = current,
+        saveConfig = { events += "save_failed"; false },
+        fullUpdate = { events += "all" },
+        partialUpdate = { events += "one" },
+        recordRenderedState = { events += "record" },
+      )
+
+      assertFalse(saved)
+      assertEquals(listOf("save_failed"), events)
+    }
   }
 }

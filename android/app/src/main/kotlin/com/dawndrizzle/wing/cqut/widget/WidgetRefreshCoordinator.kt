@@ -20,33 +20,35 @@ object WidgetRefreshCoordinator {
   internal fun <T> withRefreshLock(block: () -> T): T = synchronized(refreshLock, block)
 
   /**
-   * Applies a day change without marking an outstanding global refresh as
-   * rendered. [current] is captured before the target widget's day offset is
-   * changed, so any date, presentation, or content drift still selects the
-   * full repair path after the new offset has been saved.
+   * Applies an instance configuration without hiding a pending global repair.
+   * Capture [current] before saving, then render all instances if another
+   * widget's date, presentation, or content has drifted in the meantime.
    */
-  internal fun applyDayToggleRender(
+  internal fun applyInstanceConfigRender(
     previous: WidgetRefreshRenderState?,
     current: WidgetRefreshRenderState,
-    saveDayOffset: () -> Unit,
+    saveConfig: () -> Boolean,
     fullUpdate: () -> Unit,
     partialUpdate: () -> Unit,
     recordRenderedState: () -> Unit,
-  ) {
+  ): Boolean {
     val needsFullUpdate = WidgetRefreshRenderStateStore.shouldRefresh(previous, current)
-    saveDayOffset()
+    if (!saveConfig()) return false
     if (needsFullUpdate) {
       fullUpdate()
     } else {
       partialUpdate()
       recordRenderedState()
     }
+    return true
   }
 
   fun refreshAndRepair(
     context: Context,
     reason: String,
+    bootCompleted: Boolean = false,
   ) {
+    ScheduleWidgetRefreshWork.recoverInterruptedRefresh(context, bootCompleted)
     WidgetNativeLog.withOperation("widget_refresh") {
       synchronized(refreshLock) {
         WidgetRenderSnapshot.withSnapshot {
@@ -102,25 +104,28 @@ object WidgetRefreshCoordinator {
   fun repairIfDue(
     context: Context,
     reason: String,
-  ): Boolean = WidgetNativeLog.withOperation("widget_repair") {
-    synchronized(refreshLock) {
-      if (!hasActiveWidgets(context)) {
-        cancelAll(context, reason)
-        return@withOperation false
-      }
-      WidgetRenderSnapshot.withSnapshot {
-        val current = WidgetRefreshRenderStateStore.capture(context)
-        val previous = WidgetRefreshRenderStateStore.load(context)
-        if (WidgetRefreshRenderStateStore.shouldRefresh(previous, current)) {
-          refreshAndRepair(context, reason, current, previous)
-          return@withOperation true
+  ): Boolean {
+    ScheduleWidgetRefreshWork.recoverInterruptedRefresh(context)
+    return WidgetNativeLog.withOperation("widget_repair") {
+      synchronized(refreshLock) {
+        if (!hasActiveWidgets(context)) {
+          cancelAll(context, reason)
+          return@withOperation false
         }
-        WidgetNativeLog.debug(
-          context,
-          "event=repair_not_due reason=$reason logicalDate=${current.logicalDate}",
-        )
-        ensureScheduled(context, reason)
-        false
+        WidgetRenderSnapshot.withSnapshot {
+          val current = WidgetRefreshRenderStateStore.capture(context)
+          val previous = WidgetRefreshRenderStateStore.load(context)
+          if (WidgetRefreshRenderStateStore.shouldRefresh(previous, current)) {
+            refreshAndRepair(context, reason, current, previous)
+            return@withOperation true
+          }
+          WidgetNativeLog.debug(
+            context,
+            "event=repair_not_due reason=$reason logicalDate=${current.logicalDate}",
+          )
+          ensureScheduled(context, reason)
+          false
+        }
       }
     }
   }

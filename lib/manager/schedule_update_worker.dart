@@ -60,6 +60,19 @@ class ScheduleUpdateWorker {
   static bool? debugIsAndroidOverride;
   static bool get _isAndroid => debugIsAndroidOverride ?? Platform.isAndroid;
 
+  @visibleForTesting
+  static ScheduleApi Function()? debugForegroundScheduleApiFactory;
+
+  @visibleForTesting
+  static void debugResetForegroundState() {
+    _foregroundGeneration++;
+    _foregroundSync = null;
+    _foregroundUser = null;
+    _lastForegroundUser = null;
+    _lastForegroundSyncAt = null;
+    debugForegroundScheduleApiFactory = null;
+  }
+
   static String pendingKeyForUser(String userId) =>
       scheduleUpdateWorkerPendingKeyForUser(userId);
 
@@ -358,6 +371,19 @@ class ScheduleUpdateWorker {
         error: error,
         stackTrace: stackTrace,
       );
+    } finally {
+      // Publish after the entire batch (including reminder completion), even
+      // when the optional network or calendar checks did not succeed.
+      final prefs = await SharedPreferences.getInstance();
+      bool isCurrentAccount() =>
+          generation == _foregroundGeneration &&
+          (prefs.getString('account') ?? '').trim() == userId;
+      if (isCurrentAccount()) {
+        await WidgetUpdater.updateTodayWidget(
+          trigger: 'foreground_sync_complete',
+        );
+        if (isCurrentAccount()) ScheduleUpdateIntents.requestScheduleUpdated();
+      }
     }
   }
 
@@ -387,7 +413,8 @@ class ScheduleUpdateWorker {
       if (encryptedPassword.isNotEmpty) {
         try {
           await loadCurrentWeekAndUpdateWidgetPin(
-            scheduleApi: ScheduleApi(),
+            scheduleApi:
+                debugForegroundScheduleApiFactory?.call() ?? ScheduleApi(),
             userId: userId,
             encryptedPassword: encryptedPassword,
             notifyWidget: false,
@@ -411,7 +438,6 @@ class ScheduleUpdateWorker {
       }
       if (!isCurrentAccount()) return;
       await CourseReminderScheduler.rescheduleForUser(userId);
-      ScheduleUpdateIntents.requestScheduleUpdated();
     } catch (error, stackTrace) {
       AppLogger.I.warn(
         'ScheduleUpdateWorker',

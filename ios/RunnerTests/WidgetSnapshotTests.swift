@@ -5,7 +5,7 @@ final class WidgetSnapshotTests: XCTestCase {
   private func snapshot(state: String = "normal", user: String = "student",
     lastSuccessfulAt: Double? = nil, kind: String = "normal",
     events: [[String: Any]] = [], clocks: [[String: Any]] = [], schema: Int = 1,
-    generatedAt: Double? = nil
+    generatedAt: Double? = nil, label: String = ""
   ) throws -> WidgetSnapshot {
     let json: [String: Any] = [
       "schemaVersion": schema,
@@ -13,7 +13,7 @@ final class WidgetSnapshotTests: XCTestCase {
       "activeUserId": user,
       "yearTerm": "2026-2027-1", "pinnedWeek": 1,
       "calendarProjection": ["schema_version": 1, "days": [
-        ["date": "2026-11-05", "kind": kind, "events": events]
+        ["date": "2026-11-05", "kind": kind, "label": label, "events": events]
       ]],
       "sessionClocks": clocks, "courseColorMap": ["高等数学": 7], "themeMode": "system",
       "refresh": ["state": state, "lastSuccessfulAt": lastSuccessfulAt.map { $0 as Any } ?? NSNull(),
@@ -64,7 +64,9 @@ final class WidgetSnapshotTests: XCTestCase {
   func testCalendarKindsAndUncoveredDate() throws {
     let date = WidgetClock.parseDate("2026-11-05")!
     XCTAssertEqual(try snapshot(kind: "missing_source").emptyText(on: date, now: date), "补课课表加载失败")
-    XCTAssertEqual(try snapshot(kind: "holiday").emptyText(on: date, now: date), "今日放假")
+    XCTAssertEqual(try snapshot(kind: "holiday").emptyText(on: date, now: date), "放假")
+    XCTAssertEqual(try snapshot(kind: "holiday", label: " 校庆 ")
+      .emptyText(on: date, now: date.addingTimeInterval(-86400)), "放假 · 校庆")
     XCTAssertEqual(try snapshot().emptyText(on: date, now: date), "今天没有课程")
     XCTAssertEqual(try snapshot().emptyText(on: date.addingTimeInterval(86400), now: date), "该日期课表未获取")
   }

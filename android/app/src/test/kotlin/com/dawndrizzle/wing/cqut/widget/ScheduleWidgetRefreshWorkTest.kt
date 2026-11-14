@@ -41,6 +41,88 @@ class ScheduleWidgetRefreshWorkTest {
   }
 
   @Test
+  fun `starting another process does not fail a live refresh lease`() {
+    assertEquals(WidgetManualRefreshRecovery.NONE, recovery(createdInProcess = false))
+  }
+
+  @Test
+  fun `timeout recovery retains ownership for a late success`() {
+    assertEquals(
+      WidgetManualRefreshRecovery.TIMED_OUT,
+      recovery(now = 1_000L + 15L * 60 * 1_000L),
+    )
+    assertEquals(WidgetManualRefreshRecovery.NONE, recovery(state = "idle"))
+  }
+
+  @Test
+  fun `new boot is detected before the boot broadcast arrives`() {
+    assertEquals(
+      WidgetManualRefreshRecovery.REBOOTED,
+      recovery(currentBootCount = 8, bootCompleted = false),
+    )
+  }
+
+  @Test
+  fun `delayed boot broadcast preserves a lease created during the current boot`() {
+    assertEquals(
+      WidgetManualRefreshRecovery.NONE,
+      recovery(bootCompleted = true, createdInProcess = false),
+    )
+    assertEquals(
+      WidgetManualRefreshRecovery.NONE,
+      recovery(leaseBootCount = null, currentBootCount = null, bootCompleted = true, createdInProcess = true),
+    )
+  }
+
+  @Test
+  fun `boot broadcast repairs an old lease without a boot generation`() {
+    assertEquals(
+      WidgetManualRefreshRecovery.REBOOTED,
+      recovery(leaseBootCount = null, bootCompleted = true, createdInProcess = false),
+    )
+  }
+
+  @Test
+  fun `an obsolete token cannot fail a replacement refresh or a completed refresh`() {
+    assertEquals(
+      WidgetManualRefreshRecovery.NONE,
+      recovery(accountToken = "replacement", currentBootCount = 8),
+    )
+    assertEquals(
+      WidgetManualRefreshRecovery.NONE,
+      recovery(accountToken = null, now = Long.MAX_VALUE),
+    )
+    assertEquals(
+      WidgetManualRefreshRecovery.NONE,
+      recovery(state = "idle", currentBootCount = 8),
+    )
+    assertEquals(
+      WidgetManualRefreshRecovery.NONE,
+      recovery(state = "failed", currentBootCount = 8),
+    )
+  }
+
+  private fun recovery(
+    accountToken: String? = "refresh-1",
+    state: String = "loading",
+    leaseBootCount: Int? = 7,
+    currentBootCount: Int? = 7,
+    bootCompleted: Boolean = false,
+    createdInProcess: Boolean = false,
+    now: Long = 1_100L,
+  ): WidgetManualRefreshRecovery = ScheduleWidgetRefreshWork.recoveryFor(
+    refreshId = "refresh-1",
+    accountToken = accountToken,
+    state = state,
+    startedAt = 1_000L,
+    leaseBootCount = leaseBootCount,
+    currentBootCount = currentBootCount,
+    bootCompleted = bootCompleted,
+    createdInProcess = createdInProcess,
+    now = now,
+  )
+
+  @Test
   fun `display fingerprint changes only with visible schedule input`() {
     val original = TodayWidgetData.displayedScheduleFingerprint("u", "t", "1", "{\"events\":[]}")
     val same = TodayWidgetData.displayedScheduleFingerprint("u", "t", "1", "{\"events\":[]}")

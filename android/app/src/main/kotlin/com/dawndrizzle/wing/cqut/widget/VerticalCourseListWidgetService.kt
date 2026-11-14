@@ -7,6 +7,7 @@ import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.dawndrizzle.wing.cqut.R
+import com.dawndrizzle.wing.cqut.widget.WidgetNavigationPendingIntent.putNavigationExtras
 
 class VerticalCourseListWidgetService : RemoteViewsService() {
   override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
@@ -33,7 +34,7 @@ private class VerticalCourseListRemoteViewsFactory(
   private val appWidgetId: Int,
   private val dayOffset: Int,
 ) : RemoteViewsService.RemoteViewsFactory {
-  private var items: List<TodayWidgetData.CourseItem> = emptyList()
+  @Volatile private var courseDay = TodayWidgetData.CourseDay("", dayOffset, emptyList())
 
   override fun onCreate() {
     reload()
@@ -44,13 +45,14 @@ private class VerticalCourseListRemoteViewsFactory(
   }
 
   override fun onDestroy() {
-    items = emptyList()
+    courseDay = courseDay.copy(courses = emptyList())
   }
 
-  override fun getCount(): Int = items.size
+  override fun getCount(): Int = courseDay.courses.size
 
   override fun getViewAt(position: Int): RemoteViews {
-    val item = items.getOrNull(position)
+    val renderedDay = courseDay
+    val item = renderedDay.courses.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_vertical_schedule_item)
     val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId)
 
@@ -110,8 +112,7 @@ private class VerticalCourseListRemoteViewsFactory(
     }
 
     val fillInIntent = Intent().apply {
-      putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME, item.name)
-      putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_ID, item.eventId)
+      putNavigationExtras(renderedDay.navigationExtras(item))
     }
     views.setOnClickFillInIntent(R.id.ll_item, fillInIntent)
     return views
@@ -122,7 +123,7 @@ private class VerticalCourseListRemoteViewsFactory(
   override fun getViewTypeCount(): Int = 1
 
   override fun getItemId(position: Int): Long {
-    val item = items.getOrNull(position) ?: return position.toLong()
+    val item = courseDay.courses.getOrNull(position) ?: return position.toLong()
     val stableKey =
       item.eventId?.takeIf { it.isNotBlank() }
         ?: "${item.courseKey}|${item.sortOrder}|${item.periods}"
@@ -132,7 +133,7 @@ private class VerticalCourseListRemoteViewsFactory(
   override fun hasStableIds(): Boolean = true
 
   private fun reload() {
-    items = TodayWidgetData.loadCoursesByDayOffset(context, dayOffset)
+    courseDay = TodayWidgetData.loadCourseDay(context, dayOffset)
   }
 
   private fun courseLocation(item: TodayWidgetData.CourseItem): String {

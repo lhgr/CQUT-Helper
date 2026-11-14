@@ -79,6 +79,18 @@ object TodayWidgetData {
     val startMinuteOfDay: Int? = null,
   )
 
+  internal data class CourseDay(
+    val date: String,
+    val dayOffset: Int,
+    val courses: List<CourseItem>,
+    val hadCourses: Boolean = courses.isNotEmpty(),
+  ) {
+    fun navigationExtras(item: CourseItem): Map<String, Any> =
+      WidgetNavigationPendingIntent.navigationExtras(
+        dayOffset, date, eventName = item.name, eventId = item.eventId,
+      )
+  }
+
   internal data class ScheduleDayMarker(
     val weekDate: String,
     val markedToday: Boolean,
@@ -132,6 +144,28 @@ object TodayWidgetData {
     SimpleDateFormat(pattern, Locale.CHINA).apply {
       timeZone = WIDGET_TIME_ZONE
     }
+
+  internal fun dateForDayOffset(
+    dayOffset: Int,
+    nowMillis: Long = WidgetRenderSnapshot.nowMillis(),
+  ): String = widgetDateFormat("yyyy-MM-dd").format(
+    widgetCalendar(nowMillis).apply { add(Calendar.DAY_OF_YEAR, dayOffset) }.time,
+  )
+
+  internal fun loadCourseDay(context: Context, dayOffset: Int): CourseDay =
+    WidgetRenderSnapshot.withSnapshot {
+      courseDayFor(dayOffset, loadUnfilteredCourses(context, dayOffset))
+    }
+
+  internal fun courseDayFor(
+    dayOffset: Int,
+    courses: List<CourseItem>,
+    nowMillis: Long = WidgetRenderSnapshot.nowMillis(),
+  ): CourseDay = CourseDay(
+    dateForDayOffset(dayOffset, nowMillis), dayOffset,
+    filterStartedCourses(courses, currentMinuteOfDay(widgetCalendar(nowMillis)), dayOffset),
+    hadCourses = courses.isNotEmpty(),
+  )
 
   fun loadHeader(context: Context): Header {
     return loadHeaderByDayOffset(context, 0)
@@ -474,28 +508,28 @@ object TodayWidgetData {
       .coerceAtLeast(0L)
   }
 
-  fun loadCoursesByDayOffset(context: Context, dayOffset: Int): List<CourseItem> {
-    WidgetRenderSnapshot.withSnapshot {
-      val targetDate =
-        widgetCalendar().apply {
-          add(Calendar.DAY_OF_YEAR, dayOffset)
-        }
-      val projectedDay = loadProjectedDay(context, targetDate)
-      val courses = if (projectedDay == null) {
-        // Keep existing users' basic widget usable while the first projection
-        // is being built or after its optional cache has been cleared.
-        val targetData = loadScheduleJsonObjectForDate(context, targetDate)
-          ?: return emptyList()
-        loadCoursesByWeekdayFromSchedule(
-          context,
-          targetData,
-          toMondayBasedWeekday(targetDate).coerceIn(1, 7).toString(),
-        )
-      } else {
-        if (projectedDay.optString("kind", "") == "holiday") return emptyList()
-        loadCoursesFromEvents(context, projectedDay.optJSONArray("events"))
+  fun loadCoursesByDayOffset(context: Context, dayOffset: Int): List<CourseItem> =
+    loadCourseDay(context, dayOffset).courses
+
+  private fun loadUnfilteredCourses(context: Context, dayOffset: Int): List<CourseItem> {
+    val targetDate =
+      widgetCalendar().apply {
+        add(Calendar.DAY_OF_YEAR, dayOffset)
       }
-      return filterStartedCourses(courses, currentMinuteOfDay(), dayOffset)
+    val projectedDay = loadProjectedDay(context, targetDate)
+    return if (projectedDay == null) {
+      // Keep existing users' basic widget usable while the first projection
+      // is being built or after its optional cache has been cleared.
+      val targetData = loadScheduleJsonObjectForDate(context, targetDate)
+        ?: return emptyList()
+      loadCoursesByWeekdayFromSchedule(
+        context,
+        targetData,
+        toMondayBasedWeekday(targetDate).coerceIn(1, 7).toString(),
+      )
+    } else {
+      if (projectedDay.optString("kind", "") == "holiday") return emptyList()
+      loadCoursesFromEvents(context, projectedDay.optJSONArray("events"))
     }
   }
 
@@ -549,10 +583,10 @@ object TodayWidgetData {
       }
       if (projectedDay?.optString("kind", "") == "holiday") {
         val label = projectedDay.optString("label", "").trim()
-        return if (label.isBlank()) "今日放假" else "今日放假 · $label"
+        return if (label.isBlank()) "放假" else "放假 · $label"
       }
       val availability = loadDayScheduleAvailability(context, dayOffset)
-      val hadCourses = dayOffset == 0 && loadCoursesByDayOffset(context, 0).isNotEmpty()
+      val hadCourses = dayOffset == 0 && loadCourseDay(context, 0).hadCourses
       val base = emptyStateTextFor(availability, dayOffset, hadCourses)
       return if (projectedDay?.optString("kind", "") == "teaching_day" &&
         projectedDay.optString("label", "").isNotBlank()

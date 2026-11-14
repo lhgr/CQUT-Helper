@@ -23,7 +23,7 @@ class WidgetNavigationRequest {
 
   DateTime targetDate({DateTime? now}) {
     if (date != null) return date!;
-    final today = now ?? DateTime.now();
+    final today = (now ?? DateTime.now()).toUtc().add(const Duration(hours: 8));
     return DateTime(today.year, today.month, today.day + dayOffset);
   }
 

@@ -160,7 +160,7 @@ class WidgetConfigurationActivity : Activity() {
       content.addView(sectionTitle("准时刷新"))
       exactAlarmStatusText =
         TextView(this).apply {
-          text = "尚未允许精确闹钟，课程结束和跨日刷新仍有系统兜底，但可能延迟。"
+          text = "尚未允许精确闹钟，课程开课和跨日刷新仍有系统兜底，但可能延迟。"
           textSize = 13f
           alpha = 0.72f
           setPadding(0, dp(6), 0, dp(8))
@@ -326,7 +326,7 @@ class WidgetConfigurationActivity : Activity() {
       TodayListWidgetProvider::class.java.name -> "单日课程：以列表展示今天剩余课程或明天的课程"
       TodayAndNextWidgetProvider::class.java.name -> "近日课程：同时展示今天和明天"
       TodayCourseWidgetProvider::class.java.name -> "日视图：可在今天和明天之间快速切换"
-      TinyCourseWidgetProvider::class.java.name -> "超小课程：仅展示今天最近一节未结束课程"
+      TinyCourseWidgetProvider::class.java.name -> "超小课程：仅展示今天最近一节尚未开课的课程"
       VerticalScheduleWidgetProvider::class.java.name ->
         "垂直列表课表：以时间轴列表展示选定日期的课程"
       else -> "为这个小组件选择独立外观和显示内容"
@@ -352,9 +352,9 @@ class WidgetConfigurationActivity : Activity() {
     exactAlarmStatusText?.apply {
       text =
         if (granted) {
-          "已允许准时刷新，小组件会按课程结束和跨日边界更新。"
+          "已允许准时刷新，小组件会按课程开课和跨日边界更新。"
         } else {
-          "尚未允许精确闹钟，课程结束和跨日刷新仍有系统兜底，但可能延迟。"
+          "尚未允许精确闹钟，课程开课和跨日刷新仍有系统兜底，但可能延迟。"
         }
     }
     exactAlarmPermissionButton?.visibility = if (granted) View.GONE else View.VISIBLE
@@ -392,23 +392,41 @@ class WidgetConfigurationActivity : Activity() {
         0
       }
     val refreshSuggestionDays = selectedRefreshSuggestionDays() ?: return
+    val appContext = applicationContext
+    ScheduleWidgetRefreshWork.recoverInterruptedRefresh(appContext)
     val saved =
-      WidgetInstanceConfigStore.saveImmediately(
-        this,
-        appWidgetId,
-        WidgetInstanceConfig(
-          theme = theme,
-          dayOffset = dayOffset,
-          refreshSuggestionDays = refreshSuggestionDays,
-        ),
-      )
+      WidgetRefreshCoordinator.withRefreshLock {
+        WidgetRenderSnapshot.withSnapshot {
+          val previous = WidgetRefreshRenderStateStore.load(appContext)
+          val beforeSave = WidgetRefreshRenderStateStore.capture(appContext)
+          WidgetRefreshCoordinator.applyInstanceConfigRender(
+            previous = previous,
+            current = beforeSave,
+            saveConfig = {
+              WidgetInstanceConfigStore.saveImmediately(
+                appContext,
+                appWidgetId,
+                WidgetInstanceConfig(
+                  theme = theme,
+                  dayOffset = dayOffset,
+                  refreshSuggestionDays = refreshSuggestionDays,
+                ),
+              )
+            },
+            fullUpdate = {
+              WidgetRefreshCoordinator.forceRebind(appContext, "configuration_pending_repair")
+            },
+            partialUpdate = { updateConfiguredWidget(appContext, providerName, appWidgetId) },
+            recordRenderedState = {
+              WidgetRefreshCoordinator.recordRenderedState(appContext, persistLog = false)
+            },
+          )
+        }
+      }
     if (!saved) {
       Toast.makeText(this, "保存小组件设置失败，请重试", Toast.LENGTH_SHORT).show()
       return
     }
-    val appContext = applicationContext
-    updateConfiguredWidget(appContext, providerName, appWidgetId)
-    WidgetRefreshCoordinator.recordRenderedState(appContext, persistLog = false)
     WidgetRefreshCoordinator.ensureScheduled(this, "configuration_saved")
 
     setResult(

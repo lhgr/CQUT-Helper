@@ -33,7 +33,11 @@ class WidgetAutoRefreshReceiver : BroadcastReceiver() {
       return
     }
     if (!isDataRefreshAction(action)) return
-    WidgetRefreshCoordinator.refreshAndRepair(context, "broadcast:$action")
+    WidgetRefreshCoordinator.refreshAndRepair(
+      context,
+      "broadcast:$action",
+      bootCompleted = action == Intent.ACTION_BOOT_COMPLETED,
+    )
   }
 
   companion object {

@@ -482,6 +482,7 @@ class MainActivity : FlutterActivity() {
       return null
     }
     return mapOf(
+      "date" to intent.getStringExtra(WidgetNavigationPendingIntent.EXTRA_DATE),
       "dayOffset" to
         intent.getIntExtra(
           WidgetNavigationPendingIntent.EXTRA_DAY_OFFSET,

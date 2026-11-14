@@ -6,6 +6,10 @@ import 'package:cqut_helper/api/course/course_api.dart';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/manager/schedule_customization_manager.dart';
+import 'package:cqut_helper/manager/widget_calendar_projection_store.dart';
+import 'package:cqut_helper/model/academic_calendar_model.dart';
+import 'package:cqut_helper/model/course_preference_model.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,10 +50,12 @@ void main() {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     late Map<String, dynamic> schedule;
+    late Map<String, Map<String, dynamic>> cachedSchedules;
     late Map<String, Object> storedPreferences;
     late List<Map<String, Object?>> coursePreferences;
     final writes = <String>[];
     var broadcasts = 0;
+    final snapshots = <Map<String, dynamic>>[];
 
     setUp(() {
       SharedPreferences.resetStatic();
@@ -69,6 +75,7 @@ void main() {
           },
         ],
       };
+      cachedSchedules = {'5': schedule};
       coursePreferences = [];
       storedPreferences = {
         'flutter.account': userId,
@@ -77,9 +84,14 @@ void main() {
       };
       writes.clear();
       broadcasts = 0;
+      snapshots.clear();
       WidgetUpdater.debugIsAndroidOverride = true;
       WidgetUpdater.debugMethodInvoker = (_, arguments) async {
         broadcasts++;
+        final raw = arguments['snapshotJson'];
+        if (raw is String) {
+          snapshots.add(jsonDecode(raw) as Map<String, dynamic>);
+        }
       };
       messenger.setMockMethodCallHandler(preferencesChannel, (call) async {
         final arguments = call.arguments as Map?;
@@ -120,21 +132,22 @@ void main() {
           if (sql.contains('course_preferences')) return coursePreferences;
           if (sql.contains('schedule_weeks')) {
             final values = arguments?['arguments'] as List? ?? [];
-            if (values.length == 3 && values.last != '5') {
-              return [];
-            }
-            final raw = jsonEncode(schedule);
             return [
-              {
-                'user_id': userId,
-                'year_term': term,
-                'week_num': '5',
-                'raw_json': raw,
-                'checksum': ScheduleCacheDatabase.checksumFor(raw),
-                'data_version': 1,
-                'fetched_at': 1,
-                'last_verified_at': DateTime.now().millisecondsSinceEpoch,
-              },
+              for (final entry in cachedSchedules.entries)
+                if (values.length != 3 || values.last == entry.key)
+                  (() {
+                    final raw = jsonEncode(entry.value);
+                    return <String, Object?>{
+                      'user_id': userId,
+                      'year_term': term,
+                      'week_num': entry.key,
+                      'raw_json': raw,
+                      'checksum': ScheduleCacheDatabase.checksumFor(raw),
+                      'data_version': 1,
+                      'fetched_at': 1,
+                      'last_verified_at': DateTime.now().millisecondsSinceEpoch,
+                    };
+                  })(),
             ];
           }
           return [];
@@ -142,7 +155,37 @@ void main() {
         if (call.method == 'execute' && sql.startsWith('BEGIN')) {
           return {'transactionId': 1};
         }
-        if (call.method == 'insert') return 1;
+        if (call.method == 'insert') {
+          final columns = RegExp(r'\(([^)]+)\)')
+              .firstMatch(sql)!
+              .group(1)!
+              .split(',')
+              .map((column) => column.trim().replaceAll('"', ''))
+              .toList();
+          final values = arguments!['arguments'] as List;
+          final literals = RegExp(
+            r'VALUES\s*\(([^)]+)\)',
+            caseSensitive: false,
+          ).firstMatch(sql)!.group(1)!.split(',');
+          var argumentIndex = 0;
+          final row = <String, Object?>{
+            for (var i = 0; i < columns.length; i++)
+              columns[i]: literals[i].trim() == '?'
+                  ? values[argumentIndex++]
+                  : null,
+          };
+          if (sql.contains('course_preferences')) coursePreferences = [row];
+          if (sql.contains('schedule_weeks')) {
+            cachedSchedules[row['week_num']! as String] =
+                jsonDecode(row['raw_json']! as String) as Map<String, dynamic>;
+          }
+          return 1;
+        }
+        if (call.method == 'update' &&
+            sql.contains('DELETE FROM course_preferences')) {
+          coursePreferences.clear();
+          return 1;
+        }
         return null;
       });
     });
@@ -160,6 +203,205 @@ void main() {
         isNotNull,
       );
     }
+
+    void captureIOSPayloads() {
+      WidgetUpdater.debugIsAndroidOverride = false;
+      WidgetUpdater.debugIsIOSOverride = true;
+    }
+
+    Map<String, dynamic> projectedDay(Map snapshot, String date) =>
+        (snapshot['calendarProjection']['days'] as List)
+            .cast<Map<String, dynamic>>()
+            .singleWhere((day) => day['date'] == date);
+
+    Future<AcademicCalendarSnapshot> saveRemoteMakeupCalendar() async {
+      final calendar = AcademicCalendarSnapshot.fromJson({
+        'schema_version': 1,
+        'year_term': term,
+        'revision': 'remote-makeup',
+        'generated_at': '2026-09-19T10:00:00Z',
+        'term_calendar_complete': true,
+        'days': [
+          {
+            'date': '2026-09-29',
+            'kind': 'teaching_day',
+            'schedule_date': '2026-10-20',
+            'label': '调休补课',
+          },
+        ],
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'academic_calendar_snapshot_v1_$term',
+        calendar.encode(),
+      );
+      return calendar;
+    }
+
+    Map<String, dynamic> remoteWeek(String courseName) => {
+      'yearTerm': term,
+      'weekNum': '8',
+      'weekDayList': [
+        {'weekDay': '2', 'weekDate': '2026-10-20'},
+      ],
+      'eventList': [
+        {
+          'eventName': courseName,
+          'weekDay': '2',
+          'sessionStart': '1',
+          'sessionLast': '2',
+        },
+      ],
+    };
+
+    test('preference mutations publish the customized projection without a page listener', () async {
+      captureIOSPayloads();
+      final api = ScheduleApi();
+      await readCache(api);
+      final preference = CoursePreference(
+        userId: userId,
+        yearTerm: term,
+        courseKey: 'course:课程|',
+        displayName: '更名课程',
+        teacher: null,
+        location: '新教室',
+        note: '',
+        hidden: false,
+        reminderMinutes: null,
+        colorIndex: 4,
+        updatedAt: DateTime(2026, 9, 29),
+      );
+      await ScheduleCustomizationManager.instance.saveCoursePreference(
+        preference,
+      );
+      var events = projectedDay(snapshots.last, '2026-09-29')['events'] as List;
+      expect(events.single['eventName'], '更名课程');
+      expect(events.single['colorIndex'], 4);
+      expect(events.single['address'], '新教室');
+
+      await ScheduleCustomizationManager.instance.saveCoursePreference(
+        preference.copyWith(hidden: true),
+      );
+      expect(projectedDay(snapshots.last, '2026-09-29')['events'], isEmpty);
+
+      await ScheduleCustomizationManager.instance.deleteCoursePreference(
+        preference,
+      );
+      events = projectedDay(snapshots.last, '2026-09-29')['events'] as List;
+      expect(events.single['eventName'], '课程');
+    });
+
+    test('ordinary cache and network refresh retain a cached distant makeup source', () async {
+      captureIOSPayloads();
+      cachedSchedules['8'] = remoteWeek('远周课程');
+      final calendar = await saveRemoteMakeupCalendar();
+      final api = ScheduleApi(courseApi: _FakeCourseApi({'5': schedule}));
+      await api.rebuildWidgetCalendarProjection(calendar: calendar);
+      await readCache(api);
+      expect(
+        projectedDay(
+          snapshots.last,
+          '2026-09-29',
+        )['events'].single['eventName'],
+        '远周课程',
+      );
+
+      await api.loadFromNetwork(
+        userId: userId,
+        encryptedPassword: 'secret',
+        yearTerm: term,
+        weekNum: '5',
+        persistLastViewed: false,
+      );
+      expect(
+        projectedDay(
+          snapshots.last,
+          '2026-09-29',
+        )['events'].single['eventName'],
+        '远周课程',
+      );
+    });
+
+    test('loading a distant source week fills and publishes an existing missing source', () async {
+      captureIOSPayloads();
+      await saveRemoteMakeupCalendar();
+      final api = ScheduleApi(
+        courseApi: _FakeCourseApi({'8': remoteWeek('刚加载课程')}),
+      );
+      await readCache(api);
+      expect(
+        projectedDay(snapshots.last, '2026-09-29')['kind'],
+        'missing_source',
+      );
+      await api.loadFromNetwork(
+        userId: userId,
+        encryptedPassword: 'secret',
+        yearTerm: term,
+        weekNum: '8',
+        persistLastViewed: false,
+      );
+      final day = projectedDay(snapshots.last, '2026-09-29');
+      expect(day['kind'], 'teaching_day');
+      expect(day['events'].single['eventName'], '刚加载课程');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('schedule_${userId}_${term}_8'), isNull);
+    });
+
+    test(
+      'queued projection rebuilds finish with the latest raw course data',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        final started = Completer<void>();
+        final release = Completer<void>();
+        final first = WidgetCalendarProjectionStore.rebuild(
+          prefs: prefs,
+          userId: userId,
+          yearTerm: term,
+          centerWeek: '5',
+          customizeSchedules: (schedules) async {
+            started.complete();
+            await release.future;
+            return schedules.toList();
+          },
+        );
+        await started.future;
+        (schedule['eventList'] as List).single['eventName'] = '新课表课程';
+        final second = WidgetCalendarProjectionStore.rebuild(
+          prefs: prefs,
+          userId: userId,
+          yearTerm: term,
+          centerWeek: '5',
+          customizeSchedules: (schedules) async => schedules.toList(),
+        );
+        release.complete();
+        await Future.wait([first, second]);
+        await WidgetUpdater.updateTodayWidget();
+        final projection = jsonDecode(prefs.getString(projectionKey)!) as Map;
+        expect(
+          projection['days'].single['events'].single['eventName'],
+          '新课表课程',
+        );
+      },
+    );
+
+    test(
+      'projection rebuilding abandons an account or pin changed while reading',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        final changed = await WidgetCalendarProjectionStore.rebuild(
+          prefs: prefs,
+          userId: userId,
+          yearTerm: term,
+          centerWeek: '5',
+          customizeSchedules: (schedules) async {
+            await prefs.setString('schedule_widget_week_$userId', '9');
+            return schedules.toList();
+          },
+        );
+        expect(changed, isFalse);
+        expect(prefs.getString(projectionKey), isNull);
+      },
+    );
 
     test(
       'unchanged cache reads skip projection writes and broadcasts',

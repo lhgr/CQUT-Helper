@@ -6,7 +6,14 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
+import android.provider.Settings
 import java.util.UUID
+
+internal enum class WidgetManualRefreshRecovery {
+  NONE,
+  TIMED_OUT,
+  REBOOTED,
+}
 
 object ScheduleWidgetRefreshWork {
   private const val PREFS_NAME = "FlutterSharedPreferences"
@@ -17,9 +24,12 @@ object ScheduleWidgetRefreshWork {
   private const val TOKEN_KEY_PREFIX = "${FLUTTER_PREFIX}schedule_widget_refresh_token_"
   private const val LEASE_TOKEN_KEY = "active_token"
   private const val LEASE_STARTED_AT_KEY = "active_started_at"
+  private const val LEASE_ACCOUNT_KEY = "active_account"
+  private const val LEASE_BOOT_COUNT_KEY = "active_boot_count"
   private const val LEASE_TIMEOUT_MS = 15L * 60 * 1000
   private const val WATCHDOG_REQUEST_CODE = 0x43515744
   private const val TAG = "WidgetManualRefresh"
+  private var leaseCreatedInProcess: String? = null
 
   @Synchronized
   fun enqueue(context: Context, appWidgetId: Int) {
@@ -49,10 +59,13 @@ object ScheduleWidgetRefreshWork {
     }
 
     val refreshId = UUID.randomUUID().toString()
+    leaseCreatedInProcess = refreshId
     leasePrefs
       .edit()
       .putString(LEASE_TOKEN_KEY, refreshId)
       .putLong(LEASE_STARTED_AT_KEY, now)
+      .putString(LEASE_ACCOUNT_KEY, account)
+      .putInt(LEASE_BOOT_COUNT_KEY, bootCount(context) ?: -1)
       .commit()
     prefs
       .edit()
@@ -132,7 +145,91 @@ object ScheduleWidgetRefreshWork {
   internal fun clearLease(context: Context, refreshId: String) {
     val leasePrefs = context.getSharedPreferences(LEASE_PREFS_NAME, Context.MODE_PRIVATE)
     if (leasePrefs.getString(LEASE_TOKEN_KEY, null) != refreshId) return
-    leasePrefs.edit().remove(LEASE_TOKEN_KEY).remove(LEASE_STARTED_AT_KEY).commit()
+    leasePrefs.edit()
+      .remove(LEASE_TOKEN_KEY)
+      .remove(LEASE_STARTED_AT_KEY)
+      .remove(LEASE_ACCOUNT_KEY)
+      .remove(LEASE_BOOT_COUNT_KEY)
+      .commit()
+    if (leaseCreatedInProcess == refreshId) leaseCreatedInProcess = null
+  }
+
+  private fun bootCount(context: Context): Int? = try {
+    // Reading the key also works on systems where BOOT_COUNT is unavailable:
+    // a missing setting is represented by null, never by a new boot.
+    Settings.Global.getInt(context.contentResolver, "boot_count", -1).takeIf { it >= 0 }
+  } catch (_: RuntimeException) {
+    null
+  }
+
+  internal fun recoveryFor(
+    refreshId: String?,
+    accountToken: String?,
+    state: String?,
+    startedAt: Long,
+    leaseBootCount: Int?,
+    currentBootCount: Int?,
+    bootCompleted: Boolean,
+    createdInProcess: Boolean,
+    now: Long,
+  ): WidgetManualRefreshRecovery {
+    if (refreshId.isNullOrBlank() || accountToken != refreshId || state != "loading") {
+      return WidgetManualRefreshRecovery.NONE
+    }
+    val differentBoot = leaseBootCount != null && currentBootCount != null &&
+      leaseBootCount != currentBootCount
+    val bootWithoutGeneration = bootCompleted && !createdInProcess &&
+      (leaseBootCount == null || currentBootCount == null)
+    if (differentBoot || bootWithoutGeneration) return WidgetManualRefreshRecovery.REBOOTED
+    return if (shouldAcceptClick(refreshId, startedAt, now)) {
+      WidgetManualRefreshRecovery.TIMED_OUT
+    } else {
+      WidgetManualRefreshRecovery.NONE
+    }
+  }
+
+  /** Repairs persisted loading before the coordinator acquires its render lock. */
+  @Synchronized
+  internal fun recoverInterruptedRefresh(
+    context: Context,
+    bootCompleted: Boolean = false,
+  ): Boolean {
+    val leasePrefs = context.getSharedPreferences(LEASE_PREFS_NAME, Context.MODE_PRIVATE)
+    val refreshId = leasePrefs.getString(LEASE_TOKEN_KEY, null) ?: return false
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val account = leasePrefs.getString(LEASE_ACCOUNT_KEY, null)
+      ?: prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
+    if (account.isBlank()) return false
+    val recovery = recoveryFor(
+      refreshId = refreshId,
+      accountToken = prefs.getString("$TOKEN_KEY_PREFIX$account", null),
+      state = prefs.getString("$STATE_KEY_PREFIX$account", null),
+      startedAt = leasePrefs.getLong(LEASE_STARTED_AT_KEY, 0L),
+      leaseBootCount = leasePrefs.getInt(LEASE_BOOT_COUNT_KEY, -1).takeIf { it >= 0 },
+      currentBootCount = bootCount(context),
+      bootCompleted = bootCompleted,
+      createdInProcess = leaseCreatedInProcess == refreshId,
+      now = System.currentTimeMillis(),
+    )
+    if (recovery == WidgetManualRefreshRecovery.NONE) return false
+    // enqueue and completion hold this same monitor. A superseded token must
+    // never fail or release the task that replaced it.
+    if (!recoverIfCurrent(context, refreshId, account)) return false
+    if (recovery == WidgetManualRefreshRecovery.REBOOTED) {
+      cancelWatchdog(context)
+      clearLease(context, refreshId)
+      if (prefs.getString("$TOKEN_KEY_PREFIX$account", null) == refreshId) {
+        prefs.edit().remove("$TOKEN_KEY_PREFIX$account").commit()
+      }
+    }
+    // Timed-out work retains its token so a late successful Dart result can
+    // still clear the failure, exactly as with the existing watchdog.
+    WidgetNativeLog.info(
+      context,
+      "event=interrupted_refresh_recovered refreshId=$refreshId kind=$recovery",
+      tag = TAG,
+    )
+    return true
   }
 
   internal fun cancelWatchdog(context: Context) {

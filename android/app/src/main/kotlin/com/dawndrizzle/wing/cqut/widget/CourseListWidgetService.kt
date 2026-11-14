@@ -6,6 +6,7 @@ import android.content.Intent
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.dawndrizzle.wing.cqut.R
+import com.dawndrizzle.wing.cqut.widget.WidgetNavigationPendingIntent.putNavigationExtras
 
 class CourseListWidgetService : RemoteViewsService() {
   override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
@@ -37,28 +38,33 @@ private class CourseListRemoteViewsFactory(
   private val followWidgetDayOffset: Boolean,
   private val addFirstItemTopSpacing: Boolean,
 ) : RemoteViewsService.RemoteViewsFactory {
-  private var items: List<TodayWidgetData.CourseItem> = emptyList()
+  @Volatile private var courseDay = TodayWidgetData.CourseDay("", initialDayOffset, emptyList())
   private var dayOffset: Int = initialDayOffset
 
   override fun onCreate() {
-    items = TodayWidgetData.loadCoursesByDayOffset(context, dayOffset)
+    reload()
   }
 
   override fun onDataSetChanged() {
     if (followWidgetDayOffset) {
       dayOffset = WidgetInstanceConfigStore.load(context, appWidgetId).dayOffset
     }
-    items = TodayWidgetData.loadCoursesByDayOffset(context, dayOffset)
+    reload()
   }
 
   override fun onDestroy() {
-    items = emptyList()
+    courseDay = courseDay.copy(courses = emptyList())
   }
 
-  override fun getCount(): Int = items.size
+  private fun reload() {
+    courseDay = TodayWidgetData.loadCourseDay(context, dayOffset)
+  }
+
+  override fun getCount(): Int = courseDay.courses.size
 
   override fun getViewAt(position: Int): RemoteViews {
-    val item = items.getOrNull(position)
+    val renderedDay = courseDay
+    val item = renderedDay.courses.getOrNull(position)
     val views = RemoteViews(context.packageName, R.layout.widget_today_list_item)
     val theme = WidgetInstanceConfigStore.resolveTheme(context, appWidgetId)
     WidgetRemoteViewsTheme.setColor(views, R.id.tv_course_name, "setTextColor", theme) {
@@ -112,8 +118,7 @@ private class CourseListRemoteViewsFactory(
     }
 
     val fillInIntent = Intent().apply {
-      putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME, item.name)
-      putExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_ID, item.eventId)
+      putNavigationExtras(renderedDay.navigationExtras(item))
     }
     views.setOnClickFillInIntent(R.id.ll_item, fillInIntent)
 

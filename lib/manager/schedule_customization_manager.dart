@@ -6,6 +6,7 @@ import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/model/course_preference_model.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
+import 'package:cqut_helper/manager/widget_calendar_projection_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -223,12 +224,16 @@ CREATE TABLE course_preferences (
   Future<void> rebuildDisplayCaches(String userId) async {
     final prefs = await SharedPreferences.getInstance();
     final normalizedUserId = userId.trim();
-    final term =
-        prefs.getString('schedule_widget_term_$normalizedUserId')?.trim() ??
-        prefs.getString('schedule_last_term_$normalizedUserId')?.trim();
-    final week =
-        prefs.getString('schedule_widget_week_$normalizedUserId')?.trim() ??
-        prefs.getString('schedule_last_week_$normalizedUserId')?.trim();
+    final term = WidgetCalendarProjectionStore.pinnedValue(
+      prefs,
+      normalizedUserId,
+      'term',
+    );
+    final week = WidgetCalendarProjectionStore.pinnedValue(
+      prefs,
+      normalizedUserId,
+      'week',
+    );
     final centerWeek = int.tryParse(week ?? '');
     if (term != null && term.isNotEmpty && centerWeek != null) {
       final projectedWeeks = <int>{
@@ -264,7 +269,19 @@ CREATE TABLE course_preferences (
         } catch (_) {}
       }
     }
-    await WidgetUpdater.updateTodayWidget(trigger: 'custom_schedule_changed');
+    if (term != null && term.isNotEmpty && week != null && week.isNotEmpty) {
+      await WidgetCalendarProjectionStore.rebuild(
+        prefs: prefs,
+        userId: normalizedUserId,
+        yearTerm: term,
+        centerWeek: week,
+        customizeSchedules: (schedules) =>
+            applyToSchedules(userId: normalizedUserId, schedules: schedules),
+      );
+    }
+    if ((prefs.getString('account') ?? '').trim() == normalizedUserId) {
+      await WidgetUpdater.updateTodayWidget(trigger: 'custom_schedule_changed');
+    }
   }
 
   Future<void> clearUserData(String userId) async {
