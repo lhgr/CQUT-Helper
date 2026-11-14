@@ -1,5 +1,7 @@
 import 'package:cqut_helper/api/api_service.dart';
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
+import 'package:cqut_helper/manager/schedule_refresh_state.dart';
+import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -10,7 +12,8 @@ import 'mine_user_info_loader.dart';
 import 'mine_user_info_view_model.dart';
 
 class MineView extends StatefulWidget {
-  const MineView({super.key});
+  final MineUserInfoLoader? userInfoLoader;
+  const MineView({super.key, this.userInfoLoader});
 
   @override
   State<MineView> createState() => _MineViewState();
@@ -23,12 +26,16 @@ class _MineViewState extends State<MineView> {
   Map<String, dynamic>? _userInfo;
   bool _loading = true;
   String? _error;
+  bool _refreshing = false;
+  bool _requiresLogin = false;
+  bool _authenticating = false;
+  int _loadVersion = 0;
   int _lastUserInfoCacheEpoch = CacheCleanupManager.userInfoCacheEpoch.value;
 
   @override
   void initState() {
     super.initState();
-    _userInfoLoader = MineUserInfoLoader(_apiService);
+    _userInfoLoader = widget.userInfoLoader ?? MineUserInfoLoader(_apiService);
     CacheCleanupManager.userInfoCacheEpoch.addListener(_onUserInfoCacheCleared);
     _loadUserInfo();
   }
@@ -47,6 +54,8 @@ class _MineViewState extends State<MineView> {
     _lastUserInfoCacheEpoch = epoch;
     if (!mounted) return;
     setState(() {
+      _loadVersion++;
+      _refreshing = false;
       _userInfo = null;
       _loading = true;
       _error = null;
@@ -55,13 +64,17 @@ class _MineViewState extends State<MineView> {
   }
 
   Future<void> _loadUserInfo({bool forceRefresh = false}) async {
+    if (_refreshing) return;
+    final version = ++_loadVersion;
+    setState(() => _refreshing = true);
     try {
       final result = await _userInfoLoader.load(forceRefresh: forceRefresh);
-      if (!mounted) return;
+      if (!mounted || version != _loadVersion) return;
       setState(() {
         _userInfo = result.userInfo;
         _loading = false;
         _error = null;
+        _requiresLogin = false;
       });
     } catch (e, stackTrace) {
       AppLogger.I.logOperationFailure(
@@ -70,13 +83,68 @@ class _MineViewState extends State<MineView> {
         error: e,
         stackTrace: stackTrace,
       );
-      if (!mounted) return;
+      if (!mounted || version != _loadVersion) return;
       setState(() {
-        _error = e is MineNotLoggedInException ? '请先登录后查看个人信息' : '个人信息加载失败';
+        _requiresLogin =
+            e is MineNotLoggedInException ||
+            ScheduleRefreshState.looksLikeCredentialFailure(e) ||
+            e.toString().contains('鉴权');
+        _error = _requiresLogin
+            ? '请重新登录后更新个人信息'
+            : _userInfo == null
+            ? '个人信息加载失败'
+            : '个人信息更新失败，请重试';
         _loading = false;
       });
+    } finally {
+      if (mounted && version == _loadVersion) {
+        setState(() => _refreshing = false);
+      }
     }
   }
+
+  Future<void> _reauthenticate() async {
+    if (_authenticating || _refreshing) return;
+    setState(() => _authenticating = true);
+    try {
+      if (!await requestReauthentication(context) || !mounted) return;
+      await _loadUserInfo(forceRefresh: true);
+    } finally {
+      if (mounted) setState(() => _authenticating = false);
+    }
+  }
+
+  Widget _buildLoadFeedback({required bool hasSavedInfo}) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(_error!),
+          if (hasSavedInfo) const Text('正在显示已保存的个人信息'),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _refreshing || _authenticating
+                  ? null
+                  : _requiresLogin
+                  ? _reauthenticate
+                  : () => _loadUserInfo(forceRefresh: true),
+              icon: Icon(_requiresLogin ? Icons.login : Icons.refresh),
+              label: Text(
+                _refreshing
+                    ? '更新中…'
+                    : _requiresLogin
+                    ? '重新登录'
+                    : '重试',
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -90,6 +158,10 @@ class _MineViewState extends State<MineView> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
           children: [
             _buildProfileSection(user),
+            if (_error != null && _userInfo != null) ...[
+              const SizedBox(height: 12),
+              _buildLoadFeedback(hasSavedInfo: true),
+            ],
             const MineOptionalFeaturesCard(),
             const SizedBox(height: 24),
             const MineMenuSection(),
@@ -109,41 +181,7 @@ class _MineViewState extends State<MineView> {
       );
     }
     if (_error != null && _userInfo == null) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.error_outline,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(_error!)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _loading = true;
-                      _error = null;
-                    });
-                    _loadUserInfo();
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('重试'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      return _buildLoadFeedback(hasSavedInfo: false);
     }
     return MineUserInfoCard(
       realName: user.realName,

@@ -4,6 +4,7 @@ import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
+import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_header.dart';
 import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:cqut_helper/theme/app_theme_catalog.dart';
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
@@ -58,10 +59,30 @@ class ScheduleLayoutPreview extends StatelessWidget {
           final cardTheme = Theme.of(context)
               .extension<ScheduleCourseCardTheme>()!;
           final dayCount = showWeekend ? 7 : 5;
+          final previewWeek = ScheduleData(
+            nowMonth: '9',
+            weekDayList: [
+              for (var i = 0; i < 7; i++)
+                WeekDayItem(
+                  weekDay: '${i + 1}',
+                  weekDate: '09-${(i + 7).toString().padLeft(2, '0')}',
+                ),
+            ],
+          );
+          final reference = DateTime(2026, 9, 7);
           return LayoutBuilder(
             builder: (context, constraints) {
               final gridWidth = math.max(
-                settings.gridCellWidth * dayCount,
+                math.max(
+                      settings.gridCellWidth,
+                      ScheduleHeader.minimumDayWidth(
+                        context,
+                        scheduleData: previewWeek,
+                        reference: reference,
+                        showWeekend: showWeekend,
+                      ),
+                    ) *
+                    dayCount,
                 constraints.maxWidth - _timeWidth,
               );
               return DecoratedBox(
@@ -85,9 +106,15 @@ class ScheduleLayoutPreview extends StatelessWidget {
                             width: _timeWidth + gridWidth,
                             child: Column(
                               children: [
-                                _PreviewHeader(
-                                  dayCount: dayCount,
-                                  gridWidth: gridWidth,
+                                ScheduleHeader(
+                                  key: const ValueKey(
+                                    'schedule-layout-preview-header',
+                                  ),
+                                  scheduleData: previewWeek,
+                                  todayDate: reference,
+                                  height: _headerHeight,
+                                  timeColumnWidth: _timeWidth,
+                                  showWeekend: showWeekend,
                                   showGridLines: settings.showGridLines,
                                   gridLineOpacity: settings.gridLineOpacity,
                                   transparentBackground: backgroundFile != null,
@@ -146,69 +173,6 @@ class ScheduleLayoutPreview extends StatelessWidget {
             },
           );
         },
-      ),
-    );
-  }
-}
-
-class _PreviewHeader extends StatelessWidget {
-  final int dayCount;
-  final double gridWidth;
-  final bool showGridLines;
-  final double gridLineOpacity;
-  final bool transparentBackground;
-
-  const _PreviewHeader({
-    required this.dayCount,
-    required this.gridWidth,
-    required this.showGridLines,
-    required this.gridLineOpacity,
-    required this.transparentBackground,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const days = ['一', '二', '三', '四', '五', '六', '日'];
-    final surface = transparentBackground
-        ? Colors.transparent
-        : Theme.of(context).colorScheme.surface;
-    final borderColor = scheduleGridLineColor(context, gridLineOpacity);
-    return Container(
-      key: const ValueKey('schedule-layout-preview-header'),
-      height: ScheduleLayoutPreview._headerHeight,
-      color: surface,
-      child: Row(
-        children: [
-          const SizedBox(
-            width: ScheduleLayoutPreview._timeWidth,
-            child: Center(child: Text('9月', style: TextStyle(fontSize: 10))),
-          ),
-          SizedBox(
-            width: gridWidth,
-            child: Row(
-              children: List.generate(
-                dayCount,
-                (index) => Expanded(
-                  child: Container(
-                    decoration: showGridLines
-                        ? BoxDecoration(
-                            border: Border(
-                              left: BorderSide(color: borderColor, width: .5),
-                              bottom: BorderSide(color: borderColor, width: .5),
-                            ),
-                          )
-                        : null,
-                    alignment: Alignment.center,
-                    child: Text(
-                      '周${days[index]}',
-                      style: const TextStyle(fontSize: 10),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

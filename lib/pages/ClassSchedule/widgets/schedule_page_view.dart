@@ -17,6 +17,8 @@ class SchedulePageView extends StatefulWidget {
   final ValueChanged<bool> onScrollActivityChanged;
   final List<String> weekList;
   final Map<int, ScheduleData> weekCache;
+  final Set<int> failedWeeks;
+  final ValueChanged<String>? onRetryWeek;
   final DateTime todayDate;
   final bool showWeekend;
   final bool weekendNoticeDismissed;
@@ -41,6 +43,8 @@ class SchedulePageView extends StatefulWidget {
     required this.onScrollActivityChanged,
     required this.weekList,
     required this.weekCache,
+    this.failedWeeks = const {},
+    this.onRetryWeek,
     required this.todayDate,
     required this.showWeekend,
     required this.weekendNoticeDismissed,
@@ -99,6 +103,29 @@ class _SchedulePageViewState extends State<SchedulePageView> {
           final data = widget.weekCache[weekNum];
 
           if (data == null) {
+            if (widget.failedWeeks.contains(weekNum)) {
+              return Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off_outlined),
+                      const SizedBox(height: 12),
+                      Text('第$weekStr周加载失败'),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: widget.onRetryWeek == null
+                            ? null
+                            : () => widget.onRetryWeek!(weekStr),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重试'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -128,151 +155,152 @@ class _SchedulePageViewState extends State<SchedulePageView> {
                 );
                 final effectiveShowWeekend =
                     widget.showWeekend || showMappedWeekend;
-                final baseDayCount = widget.showWeekend ? 7 : 5;
+                final baseDayCount = effectiveShowWeekend ? 7 : 5;
+                final minimumDayWidth = ScheduleHeader.minimumDayWidth(
+                  context,
+                  scheduleData: data,
+                  reference: widget.todayDate,
+                  showWeekend: effectiveShowWeekend,
+                  resolvedDays: resolved,
+                );
                 final gridWidth = math.max(
-                  widget.layoutSettings.gridCellWidth * baseDayCount,
+                  math.max(
+                        widget.layoutSettings.gridCellWidth,
+                        minimumDayWidth,
+                      ) *
+                      baseDayCount,
                   constraints.maxWidth - SchedulePageView._timeColumnWidth,
                 );
                 final contentWidth =
                     SchedulePageView._timeColumnWidth + gridWidth;
 
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: contentWidth,
-                    child: Column(
-                      children: [
-                        ScheduleHeader(
-                          scheduleData: data,
-                          todayDate: widget.todayDate,
-                          height: SchedulePageView._headerHeight,
-                          timeColumnWidth: SchedulePageView._timeColumnWidth,
-                          showWeekend: effectiveShowWeekend,
-                          resolvedDays: resolved,
-                          showGridLines: widget.layoutSettings.showGridLines,
-                          gridLineOpacity:
-                              widget.layoutSettings.gridLineOpacity,
-                          transparentBackground:
-                              widget.layoutSettings.backgroundImagePath != null,
-                        ),
-                        if (!widget.showWeekend &&
-                            showMappedWeekend &&
-                            !widget.weekendNoticeDismissed)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primaryContainer
-                                .withAlpha(150),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '本周有周末补课，已临时显示周末课表',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: widget.onDismissWeekendNotice,
-                                  icon: const Icon(Icons.close, size: 14),
-                                  tooltip: '关闭全部周末补课提示',
-                                  padding: EdgeInsets.zero,
-                                  visualDensity: VisualDensity.compact,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 18,
-                                    height: 18,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                ScheduleTimeColumn(
-                                  width: SchedulePageView._timeColumnWidth,
-                                  sessionHeight:
-                                      widget.layoutSettings.gridCellHeight,
-                                  timeInfoList: widget.timeInfoList,
-                                  showGridLines:
-                                      widget.layoutSettings.showGridLines,
-                                  gridLineOpacity:
-                                      widget.layoutSettings.gridLineOpacity,
-                                  transparentBackground:
-                                      widget
-                                          .layoutSettings
-                                          .backgroundImagePath !=
-                                      null,
-                                ),
-                                SizedBox(
-                                  width: gridWidth,
-                                  child: ScheduleCourseGrid(
-                                    events: resolvedEvents,
-                                    displayWeekdays: displayWeekdays,
-                                    disabledEvents: disabledDisplayEvents,
-                                    yearTerm: data.yearTerm ?? '',
-                                    sessionHeight:
-                                        widget.layoutSettings.gridCellHeight,
-                                    showWeekend: effectiveShowWeekend,
-                                    showGridLines:
-                                        widget.layoutSettings.showGridLines,
-                                    gridLineOpacity:
-                                        widget.layoutSettings.gridLineOpacity,
-                                    hideLocation:
-                                        widget.layoutSettings.hideLocation,
-                                    hideTeacher:
-                                        widget.layoutSettings.hideTeacher,
-                                    removeCampusPrefix: widget
-                                        .layoutSettings
-                                        .removeCampusPrefix,
-                                    horizontalCenter:
-                                        widget.layoutSettings.horizontalCenter,
-                                    verticalCenter:
-                                        widget.layoutSettings.verticalCenter,
-                                    cardRadius:
-                                        widget.layoutSettings.cardRadius,
-                                    textScale: widget.layoutSettings.textScale,
-                                    cardOpacity:
-                                        widget.layoutSettings.cardOpacity,
-                                    backgroundColors: cardTheme.backgrounds,
-                                    borderColors: cardTheme.borders,
-                                    titleColors: cardTheme.titleColors,
-                                    descriptionColors:
-                                        cardTheme.descriptionColors,
-                                    buttonColors: cardTheme.buttonColors,
-                                    resolveCourseDetailEvents:
-                                        widget.resolveCourseDetailEvents == null
-                                        ? null
-                                        : (event) =>
-                                              widget.resolveCourseDetailEvents!(
+                return Column(
+                  children: [
+                    if (!widget.showWeekend &&
+                        showMappedWeekend &&
+                        !widget.weekendNoticeDismissed)
+                      _buildWeekendNotice(context),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: SizedBox(
+                          width: contentWidth,
+                          child: Column(
+                            children: [
+                              ScheduleHeader(
+                                scheduleData: data,
+                                todayDate: widget.todayDate,
+                                height: SchedulePageView._headerHeight,
+                                timeColumnWidth:
+                                    SchedulePageView._timeColumnWidth,
+                                showWeekend: effectiveShowWeekend,
+                                resolvedDays: resolved,
+                                showGridLines:
+                                    widget.layoutSettings.showGridLines,
+                                gridLineOpacity:
+                                    widget.layoutSettings.gridLineOpacity,
+                                transparentBackground:
+                                    widget.layoutSettings.backgroundImagePath !=
+                                    null,
+                              ),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      ScheduleTimeColumn(
+                                        width:
+                                            SchedulePageView._timeColumnWidth,
+                                        sessionHeight: widget
+                                            .layoutSettings
+                                            .gridCellHeight,
+                                        timeInfoList: widget.timeInfoList,
+                                        showGridLines:
+                                            widget.layoutSettings.showGridLines,
+                                        gridLineOpacity: widget
+                                            .layoutSettings
+                                            .gridLineOpacity,
+                                        transparentBackground:
+                                            widget
+                                                .layoutSettings
+                                                .backgroundImagePath !=
+                                            null,
+                                      ),
+                                      SizedBox(
+                                        width: gridWidth,
+                                        child: ScheduleCourseGrid(
+                                          events: resolvedEvents,
+                                          displayWeekdays: displayWeekdays,
+                                          disabledEvents: disabledDisplayEvents,
+                                          yearTerm: data.yearTerm ?? '',
+                                          sessionHeight: widget
+                                              .layoutSettings
+                                              .gridCellHeight,
+                                          showWeekend: effectiveShowWeekend,
+                                          showGridLines: widget
+                                              .layoutSettings
+                                              .showGridLines,
+                                          gridLineOpacity: widget
+                                              .layoutSettings
+                                              .gridLineOpacity,
+                                          hideLocation: widget
+                                              .layoutSettings
+                                              .hideLocation,
+                                          hideTeacher:
+                                              widget.layoutSettings.hideTeacher,
+                                          removeCampusPrefix: widget
+                                              .layoutSettings
+                                              .removeCampusPrefix,
+                                          horizontalCenter: widget
+                                              .layoutSettings
+                                              .horizontalCenter,
+                                          verticalCenter: widget
+                                              .layoutSettings
+                                              .verticalCenter,
+                                          cardRadius:
+                                              widget.layoutSettings.cardRadius,
+                                          textScale:
+                                              widget.layoutSettings.textScale,
+                                          cardOpacity:
+                                              widget.layoutSettings.cardOpacity,
+                                          backgroundColors:
+                                              cardTheme.backgrounds,
+                                          borderColors: cardTheme.borders,
+                                          titleColors: cardTheme.titleColors,
+                                          descriptionColors:
+                                              cardTheme.descriptionColors,
+                                          buttonColors: cardTheme.buttonColors,
+                                          resolveCourseDetailEvents:
+                                              widget.resolveCourseDetailEvents ==
+                                                  null
+                                              ? null
+                                              : (event) =>
+                                                    widget
+                                                        .resolveCourseDetailEvents!(
+                                                      displaySources[event] ??
+                                                          event,
+                                                    ),
+                                          onEditCourse: (event) =>
+                                              widget.onEditCourse(
                                                 displaySources[event] ?? event,
                                               ),
-                                    onEditCourse: (event) =>
-                                        widget.onEditCourse(
-                                          displaySources[event] ?? event,
+                                          onDeleteCourse: (event) =>
+                                              widget.onDeleteCourse(
+                                                displaySources[event] ?? event,
+                                              ),
                                         ),
-                                    onDeleteCourse: (event) =>
-                                        widget.onDeleteCourse(
-                                          displaySources[event] ?? event,
-                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 );
               },
             ),
@@ -281,6 +309,30 @@ class _SchedulePageViewState extends State<SchedulePageView> {
       ),
     );
   }
+
+  Widget _buildWeekendNotice(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    color: Theme.of(context).colorScheme.primaryContainer.withAlpha(150),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            '本周有周末补课，已临时显示周末课表',
+            style: Theme.of(context).textTheme.labelSmall,
+            textAlign: TextAlign.center,
+          ),
+        ),
+        IconButton(
+          onPressed: widget.onDismissWeekendNotice,
+          icon: const Icon(Icons.close, size: 20),
+          tooltip: '关闭全部周末补课提示',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+        ),
+      ],
+    ),
+  );
 
   EventItem _copyForDisplay(
     AcademicCalendarResolvedEvent resolved,

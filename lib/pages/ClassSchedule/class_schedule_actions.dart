@@ -16,6 +16,7 @@ extension _ClassScheduleActions on _ClassscheduleViewState {
     final wInt = int.tryParse(targetWeek) ?? 0;
     if (currentTerm == null) return;
     if (userChangedWeek) {
+      _cancelLocation();
       _viewGeneration++;
       _controller.selectWeek(targetWeek, currentTerm);
     }

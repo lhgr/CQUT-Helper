@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/pages/Settings/notification_settings_page.dart';
 import 'package:cqut_helper/pages/Settings/settings_schedule_scope.dart';
 import 'package:cqut_helper/utils/course_reminder_mode.dart';
@@ -113,13 +116,230 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  testWidgets('窄屏两倍文字把必要权限操作放在文字下方', (tester) async {
+    tester.view.physicalSize = const Size(320, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.remindersEnabledKey: true,
+    });
+    mockStatus(notificationGranted: false);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: const NotificationSettingsPage(
+          scope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final title = find.text('通知权限');
+    await tester.scrollUntilVisible(title, 250);
+    final tile = find.ancestor(of: title, matching: find.byType(ListTile));
+    expect(tester.widget<ListTile>(tile).trailing, isNull);
+    final group = find.ancestor(of: tile, matching: find.byType(Column)).first;
+    final action = find.descendant(
+      of: group,
+      matching: find.widgetWithText(TextButton, '去设置'),
+    );
+    await tester.ensureVisible(action);
+    expect(
+      tester.getTopLeft(action).dy,
+      greaterThan(tester.getBottomLeft(title).dy),
+    );
+    expect(tester.getSize(title).width, greaterThan(180));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('两倍文字自启动与应用设置操作下置且可点击', (tester) async {
+    tester.view.physicalSize = const Size(320, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({});
+    final opened = <String>[];
+    mockStatus(
+      notificationGranted: true,
+      onOpenSettings: (kind) {
+        opened.add(kind);
+        return true;
+      },
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: const NotificationSettingsPage(
+          scope: SettingsScheduleScope(userId: '', yearTerm: ''),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('系统与后台设置'), 250);
+    await tester.tap(find.text('系统与后台设置'));
+    await tester.pumpAndSettle();
+    for (final item in [('自启动设置', '去设置'), ('应用系统设置', '打开')]) {
+      final title = find.text(item.$1);
+      final tile = find.ancestor(of: title, matching: find.byType(ListTile));
+      expect(tester.widget<ListTile>(tile).trailing, isNull);
+      final group = find
+          .ancestor(of: tile, matching: find.byType(Column))
+          .first;
+      final action = find.descendant(
+        of: group,
+        matching: find.widgetWithText(TextButton, item.$2),
+      );
+      await tester.ensureVisible(action);
+      await tester.pumpAndSettle();
+      expect(action.hitTestable(), findsOneWidget);
+      expect(
+        tester.getTopLeft(action).dy,
+        greaterThan(tester.getBottomLeft(title).dy),
+      );
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+    }
+    expect(opened, ['appDetails']);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('权限已齐仍显示真实计划失败，后台选项默认收起', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.remindersEnabledKey: true,
+      'schedule_course_reminder_status_v1': jsonEncode(
+        CourseReminderStatus(
+          enabled: true,
+          ready: false,
+          reason: '课表覆盖不完整，请联网后点击重建以补齐',
+          updatedAt: DateTime.now(),
+        ).toJson(),
+      ),
+    });
+    mockStatus(notificationGranted: true, dndGranted: false);
+    await pumpPage(tester);
+    expect(find.text('课表覆盖不完整，请联网后点击重建以补齐'), findsOneWidget);
+    expect(find.text('通知权限'), findsNothing);
+    expect(find.text('勿扰权限'), findsNothing);
+    expect(find.text('自启动设置'), findsNothing);
+    await tester.scrollUntilVisible(find.text('系统与后台设置'), 250);
+    await tester.tap(find.text('系统与后台设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('自启动设置'), findsOneWidget);
+    expect(find.text('可能限制后台提醒'), findsOneWidget);
+    // Optional battery configuration never replaces the actual plan's reason.
+    await tester.scrollUntilVisible(find.text('提醒就绪状态'), -250);
+    expect(find.text('课表覆盖不完整，请联网后点击重建以补齐'), findsOneWidget);
+  });
+
+  testWidgets('关闭相关功能不列出缺失权限，启用提醒只列必要缺项', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    mockStatus(
+      notificationGranted: false,
+      exactAlarmGranted: false,
+      dndGranted: false,
+    );
+    await pumpPage(tester);
+    expect(find.text('通知权限'), findsNothing);
+    expect(find.text('精确闹钟'), findsNothing);
+    expect(find.text('勿扰权限'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.remindersEnabledKey: true,
+    });
+    await pumpPage(tester);
+    expect(find.text('通知权限'), findsOneWidget);
+    expect(find.text('精确闹钟'), findsOneWidget);
+    expect(find.text('勿扰权限'), findsNothing);
+  });
+
+  testWidgets('权限刷新失败不能沿用旧授权宣称正常，重试保留服务地址草稿', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.remindersEnabledKey: true,
+      'schedule_course_reminder_status_v1': jsonEncode(
+        CourseReminderStatus(
+          enabled: true,
+          ready: true,
+          reason: '提醒计划正常',
+          updatedAt: DateTime.now(),
+        ).toJson(),
+      ),
+    });
+    var fail = false;
+    mockStatus(
+      notificationGranted: true,
+      statusBuilder: () {
+        if (fail) throw PlatformException(code: 'temporarily_unavailable');
+        return {
+          'supported': true,
+          'notificationGranted': true,
+          'exactAlarmGranted': true,
+          'dndGranted': true,
+        };
+      },
+    );
+    await pumpPage(tester);
+    expect(find.text('提醒计划正常'), findsOneWidget);
+    final pageScroll = find
+        .descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('高级设置').hitTestable(),
+      250,
+      scrollable: pageScroll,
+    );
+    await tester.tap(find.text('高级设置'));
+    await tester.pumpAndSettle();
+    final url = find.widgetWithText(TextField, '调课服务地址');
+    await tester.scrollUntilVisible(
+      url.hitTestable(),
+      150,
+      scrollable: pageScroll,
+    );
+    await tester.enterText(url, 'https://draft.example.com');
+    fail = true;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(find.text('提醒计划正常'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('重试').hitTestable(),
+      -250,
+      scrollable: pageScroll,
+    );
+    fail = false;
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(find.text('提醒计划正常'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('高级设置'),
+      250,
+      scrollable: pageScroll,
+    );
+    await tester.scrollUntilVisible(url, 250, scrollable: pageScroll);
+    expect(
+      tester.widget<TextField>(url).controller!.text,
+      'https://draft.example.com',
+    );
+  });
+
   testWidgets('iOS 仅显示通知授权与前台同步能力', (tester) async {
     SharedPreferences.setMockInitialValues({
       ScheduleSettingsManager.remindersEnabledKey: true,
     });
     mockStatus(notificationGranted: true);
     await pumpPage(tester);
-    expect(find.text('通知权限'), findsOneWidget);
+    expect(find.text('通知权限'), findsNothing);
+    expect(find.text('系统通知设置'), findsOneWidget);
     expect(find.text('打开应用更新课表与提醒'), findsOneWidget);
     expect(find.text('上课勿扰与静音'), findsNothing);
     expect(find.text('精确闹钟'), findsNothing);
@@ -131,7 +351,9 @@ void main() {
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   testWidgets('返回应用时刷新系统权限状态', (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      ScheduleSettingsManager.remindersEnabledKey: true,
+    });
     var notificationGranted = false;
     CourseReminderMode.debugIsAndroidOverride = true;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -157,7 +379,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('通知权限'), findsOneWidget);
-    expect(find.text('上课勿扰与静音'), findsNothing);
+    expect(find.text('上课勿扰与静音'), findsOneWidget);
     final notificationTile = find.ancestor(
       of: find.text('通知权限'),
       matching: find.byType(ListTile),
@@ -171,6 +393,10 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pumpAndSettle();
 
+    expect(find.text('通知权限'), findsNothing);
+    await tester.scrollUntilVisible(find.text('系统与后台设置'), 250);
+    await tester.tap(find.text('系统与后台设置'));
+    await tester.pumpAndSettle();
     expect(
       find.descendant(of: notificationTile, matching: find.text('已授权')),
       findsOneWidget,

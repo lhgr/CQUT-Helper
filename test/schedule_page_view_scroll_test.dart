@@ -6,6 +6,45 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+    'failed missing week offers retry while cached week remains visible',
+    (tester) async {
+      final controller = PageController();
+      addTearDown(controller.dispose);
+      final retries = <String>[];
+      Widget page(Map<int, ScheduleData> cache) => MaterialApp(
+        home: Scaffold(
+          body: SchedulePageView(
+            pageController: controller,
+            onPageChanged: (_) {},
+            onScrollActivityChanged: (_) {},
+            weekList: const ['1'],
+            weekCache: cache,
+            failedWeeks: const {1},
+            onRetryWeek: retries.add,
+            todayDate: DateTime(2026, 9, 29),
+            showWeekend: true,
+            weekendNoticeDismissed: false,
+            onDismissWeekendNotice: () {},
+            onBoundaryMessage: (_) {},
+            currentWeekIndex: 0,
+            onEditCourse: (_) async {},
+            onDeleteCourse: (_) async {},
+          ),
+        ),
+      );
+      await tester.pumpWidget(page({}));
+      expect(find.text('第1周加载失败'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      await tester.tap(find.text('重试'));
+      expect(retries, ['1']);
+      await tester.pumpWidget(page({1: _week('1', DateTime(2026, 9, 28))}));
+      expect(find.text('第1周加载失败'), findsNothing);
+      expect(find.byType(ScheduleCourseGrid), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('周页面滑动会报告交互开始与结束', (tester) async {
     final controller = PageController();
     addTearDown(controller.dispose);
@@ -41,12 +80,13 @@ void main() {
     expect(activity, containsAllInOrder([true, false]));
   });
 
-  testWidgets('关闭周末时调休周与普通周保持相同的窄视口宽度', (tester) async {
+  testWidgets('临时显示补课周末保留每列最小宽度且关闭提示可点击', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final controller = PageController();
     addTearDown(controller.dispose);
     var currentPage = 0;
+    var noticeDismissed = false;
     final normal = _week('1', DateTime(2026, 9, 28));
     final makeup = _week('2', DateTime(2026, 10, 5));
     final calendar = AcademicCalendarSnapshot(
@@ -77,7 +117,7 @@ void main() {
             todayDate: DateTime(2026, 9, 29),
             showWeekend: false,
             weekendNoticeDismissed: false,
-            onDismissWeekendNotice: () {},
+            onDismissWeekendNotice: () => noticeDismissed = true,
             academicCalendar: calendar,
             onBoundaryMessage: (_) {},
             currentWeekIndex: 0,
@@ -111,7 +151,15 @@ void main() {
           )
           .first,
     );
-    expect(makeupGrid.width, normalGrid.width);
+    expect(makeupGrid.width! / 7, greaterThanOrEqualTo(52));
+    expect(makeupGrid.width, greaterThan(normalGrid.width!));
+    final close = find.byTooltip('关闭全部周末补课提示');
+    expect(tester.getRect(close).right, lessThanOrEqualTo(360));
+    await tester.ensureVisible(close);
+    expect(tester.getSize(close).width, greaterThanOrEqualTo(48));
+    expect(tester.getSize(close).height, greaterThanOrEqualTo(48));
+    await tester.tap(close);
+    expect(noticeDismissed, isTrue);
   });
 }
 

@@ -4,7 +4,11 @@ import 'package:material_ui/material_ui.dart';
 void _noopScheduleAction() {}
 
 class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
-  static const double _appBarHeight = 112;
+  late final ({bool stacked, double height, double weekWidth, double termWidth})
+  _layout;
+  late final TextStyle _titleStyle;
+  late final TextStyle _termStyle;
+  late final TextHeightBehavior? _textHeightBehavior;
 
   final bool loading;
   final List<String>? weekList;
@@ -21,8 +25,10 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onExportIcs;
   final bool transparentBackground;
 
-  const ScheduleAppBar({
+  ScheduleAppBar({
     super.key,
+    required BuildContext context,
+    required double availableWidth,
     required this.loading,
     required this.weekList,
     required this.currentWeekIndex,
@@ -37,15 +43,97 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.onAddCourse = _noopScheduleAction,
     this.onExportIcs = _noopScheduleAction,
     this.transparentBackground = false,
-  });
+  }) {
+    final theme = Theme.of(context);
+    final defaults = DefaultTextStyle.of(context);
+    _textHeightBehavior = defaults.textHeightBehavior;
+    TextStyle resolvedStyle(TextStyle? style) {
+      final resolved = defaults.style.merge(style);
+      return resolved.copyWith(
+        inherit: false,
+        fontWeight: MediaQuery.boldTextOf(context)
+            ? FontWeight.bold
+            : resolved.fontWeight,
+      );
+    }
+
+    _titleStyle = resolvedStyle(
+      theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+    );
+    _termStyle = resolvedStyle(theme.textTheme.bodySmall);
+    final width = (availableWidth - 112).clamp(1.0, double.infinity);
+    double measure(
+      String text,
+      TextStyle? style, {
+      double maxWidth = double.infinity,
+      bool height = false,
+    }) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        locale: Localizations.maybeLocaleOf(context),
+        textHeightBehavior: _textHeightBehavior,
+      )..layout(maxWidth: maxWidth);
+      final result = height ? painter.height : painter.width;
+      painter.dispose();
+      return result;
+    }
+
+    final titleStyle = _titleStyle;
+    final termStyle = _termStyle;
+    final weekWidth = (measure(_weekLabel, titleStyle) + 16).clamp(
+      48.0,
+      double.infinity,
+    );
+    final termWidth = currentScheduleData == null
+        ? 0.0
+        : (measure(_termLabel, termStyle) + 16).clamp(48.0, double.infinity);
+    final stacked = weekWidth + termWidth > width;
+    double buttonHeight(String label, TextStyle? style) =>
+        (measure(
+                  label,
+                  style,
+                  maxWidth: (width - 16).clamp(1.0, double.infinity),
+                  height: true,
+                ) +
+                12)
+            .clamp(48.0, double.infinity);
+    final height = stacked
+        ? buttonHeight(_weekLabel, titleStyle) +
+              (currentScheduleData == null
+                  ? 0
+                  : buttonHeight(_termLabel, termStyle))
+        : [
+            buttonHeight(_weekLabel, titleStyle),
+            if (currentScheduleData != null)
+              buttonHeight(_termLabel, termStyle),
+          ].reduce((a, b) => a > b ? a : b);
+    _layout = (
+      stacked: stacked,
+      height: height + 8,
+      weekWidth: weekWidth,
+      termWidth: termWidth,
+    );
+  }
+
+  String get _termLabel => '${currentScheduleData!.yearTerm}学期';
+  String get _weekLabel =>
+      nowInTeachingWeek == false &&
+          nowStatusLabel?.isNotEmpty == true &&
+          weekList != null &&
+          currentWeekIndex < weekList!.length
+      ? '$nowStatusLabel · 第${weekList![currentWeekIndex]}周'
+      : weekList != null && currentWeekIndex < weekList!.length
+      ? '第${weekList![currentWeekIndex]}周'
+      : '课表';
 
   @override
-  Size get preferredSize => const Size.fromHeight(_appBarHeight);
+  Size get preferredSize => Size.fromHeight(_layout.height);
 
   @override
   Widget build(BuildContext context) {
-    const double sideSlotWidth = 60;
-    const double pickerButtonGap = 2;
+    const double sideSlotWidth = 48;
 
     Widget buildPickerButton({
       required String label,
@@ -57,15 +145,14 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
         child: TextButton(
           onPressed: onTap,
           style: TextButton.styleFrom(
-            minimumSize: const Size(0, 48),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+            minimumSize: const Size(48, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           ),
           child: Text(
             label,
             style: textStyle,
             textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            textHeightBehavior: _textHeightBehavior,
           ),
         ),
       );
@@ -99,29 +186,31 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       );
     }
 
-    final titleTextStyle = Theme.of(context).textTheme.titleMedium
-        ?.copyWith(fontWeight: FontWeight.bold);
-    final termTextStyle = Theme.of(context).textTheme.bodySmall
-        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
-    final weekLabel =
-        (nowInTeachingWeek == false &&
-            nowStatusLabel != null &&
-            nowStatusLabel!.isNotEmpty &&
-            weekList != null &&
-            currentWeekIndex < weekList!.length)
-        ? "$nowStatusLabel · 第${weekList![currentWeekIndex]}周"
-        : (weekList != null && currentWeekIndex < weekList!.length)
-        ? "第${weekList![currentWeekIndex]}周"
-        : "课表";
+    final titleTextStyle = _titleStyle;
+    final termTextStyle = _termStyle.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+    final weekButton = buildPickerButton(
+      label: _weekLabel,
+      onTap: onWeekPicker,
+      textStyle: titleTextStyle,
+    );
+    final termButton = currentScheduleData == null
+        ? null
+        : buildPickerButton(
+            label: _termLabel,
+            onTap: onTermPicker,
+            textStyle: termTextStyle,
+          );
 
     return AppBar(
-      toolbarHeight: _appBarHeight,
-      titleSpacing: 0,
+      toolbarHeight: _layout.height,
+      titleSpacing: 8,
       leadingWidth: sideSlotWidth,
       automaticallyImplyLeading: false,
       scrolledUnderElevation: 0,
       backgroundColor: transparentBackground
-          ? Colors.transparent
+          ? Theme.of(context).colorScheme.surface.withAlpha(240)
           : Theme.of(context).colorScheme.surface,
       surfaceTintColor: Colors.transparent,
       leading: Center(child: buildRefreshAction()),
@@ -130,6 +219,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
           width: sideSlotWidth,
           child: Center(
             child: IconButton(
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               padding: EdgeInsets.zero,
               tooltip: '更多课表操作',
               icon: const Icon(Icons.more_vert_rounded),
@@ -143,24 +233,22 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
           ),
         ),
       ],
-      title: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          buildPickerButton(
-            label: weekLabel,
-            onTap: onWeekPicker,
-            textStyle: titleTextStyle,
-          ),
-          if (currentScheduleData != null) ...[
-            const SizedBox(height: pickerButtonGap),
-            buildPickerButton(
-              label: "${currentScheduleData!.yearTerm}学期",
-              onTap: onTermPicker,
-              textStyle: termTextStyle,
-            ),
-          ],
-        ],
+      title: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: _layout.stacked
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [weekButton, ?termButton],
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(width: _layout.weekWidth, child: weekButton),
+                  if (termButton != null)
+                    SizedBox(width: _layout.termWidth, child: termButton),
+                ],
+              ),
       ),
       centerTitle: true,
     );

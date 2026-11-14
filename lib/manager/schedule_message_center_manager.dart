@@ -76,6 +76,25 @@ class ScheduleMessageRecord {
 class ScheduleMessageCenterManager {
   static const int maxRecords = 100;
   static final ValueNotifier<int> epoch = ValueNotifier<int>(0);
+  static Future<void>? _mutations;
+
+  static Future<void> _mutate(Future<void> Function() operation) {
+    final previous = _mutations;
+    final result = previous == null
+        ? Future<void>.microtask(operation)
+        : previous.then((_) => operation());
+    late final Future<void> tail;
+    void release() {
+      if (identical(_mutations, tail)) _mutations = null;
+    }
+
+    tail = result.then<void>(
+      (_) => release(),
+      onError: (Object _, StackTrace _) => release(),
+    );
+    _mutations = tail;
+    return result;
+  }
 
   static String _key(String userId) => 'schedule_message_history_v1_$userId';
 
@@ -83,6 +102,7 @@ class ScheduleMessageCenterManager {
     final normalized = userId.trim();
     if (normalized.isEmpty) return const [];
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     final raw = prefs.getString(_key(normalized));
     if (raw == null || raw.isEmpty) return const [];
     try {
@@ -107,7 +127,7 @@ class ScheduleMessageCenterManager {
     required String userId,
     required String yearTerm,
     required List<ScheduleWeekChange> changes,
-  }) async {
+  }) => _mutate(() async {
     final normalized = userId.trim();
     if (normalized.isEmpty || changes.isEmpty) return;
     final now = DateTime.now();
@@ -129,32 +149,62 @@ class ScheduleMessageCenterManager {
       read: false,
     );
     await _save(normalized, [record, ...current].take(maxRecords).toList());
-  }
+  });
 
-  static Future<void> markAllRead(String userId) async {
+  static Future<void> markRead(
+    String userId,
+    String recordId,
+  ) => _mutate(() async {
+    final current = await load(userId);
+    if (!current.any((record) => record.id == recordId && !record.read)) return;
+    await _save(
+      userId.trim(),
+      current
+          .map(
+            (record) =>
+                record.id == recordId ? record.copyWith(read: true) : record,
+          )
+          .toList(),
+    );
+  });
+
+  static Future<void> markAllRead(String userId) => _mutate(() async {
     final current = await load(userId);
     if (current.isEmpty || current.every((record) => record.read)) return;
     await _save(
       userId.trim(),
       current.map((record) => record.copyWith(read: true)).toList(),
     );
-  }
+  });
 
-  static Future<void> clear(String userId) async {
+  static Future<void> clear(String userId) => _mutate(() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key(userId.trim()));
+    try {
+      final removed = await prefs.remove(_key(userId.trim()));
+      if (!removed) throw StateError('消息记录未能清空');
+    } catch (_) {
+      await prefs.reload();
+      rethrow;
+    }
     epoch.value++;
-  }
+  });
 
   static Future<void> _save(
     String userId,
     List<ScheduleMessageRecord> records,
   ) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _key(userId),
-      jsonEncode(records.map((record) => record.toJson()).toList()),
-    );
+    try {
+      final saved = await prefs.setString(
+        _key(userId),
+        jsonEncode(records.map((record) => record.toJson()).toList()),
+      );
+      if (!saved) throw StateError('消息记录未能保存');
+    } catch (_) {
+      // SharedPreferences mutates its memory cache before the platform write.
+      await prefs.reload();
+      rethrow;
+    }
     epoch.value++;
   }
 

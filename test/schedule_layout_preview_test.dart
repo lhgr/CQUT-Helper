@@ -34,7 +34,7 @@ void main() {
     );
   }
 
-  testWidgets('背景预览从图片顶部裁剪，关键区域保持透明', (tester) async {
+  testWidgets('背景预览顶部有局部衬底而时间列与底栏保持透明', (tester) async {
     final file = existingImage();
     expect(file.existsSync(), isTrue);
 
@@ -55,14 +55,19 @@ void main() {
     final headerFinder = find.byKey(
       const ValueKey('schedule-layout-preview-header'),
     );
-    final header = tester.widget<Container>(headerFinder);
+    final header = tester.widget<Container>(
+      find.descendant(of: headerFinder, matching: find.byType(Container)).first,
+    );
     final timeColumn = tester.widget<Container>(
       find.byKey(const ValueKey('schedule-layout-preview-time-column')),
     );
     final bottomBar = tester.widget<Container>(
       find.byKey(const ValueKey('schedule-layout-preview-bottom-bar')),
     );
-    expect(header.color, Colors.transparent);
+    expect(
+      (header.decoration! as BoxDecoration).color,
+      Theme.of(tester.element(headerFinder)).colorScheme.surface.withAlpha(240),
+    );
     expect(timeColumn.color, Colors.transparent);
     expect((bottomBar.decoration! as BoxDecoration).color, Colors.transparent);
     expect(Theme.of(tester.element(headerFinder)).brightness, Brightness.dark);
@@ -101,14 +106,19 @@ void main() {
     final headerFinder = find.byKey(
       const ValueKey('schedule-layout-preview-header'),
     );
-    final header = tester.widget<Container>(headerFinder);
+    final header = tester.widget<Container>(
+      find.descendant(of: headerFinder, matching: find.byType(Container)).first,
+    );
     final timeColumn = tester.widget<Container>(
       find.byKey(const ValueKey('schedule-layout-preview-time-column')),
     );
     final bottomBar = tester.widget<Container>(
       find.byKey(const ValueKey('schedule-layout-preview-bottom-bar')),
     );
-    expect(header.color, isNot(Colors.transparent));
+    expect(
+      (header.decoration! as BoxDecoration).color,
+      isNot(Colors.transparent),
+    );
     expect(timeColumn.color, isNot(Colors.transparent));
     expect((bottomBar.decoration! as BoxDecoration).color!.a, 1);
     expect(Theme.of(tester.element(headerFinder)).brightness, Brightness.light);

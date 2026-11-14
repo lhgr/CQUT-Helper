@@ -1,3 +1,5 @@
+import 'reminder_readiness.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:cqut_helper/utils/course_reminder_mode.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
@@ -13,7 +15,7 @@ import 'package:cqut_helper/utils/local_notifications.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum DiagnosticCondition { normal, off, pending, problem }
+export 'reminder_readiness.dart' show DiagnosticCondition;
 
 enum DiagnosticRead {
   settings,
@@ -69,25 +71,18 @@ class SyncDiagnosticsSnapshot {
       : hasCredential == null
       ? DiagnosticCondition.pending
       : DiagnosticCondition.normal;
-  DiagnosticCondition get reminderCondition {
-    if (remindersEnabled == false) return DiagnosticCondition.off;
-    if (remindersEnabled == null ||
-        reminders == null ||
-        notifications == null ||
-        exactAlarm == null) {
-      return DiagnosticCondition.pending;
-    }
-    if (notifications == false || exactAlarm == false) {
-      return DiagnosticCondition.problem;
-    }
-    if (reminders!.updatedAt == null || !reminders!.enabled) {
-      return DiagnosticCondition.pending;
-    }
-    return reminders!.ready
-        ? DiagnosticCondition.normal
-        : DiagnosticCondition.problem;
-  }
-
+  ReminderReadiness get reminderReadiness => ReminderReadiness(
+    enabled: remindersEnabled,
+    plan: reminders,
+    notifications: notifications,
+    exactAlarm: exactAlarm,
+    readFailed:
+        failures.contains(DiagnosticRead.reminders) ||
+        failures.contains(DiagnosticRead.notifications) ||
+        failures.contains(DiagnosticRead.exactAlarm),
+    isIOS: defaultTargetPlatform == TargetPlatform.iOS,
+  );
+  DiagnosticCondition get reminderCondition => reminderReadiness.condition;
   DiagnosticCondition get backgroundCondition {
     if (notifications == false ||
         backgroundRestricted == true ||

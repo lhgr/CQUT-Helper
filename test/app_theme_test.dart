@@ -7,12 +7,43 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('浅色全部课程色与停课灰度保持标题和辅助文字对比', () {
+    final theme = ScheduleCourseCardTheme.light();
+    Color gray(Color color) =>
+        HSLColor.fromColor(color).withSaturation(0).toColor();
+    for (var index = 0; index < theme.backgrounds.length; index++) {
+      for (final transform in <Color Function(Color)>[(color) => color, gray]) {
+        final background = transform(theme.backgroundAt(index));
+        expect(
+          _contrastRatio(background, transform(theme.titleAt(index))),
+          greaterThanOrEqualTo(7),
+          reason: 'title index $index',
+        );
+        expect(
+          _contrastRatio(background, transform(theme.descriptionAt(index))),
+          greaterThanOrEqualTo(4.5),
+          reason: 'description index $index',
+        );
+      }
+    }
+  });
+
   test('深色课程卡片使用低亮背景并保持文字可读', () {
     final theme = ScheduleCourseCardTheme.dark();
 
     for (var index = 0; index < theme.backgrounds.length; index++) {
       final background = theme.backgroundAt(index);
       expect(background.computeLuminance(), lessThan(0.12));
+      Color gray(Color color) =>
+          HSLColor.fromColor(color).withSaturation(0).toColor();
+      expect(
+        _contrastRatio(gray(background), gray(theme.titleAt(index))),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrastRatio(gray(background), gray(theme.descriptionAt(index))),
+        greaterThanOrEqualTo(4.5),
+      );
       expect(
         _contrastRatio(background, theme.titleAt(index)),
         greaterThanOrEqualTo(4.5),

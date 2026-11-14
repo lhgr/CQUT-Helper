@@ -26,8 +26,8 @@ void main() {
       expect(find.text('调课通知增强未开启'), privacyHint);
       expect(find.text('课表变更记录'), findsOneWidget);
       if (!scenario.enabled) {
-        expect(find.textContaining('未开启时不会查询调课通知'), findsOneWidget);
-        expect(find.textContaining('本机保存的历史记录'), findsOneWidget);
+        expect(find.textContaining('未查询调课通知'), findsOneWidget);
+        expect(find.textContaining('本机记录与同步变更'), findsOneWidget);
       }
     });
   }

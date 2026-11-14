@@ -11,8 +11,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
   final bool reauthenticate;
+  final AuthApi? authApi;
 
-  const LoginPage({super.key, this.reauthenticate = false});
+  const LoginPage({super.key, this.reauthenticate = false, this.authApi});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -22,18 +23,22 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _accountController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _accountFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+  String? _loginError;
 
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _savedEncryptedPassword;
   String? _savedAccount;
 
-  final AuthApi _authApi = AuthApi();
+  late final AuthApi _authApi;
   final CredentialStore _credentialStore = CredentialStore();
 
   @override
   void initState() {
     super.initState();
+    _authApi = widget.authApi ?? AuthApi();
     _loadSavedCredentials();
     _accountController.addListener(() {
       setState(() {});
@@ -44,6 +49,8 @@ class _LoginPageState extends State<LoginPage> {
   void dispose() {
     _accountController.dispose();
     _passwordController.dispose();
+    _accountFocus.dispose();
+    _passwordFocus.dispose();
     super.dispose();
   }
 
@@ -55,7 +62,9 @@ class _LoginPageState extends State<LoginPage> {
     if (account != null && account.isNotEmpty) {
       if (mounted) {
         setState(() {
-          _accountController.text = account;
+          if (_accountController.text.isEmpty) {
+            _accountController.text = account;
+          }
           _savedAccount = account;
           _savedEncryptedPassword = widget.reauthenticate ? null : encryptedPwd;
         });
@@ -64,29 +73,20 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _handleLogin() async {
+    if (_isLoading) return;
     final account = _accountController.text.trim();
     final password = _passwordController.text;
 
-    if (account.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('请输入账号')));
+    if (_formKey.currentState?.validate() != true) {
+      (account.isEmpty ? _accountFocus : _passwordFocus).requestFocus();
       return;
     }
 
-    bool useSavedPassword = false;
-    if (password.isEmpty) {
-      if (_savedEncryptedPassword != null &&
-          _savedEncryptedPassword!.isNotEmpty &&
-          account == _savedAccount) {
-        useSavedPassword = true;
-      } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('请输入密码')));
-        return;
-      }
-    }
-
-    setState(() => _isLoading = true);
+    final useSavedPassword = password.isEmpty && _canUseSavedPassword;
+    setState(() {
+      _isLoading = true;
+      _loginError = null;
+    });
 
     try {
       await runDiagnosticOperation('Login', 'sign_in', () async {
@@ -128,8 +128,7 @@ class _LoginPageState extends State<LoginPage> {
       });
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(_loginErrorMessage(error))));
+        setState(() => _loginError = _loginErrorMessage(error));
       }
     } finally {
       if (mounted) {
@@ -137,6 +136,10 @@ class _LoginPageState extends State<LoginPage> {
       }
     }
   }
+
+  bool get _canUseSavedPassword =>
+      _savedEncryptedPassword?.isNotEmpty == true &&
+      _accountController.text.trim() == _savedAccount;
 
   String _loginErrorMessage(Object error) {
     if (error is DioException) return '登录请求未能完成，请检查网络后重试';
@@ -190,6 +193,7 @@ class _LoginPageState extends State<LoginPage> {
                   constraints: const BoxConstraints(maxWidth: 480),
                   child: Form(
                     key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -245,6 +249,14 @@ class _LoginPageState extends State<LoginPage> {
                                 const SizedBox(height: 16),
                                 TextFormField(
                                   controller: _accountController,
+                                  focusNode: _accountFocus,
+                                  enabled: !_isLoading,
+                                  validator: (value) =>
+                                      value?.trim().isNotEmpty == true
+                                      ? null
+                                      : '请输入账号',
+                                  onChanged: (_) =>
+                                      setState(() => _loginError = null),
                                   autofillHints: const [AutofillHints.username],
                                   decoration: const InputDecoration(
                                     labelText: '账号',
@@ -255,6 +267,15 @@ class _LoginPageState extends State<LoginPage> {
                                 const SizedBox(height: 16),
                                 TextFormField(
                                   controller: _passwordController,
+                                  focusNode: _passwordFocus,
+                                  enabled: !_isLoading,
+                                  validator: (value) =>
+                                      value?.isNotEmpty == true ||
+                                          _canUseSavedPassword
+                                      ? null
+                                      : '请输入密码',
+                                  onChanged: (_) =>
+                                      setState(() => _loginError = null),
                                   autofillHints: const [AutofillHints.password],
                                   obscureText: _obscurePassword,
                                   decoration: InputDecoration(
@@ -286,17 +307,26 @@ class _LoginPageState extends State<LoginPage> {
                                 Align(
                                   alignment: Alignment.centerRight,
                                   child: TextButton(
-                                    onPressed: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              const ForgetPasswordPage(),
-                                        ),
-                                      );
-                                    },
+                                    onPressed: _isLoading
+                                        ? null
+                                        : () {
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    const ForgetPasswordPage(),
+                                              ),
+                                            );
+                                          },
                                     child: const Text('忘记密码？'),
                                   ),
                                 ),
+                                if (_loginError != null) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _loginError!,
+                                    style: TextStyle(color: colorScheme.error),
+                                  ),
+                                ],
                                 const SizedBox(height: 16),
                                 FilledButton.icon(
                                   onPressed: _isLoading ? null : _handleLogin,

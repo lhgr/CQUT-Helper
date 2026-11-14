@@ -356,27 +356,8 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
   }
 
   Widget _reminderStatus(SyncDiagnosticsSnapshot data) {
-    String detail;
-    if (data.remindersEnabled == false) {
-      detail = defaultTargetPlatform == TargetPlatform.iOS
-          ? '开启后根据课表安排近期提醒，打开应用时续排'
-          : '开启后会根据课表生成未来 60 天提醒';
-    } else if (data.remindersEnabled == null ||
-        data.failures.contains(DiagnosticRead.reminders) ||
-        data.failures.contains(DiagnosticRead.notifications) ||
-        data.failures.contains(DiagnosticRead.exactAlarm)) {
-      detail = '暂时无法获取，请重试';
-    } else if (data.notifications == false || data.exactAlarm == false) {
-      detail = defaultTargetPlatform == TargetPlatform.iOS
-          ? '通知权限未授予，请修复提醒或检查系统设置'
-          : '通知或精确闹钟权限未授予，请修复提醒或检查系统设置';
-    } else if (data.reminders?.updatedAt == null ||
-        data.reminders?.enabled != true) {
-      detail = '尚未建立提醒计划，可修复提醒';
-    } else {
-      detail = data.reminders!.reason;
-    }
-    final unreadable = detail.contains('暂时无法获取');
+    final detail = data.reminderReadiness.detail;
+    final unreadable = data.reminderReadiness.unreadable;
     return _status(
       icon: Icons.alarm_on_outlined,
       title: '提醒就绪状态',

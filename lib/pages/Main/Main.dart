@@ -74,6 +74,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       _onOpenFromSystemNotification,
     );
     WidgetNavigation.request.addListener(_onWidgetNavigation);
+    ScheduleUpdateIntents.openWeek.addListener(_onOpenWeek);
     LocalNotifications.courseReminderOpened.addListener(
       _onCourseReminderOpened,
     );
@@ -105,6 +106,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       _onOpenFromSystemNotification,
     );
     WidgetNavigation.request.removeListener(_onWidgetNavigation);
+    ScheduleUpdateIntents.openWeek.removeListener(_onOpenWeek);
     LocalNotifications.courseReminderOpened.removeListener(
       _onCourseReminderOpened,
     );
@@ -174,6 +176,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       _onWidgetNavigation();
+      _onOpenWeek();
       _onOpenFromSystemNotification();
       unawaited(_fetchStartupAnnouncement());
       unawaited(_fetchStartupUpdate());
@@ -325,6 +328,15 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         _currentIndex = 0;
       });
     }
+  }
+
+  void _onOpenWeek() {
+    if (ScheduleUpdateIntents.openWeek.value == null ||
+        _isCheckingLogin ||
+        !mounted) {
+      return;
+    }
+    if (_currentIndex != 1) setState(() => _currentIndex = 1);
   }
 
   void _openScheduleAndChanges() {

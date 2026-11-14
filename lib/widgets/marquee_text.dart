@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 /// Scrolls a single line back and forth only when it exceeds the available
@@ -24,11 +26,30 @@ class _MarqueeTextState extends State<MarqueeText> {
   final ScrollController _controller = ScrollController();
   int _loopGeneration = 0;
   bool _loopScheduled = false;
+  bool _staticText = false;
+  Timer? _pauseTimer;
+  double? _lastWidth;
+  TextScaler? _lastTextScaler;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final staticText =
+        MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.accessibleNavigationOf(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    if (staticText != _staticText || scaler != _lastTextScaler) {
+      _staticText = staticText;
+      _lastTextScaler = scaler;
+      _restart();
+    }
+  }
 
   @override
   void didUpdateWidget(covariant MarqueeText oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.text != widget.text ||
+        oldWidget.style != widget.style ||
         oldWidget.pixelsPerSecond != widget.pixelsPerSecond ||
         oldWidget.pause != widget.pause) {
       _restart();
@@ -38,77 +59,97 @@ class _MarqueeTextState extends State<MarqueeText> {
   void _restart() {
     _loopGeneration++;
     _loopScheduled = false;
-    if (_controller.hasClients) _controller.jumpTo(0);
+    _pauseTimer?.cancel();
+    _pauseTimer = null;
   }
 
   void _scheduleLoop() {
-    if (_loopScheduled) return;
+    if (_loopScheduled || _staticText) return;
     _loopScheduled = true;
     final generation = ++_loopGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _runLoop(generation);
+      if (!mounted ||
+          generation != _loopGeneration ||
+          !_controller.hasClients) {
+        return;
+      }
+      _controller.jumpTo(0);
+      _queueTravel(generation, forward: true);
     });
   }
 
-  Future<void> _runLoop(int generation) async {
+  void _queueTravel(int generation, {required bool forward}) {
     if (!mounted || generation != _loopGeneration || !_controller.hasClients) {
       return;
     }
     final maxExtent = _controller.position.maxScrollExtent;
-    if (maxExtent <= 0) return;
+    if (maxExtent <= 0) {
+      _loopScheduled = false;
+      return;
+    }
     final travelDuration = Duration(
       milliseconds: (maxExtent / widget.pixelsPerSecond * 1000).round().clamp(
         300,
         12000,
       ),
     );
-    while (mounted && generation == _loopGeneration) {
-      await Future<void>.delayed(widget.pause);
-      if (!mounted || generation != _loopGeneration) return;
+    _pauseTimer = Timer(widget.pause, () async {
+      _pauseTimer = null;
+      if (!mounted ||
+          generation != _loopGeneration ||
+          !_controller.hasClients) {
+        return;
+      }
       await _controller.animateTo(
-        _controller.position.maxScrollExtent,
+        forward ? _controller.position.maxScrollExtent : 0,
         duration: travelDuration,
         curve: Curves.linear,
       );
       if (!mounted || generation != _loopGeneration) return;
-      await Future<void>.delayed(widget.pause);
-      if (!mounted || generation != _loopGeneration) return;
-      await _controller.animateTo(
-        0,
-        duration: travelDuration,
-        curve: Curves.linear,
-      );
-    }
+      _queueTravel(generation, forward: !forward);
+    });
   }
 
   @override
   void dispose() {
     _loopGeneration++;
+    _pauseTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    _scheduleLoop();
-    return Semantics(
-      label: widget.text,
-      child: ClipRect(
-        child: SingleChildScrollView(
-          controller: _controller,
-          scrollDirection: Axis.horizontal,
-          physics: const NeverScrollableScrollPhysics(),
-          child: ExcludeSemantics(
-            child: Text(
-              widget.text,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.visible,
-              style: widget.style,
+    if (_staticText) {
+      return Text(widget.text, style: widget.style, softWrap: true);
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (_lastWidth != constraints.maxWidth) {
+          _lastWidth = constraints.maxWidth;
+          _restart();
+        }
+        _scheduleLoop();
+        return Semantics(
+          label: widget.text,
+          child: ClipRect(
+            child: SingleChildScrollView(
+              controller: _controller,
+              scrollDirection: Axis.horizontal,
+              physics: const NeverScrollableScrollPhysics(),
+              child: ExcludeSemantics(
+                child: Text(
+                  widget.text,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                  style: widget.style,
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

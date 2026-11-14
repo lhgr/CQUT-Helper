@@ -19,15 +19,18 @@ import 'package:material_ui/material_ui.dart';
 
 class TodayScheduleView extends StatefulWidget {
   final bool isActive;
+  final ScheduleController? controller;
 
-  const TodayScheduleView({super.key, this.isActive = true});
+  const TodayScheduleView({super.key, this.isActive = true, this.controller});
 
   @override
   State<TodayScheduleView> createState() => _TodayScheduleViewState();
 }
 
 class _TodayScheduleViewState extends State<TodayScheduleView> {
-  final ScheduleController _controller = ScheduleController();
+  late final ScheduleController _controller;
+  bool _refreshing = false;
+  bool _reauthenticating = false;
 
   ScheduleData? _scheduleData;
   bool _loading = true;
@@ -52,6 +55,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   @override
   void initState() {
     super.initState();
+    _controller = widget.controller ?? ScheduleController();
     WidgetNavigation.request.addListener(_onWidgetNavigation);
     ScheduleCustomizationManager.instance.addListener(_onCustomizationChanged);
     AcademicCalendarManager.instance.epoch.addListener(
@@ -166,6 +170,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     if (!mounted ||
         !widget.isActive ||
         _loading ||
+        _refreshing ||
         _handlingWidgetNavigation ||
         navigation == null ||
         navigation.token == _lastHandledWidgetNavigationToken) {
@@ -267,14 +272,15 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     required bool forceRefresh,
     required bool widgetSync,
   }) async {
-    if (!mounted) return;
+    if (!mounted || _refreshing) return;
     setState(() {
+      _refreshing = true;
       if (forceRefresh) {
         _quoteRefreshToken++;
       } else {
         _loading = true;
       }
-      _error = null;
+      if (_scheduleData == null) _error = null;
     });
 
     ScheduleData? cached;
@@ -378,6 +384,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       if (mounted) {
         setState(() {
           _loading = false;
+          _refreshing = false;
         });
         unawaited(_onWidgetNavigation());
       }
@@ -409,13 +416,11 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   }
 
   String _mapError(Object error) {
-    final text = error.toString().toLowerCase();
-    if (text.contains('login')) {
+    if (error.toString().toLowerCase().contains('login')) {
       return '需要登录后才能查看今日课表。';
     }
-    if (text.contains('credential') ||
-        text.contains('凭证') ||
-        text.contains('鉴权')) {
+    if (ScheduleRefreshState.looksLikeCredentialFailure(error) ||
+        error.toString().contains('鉴权')) {
       return '登录凭证已失效，请重新登录。';
     }
     return '无法加载今日课表，请检查网络后重试。';
@@ -430,8 +435,14 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
   }
 
   Future<void> _reauthenticate() async {
-    if (!await requestReauthentication(context) || !mounted) return;
-    await _loadSchedule(forceRefresh: true);
+    if (_reauthenticating || _refreshing) return;
+    setState(() => _reauthenticating = true);
+    try {
+      if (!await requestReauthentication(context) || !mounted) return;
+      await _loadSchedule(forceRefresh: true);
+    } finally {
+      if (mounted) setState(() => _reauthenticating = false);
+    }
   }
 
   List<EventItem> _todayEvents(ScheduleData data) {
@@ -644,12 +655,16 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
               children: [
                 if (_requiresReauthentication)
                   FilledButton.icon(
-                    onPressed: _reauthenticate,
+                    onPressed: _reauthenticating || _refreshing
+                        ? null
+                        : _reauthenticate,
                     icon: const Icon(Icons.login),
                     label: const Text('重新登录'),
                   ),
                 OutlinedButton.icon(
-                  onPressed: () => _loadSchedule(forceRefresh: true),
+                  onPressed: _refreshing
+                      ? null
+                      : () => _loadSchedule(forceRefresh: true),
                   icon: const Icon(Icons.refresh),
                   label: const Text('重试'),
                 ),
@@ -725,15 +740,28 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
             ],
             if (moment != null) ...[
               const SizedBox(height: 24),
-              _NowNextCard(moment: moment),
+              _NowNextCard(
+                moment: moment,
+                onTap: moment.kind == _CourseMomentKind.finished
+                    ? null
+                    : () => _openEventDetails(moment.event),
+              ),
             ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               _InfoBanner(
-                icon: Icons.wifi_off_outlined,
+                icon: _requiresReauthentication
+                    ? Icons.login_outlined
+                    : Icons.wifi_off_outlined,
                 message: _requiresReauthentication
                     ? '请重新登录后刷新，正在显示已保存课表。'
                     : '刷新失败，正在显示已保存课表。',
+                actionLabel: _requiresReauthentication ? '重新登录' : '重试',
+                onAction: _refreshing || _reauthenticating
+                    ? null
+                    : _requiresReauthentication
+                    ? _reauthenticate
+                    : () => _loadSchedule(forceRefresh: true),
               ),
             ],
             const SizedBox(height: 24),
@@ -803,6 +831,14 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
     );
   }
 
+  void _openEventDetails(EventItem event) {
+    showCourseDetailDialog(
+      context,
+      courseName: event.eventName ?? '未命名课程',
+      events: [event],
+    );
+  }
+
   Widget _buildEventCard(BuildContext context, EventItem event) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -822,13 +858,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () {
-          showCourseDetailDialog(
-            context,
-            courseName: event.eventName ?? '未命名课程',
-            events: [event],
-          );
-        },
+        onTap: () => _openEventDetails(event),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -966,8 +996,15 @@ class _DateSummary extends StatelessWidget {
 class _InfoBanner extends StatelessWidget {
   final IconData icon;
   final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
-  const _InfoBanner({required this.icon, required this.message});
+  const _InfoBanner({
+    required this.icon,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -985,11 +1022,26 @@ class _InfoBanner extends StatelessWidget {
           Icon(icon, size: 20, color: colors.onSurfaceVariant),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              message,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  message,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                if (actionLabel != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: onAction,
+                      child: Text(actionLabel!),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -1059,7 +1111,9 @@ class _CourseMoment {
 class _NowNextCard extends StatelessWidget {
   final _CourseMoment moment;
 
-  const _NowNextCard({required this.moment});
+  final VoidCallback? onTap;
+
+  const _NowNextCard({required this.moment, this.onTap});
 
   String get _title => switch (moment.kind) {
     _CourseMomentKind.ongoing => '正在上课',
@@ -1087,60 +1141,77 @@ class _NowNextCard extends StatelessWidget {
       color: foreground,
       fontWeight: FontWeight.w600,
     );
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      color: finished ? colors.surfaceContainerLow : colors.primaryContainer,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _title,
-              style: theme.textTheme.labelLarge?.copyWith(color: foreground),
-            ),
-            if (finished) ...[
-              const SizedBox(height: 8),
-              Text(
-                '辛苦了',
-                style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
-              ),
-            ] else ...[
-              const SizedBox(height: 8),
-              Text(
-                name.isEmpty ? '未命名课程' : name,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  color: foreground,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (location.isNotEmpty) ...[
-                const SizedBox(height: 8),
+    return Semantics(
+      key: const ValueKey('today-course-moment'),
+      container: true,
+      button: onTap != null,
+      hint: onTap == null ? null : '查看课程详情',
+      onTap: onTap,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        color: finished ? colors.surfaceContainerLow : colors.primaryContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          excludeFromSemantics: true,
+          borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  location,
-                  style: theme.textTheme.bodyMedium?.copyWith(
+                  _title,
+                  style: theme.textTheme.labelLarge?.copyWith(
                     color: foreground,
                   ),
                 ),
-              ],
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: [
-                  if (moment.kind == _CourseMomentKind.ongoing)
-                    Text('距离下课', style: countdownStyle),
-                  Text(_countdownDuration, style: countdownStyle),
-                  if (moment.kind == _CourseMomentKind.next)
-                    Text('后开始', style: countdownStyle),
+                if (finished) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '辛苦了',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: foreground,
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    name.isEmpty ? '未命名课程' : name,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: foreground,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (location.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      location,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: foreground,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: [
+                      if (moment.kind == _CourseMomentKind.ongoing)
+                        Text('距离下课', style: countdownStyle),
+                      Text(_countdownDuration, style: countdownStyle),
+                      if (moment.kind == _CourseMomentKind.next)
+                        Text('后开始', style: countdownStyle),
+                    ],
+                  ),
                 ],
-              ),
-            ],
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );

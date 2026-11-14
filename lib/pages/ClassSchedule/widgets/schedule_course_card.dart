@@ -60,7 +60,6 @@ class ScheduleCourseCard extends StatelessWidget {
         final edgeInsets = tinyWidth
             ? const EdgeInsets.symmetric(horizontal: 1, vertical: 1)
             : const EdgeInsets.all(2);
-        final lineBudget = _lineBudgetForHeight(constraints.maxHeight);
 
         final titleText = (event.eventName ?? '').trim();
         final rawAddress = (event.address ?? '').trim();
@@ -102,21 +101,26 @@ class ScheduleCourseCard extends StatelessWidget {
                         : (horizontalCenter
                               ? Alignment.topCenter
                               : Alignment.topLeft),
-                    child: Text.rich(
-                      _buildContentSpan(
-                        title: titleText,
-                        address: addressText,
-                        teacher: teacherText,
-                        prefixAddressWithAt: !removeCampusPrefix,
-                        titleStyle: titleStyle,
-                        detailStyle: detailStyle,
-                      ),
-                      softWrap: true,
-                      textAlign: horizontalCenter
-                          ? TextAlign.center
-                          : TextAlign.start,
-                      maxLines: lineBudget,
-                      overflow: TextOverflow.ellipsis,
+                    child: _buildContent(
+                      context,
+                      title: titleText.isEmpty ? '-' : titleText,
+                      address: addressText.isEmpty
+                          ? ''
+                          : '${removeCampusPrefix ? '' : '@'}$addressText',
+                      addressSemanticLabel: '地点：$rawAddress',
+                      teacher: teacherText,
+                      titleStyle: titleStyle!,
+                      detailStyle: detailStyle!,
+                      width:
+                          constraints.maxWidth -
+                          2 -
+                          edgeInsets.horizontal -
+                          (showBadge && !expandedConflictBadge ? 24 : 0),
+                      height:
+                          constraints.maxHeight -
+                          2 -
+                          edgeInsets.vertical -
+                          (showBadge && expandedConflictBadge ? 14 : 0),
                     ),
                   ),
                 ),
@@ -234,37 +238,164 @@ class ScheduleCourseCard extends StatelessWidget {
         .trim();
   }
 
-  TextSpan _buildContentSpan({
+  Widget _buildContent(
+    BuildContext context, {
     required String title,
     required String address,
+    required String addressSemanticLabel,
     required String teacher,
-    required bool prefixAddressWithAt,
-    required TextStyle? titleStyle,
-    required TextStyle? detailStyle,
+    required TextStyle titleStyle,
+    required TextStyle detailStyle,
+    required double width,
+    required double height,
   }) {
-    final children = <InlineSpan>[
-      TextSpan(text: title.isEmpty ? '-' : title, style: titleStyle),
-    ];
-
-    if (address.isNotEmpty) {
-      final prefix = prefixAddressWithAt ? '@' : '';
-      children.add(TextSpan(text: '\n$prefix$address', style: detailStyle));
+    if (width <= 0 || height <= 0) return const SizedBox.shrink();
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    final defaults = DefaultTextStyle.of(context);
+    TextStyle resolvedStyle(TextStyle style) {
+      final resolved = defaults.style.merge(style);
+      return MediaQuery.boldTextOf(context)
+          ? resolved.copyWith(fontWeight: FontWeight.bold)
+          : resolved;
     }
 
-    if (teacher.isNotEmpty) {
-      children.add(TextSpan(text: '\n$teacher', style: detailStyle));
+    titleStyle = resolvedStyle(titleStyle);
+    detailStyle = resolvedStyle(detailStyle);
+    TextPainter measure(String text, TextStyle style) => TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: direction,
+      textScaler: scaler,
+      locale: Localizations.maybeLocaleOf(context),
+      textHeightBehavior: defaults.textHeightBehavior,
+    )..layout(maxWidth: width);
+    final titleMetrics = measure(title, titleStyle);
+    final addressMetrics = measure(address, detailStyle);
+    final titleProbe = measure('国', titleStyle);
+    final detailProbe = measure('国', detailStyle);
+    final lineHeight = titleProbe.height > detailProbe.height
+        ? titleProbe.height
+        : detailProbe.height;
+    titleProbe.dispose();
+    detailProbe.dispose();
+    // Reserve location before giving long names additional lines.
+    final budget = (height / lineHeight).floor().clamp(1, 7);
+    final titleNeeded = titleMetrics.computeLineMetrics().length.clamp(1, 3);
+    final addressNeeded = address.isEmpty
+        ? 0
+        : addressMetrics.computeLineMetrics().length.clamp(1, 3);
+    titleMetrics.dispose();
+    addressMetrics.dispose();
+    var titleLines = 1;
+    var addressLines = addressNeeded > 0 && budget >= 2 ? 1 : 0;
+    var remaining = budget - titleLines - addressLines;
+    final extraTitle = (titleNeeded - titleLines).clamp(0, remaining);
+    titleLines += extraTitle;
+    remaining -= extraTitle;
+    if (addressLines > 0) {
+      final extraAddress = (addressNeeded - addressLines).clamp(0, remaining);
+      addressLines += extraAddress;
+      remaining -= extraAddress;
+    }
+    bool addressFits(String value, int lines) {
+      final painter = TextPainter(
+        text: TextSpan(text: value, style: detailStyle),
+        textDirection: direction,
+        textScaler: scaler,
+        locale: Localizations.maybeLocaleOf(context),
+        textHeightBehavior: defaults.textHeightBehavior,
+        maxLines: lines,
+      )..layout(maxWidth: width);
+      final result = !painter.didExceedMaxLines;
+      painter.dispose();
+      return result;
     }
 
-    return TextSpan(children: children);
-  }
+    final roomToken = RegExp(r'[A-Za-z]?\d+[A-Za-z]?$')
+        .firstMatch(address)
+        ?.group(0);
+    // Give a room number enough lines before spending them on a third title line.
+    while (addressLines > 0 &&
+        roomToken != null &&
+        !addressFits(roomToken, addressLines) &&
+        (remaining > 0 || titleLines > 1)) {
+      if (remaining > 0) {
+        remaining--;
+      } else {
+        titleLines--;
+      }
+      addressLines++;
+    }
 
-  int _lineBudgetForHeight(double height) {
-    if (height < 28) return 1;
-    if (height < 42) return 2;
-    if (height < 58) return 3;
-    if (height < 74) return 4;
-    if (height < 90) return 5;
-    if (height < 108) return 6;
-    return 7;
+    String compactAddress(int lines) {
+      bool fits(String value) => addressFits(value, lines);
+
+      if (fits(address)) return address;
+      if (roomToken != null && fits(roomToken) && !fits('…$roomToken')) {
+        return roomToken;
+      }
+      final points = address.runes.toList(growable: false);
+      final roomTokenLength = roomToken?.runes.length ?? 4;
+      String candidate(int count) {
+        final prefix = (count - roomTokenLength).clamp(0, count) ~/ 3;
+        return '${String.fromCharCodes(points.take(prefix))}…${String.fromCharCodes(points.skip(points.length - count + prefix))}';
+      }
+
+      var low = 0;
+      var high = points.length - 1;
+      var result = '…';
+      while (low <= high) {
+        final count = (low + high) ~/ 2;
+        final value = candidate(count);
+        if (fits(value)) {
+          result = value;
+          low = count + 1;
+        } else {
+          high = count - 1;
+        }
+      }
+      return result;
+    }
+
+    Widget field(
+      String text,
+      TextStyle style,
+      int lines, {
+      String? semanticLabel,
+    }) => Text(
+      text,
+      semanticsLabel: semanticLabel,
+      style: style,
+      textAlign: horizontalCenter ? TextAlign.center : TextAlign.start,
+      maxLines: lines,
+      textHeightBehavior: defaults.textHeightBehavior,
+      overflow: TextOverflow.ellipsis,
+    );
+    return ClipRect(
+      child: OverflowBox(
+        minHeight: 0,
+        maxHeight: double.infinity,
+        alignment: verticalCenter ? Alignment.center : Alignment.topCenter,
+        child: SizedBox(
+          width: width,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              field(title, titleStyle, titleLines),
+              if (addressLines > 0)
+                field(
+                  compactAddress(addressLines),
+                  detailStyle,
+                  addressLines,
+                  semanticLabel: addressSemanticLabel,
+                ),
+              if (teacher.isNotEmpty && remaining > 0)
+                field(teacher, detailStyle, 1),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

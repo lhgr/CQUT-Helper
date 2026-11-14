@@ -4,9 +4,11 @@ import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_week_loader.dart';
+import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeWeekLoaderScheduleApi extends ScheduleApi {
@@ -19,6 +21,9 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
   int cacheCalls = 0;
   int networkCalls = 0;
   String? lastEncryptedPassword;
+  bool? lastRefreshReminders;
+  bool? lastUpdateWidgetPins;
+  bool? lastPersistLastViewed;
 
   @override
   Future<ScheduleData?> loadFromCache({
@@ -45,6 +50,9 @@ class _FakeWeekLoaderScheduleApi extends ScheduleApi {
     String? refreshId,
   }) async {
     networkCalls++;
+    lastRefreshReminders = refreshReminders;
+    lastUpdateWidgetPins = updateWidgetPins;
+    lastPersistLastViewed = persistLastViewed;
     if (networkError != null) throw networkError!;
     lastEncryptedPassword = encryptedPassword;
     final request = pending['$userId|$yearTerm|$weekNum'] ?? networkCompleter;
@@ -121,6 +129,105 @@ void main() {
       weekList: const ['1', '2', '3'],
       eventList: const [],
     );
+
+    test('controller navigation reads cache then network without changing visible or persisted selection', () async {
+      SharedPreferences.setMockInitialValues({
+        'account': 'u1',
+        'schedule_last_term_u1': 'current',
+        'schedule_last_week_u1': '1',
+      });
+      FlutterSecureStorage.setMockInitialValues({
+        'encrypted_password': 'secure-p1',
+      });
+      final api = _FakeWeekLoaderScheduleApi()
+        ..networkResult = week('2', 'historical');
+      final controller = ScheduleController(service: api);
+      addTearDown(controller.dispose);
+      await controller.loadCredentials();
+      controller.processLoadedData(week('1', 'current'));
+      final selection = controller.selectionVersion;
+      final result = await controller.loadWeekForNavigation('2', 'historical');
+      expect(result.yearTerm, 'historical');
+      expect(api.networkCalls, 1);
+      expect(api.lastRefreshReminders, isFalse);
+      expect(api.lastUpdateWidgetPins, isFalse);
+      expect(api.lastPersistLastViewed, isFalse);
+      expect(controller.currentTerm, 'current');
+      expect(controller.weekCache.keys, [1]);
+      expect(controller.selectionVersion, selection);
+      api.cacheResult = week('3', 'historical');
+      expect(
+        (await controller.loadWeekForNavigation('3', 'historical')).weekNum,
+        '3',
+      );
+      expect(api.networkCalls, 1);
+      expect(controller.currentTerm, 'current');
+      expect(controller.weekCache.keys, [1]);
+      api.cacheResult = null;
+      api.networkError = StateError('offline');
+      await expectLater(
+        controller.loadWeekForNavigation('2', 'historical'),
+        throwsStateError,
+      );
+      expect(controller.currentTerm, 'current');
+      expect(controller.weekCache.keys, [1]);
+      expect(controller.selectionVersion, selection);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('schedule_last_term_u1'), 'current');
+      expect(prefs.getString('schedule_last_week_u1'), '1');
+    });
+
+    test('navigation read does not select historical term or persist it before commit', () async {
+      SharedPreferences.setMockInitialValues({
+        'account': 'u1',
+        'schedule_last_term_u1': 'current',
+        'schedule_last_week_u1': '1',
+      });
+      final api = _FakeWeekLoaderScheduleApi()
+        ..networkResult = week('2', 'historical');
+      final loader = buildLoader(
+        api,
+        credentialStore: _FakeWeekLoaderCredentialStore(value: 'secure-p1'),
+      );
+      await loader.loadCredentials();
+      loader.processLoadedData(week('1', 'current'));
+      final selection = loader.selectionVersion;
+      final result = await loader.loadFromNetwork(
+        weekNum: '2',
+        yearTerm: 'historical',
+        select: false,
+        persistLastViewed: false,
+        updateWidgetPins: false,
+        refreshReminders: false,
+      );
+      expect(result.yearTerm, 'historical');
+      expect(currentTerm, 'current');
+      expect(weekCache.keys, [1]);
+      expect(weekList, ['1', '2', '3']);
+      expect(loader.selectionVersion, selection);
+      expect(api.lastRefreshReminders, isFalse);
+      expect(api.lastUpdateWidgetPins, isFalse);
+      expect(api.lastPersistLastViewed, isFalse);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('schedule_last_term_u1'), 'current');
+      expect(prefs.getString('schedule_last_week_u1'), '1');
+      api.networkError = StateError('offline');
+      await expectLater(
+        loader.loadFromNetwork(
+          weekNum: '2',
+          yearTerm: 'historical',
+          select: false,
+          persistLastViewed: false,
+          updateWidgetPins: false,
+          refreshReminders: false,
+        ),
+        throwsStateError,
+      );
+      expect(currentTerm, 'current');
+      expect(weekCache.keys, [1]);
+      expect(loader.selectionVersion, selection);
+      expect(prefs.getString('schedule_last_term_u1'), 'current');
+    });
 
     test(
       'later foreground selection owns last-viewed when responses reverse',

@@ -37,6 +37,7 @@ import 'package:cqut_helper/pages/Login/Login.dart';
 part 'class_schedule_actions.dart';
 part 'class_schedule_loading.dart';
 part 'class_schedule_updates.dart';
+part 'class_schedule_navigation.dart';
 
 class ClassscheduleView extends StatefulWidget {
   final double floatingActionButtonBottomOffset;
@@ -72,6 +73,13 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
 
   bool _loading = true; // 默认为 true，防止初始空数据渲染
   String? _error;
+  final Set<(String, int)> _failedWeeks = {};
+  bool _locationReady = false;
+  bool _locationLoading = false;
+  ScheduleLocationRequest? _locationTarget;
+  String? _locationError;
+  bool _locationNeedsLogin = false;
+  bool _locationAuthenticating = false;
   DateTime? _lastSuccessfulRefreshAt;
 
   int _lastOpenChangesToken = 0;
@@ -109,6 +117,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openChangesSheet.addListener(_onOpenChangesSheet);
     ScheduleUpdateIntents.scheduleUpdated.addListener(_onScheduleUpdated);
+    ScheduleUpdateIntents.openWeek.addListener(_onOpenWeek);
     CacheCleanupManager.timetableCacheEpoch.addListener(
       _onTimetableCacheCleared,
     );
@@ -118,7 +127,11 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
       _onAcademicCalendarChanged,
     );
     _loadPreferences();
-    _loadInitialData();
+    _loadInitialData().whenComplete(() {
+      if (!mounted) return;
+      _locationReady = true;
+      _onOpenWeek();
+    });
     _scheduleDeviceDateCheck();
   }
 
@@ -127,6 +140,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     WidgetsBinding.instance.removeObserver(this);
     ScheduleUpdateIntents.openChangesSheet.removeListener(_onOpenChangesSheet);
     ScheduleUpdateIntents.scheduleUpdated.removeListener(_onScheduleUpdated);
+    ScheduleUpdateIntents.openWeek.removeListener(_onOpenWeek);
     CacheCleanupManager.timetableCacheEpoch.removeListener(
       _onTimetableCacheCleared,
     );
@@ -190,6 +204,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     _viewGeneration++;
     _resetDeferredWork();
     _controller.reset();
+    _cancelLocation();
+    _failedWeeks.clear();
     _schoolTodayDate = null;
     _schoolTodayReceivedAt = null;
     if (!mounted) return;
@@ -352,6 +368,15 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     final hasBackground = ScheduleBackground.hasImage(
       _settingsManager.layoutSettings,
     );
+    if (_currentScheduleData == null &&
+        (_locationLoading || _locationError != null)) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('课表'), centerTitle: true),
+        body: Center(
+          child: SingleChildScrollView(child: _buildLocationNotice()),
+        ),
+      );
+    }
     if ((_currentScheduleData == null || _weekList == null) && _loading) {
       return Scaffold(
         backgroundColor: Colors.transparent,
@@ -442,85 +467,99 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
           ScheduleDate.dataCoversDate(_currentScheduleData!, DateTime.now()),
     );
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      floatingActionButton: showFab
-          ? ScheduleReturnWeekButton(
-              onPressed: _returnToCurrentWeek,
-              transparentBackground: hasBackground,
-              bottomOffset: widget.floatingActionButtonBottomOffset,
-            )
-          : null,
-      appBar: ScheduleAppBar(
-        loading: _loading,
-        weekList: _weekList,
-        currentWeekIndex: _currentWeekIndex,
-        currentScheduleData: _currentScheduleData,
-        nowInTeachingWeek: _nowInTeachingWeek,
-        nowStatusLabel: _nowStatusLabel,
-        refreshStatusText: _refreshStatusText,
-        onRefresh: () => _loadFromNetwork(
-          weekNum: _weekList![_currentWeekIndex],
-          yearTerm: _currentScheduleData?.yearTerm,
-          updateWidgetPins:
-              _actualCurrentWeekStr == null ||
-              _actualCurrentTermStr == null ||
-              (_weekList![_currentWeekIndex] == _actualCurrentWeekStr &&
-                  _currentScheduleData?.yearTerm == _actualCurrentTermStr),
+    return LayoutBuilder(
+      builder: (context, constraints) => Scaffold(
+        backgroundColor: Colors.transparent,
+        floatingActionButton: showFab
+            ? ScheduleReturnWeekButton(
+                onPressed: _returnToCurrentWeek,
+                transparentBackground: hasBackground,
+                bottomOffset: widget.floatingActionButtonBottomOffset,
+              )
+            : null,
+        appBar: ScheduleAppBar(
+          context: context,
+          availableWidth: constraints.maxWidth,
+          loading: _loading,
+          weekList: _weekList,
+          currentWeekIndex: _currentWeekIndex,
+          currentScheduleData: _currentScheduleData,
+          nowInTeachingWeek: _nowInTeachingWeek,
+          nowStatusLabel: _nowStatusLabel,
+          refreshStatusText: _refreshStatusText,
+          onRefresh: () => _loadFromNetwork(
+            weekNum: _weekList![_currentWeekIndex],
+            yearTerm: _currentScheduleData?.yearTerm,
+            updateWidgetPins:
+                _actualCurrentWeekStr == null ||
+                _actualCurrentTermStr == null ||
+                (_weekList![_currentWeekIndex] == _actualCurrentWeekStr &&
+                    _currentScheduleData?.yearTerm == _actualCurrentTermStr),
+          ),
+          onSettings: _showScheduleSettingsPage,
+          onWeekPicker: _showWeekPickerSheet,
+          onTermPicker: _showTermPickerSheet,
+          onAddCourse: _openCustomCourseEditor,
+          onExportIcs: _exportIcs,
+          transparentBackground: hasBackground,
         ),
-        onSettings: _showScheduleSettingsPage,
-        onWeekPicker: _showWeekPickerSheet,
-        onTermPicker: _showTermPickerSheet,
-        onAddCourse: _openCustomCourseEditor,
-        onExportIcs: _exportIcs,
-        transparentBackground: hasBackground,
-      ),
-      body: Column(
-        children: [
-          if (_inlineNoticeMessages.isNotEmpty)
-            ScheduleInlineNoticePanel(
-              notices: _inlineNoticeMessages,
-              onDismissOne: _dismissInlineNoticeAt,
-              onDismissAll: _clearInlineNotices,
+        body: Column(
+          children: [
+            if (_locationLoading || _locationError != null)
+              _buildLocationNotice(),
+            if (_inlineNoticeMessages.isNotEmpty)
+              ScheduleInlineNoticePanel(
+                notices: _inlineNoticeMessages,
+                onDismissOne: _dismissInlineNoticeAt,
+                onDismissAll: _clearInlineNotices,
+              ),
+            ScheduleOnboardingHintVisibility(
+              manager: OnboardingManager.instance,
+              readyToShow:
+                  !_loading &&
+                  _currentScheduleData != null &&
+                  _weekList != null &&
+                  _weekList!.isNotEmpty &&
+                  _weekCache[int.tryParse(displayedWeek) ?? -1] != null,
+              hasInlineNotices: _inlineNoticeMessages.isNotEmpty,
+              hasCourses: () =>
+                  displayedSchedule != null &&
+                  _weekHasDisplayedCourses(displayedSchedule),
             ),
-          ScheduleOnboardingHintVisibility(
-            manager: OnboardingManager.instance,
-            readyToShow:
-                !_loading &&
-                _currentScheduleData != null &&
-                _weekList != null &&
-                _weekList!.isNotEmpty &&
-                _weekCache[int.tryParse(displayedWeek) ?? -1] != null,
-            hasInlineNotices: _inlineNoticeMessages.isNotEmpty,
-            hasCourses: () =>
-                displayedSchedule != null &&
-                _weekHasDisplayedCourses(displayedSchedule),
-          ),
-          Expanded(
-            child: SchedulePageView(
-              pageController: _pageController,
-              onPageChanged: _onPageChanged,
-              onScrollActivityChanged: _onWeekPageScrollActivityChanged,
-              weekList: _weekList!,
-              weekCache: _weekCache,
-              todayDate: todayDate,
-              showWeekend: _settingsManager.showWeekend,
-              weekendNoticeDismissed:
-                  _settingsManager.weekendMakeupNoticeDismissed,
-              onDismissWeekendNotice: _dismissWeekendMakeupNotice,
-              academicCalendar: _academicCalendar,
-              onBoundaryMessage: _showBoundaryMessage,
-              currentWeekIndex: _currentWeekIndex,
-              timeInfoList: _settingsManager.timeInfoEnabled
-                  ? _controller.timeInfoList
-                  : null,
-              layoutSettings: _settingsManager.layoutSettings,
-              resolveCourseDetailEvents: _resolveCourseDetailEvents,
-              onEditCourse: _editCourse,
-              onDeleteCourse: _deleteCustomCourse,
+            Expanded(
+              child: SchedulePageView(
+                pageController: _pageController,
+                onPageChanged: _onPageChanged,
+                onScrollActivityChanged: _onWeekPageScrollActivityChanged,
+                weekList: _weekList!,
+                weekCache: _weekCache,
+                failedWeeks: {
+                  for (final failure in _failedWeeks)
+                    if (failure.$1 == _currentTerm) failure.$2,
+                },
+                onRetryWeek: (week) {
+                  final term = _currentTerm;
+                  if (term != null) _ensureWeekLoaded(week, term);
+                },
+                todayDate: todayDate,
+                showWeekend: _settingsManager.showWeekend,
+                weekendNoticeDismissed:
+                    _settingsManager.weekendMakeupNoticeDismissed,
+                onDismissWeekendNotice: _dismissWeekendMakeupNotice,
+                academicCalendar: _academicCalendar,
+                onBoundaryMessage: _showBoundaryMessage,
+                currentWeekIndex: _currentWeekIndex,
+                timeInfoList: _settingsManager.timeInfoEnabled
+                    ? _controller.timeInfoList
+                    : null,
+                layoutSettings: _settingsManager.layoutSettings,
+                resolveCourseDetailEvents: _resolveCourseDetailEvents,
+                onEditCourse: _editCourse,
+                onDeleteCourse: _deleteCustomCourse,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

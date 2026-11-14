@@ -15,6 +15,8 @@ import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'settings_schedule_scope.dart';
+import 'reminder_readiness.dart';
+import 'app_settings_page.dart';
 
 class NotificationSettingsPage extends StatefulWidget {
   final SettingsScheduleScope scope;
@@ -39,6 +41,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
   CourseAutoMode _courseAutoMode = CourseAutoMode.off;
   CourseReminderPermissionStatus? _permissionStatus;
   bool _permissionStatusLoadFailed = false;
+  CourseReminderStatus? _reminderStatus;
+  bool _reminderStatusLoadFailed = false;
   bool _permissionRefreshInProgress = false;
   CourseAutoMode? _pendingCourseAutoMode;
   String? _pendingPermissionKind;
@@ -76,6 +80,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       _permissionStatusLoadFailed = true;
     }
     final health = await ScheduleUpdateWorker.loadHealthSnapshot();
+    await _refreshReminderStatus();
     if (!mounted) return;
     final serviceUrl = _manager.noticeApiBaseUrl;
     _serviceController.text =
@@ -145,6 +150,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
         }
       }
     } finally {
+      await _refreshReminderStatus();
       _permissionRefreshInProgress = false;
     }
   }
@@ -286,11 +292,27 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
   }
 
   Future<void> _rescheduleReminders() async {
-    if (_remindersEnabled && widget.scope.userId.isNotEmpty) {
-      await CourseReminderScheduler.rescheduleForUser(widget.scope.userId);
-    } else {
-      await CourseReminderScheduler.cancelAll();
+    try {
+      if (_remindersEnabled && widget.scope.userId.isNotEmpty) {
+        await CourseReminderScheduler.rescheduleForUser(widget.scope.userId);
+      } else {
+        await CourseReminderScheduler.cancelAll();
+      }
+    } finally {
+      await _refreshReminderStatus();
     }
+  }
+
+  Future<void> _refreshReminderStatus() async {
+    CourseReminderStatus? status;
+    try {
+      status = await CourseReminderScheduler.loadStatus();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _reminderStatus = status;
+      _reminderStatusLoadFailed = status == null;
+    });
   }
 
   Future<void> _toggleReminders(bool value) async {
@@ -644,16 +666,217 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
     String deniedLabel = '未授权',
     Future<void> Function()? onTap,
   }) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: Text(granted ? grantedLabel : deniedLabel),
-      trailing: TextButton(
-        onPressed: onTap ?? () => _openPermissionSettings(kind),
-        child: const Text('去设置'),
+    return _settingsActionTile(
+      icon: icon,
+      title: title,
+      subtitle: granted ? grantedLabel : deniedLabel,
+      onTap: onTap ?? () => _openPermissionSettings(kind),
+    );
+  }
+
+  Widget _settingsActionTile({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required Future<void> Function() onTap,
+    String actionLabel = '去设置',
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final action = TextButton(onPressed: onTap, child: Text(actionLabel));
+        final stackAction =
+            constraints.maxWidth < 360 ||
+            MediaQuery.textScalerOf(context).scale(14) > 18;
+        final tile = ListTile(
+          leading: Icon(icon),
+          title: Text(title),
+          subtitle: subtitle == null ? null : Text(subtitle),
+          trailing: stackAction ? null : action,
+        );
+        if (!stackAction) return tile;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            tile,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Align(alignment: Alignment.centerRight, child: action),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _reminderReadinessCard() {
+    final permissions = _permissionStatusLoadFailed ? null : _permissionStatus;
+    final readiness = ReminderReadiness(
+      enabled: _remindersEnabled,
+      plan: _reminderStatus,
+      notifications: permissions?.notificationGranted,
+      exactAlarm: _isIOS ? true : permissions?.exactAlarmGranted,
+      readFailed: _permissionStatusLoadFailed || _reminderStatusLoadFailed,
+      isIOS: _isIOS,
+    );
+    final needsPermissions = _remindersEnabled || _pollingEnabled;
+    String time(DateTime value) =>
+        '${value.month}月${value.day}日 ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: Icon(switch (readiness.condition) {
+              DiagnosticCondition.normal => Icons.alarm_on_outlined,
+              DiagnosticCondition.off => Icons.alarm_off_outlined,
+              _ => Icons.info_outline,
+            }),
+            title: const Text('提醒就绪状态'),
+            subtitle: Text(readiness.detail),
+          ),
+          if (_remindersEnabled && !readiness.unreadable) ...[
+            if (_reminderStatus?.nextReminderAt case final next?)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text('下一条提醒：${time(next)}'),
+              ),
+            if (_isIOS)
+              if (_reminderStatus?.coveredUntil case final until?)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text('实际覆盖截至：${time(until)}'),
+                ),
+          ],
+          if (needsPermissions && _permissionStatusLoadFailed)
+            const ListTile(title: Text('暂时无法读取系统授权状态')),
+          if (needsPermissions && permissions?.supported == true) ...[
+            if (!permissions!.notificationGranted)
+              _permissionTile(
+                icon: Icons.notifications_outlined,
+                title: '通知权限',
+                granted: false,
+                kind: 'notifications',
+              ),
+            if (_remindersEnabled && !_isIOS && !permissions.exactAlarmGranted)
+              _permissionTile(
+                icon: Icons.alarm,
+                title: '精确闹钟',
+                granted: false,
+                kind: 'exactAlarm',
+              ),
+            if (_remindersEnabled &&
+                !_isIOS &&
+                _courseAutoMode != CourseAutoMode.off &&
+                !permissions.dndGranted)
+              _permissionTile(
+                icon: Icons.do_not_disturb_on_outlined,
+                title: '勿扰权限',
+                granted: false,
+                kind: 'dnd',
+              ),
+          ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              children: [
+                if (readiness.unreadable ||
+                    (needsPermissions && _permissionStatusLoadFailed))
+                  TextButton(
+                    onPressed: _permissionRefreshInProgress
+                        ? null
+                        : _refreshPermissionStatus,
+                    child: const Text('重试'),
+                  ),
+                if (_remindersEnabled &&
+                    !readiness.unreadable &&
+                    readiness.condition != DiagnosticCondition.normal)
+                  TextButton(
+                    onPressed: () async {
+                      await openAppSettings(
+                        context,
+                        section: AppSettingsSection.diagnostics,
+                        userId: widget.scope.userId,
+                        yearTerm: widget.scope.yearTerm,
+                      );
+                      if (mounted) await _refreshPermissionStatus();
+                    },
+                    child: const Text('同步与修复'),
+                  ),
+                if (_isIOS)
+                  TextButton(
+                    onPressed: () => _openPermissionSettings('notifications'),
+                    child: const Text('系统通知设置'),
+                  ),
+              ],
+            ),
+          ),
+          if (_isIOS)
+            const ListTile(
+              leading: Icon(Icons.sync),
+              title: Text('打开应用更新课表与提醒'),
+              subtitle: Text('启动、返回前台和手动刷新时同步。iOS 最多保留 64 条待发送本地通知，请定期打开应用续排。'),
+            ),
+        ],
       ),
     );
   }
+
+  Widget _systemSettingsCard() => Card(
+    child: ExpansionTile(
+      key: const ValueKey('notification-system-settings'),
+      title: const Text('系统与后台设置'),
+      subtitle: const Text('查看通知权限、电池优化与自启动'),
+      children: [
+        if (!_permissionStatusLoadFailed &&
+            _permissionStatus?.supported == true) ...[
+          if (_permissionStatus!.notificationGranted)
+            _permissionTile(
+              icon: Icons.notifications_outlined,
+              title: '通知权限',
+              granted: true,
+              kind: 'notifications',
+            ),
+          if (_permissionStatus!.exactAlarmGranted)
+            _permissionTile(
+              icon: Icons.alarm,
+              title: '精确闹钟',
+              granted: true,
+              kind: 'exactAlarm',
+            ),
+          if (_permissionStatus!.dndGranted)
+            _permissionTile(
+              icon: Icons.do_not_disturb_on_outlined,
+              title: '勿扰权限',
+              granted: true,
+              kind: 'dnd',
+            ),
+          _permissionTile(
+            icon: Icons.battery_saver_outlined,
+            title: '电池优化',
+            kind: 'appDetails',
+            granted: _permissionStatus!.batteryOptimizationIgnored,
+            grantedLabel: '已忽略优化',
+            deniedLabel: '可能限制后台提醒',
+            onTap: _openBatteryOptimizationSettings,
+          ),
+        ],
+        _settingsActionTile(
+          icon: Icons.rocket_launch_outlined,
+          title: '自启动设置',
+          subtitle: '部分手机需要允许应用自启动',
+          onTap: _openAutoStartSettings,
+        ),
+        _settingsActionTile(
+          icon: Icons.settings_outlined,
+          title: '应用系统设置',
+          actionLabel: '打开',
+          onTap: () => _openPermissionSettings('appDetails'),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -754,97 +977,18 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
                             ),
                             subtitle: const Text('课程结束后恢复原系统状态'),
                           ),
-                          if (_courseAutoMode != CourseAutoMode.off &&
-                              _permissionStatus?.supported == true &&
-                              !_permissionStatus!.dndGranted)
-                            ListTile(
-                              leading: const Icon(Icons.do_not_disturb_on),
-                              title: const Text('需要勿扰权限'),
-                              subtitle: const Text('允许应用管理系统勿扰模式'),
-                              trailing: TextButton(
-                                onPressed: () => _openPermissionSettings('dnd'),
-                                child: const Text('去设置'),
-                              ),
-                            ),
                         ],
                       ],
-                      if (_isIOS && _permissionStatus != null) ...[
-                        _permissionTile(
-                          icon: Icons.notifications_outlined,
-                          title: '通知权限',
-                          granted: _permissionStatus!.notificationGranted,
-                          kind: 'notifications',
-                        ),
-                        const ListTile(
-                          leading: Icon(Icons.sync),
-                          title: Text('打开应用更新课表与提醒'),
-                          subtitle: Text(
-                            '启动、返回前台和手动刷新时同步。iOS 最多保留 64 条待发送本地通知，请在“同步与修复”查看实际覆盖并定期打开应用续排。',
-                          ),
-                        ),
-                      ],
-                      if (!_isIOS && _permissionStatus?.supported == true) ...[
-                        const Divider(height: 1),
-                        _permissionTile(
-                          icon: Icons.notifications_outlined,
-                          title: '通知权限',
-                          granted: _permissionStatus!.notificationGranted,
-                          kind: 'notifications',
-                        ),
-                        _permissionTile(
-                          icon: Icons.alarm,
-                          title: '精确闹钟',
-                          granted: _permissionStatus!.exactAlarmGranted,
-                          kind: 'exactAlarm',
-                        ),
-                        _permissionTile(
-                          icon: Icons.do_not_disturb_on_outlined,
-                          title: '勿扰权限',
-                          granted: _permissionStatus!.dndGranted,
-                          kind: 'dnd',
-                        ),
-                        _permissionTile(
-                          icon: Icons.battery_saver_outlined,
-                          title: '电池优化',
-                          kind: 'appDetails',
-                          granted:
-                              _permissionStatus!.batteryOptimizationIgnored,
-                          grantedLabel: '已忽略优化',
-                          deniedLabel: '可能限制后台提醒',
-                          onTap: _openBatteryOptimizationSettings,
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.rocket_launch_outlined),
-                          title: const Text('自启动设置'),
-                          subtitle: const Text('部分手机需要允许应用自启动'),
-                          trailing: TextButton(
-                            onPressed: _openAutoStartSettings,
-                            child: const Text('去设置'),
-                          ),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.settings_outlined),
-                          title: const Text('应用系统设置'),
-                          trailing: TextButton(
-                            onPressed: () =>
-                                _openPermissionSettings('appDetails'),
-                            child: const Text('打开'),
-                          ),
-                        ),
-                      ],
-                      if (_permissionStatusLoadFailed)
-                        ListTile(
-                          leading: const Icon(Icons.sync_problem_outlined),
-                          title: const Text('暂时无法读取系统授权状态'),
-                          trailing: TextButton(
-                            onPressed: _refreshPermissionStatus,
-                            child: const Text('重试'),
-                          ),
-                        ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 24),
+                _reminderReadinessCard(),
+                const SizedBox(height: 24),
+                if (!_isIOS) ...[
+                  _systemSettingsCard(),
+                  const SizedBox(height: 24),
+                ],
                 Text('调课通知', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 8),
                 Card(

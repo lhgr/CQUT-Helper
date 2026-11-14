@@ -1,12 +1,17 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
+import 'package:cqut_helper/api/api_service.dart';
+import 'package:cqut_helper/api/auth/forget_password_api.dart';
+import 'package:cqut_helper/pages/Mine/mine_user_info_loader.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
+import 'package:cqut_helper/manager/schedule_update_intents.dart';
+import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
-import 'package:cqut_helper/manager/schedule_update_worker_health.dart';
 import 'package:cqut_helper/manager/onboarding_manager.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/model/academic_calendar_model.dart';
@@ -15,6 +20,7 @@ import 'package:cqut_helper/pages/Login/Login.dart';
 import 'package:cqut_helper/pages/Login/ForgetPassword.dart';
 import 'package:cqut_helper/pages/Announcement/Announcement.dart';
 import 'package:cqut_helper/pages/ClassSchedule/ClassSchedule.dart';
+import 'package:cqut_helper/pages/ClassSchedule/controllers/schedule_controller.dart';
 import 'package:cqut_helper/pages/ClassSchedule/custom_course_editor_page.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_background.dart';
 import 'package:cqut_helper/pages/Mine/Mine.dart';
@@ -35,6 +41,8 @@ import 'package:cqut_helper/pages/Settings/sync_diagnostics_page.dart';
 import 'package:cqut_helper/pages/Settings/sync_diagnostics_service.dart';
 import 'package:cqut_helper/pages/TodaySchedule/TodaySchedule.dart';
 import 'package:cqut_helper/utils/widget_navigation.dart';
+import 'package:cqut_helper/utils/course_reminder_mode.dart';
+import 'package:cqut_helper/utils/schedule_background_brightness_analyzer.dart';
 import 'package:cqut_helper/utils/widget_updater.dart';
 import 'package:cqut_helper/theme/app_theme.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
@@ -54,6 +62,78 @@ String? _fontFamily;
 late Map<String, Object?> _scheduleRow;
 bool _scheduleAvailable = true;
 late WorkmanagerPlatform _originalWorkmanager;
+
+class _TodayRecoveryController extends ScheduleController {
+  Object failure = const SocketException('fixture offline');
+  Completer<ScheduleData>? pending;
+  int requests = 0;
+
+  @override
+  Future<bool> isFresh(
+    ScheduleData data, {
+    Duration maxAge = const Duration(minutes: 15),
+  }) async => false;
+
+  @override
+  Future<ScheduleData> loadFromNetwork({
+    String? weekNum,
+    String? yearTerm,
+    bool persistLastViewed = true,
+    bool updateWidgetPins = false,
+    String trigger = 'schedule_load',
+    bool waitForSideEffects = true,
+    bool refreshReminders = true,
+  }) async {
+    requests++;
+    if (pending != null) return pending!.future;
+    throw failure;
+  }
+}
+
+class _NoticeVisualController extends ScheduleController {
+  @override
+  Future<bool> ensureWeekLoaded(
+    String weekNum,
+    String yearTerm, {
+    bool forceRefresh = false,
+    bool updateLastViewed = false,
+    bool rethrowOnFailure = false,
+    bool refreshReminders = true,
+  }) => super.ensureWeekLoaded(
+    weekNum,
+    yearTerm,
+    updateLastViewed: updateLastViewed,
+    rethrowOnFailure: rethrowOnFailure,
+    refreshReminders: refreshReminders,
+  );
+}
+
+class _VisualRecoveryApi extends ForgetPasswordApi {
+  String? failure;
+  @override
+  Future<String> sendAuthCode({required String mobilePhone}) async {
+    if (failure != null) throw Exception(failure);
+    return 'visual-ticket';
+  }
+
+  @override
+  Future<void> checkAuthCode({
+    required String ticket,
+    required String authCode,
+  }) async {}
+}
+
+class _VisualProfileLoader extends MineUserInfoLoader {
+  _VisualProfileLoader() : super(ApiService());
+  @override
+  Future<MineUserInfoLoadResult> load({bool forceRefresh = false}) async {
+    if (forceRefresh) throw const SocketException('fixture offline');
+    return const MineUserInfoLoadResult(
+      userId: _user,
+      userInfo: {'username': '2026001001', 'userRealName': '陈同学'},
+    );
+  }
+}
 
 class _VisualSyncDiagnosticsService extends SyncDiagnosticsService {
   @override
@@ -373,10 +453,12 @@ void main() {
     for (final name in [
       'plugins.it_nomads.com/flutter_secure_storage',
       'com.tekartik.sqflite',
+      'cqut/course_reminders',
       'be.tramckrijte.workmanager/foreground_channel_work_manager',
     ]) {
       messenger.setMockMethodCallHandler(MethodChannel(name), null);
     }
+    CourseReminderMode.debugIsAndroidOverride = null;
     SharedPreferences.setMockInitialValues({});
   });
 
@@ -485,6 +567,8 @@ void main() {
   testWidgets('today represents next course and finished day', (tester) async {
     final now = DateTime.now();
     final minute = now.hour * 60 + now.minute;
+    final semantics = tester.ensureSemantics();
+    final momentCard = find.byKey(const ValueKey('today-course-moment'));
     // Relative times exercise production countdown selection without changing
     // the page clock or adding a test-only production constructor.
     if (minute < 1420) {
@@ -500,6 +584,16 @@ void main() {
       expect(find.textContaining('10分钟'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await _capturePage(tester, 'today-next-light-390');
+      final node = tester.getSemantics(momentCard).getSemanticsData();
+      expect(node.hasAction(ui.SemanticsAction.tap), isTrue);
+      expect(node.flagsCollection.isButton, isTrue);
+      await tester.tap(find.text('下一节课'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(find.text('编辑'), findsNothing);
+      expect(find.text('删除'), findsNothing);
+      await tester.tap(find.text('关闭'));
+      await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox.shrink());
     }
     if (minute > 30) {
@@ -515,8 +609,328 @@ void main() {
       expect(find.text('数字图像处理'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await _capturePage(tester, 'today-finished-dark-390');
+      final node = tester.getSemantics(momentCard).getSemanticsData();
+      expect(node.hasAction(ui.SemanticsAction.tap), isFalse);
+      expect(node.flagsCollection.isButton, isFalse);
+      await tester.tap(find.text('今日课程已结束'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     }
+    semantics.dispose();
+  });
+
+  testWidgets('today ongoing main card opens read-only details at 320 and 2x', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final minute = now.hour * 60 + now.minute;
+    if (minute >= 1439) return;
+    final semantics = tester.ensureSemantics();
+    const name = '数字图像处理与计算机视觉综合实践课程设计';
+    const location = '花溪校区第三教学楼与工程训练中心联合实验室 A 区 302';
+    const note = '携带电脑与实验材料';
+    final data = _fixtureSchedule();
+    data.eventList!.first
+      ..eventName = name
+      ..address = location
+      ..note = note;
+    _replaceFixtureSchedule(data);
+    await _setTodayTimes(start: minute, end: minute + 1);
+    await _pumpPage(tester, const TodayScheduleView(), 320, Brightness.dark, 2);
+    expect(find.text('正在上课'), findsOneWidget);
+    final momentCard = find.byKey(const ValueKey('today-course-moment'));
+    expect(
+      tester
+          .getSemantics(momentCard)
+          .getSemanticsData()
+          .hasAction(ui.SemanticsAction.tap),
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+    await _capturePage(tester, 'today-ongoing-dark-320-2x');
+    await tester.tap(find.text('正在上课'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.textContaining(location), findsWidgets);
+    expect(find.textContaining(note), findsWidgets);
+    expect(find.text('编辑'), findsNothing);
+    expect(find.text('删除'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _capturePage(tester, 'today-ongoing-detail-dark-320-2x');
+    await tester.pumpWidget(const SizedBox.shrink());
+    semantics.dispose();
+  });
+
+  for (final granted in [true, false]) {
+    testWidgets('notification readiness 320 2x permission $granted', (
+      tester,
+    ) async {
+      CourseReminderMode.debugIsAndroidOverride = true;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('cqut/course_reminders'),
+            (call) async {
+              if (call.method == 'getStatus') {
+                return <String, Object?>{
+                  'supported': true,
+                  'notificationGranted': granted,
+                  'exactAlarmGranted': true,
+                  'dndGranted': true,
+                  'batteryOptimizationIgnored': true,
+                  'autoModeActive': false,
+                };
+              }
+              return null;
+            },
+          );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(ScheduleSettingsManager.remindersEnabledKey, true);
+      await prefs.setString(
+        'schedule_course_reminder_status_v1',
+        jsonEncode(
+          CourseReminderStatus(
+            enabled: true,
+            ready: true,
+            reason: '提醒已安排',
+            scheduledCount: 4,
+            cachedWeekCount: 2,
+            expectedWeekCount: 2,
+            nextReminderAt: DateTime.now().add(const Duration(hours: 1)),
+            updatedAt: DateTime.now(),
+          ).toJson(),
+        ),
+      );
+      await _pumpPage(
+        tester,
+        const NotificationSettingsPage(
+          scope: SettingsScheduleScope(userId: _user, yearTerm: _term),
+        ),
+        320,
+        granted ? Brightness.light : Brightness.dark,
+        2,
+      );
+      await tester.ensureVisible(find.text('提醒就绪状态'));
+      await tester.pumpAndSettle();
+      expect(find.text('电池优化'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await _capturePage(
+        tester,
+        granted
+            ? 'notifications-ready-light-320-2x'
+            : 'notifications-missing-dark-320-2x',
+      );
+      if (!granted) {
+        await tester.ensureVisible(find.text('通知权限'));
+        await tester.pumpAndSettle();
+        expect(find.text('未授权'), findsOneWidget);
+        expect(find.text('去设置').hitTestable(), findsOneWidget);
+        await _capturePage(tester, 'notifications-permission-dark-320-2x');
+      } else {
+        await tester.ensureVisible(find.text('系统与后台设置'));
+        await tester.pumpAndSettle();
+        await _capturePage(tester, 'notifications-collapsed-light-320-2x');
+        await tester.tap(find.text('系统与后台设置'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('电池优化'));
+        await tester.pumpAndSettle();
+        expect(find.text('电池优化').hitTestable(), findsOneWidget);
+        await _capturePage(tester, 'notifications-expanded-light-320-2x');
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('messages unread expansion 320 2x remains readable', (
+    tester,
+  ) async {
+    await _pumpPage(tester, const MessageCenterPage(), 320, Brightness.dark, 2);
+    final record = find.byKey(const ValueKey('message-visual-change'));
+    await tester.ensureVisible(record);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await _capturePage(tester, 'messages-unread-dark-320-2x');
+    final expansion = find.descendant(
+      of: record,
+      matching: find.byType(ExpansionTile),
+    );
+    await tester.tap(
+      find.descendant(of: expansion, matching: find.text('第7周课表有变更')),
+    );
+    await tester.pumpAndSettle();
+    final change = find.textContaining('数字图像处理：上课地点调整为第三教学楼 302');
+    await tester.ensureVisible(change);
+    await tester.pumpAndSettle();
+    expect(change.hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _capturePage(tester, 'messages-expanded-dark-320-2x');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('messages open cached week through Main lazy schedule tab', (
+    tester,
+  ) async {
+    ScheduleUpdateIntents.openWeek.value = null;
+    await _pumpPage(tester, const MainPage(), 390, Brightness.light, 1);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      2,
+    );
+    expect(find.byType(ClassscheduleView), findsNothing);
+    await tester.ensureVisible(find.text('消息中心'));
+    await tester.tap(find.text('消息中心'));
+    await tester.pumpAndSettle();
+    final record = find.byKey(const ValueKey('message-visual-change'));
+    await tester.ensureVisible(record);
+    await tester.tap(
+      find.descendant(of: record, matching: find.text('第7周课表有变更')),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('查看该周课表'));
+    await tester.tap(find.text('查看该周课表'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MessageCenterPage), findsNothing);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      1,
+    );
+    expect(find.byType(ClassscheduleView), findsOneWidget);
+    await _revealCachedCourse(tester);
+    expect(ScheduleUpdateIntents.openWeek.value, isNull);
+    expect(tester.takeException(), isNull);
+    await _capturePage(tester, 'messages-open-week-light-390');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  for (final scenario in [
+    ('dark-320-2x', Brightness.dark, 320.0, 2.0),
+    ('light-320-2x', Brightness.light, 320.0, 2.0),
+    ('light-390-normal', Brightness.light, 390.0, 1.0),
+  ]) {
+    final (label, brightness, width, scale) = scenario;
+    testWidgets('schedule inline notice compact $label', (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        ScheduleUpdateWorker.pendingKeyForUser(_user),
+        jsonEncode({
+          'yearTerm': _term,
+          'changes': [
+            {
+              'weekNum': '7',
+              'lines': [
+                '**数字图像处理**从周三第1-2节调课到**周六第1-2节**，地点为**第三教学楼302**。',
+                '**操作系统**从周四第5-6节调课到**周六第5-6节**，地点为**实验楼201**。',
+              ],
+            },
+          ],
+        }),
+      );
+      await _pumpPage(
+        tester,
+        ClassscheduleView(controller: _NoticeVisualController()),
+        width,
+        brightness,
+        scale,
+      );
+      expect(find.text('2条调课通知'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 4));
+      await _revealCachedCourse(tester);
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'schedule-inline-notice-$label');
+      await tester.tap(
+        find.byKey(const ValueKey('schedule-inline-notice-summary')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('第三教学楼302', findRichText: true),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'schedule-inline-notice-detail-$label');
+      await tester.tap(find.text('知道了'));
+      await tester.pumpAndSettle();
+      expect(find.text('2条调课通知'), findsNothing);
+      expect(find.byType(BottomSheet), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('account login field feedback 320 2x', (tester) async {
+    await _pumpPage(tester, const LoginPage(), 320, Brightness.light, 2);
+    await tester.enterText(find.widgetWithText(TextFormField, '账号'), '');
+    await tester.enterText(find.widgetWithText(TextFormField, '密码'), '');
+    await tester.ensureVisible(find.text('登录'));
+    await tester.tap(find.text('登录'));
+    await tester.pumpAndSettle();
+    expect(find.text('请输入账号'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _capturePage(tester, 'account-login-feedback-light-320-2x');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('account recovery stages 320 2x', (tester) async {
+    final api = _VisualRecoveryApi();
+    await _pumpPage(
+      tester,
+      ForgetPasswordPage(api: api),
+      320,
+      Brightness.dark,
+      2,
+    );
+    Finder field(String label) => find.widgetWithText(TextFormField, label);
+    Future<void> tap(String label) async {
+      await tester.ensureVisible(find.text(label));
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+    }
+
+    await tester.enterText(field('手机号'), '13800138000');
+    await tap('发送验证码');
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(find.text('修改手机号'), findsOneWidget);
+    await _capturePage(tester, 'account-recovery-code-dark-320-2x');
+    api.failure = '发送过于频繁，请稍后重试';
+    await tap('重新发送验证码');
+    expect(find.text('发送过于频繁，请稍后重试'), findsOneWidget);
+    await tester.ensureVisible(find.text('发送过于频繁，请稍后重试'));
+    await tester.pumpAndSettle();
+    await _capturePage(tester, 'account-recovery-error-dark-320-2x');
+    await tester.enterText(field('验证码'), '123456');
+    await tap('验证验证码');
+    await tester.enterText(field('新密码'), 'Abc12345');
+    await tester.enterText(field('确认新密码'), 'Abc12346');
+    await tap('重置密码');
+    expect(find.text('两次输入的密码不一致'), findsOneWidget);
+    expect(find.byTooltip('显示新密码'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('重置密码'));
+    await tester.pumpAndSettle();
+    await _capturePage(tester, 'account-recovery-password-dark-320-2x');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('account cached profile feedback 320 2x', (tester) async {
+    await _pumpPage(
+      tester,
+      MineView(userInfoLoader: _VisualProfileLoader()),
+      320,
+      Brightness.light,
+      2,
+    );
+    await tester
+        .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+        .onRefresh();
+    await tester.pumpAndSettle();
+    expect(find.text('陈同学'), findsOneWidget);
+    expect(find.text('正在显示已保存的个人信息'), findsOneWidget);
+    expect(find.text('重试').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _capturePage(tester, 'account-profile-feedback-light-320-2x');
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   for (final state in [
@@ -617,6 +1031,184 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'today cached credential failure opens reauthentication and preserves courses',
+    (tester) async {
+      final controller = _TodayRecoveryController()
+        ..failure = StateError('401 credential invalid');
+      await _pumpPage(
+        tester,
+        TodayScheduleView(controller: controller),
+        320,
+        Brightness.light,
+        2,
+      );
+      expect(controller.requests, 1);
+      expect(find.text('数字图像处理'), findsWidgets);
+      final login = find.widgetWithText(TextButton, '重新登录');
+      await tester.ensureVisible(login);
+      await Scrollable.ensureVisible(
+        tester.element(find.text('请重新登录后刷新，正在显示已保存课表。')),
+        alignment: 0.1,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await _capturePage(tester, 'today-cached-credential-light-320-2x');
+      await tester.tap(login);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<LoginPage>(find.byType(LoginPage)).reauthenticate,
+        isTrue,
+      );
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(controller.requests, 1);
+      expect(find.text('数字图像处理'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'today cached network failure retries once and retains content while pending',
+    (tester) async {
+      final controller = _TodayRecoveryController();
+      await _pumpPage(
+        tester,
+        TodayScheduleView(controller: controller),
+        320,
+        Brightness.dark,
+        2,
+      );
+      expect(controller.requests, 1);
+      expect(find.text('刷新失败，正在显示已保存课表。'), findsOneWidget);
+      final retry = find.widgetWithText(TextButton, '重试');
+      await tester.ensureVisible(retry);
+      await Scrollable.ensureVisible(
+        tester.element(find.text('刷新失败，正在显示已保存课表。')),
+        alignment: 0.1,
+      );
+      await tester.pumpAndSettle();
+      await _capturePage(tester, 'today-cached-network-dark-320-2x');
+      controller.pending = Completer<ScheduleData>();
+      final previousAction = tester.widget<TextButton>(retry).onPressed!;
+      previousAction();
+      previousAction();
+      await tester.pump();
+      expect(controller.requests, 2);
+      expect(find.text('数字图像处理'), findsWidgets);
+      expect(tester.widget<TextButton>(retry).onPressed, isNull);
+      // Pull-to-refresh shares the same guard as the banner action.
+      tester
+          .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+          .onRefresh();
+      await tester.pump();
+      expect(controller.requests, 2);
+      controller.pending!.complete(_fixtureSchedule());
+      await tester.pumpAndSettle();
+      expect(find.text('刷新失败，正在显示已保存课表。'), findsNothing);
+      expect(find.text('数字图像处理'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final scene in [
+    ('light-320-2x', Brightness.light, 320.0, 2.0, false),
+    ('dark-320-2x', Brightness.dark, 320.0, 2.0, false),
+    ('light-390-normal', Brightness.light, 390.0, 1.0, false),
+    ('dark-320-2x-makeup', Brightness.dark, 320.0, 2.0, true),
+  ]) {
+    final (label, brightness, width, scale, makeup) = scene;
+    testWidgets(
+      'schedule image background $label keeps course cards readable',
+      (tester) async {
+        final background = ScheduleLayoutSettings(
+          backgroundImagePath: '${Directory.current.path}/lib/assets/Icon.png',
+          backgroundOpacity: 0.25,
+          cardOpacity: 0.65,
+        );
+        final data = _fixtureSchedule();
+        data.eventList!.first.address = '花溪校区 学院工程实验综合教学中心及计算机开放实验区域弘远楼A302';
+        if (makeup) data.eventList!.first.weekDay = '1';
+        _replaceFixtureSchedule(data);
+        final prefs = await SharedPreferences.getInstance();
+        if (makeup) {
+          await prefs.setBool('schedule_show_weekend', false);
+          final now = DateTime.now();
+          final monday = DateTime(
+            now.year,
+            now.month,
+            now.day,
+          ).subtract(Duration(days: now.weekday - 1));
+          await _setCalendar([
+            AcademicCalendarDay(
+              date: monday.add(const Duration(days: 5)),
+              scheduleDate: monday,
+              kind: AcademicCalendarDayKind.teachingDay,
+              label: '调休补课',
+            ),
+          ]);
+        }
+        final analyzedBrightness = await tester.runAsync(
+          () => ScheduleBackgroundBrightnessAnalyzer.analyzePath(
+            background.backgroundImagePath!,
+          ),
+        );
+        expect(analyzedBrightness, isNotNull);
+        await prefs.setString(
+          ScheduleSettingsManager.analyzedBackgroundBrightnessKey,
+          analyzedBrightness!.name,
+        );
+        await prefs.setDouble('schedule_card_opacity', background.cardOpacity);
+        await prefs.setString(
+          ScheduleSettingsManager.backgroundImagePathKey,
+          background.backgroundImagePath!,
+        );
+        await prefs.setDouble(
+          ScheduleSettingsManager.backgroundOpacityKey,
+          background.backgroundOpacity,
+        );
+        await prefs.setInt(
+          ScheduleSettingsManager.backgroundOpacitySemanticsVersionKey,
+          2,
+        );
+        await _pumpPage(
+          tester,
+          const ClassscheduleView(),
+          width,
+          brightness,
+          scale,
+          scheduleBackground: background,
+        );
+        await _revealCachedCourse(tester);
+        expect(find.byType(ScheduleBackground), findsWidgets);
+        if (makeup) {
+          expect(find.text('本周有周末补课，已临时显示周末课表'), findsOneWidget);
+          expect(
+            tester.getSize(find.byTooltip('关闭全部周末补课提示')).width,
+            greaterThanOrEqualTo(48),
+          );
+        }
+        expect(tester.takeException(), isNull);
+        await _capturePage(tester, 'schedule-image-$label-course');
+        if (makeup) {
+          final horizontal = find
+              .byWidgetPredicate(
+                (widget) =>
+                    widget is SingleChildScrollView &&
+                    widget.scrollDirection == Axis.horizontal,
+              )
+              .hitTestable()
+              .first;
+          await tester.drag(horizontal, const Offset(-1000, 0));
+          await tester.pumpAndSettle();
+          expect(find.text('周7').hitTestable(), findsOneWidget);
+          expect(find.byTooltip('关闭全部周末补课提示').hitTestable(), findsOneWidget);
+          await _capturePage(tester, 'schedule-image-$label-sunday');
+        }
+      },
+    );
+  }
 
   for (final scenario in [
     ('light-320-large', Brightness.light, 320.0, 1.6),

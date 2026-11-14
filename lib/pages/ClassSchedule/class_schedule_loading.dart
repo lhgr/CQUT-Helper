@@ -387,6 +387,8 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
     required bool fromInitialBoot,
   }) async {
     final generation = ++_viewGeneration;
+    _cancelLocation();
+    _failedWeeks.clear();
     if (yearTerm != null && yearTerm != _currentTerm) _resetDeferredWork();
     _allWeeksPrefetchAttempted = false;
 
@@ -526,28 +528,42 @@ extension _ClassScheduleLoading on _ClassscheduleViewState {
 
   Future<void> _ensureWeekLoaded(String weekNum, String yearTerm) async {
     final generation = _viewGeneration;
-    final success = await _controller.ensureWeekLoaded(
-      weekNum,
-      yearTerm,
-      updateLastViewed: true,
-    );
+    final account = _controller.userId;
     final wInt = int.tryParse(weekNum) ?? 0;
+    final failureKey = (yearTerm, wInt);
+    _setState(() => _failedWeeks.remove(failureKey));
+    var success = false;
+    try {
+      success = await _controller.ensureWeekLoaded(
+        weekNum,
+        yearTerm,
+        updateLastViewed: true,
+      );
+    } catch (error, stackTrace) {
+      AppLogger.I.error(
+        'ClassSchedule',
+        'Failed to load selected week',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     if (!mounted ||
         generation != _viewGeneration ||
+        account != _controller.userId ||
         _currentTerm != yearTerm ||
         _weekList?[_currentWeekIndex] != weekNum) {
       return;
     }
     if (_weekCache.containsKey(wInt)) {
       _setState(() {
+        _failedWeeks.remove(failureKey);
         _currentScheduleData = _weekCache[wInt];
       });
       _schedulePrefetch(_weekCache[wInt]!);
     } else {
-      _setState(() {});
-      if (!success) {
-        _showBoundaryMessage('第$weekNum周课表加载失败，请稍后重试');
-      }
+      _setState(() {
+        if (!success) _failedWeeks.add(failureKey);
+      });
     }
   }
 

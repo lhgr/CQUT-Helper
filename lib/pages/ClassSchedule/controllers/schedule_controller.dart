@@ -151,6 +151,23 @@ class ScheduleController {
     return _weekLoader.loadFromCache(weekNum: weekNum, yearTerm: yearTerm);
   }
 
+  /// Reads a destination without changing the visible term or remembered week.
+  Future<ScheduleData> loadWeekForNavigation(String week, String term) async {
+    final cached = await loadFromCache(weekNum: week, yearTerm: term);
+    if (cached != null) return cached;
+    await loadCredentials();
+    return _weekLoader.loadFromNetwork(
+      weekNum: week,
+      yearTerm: term,
+      select: false,
+      persistLastViewed: false,
+      updateWidgetPins: false,
+      waitForSideEffects: false,
+      trigger: 'message_open_week',
+      refreshReminders: false,
+    );
+  }
+
   Future<int> reloadMemoryCacheFromDisk({required String yearTerm}) {
     return _weekLoader.reloadMemoryCacheFromDisk(yearTerm: yearTerm);
   }

@@ -14,6 +14,25 @@ class MineUserInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final initial = realName.isNotEmpty
+        ? String.fromCharCode(realName.runes.first)
+        : '?';
+    final initialStyle = Theme.of(context).textTheme.titleLarge
+        ?.copyWith(color: Theme.of(context).colorScheme.onPrimary);
+    final initialMetrics = TextPainter(
+      text: TextSpan(
+        text: initial,
+        style: DefaultTextStyle.of(context).style.merge(initialStyle),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      locale: Localizations.maybeLocaleOf(context),
+    )..layout();
+    final initialSize = initialMetrics.width > initialMetrics.height
+        ? initialMetrics.width
+        : initialMetrics.height;
+    final avatarSize = (initialSize + 16).clamp(52.0, double.infinity);
+    initialMetrics.dispose();
     return Card(
       elevation: 0,
       child: Padding(
@@ -23,20 +42,13 @@ class MineUserInfoCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  width: 52,
-                  height: 52,
+                  width: avatarSize,
+                  height: avatarSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Theme.of(context).colorScheme.primary,
                   ),
-                  child: Center(
-                    child: Text(
-                      realName.isNotEmpty ? realName[0] : "?",
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onPrimary,
-                      ),
-                    ),
-                  ),
+                  child: Center(child: Text(initial, style: initialStyle)),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

@@ -87,8 +87,16 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
     return ScheduleCourseCardTheme(
       backgrounds: List<Color>.from(_lightBackgrounds, growable: false),
       borders: borders,
-      titleColors: List<Color>.from(_lightTitleColors, growable: false),
-      descriptionColors: List<Color>.from(_lightTitleColors, growable: false),
+      titleColors: List<Color>.generate(
+        _lightBackgrounds.length,
+        (index) => _readableLightColor(index, 7),
+        growable: false,
+      ),
+      descriptionColors: List<Color>.generate(
+        _lightBackgrounds.length,
+        (index) => _readableLightColor(index, 4.5),
+        growable: false,
+      ),
       buttonColors: List<Color>.from(_lightTitleColors, growable: false),
     );
   }
@@ -114,7 +122,7 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
             ),
           )
           .toList(growable: false),
-      titleColors: light.titleColors
+      titleColors: _lightTitleColors
           .map(
             (color) => _colorForDarkSurface(
               color,
@@ -123,7 +131,7 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
             ),
           )
           .toList(growable: false),
-      descriptionColors: light.descriptionColors
+      descriptionColors: _lightTitleColors
           .map(
             (color) => _colorForDarkSurface(
               color,
@@ -233,6 +241,32 @@ class ScheduleCourseCardTheme extends ThemeExtension<ScheduleCourseCardTheme> {
         growable: false,
       ),
     );
+  }
+
+  static Color _readableLightColor(int index, double target) {
+    final background = _lightBackgrounds[index];
+    final original = _lightTitleColors[index];
+    final hsl = HSLColor.fromColor(original);
+    Color gray(Color color) =>
+        HSLColor.fromColor(color).withSaturation(0).toColor();
+    bool readable(Color color) =>
+        _contrastRatio(background, color) >= target &&
+        _contrastRatio(gray(background), gray(color)) >= target;
+    if (readable(original)) return original;
+    var low = 0.0;
+    var high = hsl.lightness;
+    var result = hsl.withLightness(0).toColor();
+    for (var step = 0; step < 16; step++) {
+      final middle = (low + high) / 2;
+      final candidate = hsl.withLightness(middle).toColor();
+      if (readable(candidate)) {
+        low = middle;
+        result = candidate;
+      } else {
+        high = middle;
+      }
+    }
+    return result;
   }
 
   static Color _colorForDarkSurface(
