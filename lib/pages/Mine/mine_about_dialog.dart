@@ -84,14 +84,14 @@ Future<void> showMineAboutDialog(BuildContext context) async {
       ),
     ),
     children: [
-      Text("CQUTer的小助手"),
+      Text("CQUTer的课表小助手"),
       SizedBox(height: 24),
       Text("作者信息", style: Theme.of(context).textTheme.titleSmall),
       SizedBox(height: 12),
       InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () async {
-          const urlString = 'https://dawndrizzle.top/';
+          const urlString = 'https://blog.dawndrizzle.top/';
           if (!await GithubProxy.launchExternalUrlString(urlString)) {
             AppLogger.I.event(
               LogLevel.warn,
@@ -175,36 +175,96 @@ Future<void> showMineAboutDialog(BuildContext context) async {
         ),
       ),
       SizedBox(height: 24),
-      Text("开源地址", style: Theme.of(context).textTheme.titleSmall),
-      SizedBox(height: 8),
-      InkWell(
-        onTap: () async {
-          const urlString = 'https://github.com/lhgr/CQUT-Helper';
-          if (!await GithubProxy.launchExternalUrlString(urlString)) {
-            AppLogger.I.event(
-              LogLevel.warn,
-              'MineAbout',
-              event: 'ui_about_open_url_fail',
-              messageZh: '关于页打开仓库链接失败',
-              message: 'open repository url failed',
-              module: 'ui',
-              action: 'open_url',
-              status: 'fail',
-              reason: 'launch_failed',
-              fields: {'target_url': urlString},
-            );
-          }
-        },
-        child: Text(
-          'https://github.com/lhgr/CQUT-Helper',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.primary,
-            decoration: TextDecoration.underline,
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton.filledTonal(
+            tooltip: 'GitHub',
+            style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+            onPressed: () =>
+                _openAboutLink('https://github.com/lhgr/CQUT-Helper', '仓库'),
+            icon: SizedBox.square(
+              dimension: 24,
+              child: CustomPaint(
+                painter: _GithubMarkPainter(
+                  Theme.of(context).colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ),
           ),
-        ),
+          const SizedBox(width: 12),
+          IconButton.filledTonal(
+            tooltip: '发送邮件',
+            style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+            onPressed: () =>
+                _openAboutLink('mailto:dawndrizzle0104@gamil.com', '邮件'),
+            icon: const Icon(Icons.mail_outline),
+          ),
+        ],
       ),
     ],
   );
+}
+
+Future<void> _openAboutLink(String url, String target) async {
+  if (!await GithubProxy.launchExternalUrlString(url)) {
+    AppLogger.I.event(
+      LogLevel.warn,
+      'MineAbout',
+      event: 'ui_about_open_url_fail',
+      messageZh: '关于页打开$target链接失败',
+      message: 'open about link failed',
+      module: 'ui',
+      action: 'open_url',
+      status: 'fail',
+      reason: 'launch_failed',
+      fields: {'target_url': url},
+    );
+  }
+}
+
+class _GithubMarkPainter extends CustomPainter {
+  const _GithubMarkPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.scale(size.width / 24, size.height / 24);
+    final mark = Path()
+      ..moveTo(12, 0)
+      ..cubicTo(5.37, 0, 0, 5.37, 0, 12)
+      ..cubicTo(0, 17.3, 3.44, 21.8, 8.21, 23.39)
+      ..cubicTo(8.81, 23.5, 9.03, 23.13, 9.03, 22.81)
+      ..lineTo(9.03, 20.58)
+      ..cubicTo(5.69, 21.31, 4.99, 19.16, 4.99, 19.16)
+      ..cubicTo(4.44, 17.77, 3.66, 17.4, 3.66, 17.4)
+      ..cubicTo(2.57, 16.65, 3.74, 16.67, 3.74, 16.67)
+      ..cubicTo(4.95, 16.75, 5.58, 17.91, 5.58, 17.91)
+      ..cubicTo(6.65, 19.74, 8.39, 19.21, 9.07, 18.9)
+      ..cubicTo(9.18, 18.12, 9.49, 17.59, 9.83, 17.29)
+      ..cubicTo(7.16, 16.99, 4.36, 15.95, 4.36, 11.35)
+      ..cubicTo(4.36, 10.04, 4.83, 8.97, 5.59, 8.13)
+      ..cubicTo(5.47, 7.83, 5.05, 6.61, 5.71, 4.96)
+      ..cubicTo(5.71, 4.96, 6.72, 4.64, 9.01, 6.19)
+      ..cubicTo(9.97, 5.92, 10.99, 5.79, 12.01, 5.79)
+      ..cubicTo(13.03, 5.79, 14.05, 5.93, 15.01, 6.19)
+      ..cubicTo(17.3, 4.64, 18.31, 4.96, 18.31, 4.96)
+      ..cubicTo(18.97, 6.61, 18.55, 7.83, 18.43, 8.13)
+      ..cubicTo(19.2, 8.97, 19.66, 10.04, 19.66, 11.35)
+      ..cubicTo(19.66, 15.96, 16.85, 16.98, 14.17, 17.28)
+      ..cubicTo(14.6, 17.65, 14.98, 18.38, 14.98, 19.5)
+      ..lineTo(14.98, 22.81)
+      ..cubicTo(14.98, 23.13, 15.2, 23.51, 15.81, 23.39)
+      ..cubicTo(20.57, 21.8, 24, 17.3, 24, 12)
+      ..cubicTo(24, 5.37, 18.63, 0, 12, 0)
+      ..close();
+    canvas.drawPath(mark, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_GithubMarkPainter oldDelegate) =>
+      color != oldDelegate.color;
 }
 
 class _MemberAvatar extends StatelessWidget {
