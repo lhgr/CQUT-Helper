@@ -1,10 +1,10 @@
-# 调课通知增强与调课服务
+# 调课通知与考试查询服务
 
 [返回应用主页](../README.md)
 
 “调课通知增强”是 CQUT Helper 的可选功能。应用通过所选服务查询教务系统当前学期的待阅和已阅事项，比较查询结果，并在发现变化时记录通知、刷新受影响的教学周。
 
-不开启此功能不影响登录、普通课表同步、课前提醒或小组件。
+不开启此功能不影响登录、普通课表同步、课前提醒、小组件或独立考试查询。考试入口位于“我的 → 考试安排”，与调课通知共用教务查询服务地址。
 
 ## 在应用中使用
 
@@ -15,9 +15,9 @@
 - **设置 → 通知与提醒 → 调课通知增强**
 - **课表 → 右上角设置 → 调课通知增强**
 
-开启前应用会说明发送的数据用途。确认后，服务地址留空表示使用官方服务；也可以填写自己的服务地址。保存后点击“检查服务可用性”：这会使用当前账号查询当前学期，检查实际查询是否成功，不只是检查网址能否访问。
+开启前应用会说明发送的数据用途。服务地址统一在“设置 → 教务查询服务”中管理，留空表示使用默认服务，也可以填写自己的服务根地址。调课通知页中的“检查服务可用性”会使用当前账号查询当前学期，检查实际查询是否成功，不只是检查网址能否访问。
 
-自定义地址必须是 HTTPS 根地址，不包含接口路径、查询参数或片段，例如：
+自定义地址必须是 HTTPS 根地址，不包含接口路径、查询参数或片段。可按以下格式填写。
 
 ```text
 https://notice.example.com
@@ -51,7 +51,7 @@ Android 可在**设置 → 同步与修复**查看后台注册状态、最近运
 
 ## 数据与服务选择
 
-仅在开启此功能并确认说明后，应用才会把以下信息发送到所选服务：
+仅在开启调课通知并确认说明后，应用才会向所选服务发送以下调课查询信息。
 
 - 学号
 - 教务系统加密密码
@@ -59,9 +59,9 @@ Android 可在**设置 → 同步与修复**查看后台注册状态、最近运
 
 加密密码不是明文密码，但仍可用于访问教务系统。本目录的服务实现不会持久化查询凭据；处理请求时会使用凭据登录教务系统。自定义服务的数据处理方式由服务运营者决定。
 
-关闭功能后，应用不会继续访问调课服务；退出登录也会关闭功能并清除已接受的授权状态。清除消息中心只会删除本机的调课历史，不会更改学校系统中的通知。
+关闭调课通知后，应用不会继续发起调课查询；独立考试查询仍可使用。考试请求发送学号与统一认证加密密码，不发送学期。退出登录也会关闭调课通知并清除其已接受的授权状态，同时清除该账号的考试缓存。清除消息中心只会删除本机的调课历史，不会更改学校系统中的通知。
 
-## 自建调课服务
+## 自建教务查询服务
 
 服务代码位于本目录。
 
@@ -85,9 +85,9 @@ python -m uvicorn FastAPI.main:app --host 127.0.0.1 --port 8001 --no-proxy-heade
 | `JWXT_CAS_DO_LOGIN` | 统一认证登录提交地址 |
 | `JWXT_DBSY_PAGE` | 教务系统待办页面地址 |
 
-可选运行参数包括 `JWXT_PIPELINE_TIMEOUT_SEC`（默认 90 秒，范围 10–300）、`JWXT_RATE_LIMIT_PER_MINUTE`（每 IP 每分钟默认 12 次）和 `JWXT_MAX_CONCURRENT_PIPELINES`（默认 2）。每账号每分钟最多 6 次；同账号、同学期已有查询时返回 409，不创建第二个进程。账号限流只存 SHA-256 摘要，不保存密码；限流身份表各最多 4096 项，满时拒绝新身份直至过期项释放。以上计数与并发上限是单进程的，部署使用一个 Uvicorn worker。
+可选运行参数包括 `JWXT_PIPELINE_TIMEOUT_SEC`（默认 90 秒，范围 10–300）、`JWXT_RATE_LIMIT_PER_MINUTE`（每 IP 每分钟默认 12 次）和 `JWXT_MAX_CONCURRENT_PIPELINES`（默认 2）。每账号每分钟最多 6 次；调课接口在同账号、同学期已有查询时仍返回 409，不创建第二个进程。考试接口将同账号、同加密凭据的重复在途请求合并，只有首个请求占查询额度与进程槽。账号限流只存 SHA-256 摘要，不保存密码；限流身份表各最多 4096 项，满时拒绝新身份直至过期项释放。以上计数与并发上限是单进程的，部署使用一个 Uvicorn worker。
 
-调课请求体上限 20 KiB，其余路径 64 KiB；按流式块计数，读取总预算 10 秒，超限返回 413，读取超时返回 408。
+调课与考试查询请求体上限均为 20 KiB，其余路径 64 KiB；按流式块计数，读取总预算 10 秒，超限返回 413，读取超时返回 408。
 
 默认只使用 TCP 对端 IP，忽略转发头。代理部署必须保留 `--no-proxy-headers`，并将 `JWXT_TRUSTED_PROXY_CIDRS` 设为实际代理出口 CIDR（例如仅 `127.0.0.1/32`）。应用从 X-Forwarded-For 的右侧逐跳剥除可信代理，首个不可信地址作为客户端；不能把任意左侧值当作客户端。只在 Cloudflare Tunnel 入口不可绕过、代理覆盖并清除用户提交的身份头时，才额外设 `JWXT_TRUST_CF_CONNECTING_IP=true`；这时优先使用受信 TCP 对端提供的 CF-Connecting-IP。不要设置全网 CIDR。
 
@@ -137,8 +137,9 @@ docker run -d --name cqut-notice --restart unless-stopped \
 | --- | --- |
 | `GET /health` | 返回服务进程状态。成功响应为 `{"status":"ok","ready":true}`；不检查学校上游是否可用。 |
 | `POST /api/jwxt/term-schedule-notices` | 查询当前学期调课通知，供 CQUT Helper 使用。 |
+| `POST /api/jwxt/exams` | 查询学校当前发布的考试安排，不接收学期参数。 |
 
-查询接口请求 JSON：
+调课通知接口使用以下请求 JSON。
 
 ```json
 {
@@ -155,6 +156,16 @@ docker run -d --name cqut-notice --restart unless-stopped \
 成功响应外层为 `{"success":true,"data":{...}}`。`data` 包含 `year_term`、`generated_at`、`term_schedule_notices_complete`、`term_schedule_notices` 和查询计数等字段。客户端要求 `term_schedule_notices_complete` 为 `true`，且通知列表必须是数组；空数组表示一次完整查询未发现可用调课通知。
 
 失败响应为 `{"success":false,"error":{"code":"...","message":"..."}}`，并使用相应 HTTP 状态码。常见情况包括参数无效（422）、请求过大（413）、请求过频（429）、并发任务已满（503）、学校上游不可用（502）及查询超时（504）。`/health` 成功只说明服务进程在线；要确认当前查询链路可用，请在应用中执行“检查服务可用性”。
+
+### 考试查询
+
+`POST /api/jwxt/exams` 请求为 `{"username":"学号","encrypted_password":"现有统一认证加密密码"}`，不需要开启调课通知。服务从学校移动门户获取通用 CAS 入口，在独立移动浏览器上下文中完成统一认证并接收官方原生桥 token，再依次调用 UIVx60、OAuth userInfo 和 GTR585 获取考试 SSO 地址；移动请求使用本次新建的独立会话。考试页在另一独立桌面浏览器上下文中执行，等待 `/home/GetData` 返回，不保存账号凭据、Cookie 或票据。考试浏览器禁用 HTTPS 自动升级以访问学校提供的 HTTP 地址，并关闭 Chromium 的 AutomationControlled 特性以完成学校页面校验；沙箱与 TLS 校验保持启用。
+
+成功响应为 `{"success":true,"data":{"generated_at":"ISO 8601 时间","exams_complete":true,"exams":[]}}`。每项包含 `key`、`course_name`、`time_text`、`campus`、`building`、`room`、`start_at` 和 `end_at`。`key` 根据学校原始五字段规范化后生成稳定摘要；时间使用北京时间 `+08:00`。时间未安排、格式无法解析或区间无效时保留 `time_text`，起止时间均为 `null`。成功空数组表示当前无考试；响应失败或字段不完整不会返回完整结果。学校接口没有学期、分页和考试 ID，服务也不补造这些信息。
+
+考试和调课共用现有并发、限流、请求体和进程超时设置。同账号、同凭据的考试请求只在查询进行中共享同一个结果或错误，完成后不在服务端缓存结果；不同凭据不会合并。等待方沿用首个请求建立的共同截止时间，默认最多 105 秒（查询预算加 15 秒清理裕量），失败后释放查询表和进程槽。客户端离开页面或断开连接不阻止正在运行的查询完成清理。
+
+运行日志记录随机 `query_id`、`start/join/done/error`、耗时和 CAS 入口、浏览器登录、等待考试响应等阶段，不记录账号、凭据或带票据 URL。现有 `/api/jwxt(/.*)?` 代理规则包含考试接口。离线测试覆盖字段解析、认证入口、真实 Uvicorn HTTP 并发与进程隔离执行、共享错误和超时清理。
 
 ## 常见问题
 
@@ -174,5 +185,5 @@ docker run -d --name cqut-notice --restart unless-stopped \
 在仓库根目录运行，不访问学校上游：
 
 ```bash
-python -m unittest FastAPI.test_jwxt_automation FastAPI.test_public_boundaries
+python -m unittest FastAPI.test_jwxt_automation FastAPI.test_public_boundaries FastAPI.test_exam_queries FastAPI.test_exam_inflight
 ```
