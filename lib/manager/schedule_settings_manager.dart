@@ -122,6 +122,15 @@ class ScheduleSettingsManager {
     return normalizeNoticeApiBaseUrl(raw);
   }
 
+  static Future<void> saveQueryServiceBaseUrl(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _prefsKeyNoticeApiBaseUrl,
+      normalizeNoticeApiBaseUrl(value),
+    );
+    settingsEpoch.value++;
+  }
+
   static bool isNoticeEnhancementEnabledIn(SharedPreferences prefs) {
     final enabled = prefs.getBool(backgroundPollingEnabledKey) ?? false;
     final consentVersion = prefs.getInt(noticePrivacyConsentVersionKey) ?? 0;

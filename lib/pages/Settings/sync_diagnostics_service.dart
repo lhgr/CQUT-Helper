@@ -83,10 +83,12 @@ class SyncDiagnosticsSnapshot {
     isIOS: defaultTargetPlatform == TargetPlatform.iOS,
   );
   DiagnosticCondition get reminderCondition => reminderReadiness.condition;
+  bool get backgroundExecutionConfirmed =>
+      background?.status == ScheduleBackgroundPollHealthStatus.healthy;
+
   DiagnosticCondition get backgroundCondition {
-    if (notifications == false ||
-        backgroundRestricted == true ||
-        batteryIgnored == false) {
+    if (backgroundExecutionConfirmed) return DiagnosticCondition.normal;
+    if (backgroundRestricted == true || batteryIgnored == false) {
       return DiagnosticCondition.problem;
     }
     if (background == null) return DiagnosticCondition.pending;
@@ -94,9 +96,7 @@ class SyncDiagnosticsSnapshot {
         background!.status == ScheduleBackgroundPollHealthStatus.restricted) {
       return DiagnosticCondition.problem;
     }
-    if (notifications == null ||
-        batteryIgnored == null ||
-        backgroundRestricted == null) {
+    if (batteryIgnored == null || backgroundRestricted == null) {
       return DiagnosticCondition.pending;
     }
     return switch (background!.status) {

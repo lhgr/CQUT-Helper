@@ -391,6 +391,61 @@ void main() {
     expect(snapshot.remindersEnabled, isNull);
   });
 
+  for (final unreadable in [false, true]) {
+    testWidgets('近期后台成功不被系统限制阻断，通知权限独立提示 $unreadable', (tester) async {
+      const health = ScheduleBackgroundPollHealthSnapshot(
+        status: ScheduleBackgroundPollHealthStatus.healthy,
+        title: '正常',
+        detail: '最近后台执行成功',
+      );
+      final snapshot = SyncDiagnosticsSnapshot(
+        account: 'student',
+        hasCredential: true,
+        remindersEnabled: false,
+        enhancementEnabled: true,
+        notifications: false,
+        background: health,
+        batteryIgnored: unreadable ? null : false,
+        backgroundRestricted: unreadable ? null : true,
+        failures: unreadable
+            ? {DiagnosticRead.battery, DiagnosticRead.restriction}
+            : {},
+      );
+      expect(snapshot.backgroundCondition, DiagnosticCondition.normal);
+      final ready = Completer<SyncDiagnosticsSnapshot>()..complete(snapshot);
+      await pumpPage(tester, _Service()..queuedReads = [ready]);
+      expect(find.text('需处理问题：调课通知增强'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('后台检查'), 250);
+      expect(find.text('最近后台执行成功'), findsOneWidget);
+      expect(find.text('部分后台信息暂时无法获取，请重试'), findsNothing);
+      expect(find.text('检查后台设置'), findsNothing);
+      await tester.scrollUntilVisible(find.text('调课通知权限'), 250);
+      expect(find.text('调课通知权限'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('查看详情'), 250);
+      await tester.tap(find.text('查看详情'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.textContaining('电池优化：'), 250);
+      expect(
+        find.text('电池优化：${unreadable ? '暂时无法获取' : '未忽略'}'),
+        findsOneWidget,
+      );
+    });
+  }
+  test('没有近期后台成功时系统限制仍需处理', () {
+    expect(
+      const SyncDiagnosticsSnapshot(
+        background: ScheduleBackgroundPollHealthSnapshot(
+          status: ScheduleBackgroundPollHealthStatus.restricted,
+          title: '受限',
+          detail: '无近期成功',
+        ),
+        batteryIgnored: false,
+        backgroundRestricted: true,
+      ).backgroundCondition,
+      DiagnosticCondition.problem,
+    );
+  });
+
   testWidgets('仅真正启用增强时显示后台组，详情默认折叠', (tester) async {
     preferences(enhancement: true, consent: false);
     await pumpPage(tester, _Service());

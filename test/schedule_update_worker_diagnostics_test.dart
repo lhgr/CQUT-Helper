@@ -39,6 +39,53 @@ void main() {
     await temporary.delete(recursive: true);
   });
 
+  test('前台执行不覆盖后台最近执行和成功记录', () async {
+    await recordScheduleUpdateWorkerState(
+      status: 'no_changes',
+      trigger: 'daily_9am',
+      task: 'schedule_notice_poll_task',
+    );
+    await recordScheduleUpdateWorkerSuccessfulRun(trigger: 'daily_9am');
+    final before = await loadScheduleUpdateWorkerStoredState();
+    await ScheduleUpdateWorker.runTaskForTesting('unsupported_task', {
+      'trigger': 'foreground',
+    });
+    final after = await loadScheduleUpdateWorkerStoredState();
+    expect(after.lastState, before.lastState);
+    expect(after.lastSuccessAt, before.lastSuccessAt);
+  });
+
+  for (final input in [
+    ('schedule_notice_poll_task', 'widget_manual'),
+    ('academic_calendar_poll_task', 'academic_calendar_daily'),
+    ('schedule_notice_poll_task', 'foreground'),
+  ]) {
+    test('${input.$2} 实际入口不覆盖后台调课记录', () async {
+      await recordScheduleUpdateWorkerState(
+        status: 'no_changes',
+        trigger: 'daily_9am',
+        task: 'schedule_notice_poll_task',
+      );
+      await recordScheduleUpdateWorkerSuccessfulRun(trigger: 'immediate');
+      final before = await loadScheduleUpdateWorkerStoredState();
+      await ScheduleUpdateWorker.runTaskForTesting(input.$1, {
+        'trigger': input.$2,
+        'userId': 'stale-account',
+      });
+      final after = await loadScheduleUpdateWorkerStoredState();
+      expect(after.lastState, before.lastState);
+      expect(after.lastSuccessAt, before.lastSuccessAt);
+      expect(after.lastSuccessTrigger, 'immediate');
+    });
+  }
+  test('清除后台状态也清除成功来源', () async {
+    await recordScheduleUpdateWorkerSuccessfulRun(trigger: 'immediate');
+    await clearScheduleUpdateWorkerState(clearEnabledAt: true);
+    final after = await loadScheduleUpdateWorkerStoredState();
+    expect(after.lastSuccessAt, isNull);
+    expect(after.lastSuccessTrigger, isNull);
+  });
+
   test('unknown task persists a matched start and skipped outcome', () async {
     expect(
       await ScheduleUpdateWorker.runTaskForTesting('unsupported_task', {
@@ -82,6 +129,24 @@ void main() {
     expect((outcome['fields'] as Map)['network_outcome'], 'not_attempted');
   });
 
+  test('a stale manual widget request never refreshes or marks the new account failed', () async {
+    SharedPreferences.setMockInitialValues({'account': 'new-account'});
+    await ScheduleUpdateWorker.runTaskForTesting('schedule_notice_poll_task', {
+      'trigger': 'widget_manual',
+      'userId': 'old-account',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getString('schedule_widget_refresh_state_new-account'),
+      isNull,
+    );
+    final rows = await storage.snapshot();
+    final outcome = rows.singleWhere(
+      (row) => row['kind'] == 'operation_outcome',
+    );
+    expect(outcome['reason'], 'skip_stale_account');
+  });
+
   test(
     'uncaught task exception retains its cause and exactly one failed outcome',
     () async {
@@ -103,11 +168,7 @@ void main() {
       expect(outcome['errorType'], isNull);
       expect(outcome['causeEventId'], failure['eventId']);
       final state = await loadScheduleUpdateWorkerStoredState();
-      expect(state.lastState?['status'], 'unhandled_failed');
-      expect(
-        (state.lastState?['fields'] as Map)['operation_id'],
-        outcome['operationId'],
-      );
+      expect(state.lastState, isNull);
       expect((outcome['fields'] as Map)['stage_durations_ms'], isNotEmpty);
     },
   );
@@ -176,11 +237,7 @@ void main() {
       expect(followUp['outcome'], 'failed');
       expect(followUp['causeEventId'], cause['eventId']);
       final state = await loadScheduleUpdateWorkerStoredState();
-      expect(state.lastState?['status'], 'calendar_skip_missing_term');
-      expect(
-        (state.lastState?['fields'] as Map)['follow_up_outcome'],
-        'failed',
-      );
+      expect(state.lastState, isNull);
     },
   );
 }

@@ -10,6 +10,12 @@ const String _backgroundPollingEnabledAtKey =
     'schedule_background_poll_enabled_at';
 const String _backgroundPollingLastSuccessAtKey =
     'schedule_background_poll_last_success_at';
+const String _backgroundPollingLastSuccessTriggerKey =
+    'schedule_background_poll_last_success_trigger';
+
+bool isScheduleUpdateWorkerBackgroundTrigger(Object? trigger) =>
+    const {'immediate', 'daily_9am', 'fallback_noon'}.contains(trigger);
+
 const String _backgroundPollLastStateKey =
     'schedule_background_poll_last_state';
 const String _backgroundPollSyncStateKey =
@@ -22,6 +28,7 @@ class ScheduleUpdateWorkerStoredState {
   final bool enabled;
   final DateTime? enabledAt;
   final DateTime? lastSuccessAt;
+  final String? lastSuccessTrigger;
   final Map<String, dynamic>? lastState;
   final Map<String, dynamic>? syncState;
   final Map<String, dynamic>? dailyState;
@@ -30,6 +37,7 @@ class ScheduleUpdateWorkerStoredState {
     required this.enabled,
     required this.enabledAt,
     required this.lastSuccessAt,
+    required this.lastSuccessTrigger,
     required this.lastState,
     required this.syncState,
     required this.dailyState,
@@ -64,6 +72,9 @@ loadScheduleUpdateWorkerStoredState() async {
     enabled: prefs.getBool(_backgroundPollingEnabledKey) ?? false,
     enabledAt: _parseTime(prefs, _backgroundPollingEnabledAtKey),
     lastSuccessAt: _parseTime(prefs, _backgroundPollingLastSuccessAtKey),
+    lastSuccessTrigger: prefs.getString(
+      _backgroundPollingLastSuccessTriggerKey,
+    ),
     lastState: _parseState(prefs, _backgroundPollLastStateKey),
     syncState: _parseState(prefs, _backgroundPollSyncStateKey),
     dailyState: _parseState(prefs, _backgroundPollDailyStateKey),
@@ -79,6 +90,7 @@ Future<void> clearScheduleUpdateWorkerState({
       await prefs.remove(_backgroundPollingEnabledAtKey);
     }
     await prefs.remove(_backgroundPollingLastSuccessAtKey);
+    await prefs.remove(_backgroundPollingLastSuccessTriggerKey);
     await prefs.remove(_backgroundPollLastStateKey);
     await prefs.remove(_backgroundPollSyncStateKey);
     await prefs.remove(_backgroundPollDailyStateKey);
@@ -92,13 +104,17 @@ Future<void> clearScheduleUpdateWorkerDailyState() async {
   } catch (_) {}
 }
 
-Future<void> recordScheduleUpdateWorkerSuccessfulRun() async {
+Future<void> recordScheduleUpdateWorkerSuccessfulRun({
+  required String trigger,
+}) async {
+  if (!isScheduleUpdateWorkerBackgroundTrigger(trigger)) return;
   try {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _backgroundPollingLastSuccessAtKey,
       DateTime.now().toIso8601String(),
     );
+    await prefs.setString(_backgroundPollingLastSuccessTriggerKey, trigger);
   } catch (_) {}
 }
 

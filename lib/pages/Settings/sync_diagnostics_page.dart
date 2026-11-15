@@ -180,7 +180,8 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
       if (data.reminderCondition == DiagnosticCondition.problem) '课前提醒',
       if (data.enhancementEnabled &&
           defaultTargetPlatform != TargetPlatform.iOS &&
-          data.backgroundCondition == DiagnosticCondition.problem)
+          (data.backgroundCondition == DiagnosticCondition.problem ||
+              data.notifications == false))
         '调课通知增强',
       if (data.refresh?.widgetState == ScheduleWidgetRefreshState.failed &&
           !data.credentialInvalid)
@@ -452,12 +453,13 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
         data?.failures.any(
           (item) => const {
             DiagnosticRead.background,
-            DiagnosticRead.notifications,
             DiagnosticRead.battery,
             DiagnosticRead.restriction,
           }.contains(item),
         ) ??
         false;
+    final backgroundNeedsRetry =
+        backgroundUnreadable && data?.backgroundExecutionConfirmed != true;
     return Scaffold(
       appBar: AppBar(
         title: const Text('同步与修复'),
@@ -619,17 +621,17 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
                     _status(
                       icon: Icons.sync_outlined,
                       title: '后台检查',
-                      detail: backgroundUnreadable
+                      detail: backgroundNeedsRetry
                           ? '部分后台信息暂时无法获取，请重试'
                           : data.background?.detail ?? '暂无执行记录，等待系统安排',
                       condition: data.backgroundCondition,
-                      action: backgroundUnreadable
+                      action: backgroundNeedsRetry
                           ? '重试'
                           : data.backgroundCondition ==
                                 DiagnosticCondition.problem
                           ? '检查后台设置'
                           : null,
-                      onAction: backgroundUnreadable
+                      onAction: backgroundNeedsRetry
                           ? _load
                           : _openNotifications,
                     ),

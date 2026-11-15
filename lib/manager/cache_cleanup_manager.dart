@@ -5,6 +5,7 @@ import 'package:cqut_helper/manager/app_network_image_cache.dart';
 import 'package:cqut_helper/manager/background_image_temp_manager.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:cqut_helper/manager/schedule_cache_database.dart';
+import 'package:cqut_helper/manager/exam_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:path_provider/path_provider.dart';
@@ -101,6 +102,15 @@ class CacheCleanupManager {
     final clearedCounts = <AppCacheType, int>{};
 
     if (types.contains(AppCacheType.timetable)) {
+      final examAccounts = keys
+          .where((key) => key.startsWith('exam_cache_v1_'))
+          .map((key) => key.substring('exam_cache_v1_'.length))
+          .toSet();
+      final currentAccount = (prefs.getString('account') ?? '').trim();
+      if (currentAccount.isNotEmpty) examAccounts.add(currentAccount);
+      for (final account in examAccounts) {
+        await ExamRepository.clearAccountCache(account);
+      }
       final toRemove = keys.where(_isTimetableCacheKey).toList(growable: false);
       for (final k in toRemove) {
         await prefs.remove(k);
@@ -161,6 +171,7 @@ class CacheCleanupManager {
   static Future<int> clearAccountData(String userId) async {
     final normalizedUserId = userId.trim();
     if (normalizedUserId.isEmpty) return 0;
+    await ExamRepository.clearAccountCache(normalizedUserId);
 
     final prefs = await SharedPreferences.getInstance();
     final toRemove = prefs
@@ -189,6 +200,7 @@ class CacheCleanupManager {
     final normalizedUserId = userId.trim();
     if (normalizedUserId.isEmpty) return false;
     if (key == 'user_info_$normalizedUserId') return true;
+    if (key == ExamRepository.cacheKey(normalizedUserId)) return true;
 
     final exactKeys = <String>{
       'schedule_last_week_$normalizedUserId',
@@ -216,6 +228,7 @@ class CacheCleanupManager {
   }
 
   static bool _isTimetableCacheKey(String key) {
+    if (key.startsWith('exam_cache_v1_')) return true;
     if (key == 'schedule_show_weekend') return false;
     if (key == 'schedule_time_info_enabled') return false;
     if (key.startsWith('schedule_update_')) return false;
