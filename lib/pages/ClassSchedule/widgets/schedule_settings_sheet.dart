@@ -11,8 +11,7 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/hidden_courses_sheet.dar
 import 'package:material_ui/material_ui.dart';
 import 'package:cqut_helper/widgets/background_polling_setup_dialog.dart';
 import 'package:cqut_helper/utils/local_notifications.dart';
-import 'package:cqut_helper/widgets/marquee_text.dart';
-import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
+import 'package:cqut_helper/pages/Settings/query_service_settings_page.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 
 class ScheduleSettingsSheet extends StatefulWidget {
@@ -49,9 +48,7 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
   late bool showWeekend;
   late bool timeInfoEnabled;
   late bool backgroundPollingEnabled;
-  late TextEditingController _noticeApiController;
   late String noticeApiBaseUrl;
-  String? _noticeApiError;
   bool _testingAvailability = false;
   bool? _availabilityOk;
   String _availabilityMessage = '';
@@ -85,28 +82,12 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
             ScheduleSettingsManager.officialNoticeApiBaseUrl
         ? ''
         : normalizedInitialBaseUrl;
-    _noticeApiController = TextEditingController(text: noticeApiBaseUrl);
-    _noticeApiController.addListener(() {
-      final next = _noticeApiController.text.trim();
-      setState(() {
-        noticeApiBaseUrl = next;
-        _noticeApiError = _validateNoticeApiBaseUrl(next);
-      });
-    });
-    _noticeApiError = _validateNoticeApiBaseUrl(noticeApiBaseUrl);
-
     _baselineShowWeekend = showWeekend;
     _baselineTimeInfoEnabled = timeInfoEnabled;
     _baselineBackgroundPollingEnabled = backgroundPollingEnabled;
     _baselineNoticeApiBaseUrl = noticeApiBaseUrl;
     unawaited(_loadHealthSnapshot());
     unawaited(_loadHiddenCourseCount());
-  }
-
-  @override
-  void dispose() {
-    _noticeApiController.dispose();
-    super.dispose();
   }
 
   bool hasUnsavedChanges() {
@@ -161,7 +142,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     final error = _validateNoticeApiBaseUrl(noticeApiBaseUrl);
     if (error != null) {
       setState(() {
-        _noticeApiError = error;
         _availabilityOk = false;
         _availabilityElapsedMs = null;
         _availabilityMessage = '请先修正域名格式';
@@ -300,7 +280,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     final error = _validateNoticeApiBaseUrl(noticeApiBaseUrl);
     if (error != null) {
       setState(() {
-        _noticeApiError = error;
         _sheetNoticeMessage = error;
       });
       return false;
@@ -309,17 +288,6 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
     final normalizedBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
       noticeApiBaseUrl,
     );
-    final baselineBaseUrl = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
-      _baselineNoticeApiBaseUrl,
-    );
-    if (normalizedBaseUrl != baselineBaseUrl &&
-        !ScheduleSettingsManager.isOfficialNoticeApiBaseUrl(
-          normalizedBaseUrl,
-        ) &&
-        !await confirmCustomNoticeServiceRisk(context)) {
-      return false;
-    }
-
     if (backgroundPollingEnabled && _noticePrivacyConsentAcceptedThisSession) {
       await ScheduleSettingsManager.markNoticePrivacyConsentAccepted();
     }
@@ -492,9 +460,9 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                       defaultTargetPlatform == TargetPlatform.iOS
                           ? (backgroundPollingEnabled
                                 ? '打开应用和手动同步时检查调课通知'
-                                : '关闭时不会访问调课服务')
+                                : '关闭时不查询调课通知')
                           : !backgroundPollingEnabled
-                          ? '关闭时不会访问调课服务，普通课表仍可正常刷新'
+                          ? '关闭时不查询调课通知，普通课表仍可正常刷新'
                           : _healthSnapshot == null
                           ? '后台检查调课通知，并只更新受影响周'
                           : '${_healthSnapshot!.title} · ${_healthSnapshot!.detail}',
@@ -524,6 +492,32 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                       ],
                     ),
                   ),
+                  ListTile(
+                    leading: const Icon(Icons.dns_outlined),
+                    title: const Text('教务查询服务'),
+                    subtitle: Text(
+                      ScheduleSettingsManager.normalizeNoticeApiBaseUrl(
+                        noticeApiBaseUrl,
+                      ),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const QueryServiceSettingsPage(),
+                        ),
+                      );
+                      final current =
+                          await ScheduleSettingsManager.loadNoticeApiBaseUrl();
+                      if (!mounted) return;
+                      setState(() {
+                        noticeApiBaseUrl = current;
+                        _baselineNoticeApiBaseUrl = current;
+                        _availabilityMessage = '';
+                        _availabilityOk = null;
+                      });
+                    },
+                  ),
                   if (backgroundPollingEnabled && _noticeConfigExpanded)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -531,25 +525,10 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '高级设置',
+                            '调课服务检查',
                             style: Theme.of(context).textTheme.labelLarge,
                           ),
                           const SizedBox(height: 8),
-                          TextField(
-                            controller: _noticeApiController,
-                            keyboardType: TextInputType.url,
-                            textInputAction: TextInputAction.done,
-                            decoration: InputDecoration(
-                              labelText: '调课服务地址',
-                              hintText: ScheduleSettingsManager
-                                  .officialNoticeApiBaseUrl,
-                              helper: const MarqueeText(
-                                '仅支持 HTTPS；检查时会使用当前登录凭据实际查询，失败时不会回退其他服务',
-                              ),
-                              errorText: _noticeApiError,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
                           Row(
                             children: [
                               FilledButton.tonal(

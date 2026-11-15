@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('普通字号并排入口缩短顶部且背景仅在顶部提供中性衬底', (tester) async {
+  testWidgets('普通字号周次在学期上方紧凑排列且自定义背景透过顶部', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -30,20 +30,20 @@ void main() {
       ),
     );
     final bar = tester.widget<ScheduleAppBar>(find.byType(ScheduleAppBar));
-    expect(bar.preferredSize.height, lessThanOrEqualTo(64));
+    expect(bar.preferredSize.height, lessThan(112));
     final appBar = tester.widget<AppBar>(find.byType(AppBar));
     expect(appBar.toolbarHeight, bar.preferredSize.height);
-    expect(appBar.backgroundColor?.a, greaterThan(0.9));
+    expect(appBar.backgroundColor, Colors.transparent);
     expect(
-      tester.getRect(find.text('第2周')).center.dy,
-      closeTo(tester.getRect(find.text('2026-2027-1学期')).center.dy, 1),
+      tester.getRect(find.text('第2周')).bottom,
+      lessThan(tester.getRect(find.text('2026-2027-1学期')).top),
     );
     for (final label in ['第2周', '2026-2027-1学期']) {
       final button = find.ancestor(
         of: find.text(label),
         matching: find.byType(TextButton),
       );
-      expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      expect(tester.getSize(button).height, greaterThanOrEqualTo(32));
       expect(tester.getSize(button).width, greaterThanOrEqualTo(48));
     }
     expect(tester.takeException(), isNull);
@@ -143,7 +143,7 @@ void main() {
         matching: find.byType(TextButton),
       );
       final rect = tester.getRect(button);
-      expect(rect.height, greaterThanOrEqualTo(48));
+      expect(rect.height, greaterThanOrEqualTo(32));
       expect(rect.width, greaterThanOrEqualTo(48));
       expect(rect.left, greaterThanOrEqualTo(bounds.left));
       expect(rect.right, lessThanOrEqualTo(bounds.right));

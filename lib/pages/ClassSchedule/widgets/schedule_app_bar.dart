@@ -4,8 +4,8 @@ import 'package:material_ui/material_ui.dart';
 void _noopScheduleAction() {}
 
 class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
-  late final ({bool stacked, double height, double weekWidth, double termWidth})
-  _layout;
+  late final double _height;
+  late final double _pickerMinHeight;
   late final TextStyle _titleStyle;
   late final TextStyle _termStyle;
   late final TextHeightBehavior? _textHeightBehavior;
@@ -61,6 +61,9 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
     );
     _termStyle = resolvedStyle(theme.textTheme.bodySmall);
+    _pickerMinHeight = MediaQuery.textScalerOf(context).scale(16) >= 24
+        ? 48
+        : 32;
     final width = (availableWidth - 112).clamp(1.0, double.infinity);
     double measure(
       String text,
@@ -82,14 +85,6 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     final titleStyle = _titleStyle;
     final termStyle = _termStyle;
-    final weekWidth = (measure(_weekLabel, titleStyle) + 16).clamp(
-      48.0,
-      double.infinity,
-    );
-    final termWidth = currentScheduleData == null
-        ? 0.0
-        : (measure(_termLabel, termStyle) + 16).clamp(48.0, double.infinity);
-    final stacked = weekWidth + termWidth > width;
     double buttonHeight(String label, TextStyle? style) =>
         (measure(
                   label,
@@ -98,23 +93,13 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
                   height: true,
                 ) +
                 12)
-            .clamp(48.0, double.infinity);
-    final height = stacked
-        ? buttonHeight(_weekLabel, titleStyle) +
-              (currentScheduleData == null
-                  ? 0
-                  : buttonHeight(_termLabel, termStyle))
-        : [
-            buttonHeight(_weekLabel, titleStyle),
-            if (currentScheduleData != null)
-              buttonHeight(_termLabel, termStyle),
-          ].reduce((a, b) => a > b ? a : b);
-    _layout = (
-      stacked: stacked,
-      height: height + 8,
-      weekWidth: weekWidth,
-      termWidth: termWidth,
-    );
+            .clamp(_pickerMinHeight, double.infinity);
+    _height =
+        buttonHeight(_weekLabel, titleStyle) +
+        (currentScheduleData == null
+            ? 0
+            : buttonHeight(_termLabel, termStyle)) +
+        8;
   }
 
   String get _termLabel => '${currentScheduleData!.yearTerm}学期';
@@ -129,7 +114,7 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       : '课表';
 
   @override
-  Size get preferredSize => Size.fromHeight(_layout.height);
+  Size get preferredSize => Size.fromHeight(_height);
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +130,8 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
         child: TextButton(
           onPressed: onTap,
           style: TextButton.styleFrom(
-            minimumSize: const Size(48, 48),
+            minimumSize: Size(48, _pickerMinHeight),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           ),
           child: Text(
@@ -204,13 +190,13 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
           );
 
     return AppBar(
-      toolbarHeight: _layout.height,
+      toolbarHeight: _height,
       titleSpacing: 8,
       leadingWidth: sideSlotWidth,
       automaticallyImplyLeading: false,
       scrolledUnderElevation: 0,
       backgroundColor: transparentBackground
-          ? Theme.of(context).colorScheme.surface.withAlpha(240)
+          ? Colors.transparent
           : Theme.of(context).colorScheme.surface,
       surfaceTintColor: Colors.transparent,
       leading: Center(child: buildRefreshAction()),
@@ -235,20 +221,11 @@ class ScheduleAppBar extends StatelessWidget implements PreferredSizeWidget {
       ],
       title: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
-        child: _layout.stacked
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [weekButton, ?termButton],
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(width: _layout.weekWidth, child: weekButton),
-                  if (termButton != null)
-                    SizedBox(width: _layout.termWidth, child: termButton),
-                ],
-              ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [weekButton, ?termButton],
+        ),
       ),
       centerTitle: true,
     );
@@ -285,7 +262,12 @@ void _showScheduleActionsSheet(
               child: Row(
                 children: [
                   Expanded(
-                    child: Text('课表操作', style: theme.textTheme.titleMedium),
+                    child: Text(
+                      '课表操作',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                   IconButton(
                     tooltip: '关闭',
@@ -344,7 +326,6 @@ class _ScheduleActionTile extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
       leading: Icon(icon),
       title: Text(title),
-      trailing: const Icon(Icons.chevron_right_rounded),
       onTap: onTap,
     );
   }
