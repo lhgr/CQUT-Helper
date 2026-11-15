@@ -6,6 +6,7 @@ import 'package:cqut_helper/utils/notice_service_clock.dart';
 import 'package:cqut_helper/api/schedule/schedule_api.dart';
 import 'package:cqut_helper/manager/academic_calendar_manager.dart';
 import 'package:cqut_helper/manager/credential_store.dart';
+import 'package:cqut_helper/manager/exam_repository.dart';
 import 'package:cqut_helper/manager/course_reminder_scheduler.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
@@ -473,6 +474,9 @@ class ScheduleUpdateWorker {
   }) async {
     final logger = AppLogger.I;
     final isForeground = inputData?['trigger'] == 'foreground';
+    final recordsBackgroundHealth =
+        task == _taskName &&
+        isScheduleUpdateWorkerBackgroundTrigger(inputData?['trigger']);
     final operationStage = isForeground
         ? 'foreground_refresh'
         : 'background_refresh';
@@ -529,15 +533,17 @@ class ScheduleUpdateWorker {
             },
           );
           try {
-            await recordScheduleUpdateWorkerState(
-              status: 'started',
-              trigger: (diagnosticOutcome['trigger'] as String?) ?? 'unknown',
-              task: task,
-              fields: {
-                'operation_id': logger.currentTraceId,
-                'lifecycle_id': diagnosticOutcome['lifecycle_id'],
-              },
-            );
+            if (recordsBackgroundHealth) {
+              await recordScheduleUpdateWorkerState(
+                status: 'started',
+                trigger: (diagnosticOutcome['trigger'] as String?) ?? 'unknown',
+                task: task,
+                fields: {
+                  'operation_id': logger.currentTraceId,
+                  'lifecycle_id': diagnosticOutcome['lifecycle_id'],
+                },
+              );
+            }
             return await _executeTask(
               task,
               inputData,
@@ -580,18 +586,20 @@ class ScheduleUpdateWorker {
               stackTrace: taskStack,
               fields: fields,
             );
-            await recordScheduleUpdateWorkerState(
-              status:
-                  (diagnosticOutcome['status'] as String?) ??
-                  'unhandled_failed',
-              trigger: (diagnosticOutcome['trigger'] as String?) ?? 'unknown',
-              task: task,
-              fields: {
-                ...fields,
-                'operation_id': logger.currentTraceId,
-                if (refreshId.isNotEmpty) 'refreshId': refreshId,
-              },
-            );
+            if (recordsBackgroundHealth) {
+              await recordScheduleUpdateWorkerState(
+                status:
+                    (diagnosticOutcome['status'] as String?) ??
+                    'unhandled_failed',
+                trigger: (diagnosticOutcome['trigger'] as String?) ?? 'unknown',
+                task: task,
+                fields: {
+                  ...fields,
+                  'operation_id': logger.currentTraceId,
+                  if (refreshId.isNotEmpty) 'refreshId': refreshId,
+                },
+              );
+            }
           }
         },
       );
@@ -627,7 +635,9 @@ class ScheduleUpdateWorker {
         diagnosticOutcome['failed_stage'] =
             diagnosticOutcome['pipeline_stage'] ?? diagnosticOutcome['stage'];
       }
-      if (isWidgetManual && status != 'widget_manual_success') {
+      if (isWidgetManual &&
+          status != 'widget_manual_success' &&
+          status != 'skip_stale_account') {
         final widgetPrefs = await SharedPreferences.getInstance();
         final widgetUserId = (widgetPrefs.getString('account') ?? '').trim();
         if (widgetUserId.isNotEmpty) {
@@ -662,6 +672,9 @@ class ScheduleUpdateWorker {
         for (final key in ['apiClosed', 'changes', 'skip_reason'])
           if (fields.containsKey(key)) key: fields[key],
       });
+      if (_isSuccessfulStatus(status)) {
+        await recordScheduleUpdateWorkerSuccessfulRun(trigger: trigger);
+      }
       if (scheduleFollowUp && (followUp != null || _isAndroid)) {
         enterStage('schedule_follow_up');
         final clock = Stopwatch()..start();
@@ -766,6 +779,7 @@ class ScheduleUpdateWorker {
       return done(status: 'skip_unknown_task');
     }
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     if (!isWidgetManual &&
         !ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs)) {
       return done(status: 'skip_disabled');
@@ -777,9 +791,7 @@ class ScheduleUpdateWorker {
     }
     final scheduledUserId = ((inputData?['userId'] ?? '').toString()).trim();
     final userId = (prefs.getString('account') ?? '').trim();
-    if (!isWidgetManual &&
-        scheduledUserId.isNotEmpty &&
-        scheduledUserId != userId) {
+    if (scheduledUserId.isNotEmpty && scheduledUserId != userId) {
       return done(
         status: 'skip_stale_account',
         fields: {'scheduledUserId': scheduledUserId},
@@ -787,6 +799,10 @@ class ScheduleUpdateWorker {
     }
     final encryptedPassword =
         ((await CredentialStore().readEncryptedPassword()) ?? '').trim();
+    await prefs.reload();
+    if ((prefs.getString('account') ?? '').trim() != userId) {
+      return done(status: 'skip_stale_account');
+    }
     if (userId.isEmpty || encryptedPassword.isEmpty) {
       if (isWidgetManual && userId.isNotEmpty) {
         await ScheduleRefreshState.markFailure(
@@ -812,6 +828,8 @@ class ScheduleUpdateWorker {
 
     final scheduleApi = ScheduleApi();
     if (isWidgetManual) {
+      // Run both sources independently; exam failure preserves its last snapshot.
+      final examRefresh = ExamRepository.instance.refresh(force: true);
       enterStage('widget_manual_refresh');
       diagnosticOutcome.addAll({
         'network_attempted': true,
@@ -833,6 +851,7 @@ class ScheduleUpdateWorker {
           'schedule_network_outcome': 'succeeded',
         });
         await ScheduleRefreshState.markSuccess(userId, refreshId: refreshId);
+        await examRefresh;
         return await done(status: 'widget_manual_success');
       } catch (e, st) {
         diagnosticOutcome.addAll({
@@ -847,6 +866,7 @@ class ScheduleUpdateWorker {
           failure: failure,
           refreshId: refreshId,
         );
+        await examRefresh;
 
         return done(
           status: 'widget_manual_failed',
@@ -1060,10 +1080,24 @@ class ScheduleUpdateWorker {
             !ScheduleSettingsManager.isNoticeEnhancementEnabledIn(prefs))) {
       return done(status: 'skip_stale_account');
     }
+    // The exam API is independent of the notice service, so refresh exams on
+    // every daily run regardless of whether the notice pipeline found changes.
+    // refresh() honors the 30-minute cache, so foreground resumes coalesce.
+    enterStage('exam_refresh');
+    try {
+      await ExamRepository.instance.refresh();
+      diagnosticOutcome['exam_refresh'] = 'succeeded';
+    } catch (error, stackTrace) {
+      diagnosticOutcome['exam_refresh'] = 'failed';
+      AppLogger.I.warn(
+        'ScheduleUpdateWorker',
+        'background exam refresh failed',
+        error: error,
+        stackTrace: stackTrace,
+        fields: {'trigger': trigger},
+      );
+    }
     if (result.apiClosed || result.changes.isEmpty) {
-      if (!result.apiClosed && result.skipReason == null) {
-        await recordScheduleUpdateWorkerSuccessfulRun();
-      }
       return done(
         status: result.apiClosed
             ? 'api_closed'
@@ -1094,7 +1128,6 @@ class ScheduleUpdateWorker {
       body: body,
       payload: LocalNotifications.payloadScheduleUpdate,
     );
-    await recordScheduleUpdateWorkerSuccessfulRun();
     AppLogger.I.info(
       'ScheduleUpdateWorker',
       'heartbeat task detected schedule changes',
