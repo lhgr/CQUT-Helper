@@ -260,7 +260,7 @@ void main() {
     expect(find.text('勿扰权限'), findsNothing);
   });
 
-  testWidgets('权限刷新失败不能沿用旧授权宣称正常，重试保留服务地址草稿', (tester) async {
+  testWidgets('权限刷新失败不能沿用旧授权宣称正常，重试保留共享服务地址', (tester) async {
     SharedPreferences.setMockInitialValues({
       ScheduleSettingsManager.remindersEnabledKey: true,
       'schedule_course_reminder_status_v1': jsonEncode(
@@ -293,27 +293,13 @@ void main() {
           matching: find.byType(Scrollable),
         )
         .first;
-    await tester.scrollUntilVisible(
-      find.text('高级设置').hitTestable(),
-      250,
-      scrollable: pageScroll,
-    );
-    await tester.tap(find.text('高级设置'));
-    await tester.pumpAndSettle();
-    final url = find.widgetWithText(TextField, '调课服务地址');
-    await tester.scrollUntilVisible(
-      url.hitTestable(),
-      150,
-      scrollable: pageScroll,
-    );
-    await tester.enterText(url, 'https://draft.example.com');
     fail = true;
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pumpAndSettle();
     expect(find.text('提醒计划正常'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('重试').hitTestable(),
-      -250,
+      250,
       scrollable: pageScroll,
     );
     fail = false;
@@ -321,15 +307,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('提醒计划正常'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('高级设置'),
+      find.text('教务查询服务'),
       250,
       scrollable: pageScroll,
     );
-    await tester.scrollUntilVisible(url, 250, scrollable: pageScroll);
-    expect(
-      tester.widget<TextField>(url).controller!.text,
-      'https://draft.example.com',
-    );
+    expect(find.text('教务查询服务'), findsOneWidget);
   });
 
   testWidgets('iOS 仅显示通知授权与前台同步能力', (tester) async {
@@ -347,7 +329,7 @@ void main() {
     expect(find.text('自启动设置'), findsNothing);
     await tester.scrollUntilVisible(find.text('调课通知增强'), 300);
     expect(find.text('调课通知增强'), findsOneWidget);
-    expect(find.text('高级设置'), findsOneWidget);
+    expect(find.text('教务查询服务'), findsOneWidget);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   testWidgets('返回应用时刷新系统权限状态', (tester) async {

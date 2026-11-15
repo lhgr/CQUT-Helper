@@ -10,11 +10,11 @@ import 'package:cqut_helper/utils/course_reminder_mode.dart';
 import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/widgets/app_select_field.dart';
 import 'package:cqut_helper/widgets/background_polling_setup_dialog.dart';
-import 'package:cqut_helper/widgets/marquee_text.dart';
-import 'package:cqut_helper/widgets/notice_service_risk_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'settings_schedule_scope.dart';
+import 'settings_section_tile.dart';
+import 'query_service_settings_page.dart';
 import 'reminder_readiness.dart';
 import 'app_settings_page.dart';
 
@@ -48,7 +48,6 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
   String? _pendingPermissionKind;
   bool _pollingEnabled = false;
   ScheduleBackgroundPollHealthSnapshot? _health;
-  String? _serviceError;
   String _availabilityMessage = '';
   bool _testingAvailability = false;
 
@@ -599,34 +598,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
         : '请输入不含路径的 HTTPS 服务地址';
   }
 
-  Future<void> _saveServiceUrl() async {
-    final value = _serviceController.text.trim();
-    final error = _validateServiceUrl(value);
-    if (error != null) {
-      setState(() => _serviceError = error);
-      return;
-    }
-    final normalized = ScheduleSettingsManager.normalizeNoticeApiBaseUrl(value);
-    if (!ScheduleSettingsManager.isOfficialNoticeApiBaseUrl(normalized) &&
-        !await confirmCustomNoticeServiceRisk(context)) {
-      return;
-    }
-    await _manager.save(
-      showWeekend: _manager.showWeekend,
-      timeInfoEnabled: _manager.timeInfoEnabled,
-      backgroundPollingEnabled: _pollingEnabled,
-      noticeApiBaseUrl: normalized,
-    );
-    if (!mounted) return;
-    setState(() => _serviceError = null);
-    _showMessage('调课服务地址已保存');
-  }
-
   Future<void> _testAvailability() async {
     final value = _serviceController.text.trim();
     final error = _validateServiceUrl(value);
     if (error != null) {
-      setState(() => _serviceError = error);
+      setState(() => _availabilityMessage = error);
       return;
     }
     setState(() {
@@ -1001,9 +977,9 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
                           _isIOS
                               ? (_pollingEnabled
                                     ? '启动、返回前台和手动同步时检查调课通知'
-                                    : '关闭时不会访问调课服务')
+                                    : '关闭时不查询调课通知')
                               : !_pollingEnabled
-                              ? '关闭时不会访问调课服务'
+                              ? '关闭时不查询调课通知'
                               : _health == null
                               ? '后台检查调课通知'
                               : '${_health!.title} · ${_health!.detail}',
@@ -1011,70 +987,37 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
                         value: _pollingEnabled,
                         onChanged: _working ? null : _togglePolling,
                       ),
-                      ExpansionTile(
-                        leading: const Icon(Icons.dns_outlined),
-                        title: const Text('高级设置'),
-                        subtitle: const Text('自定义调课服务地址'),
-                        childrenPadding: const EdgeInsets.fromLTRB(
-                          16,
-                          0,
-                          16,
-                          16,
-                        ),
-                        children: [
-                          TextField(
-                            controller: _serviceController,
-                            keyboardType: TextInputType.url,
-                            decoration: InputDecoration(
-                              labelText: '调课服务地址',
-                              hintText: ScheduleSettingsManager
-                                  .officialNoticeApiBaseUrl,
-                              helper: const MarqueeText(
-                                '留空使用官方服务；仅在调课通知增强开启时允许实际查询',
-                              ),
-                              errorText: _serviceError,
+                      SettingsSectionTile(
+                        icon: Icons.dns_outlined,
+                        title: '教务查询服务',
+                        subtitle: '用于考试安排与调课通知',
+                        onTap: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const QueryServiceSettingsPage(),
                             ),
-                            onChanged: (_) {
-                              if (_serviceError != null) {
-                                setState(() => _serviceError = null);
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed:
-                                      !_pollingEnabled || _testingAvailability
-                                      ? null
-                                      : _testAvailability,
-                                  child: Text(
-                                    !_pollingEnabled
-                                        ? '开启后可检查'
-                                        : _testingAvailability
-                                        ? '检查中…'
-                                        : '检查服务可用性',
-                                  ),
-                                ),
+                          );
+                          if (mounted) await _load();
+                        },
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            OutlinedButton(
+                              onPressed:
+                                  !_pollingEnabled || _testingAvailability
+                                  ? null
+                                  : _testAvailability,
+                              child: Text(
+                                _testingAvailability ? '检查中…' : '检查调课服务可用性',
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: FilledButton(
-                                  onPressed: _saveServiceUrl,
-                                  child: const Text('保存地址'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_availabilityMessage.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(_availabilityMessage),
                             ),
+                            if (_availabilityMessage.isNotEmpty)
+                              Text(_availabilityMessage),
                           ],
-                        ],
+                        ),
                       ),
                     ],
                   ),
