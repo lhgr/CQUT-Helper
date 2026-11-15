@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cqut_helper/manager/exam_repository.dart';
+
 import 'package:dio/dio.dart';
 
 import 'package:cqut_helper/manager/cache_cleanup_manager.dart';
@@ -114,6 +116,8 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
     super.initState();
     _controller = widget.controller ?? ScheduleController();
     _updateManager = ScheduleUpdateManager(controller: _controller);
+    ExamRepository.instance.addListener(_onExamsChanged);
+    unawaited(ExamRepository.instance.load());
     WidgetsBinding.instance.addObserver(this);
     ScheduleUpdateIntents.openChangesSheet.addListener(_onOpenChangesSheet);
     ScheduleUpdateIntents.scheduleUpdated.addListener(_onScheduleUpdated);
@@ -137,6 +141,7 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
 
   @override
   void dispose() {
+    ExamRepository.instance.removeListener(_onExamsChanged);
     WidgetsBinding.instance.removeObserver(this);
     ScheduleUpdateIntents.openChangesSheet.removeListener(_onOpenChangesSheet);
     ScheduleUpdateIntents.scheduleUpdated.removeListener(_onScheduleUpdated);
@@ -163,6 +168,15 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
   void _setState(VoidCallback fn) {
     if (!mounted) return;
     setState(fn);
+  }
+
+  void _onExamsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _restoreExamTimeAxis() async {
+    await _controller.refreshTimeInfoIfEnabled(force: true);
+    if (mounted) setState(() {});
   }
 
   void _dismissWeekendMakeupNotice() {
@@ -487,15 +501,21 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
           nowInTeachingWeek: _nowInTeachingWeek,
           nowStatusLabel: _nowStatusLabel,
           refreshStatusText: _refreshStatusText,
-          onRefresh: () => _loadFromNetwork(
-            weekNum: _weekList![_currentWeekIndex],
-            yearTerm: _currentScheduleData?.yearTerm,
-            updateWidgetPins:
-                _actualCurrentWeekStr == null ||
-                _actualCurrentTermStr == null ||
-                (_weekList![_currentWeekIndex] == _actualCurrentWeekStr &&
-                    _currentScheduleData?.yearTerm == _actualCurrentTermStr),
-          ),
+          onRefresh: () {
+            unawaited(ExamRepository.instance.refresh(force: true));
+            unawaited(
+              _loadFromNetwork(
+                weekNum: _weekList![_currentWeekIndex],
+                yearTerm: _currentScheduleData?.yearTerm,
+                updateWidgetPins:
+                    _actualCurrentWeekStr == null ||
+                    _actualCurrentTermStr == null ||
+                    (_weekList![_currentWeekIndex] == _actualCurrentWeekStr &&
+                        _currentScheduleData?.yearTerm ==
+                            _actualCurrentTermStr),
+              ),
+            );
+          },
           onSettings: _showScheduleSettingsPage,
           onWeekPicker: _showWeekPickerSheet,
           onTermPicker: _showTermPickerSheet,
@@ -549,9 +569,10 @@ class _ClassscheduleViewState extends State<ClassscheduleView>
                 academicCalendar: _academicCalendar,
                 onBoundaryMessage: _showBoundaryMessage,
                 currentWeekIndex: _currentWeekIndex,
-                timeInfoList: _settingsManager.timeInfoEnabled
-                    ? _controller.timeInfoList
-                    : null,
+                timeInfoList: _controller.timeInfoList,
+                showTimeLabels: _settingsManager.timeInfoEnabled,
+                exams: ExamRepository.instance.exams,
+                onRestoreExamTimeAxis: () => unawaited(_restoreExamTimeAxis()),
                 layoutSettings: _settingsManager.layoutSettings,
                 resolveCourseDetailEvents: _resolveCourseDetailEvents,
                 onEditCourse: _editCourse,

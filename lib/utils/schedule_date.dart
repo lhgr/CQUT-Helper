@@ -22,11 +22,11 @@ class ScheduleDate {
     if (_strictDate(2000, month, day) == null) return null;
 
     final ref = reference ?? DateTime.now();
-    final candidate = _strictDate(ref.year, month, day);
-    if (candidate == null) return null;
-
+    // Resolve the year before strictly validating February 29: the nearest
+    // occurrence can be in a leap year adjacent to a non-leap reference year.
+    final candidate = DateTime(ref.year, month, day);
     final diff = candidate.difference(DateTime(ref.year, ref.month, ref.day));
-    if (diff.inDays.abs() <= 183) return candidate;
+    if (diff.inDays.abs() <= 183) return _strictDate(ref.year, month, day);
 
     final adjustedYear = diff.inDays > 0 ? ref.year - 1 : ref.year + 1;
     return _strictDate(adjustedYear, month, day);

@@ -7,7 +7,7 @@ enum ScheduleStyle: String, CaseIterable {
   case dual = "today_and_next", vertical = "vertical_schedule"
   var title: String {
     switch self {
-    case .tiny: return "下一节课"
+    case .tiny: return "下一项安排"
     case .course: return "今日课程"
     case .list: return "今日列表"
     case .dual: return "今明课表"
@@ -196,7 +196,9 @@ private struct ScheduleWidgetContent: View {
   }
 
   private var tinyCourse: WidgetCourse? {
-    style == .tiny ? entry.snapshot?.courses(on: targetDate, now: entry.date).first : nil
+    guard style == .tiny else { return nil }
+    let items = entry.snapshot?.courses(on: targetDate, now: entry.date) ?? []
+    return items.first { $0.kind == "exam" && $0.isOngoing } ?? items.first
   }
 
   @ViewBuilder private var content: some View {
@@ -293,7 +295,7 @@ private struct ScheduleWidgetContent: View {
           }
           if courses.count > capacity {
             Link(destination: link(date: date)) {
-              Text("还有\(courses.count - capacity)节")
+              Text("还有\(courses.count - capacity)项")
                 .font(.system(size: 11, weight: .medium)).foregroundColor(secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -310,7 +312,7 @@ private struct ScheduleWidgetContent: View {
 
   private var tiny: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text("下一节课").font(.system(size: 11, weight: .medium)).foregroundColor(secondary)
+      Text("下一项安排").font(.system(size: 11, weight: .medium)).foregroundColor(secondary)
       if presentation.state == "login" || entry.snapshot == nil {
         Text(presentation.text).font(.system(size: 13, weight: .semibold)).lineLimit(3)
       } else if let course = tinyCourse {
@@ -320,10 +322,11 @@ private struct ScheduleWidgetContent: View {
           RoundedRectangle(cornerRadius: 2).fill(tinted ? primary : palette.accent).frame(width: 4)
           VStack(alignment: .leading, spacing: 4) {
             Text(course.event.name).font(.system(size: 16, weight: .bold)).lineLimit(1)
-            Text(course.startTime.isEmpty ? course.event.periods : "\(course.startTime)–\(course.endTime)")
+            Text(course.kind == "exam" ? course.examDisplayText :
+              (course.startTime.isEmpty ? course.event.periods : "\(course.startTime)–\(course.endTime)"))
               .font(.system(size: 11)).lineLimit(1)
             Text(course.event.location).font(.system(size: 10)).foregroundColor(secondary).lineLimit(1)
-            Text(count == 1 ? "今日最后一节" : "后续\(count - 1)节")
+            Text("剩余\(count)项")
               .font(.system(size: 9)).foregroundColor(secondary).lineLimit(1)
           }
         }
@@ -352,12 +355,14 @@ private struct ScheduleWidgetContent: View {
       VStack(alignment: .leading, spacing: 3) {
         Text(course.event.name).font(.system(size: compact ? 12 : 13, weight: .bold)).lineLimit(compact ? 1 : 2)
         if compact {
-          Text([course.startTime.isEmpty ? course.event.periods : course.startTime, course.event.location]
+          Text([course.kind == "exam" ? course.examDisplayText :
+            (course.startTime.isEmpty ? course.event.periods : course.startTime), course.event.location]
             .filter { !$0.isEmpty }.joined(separator: " · "))
             .font(.system(size: 9)).foregroundColor(secondary).lineLimit(1)
         } else {
           Text(course.event.location).font(.system(size: 10)).foregroundColor(secondary).lineLimit(1)
-          Text([course.event.periods, course.event.memberName ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+          Text(course.kind == "exam" ? course.examDisplayText :
+            [course.event.periods, course.event.memberName ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
             .font(.system(size: 9)).foregroundColor(secondary).lineLimit(1)
         }
       }.frame(maxWidth: .infinity, alignment: .leading)
@@ -373,6 +378,8 @@ private struct ScheduleWidgetContent: View {
     components.queryItems = [URLQueryItem(name: "date", value: WidgetClock.dateKey(date)),
       URLQueryItem(name: "action", value: action)]
     if let course = course {
+      components.queryItems?.append(URLQueryItem(name: "itemKind", value: course.kind))
+      components.queryItems?.append(URLQueryItem(name: "examKey", value: course.examKey))
       components.queryItems?.append(URLQueryItem(name: "eventId", value: course.event.eventID))
       components.queryItems?.append(URLQueryItem(name: "eventName", value: course.event.name))
     }

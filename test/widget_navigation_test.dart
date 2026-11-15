@@ -14,6 +14,27 @@ void main() {
   });
 
   test(
+    'exam navigation retains its own identity and never matches a course',
+    () async {
+      WidgetNavigation.debugIsSupportedOverride = true;
+      messenger.setMockMethodCallHandler(
+        channel,
+        (_) async => {
+          'date': '2026-11-18',
+          'itemKind': 'exam',
+          'examKey': 'exam-key',
+          'eventName': '同名课程',
+        },
+      );
+      await WidgetNavigation.initialize();
+      final request = WidgetNavigation.request.value!;
+      expect(request.itemKind, 'exam');
+      expect(request.examKey, 'exam-key');
+      expect(request.hasCourse, isFalse);
+    },
+  );
+
+  test(
     'initial iOS navigation preserves actual date, course and one-shot sync',
     () async {
       WidgetNavigation.debugIsSupportedOverride = true;

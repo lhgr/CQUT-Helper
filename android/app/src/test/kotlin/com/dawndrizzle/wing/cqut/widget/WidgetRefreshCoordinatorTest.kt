@@ -24,8 +24,8 @@ class WidgetRefreshCoordinatorTest {
 
   @Test
   fun `vertical list count follows configured day without automatic tomorrow preview`() {
-    assertEquals("剩余2节", VerticalScheduleWidgetProvider.courseCountText(0, 2))
-    assertEquals("共2节", VerticalScheduleWidgetProvider.courseCountText(1, 2))
+    assertEquals("剩余2项", VerticalScheduleWidgetProvider.courseCountText(0, 2))
+    assertEquals("共2项", VerticalScheduleWidgetProvider.courseCountText(1, 2))
     assertEquals("", VerticalScheduleWidgetProvider.courseCountText(0, 0))
   }
 

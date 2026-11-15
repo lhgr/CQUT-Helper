@@ -10,6 +10,9 @@ import time
 from collections import deque
 import hashlib
 import ipaddress
+import json
+import uuid
+from concurrent.futures import Future, TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -29,6 +32,48 @@ from urllib3.util import Retry
 from FastAPI.service_common import ServiceError
 
 logger = logging.getLogger("jwxt_automation")
+query_logger = logging.getLogger("jwxt.query")
+if not query_logger.handlers:
+    query_logger.addHandler(logging.StreamHandler())
+query_logger.setLevel(logging.INFO)
+query_logger.propagate = False
+
+
+def log_exam_query(query_id: Optional[str], event: str, started_at: float, *,
+                   phase: Optional[str] = None, status: Optional[int] = None,
+                   error_code: Optional[str] = None) -> None:
+    """Lifecycle diagnostics deliberately contain no identity or upstream URL."""
+    if query_id is None:
+        return
+    fields: Dict[str, Any] = {
+        "operation": "exams", "query_id": query_id, "event": event,
+        "elapsed_ms": round((time.monotonic() - started_at) * 1000),
+    }
+    if phase is not None:
+        fields["phase"] = phase
+    if status is not None:
+        fields["status"] = status
+    if error_code is not None:
+        fields["error_code"] = error_code
+    query_logger.info(json.dumps(fields, ensure_ascii=False))
+
+
+def login_browser(page: Any, login_page: str, do_login: str, payload: Dict[str, Any], timeout_ms: int) -> None:
+    """Establish UIS cookies in the browser without asking for plaintext passwords."""
+    page.goto(login_page, wait_until="domcontentloaded", timeout=timeout_ms)
+    result = page.evaluate(
+        """async ({url, payload}) => {
+            const response = await fetch(url, {
+                method: 'POST', credentials: 'include',
+                headers: {'content-type': 'application/json;charset=UTF-8'},
+                body: JSON.stringify(payload)
+            });
+            return await response.json();
+        }""",
+        {"url": do_login, "payload": payload},
+    )
+    if not isinstance(result, dict) or result.get("code") != 200:
+        raise ServiceError(401, "authentication_failed", "统一认证失败，请检查登录信息")
 
 @dataclass
 class EnvConfig:
@@ -196,7 +241,6 @@ class JwxtAutomation:
         except ModuleNotFoundError as exc:
             raise RuntimeError("HTTP查询不可用且未安装浏览器组件") from exc
         captured: Dict[str, str] = {}
-        encrypted_pwd = self.encrypted_password
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, chromium_sandbox=True, env=_query_process_environment())
             try:
@@ -213,28 +257,8 @@ class JwxtAutomation:
                             captured["read"] = url
 
                 page.on("request", on_request)
-                page.goto(self.config.cas_login_page, wait_until="domcontentloaded", timeout=self.config.timeout_sec * 1000)
-                payload = {
-                    "name": self.username,
-                    "pwd": encrypted_pwd,
-                    "verifyCode": None,
-                    "universityId": "100005",
-                    "loginType": "login",
-                }
-                login_result = page.evaluate(
-                    """async ({url, payload}) => {
-                        const r = await fetch(url, {
-                            method: 'POST',
-                            credentials: 'include',
-                            headers: {'content-type': 'application/json, application/json;charset=UTF-8'},
-                            body: JSON.stringify(payload)
-                        });
-                        return await r.json();
-                    }""",
-                    {"url": self.config.cas_do_login, "payload": payload},
-                )
-                if login_result.get("code") != 200:
-                    raise RuntimeError("浏览器登录失败")
+                login_browser(page, self.config.cas_login_page, self.config.cas_do_login,
+                              self._login_payload(), self.config.timeout_sec * 1000)
                 page.goto(self.config.cas_login_page, wait_until="networkidle", timeout=self.config.timeout_sec * 1000)
                 page.goto(self.config.dbsy_page, wait_until="networkidle", timeout=self.config.timeout_sec * 1000)
                 try:
@@ -400,9 +424,12 @@ def run_pipeline(
         client.session.close()
 
 
-class PipelineRequest(BaseModel):
+class CredentialsRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=64)
     encrypted_password: str = Field(..., min_length=1, max_length=16384)
+
+
+class PipelineRequest(CredentialsRequest):
     year_term: str = Field(..., pattern=r"^\d{4}-\d{4}-[12]$")
     env: str = Field(default="prod")
     headless: bool = True
@@ -509,7 +536,13 @@ def _pipeline_process_entry(result_queue: Any, kwargs: Dict[str, Any]) -> None:
     os.environ.clear()
     os.environ.update(environment)
     try:
-        result_queue.put({"ok": True, "data": run_pipeline(**kwargs)})
+        operation = kwargs.pop("operation", "notices")
+        if operation == "exams":
+            from FastAPI.exam_queries import run_exam_pipeline
+            data = run_exam_pipeline(**kwargs)
+        else:
+            data = run_pipeline(**kwargs)
+        result_queue.put({"ok": True, "data": data})
     except ServiceError as exc:
         result_queue.put({"ok": False, "status": exc.status_code, "code": exc.code, "message": exc.message})
     except requests.HTTPError as exc:
@@ -559,7 +592,7 @@ def _pipeline_process_entry(result_queue: Any, kwargs: Dict[str, Any]) -> None:
                 "ok": False,
                 "status": 500,
                 "code": "pipeline_failed",
-                "message": "调课查询处理失败",
+                "message": "教务查询处理失败",
             }
         )
 
@@ -596,14 +629,14 @@ def _run_pipeline_isolated(target: Any, timeout_seconds: float, kwargs: Dict[str
                     break
         if outcome is None:
             if process.is_alive():
-                raise ServiceError(504, "pipeline_timeout", "调课查询超时，请稍后重试")
+                raise ServiceError(504, "pipeline_timeout", "教务查询超时，请稍后重试")
             try:
                 outcome = result_queue.get(timeout=1)
             except queue.Empty as exc:
-                raise ServiceError(500, "pipeline_failed", "调课查询处理失败") from exc
+                raise ServiceError(500, "pipeline_failed", "教务查询处理失败") from exc
         if outcome.get("ok") is True:
             return outcome["data"]
-        raise ServiceError(int(outcome.get("status", 500)), str(outcome.get("code", "pipeline_failed")), str(outcome.get("message", "调课查询处理失败")))
+        raise ServiceError(int(outcome.get("status", 500)), str(outcome.get("code", "pipeline_failed")), str(outcome.get("message", "教务查询处理失败")))
     finally:
         if process.pid is not None:
             process.join(0.1)
@@ -626,8 +659,20 @@ _pipeline_slots = threading.BoundedSemaphore(
 )
 
 _account_limiter = SlidingWindowRateLimiter(limit=6, window_seconds=60)
-_active_queries: set[tuple[str, str]] = set()
+_active_queries: set[tuple[str, str, str]] = set()
 _active_queries_lock = threading.Lock()
+
+
+@dataclass
+class ExamQueryFlight:
+    query_id: str
+    started_at: float
+    deadline: float
+    future: Future
+
+
+_exam_inflight: Dict[Tuple[str, str, str], ExamQueryFlight] = {}
+_exam_inflight_lock = threading.Lock()
 
 router = APIRouter()
 
@@ -637,13 +682,73 @@ def fetch_term_schedule_notices(
     payload: PipelineRequest,
     request: Request,
 ) -> Dict[str, Any]:
+    return _execute_query(payload, request, "notices", payload.year_term,
+                          year_term=payload.year_term, env_name="prod", headless=True)
+
+
+@router.post("/api/jwxt/exams")
+def fetch_exams(payload: CredentialsRequest, request: Request) -> Dict[str, Any]:
+    account = hashlib.sha256(payload.username.strip().encode("utf-8")).hexdigest()
+    credentials = hashlib.sha256(payload.encrypted_password.encode("utf-8")).hexdigest()
+    key = ("exams", account, credentials)
+    with _exam_inflight_lock:
+        flight = _exam_inflight.get(key)
+        leader = flight is None
+        if flight is None:
+            if not _rate_limiter.allow(_client_identity(request)) or not _account_limiter.allow(account):
+                raise ServiceError(429, "rate_limited", "请求过于频繁，请稍后再试")
+            if not _pipeline_slots.acquire(blocking=False):
+                raise ServiceError(503, "service_busy", "服务繁忙，请稍后再试")
+            started_at = time.monotonic()
+            flight = ExamQueryFlight(
+                uuid.uuid4().hex, started_at,
+                started_at + _env_int("JWXT_PIPELINE_TIMEOUT_SEC", 90, 10, 300) + 15,
+                Future(),
+            )
+            _exam_inflight[key] = flight
+    if not leader:
+        log_exam_query(flight.query_id, "join", flight.started_at)
+        try:
+            result = flight.future.result(timeout=max(0, flight.deadline - time.monotonic()))
+            return {"success": True, "data": result}
+        except FutureTimeout as exc:
+            log_exam_query(flight.query_id, "error", flight.started_at,
+                           status=504, error_code="join_wait_timeout")
+            raise ServiceError(504, "pipeline_timeout", "考试查询超时，请稍后重试") from exc
+    log_exam_query(flight.query_id, "start", flight.started_at)
+    try:
+        result = run_pipeline_isolated(
+            username=payload.username, encrypted_password=payload.encrypted_password,
+            operation="exams", query_id=flight.query_id,
+            query_started_at=flight.started_at,
+        )
+        flight.future.set_result(result)
+        log_exam_query(flight.query_id, "done", flight.started_at, status=200)
+        return {"success": True, "data": result}
+    except Exception as exc:
+        error = exc if isinstance(exc, ServiceError) else ServiceError(
+            500, "pipeline_failed", "考试查询处理失败")
+        flight.future.set_exception(error)
+        log_exam_query(flight.query_id, "error", flight.started_at,
+                       status=error.status_code, error_code=error.code)
+        raise error from None
+    finally:
+        if not flight.future.done():
+            flight.future.set_exception(ServiceError(500, "pipeline_failed", "考试查询处理失败"))
+        with _exam_inflight_lock:
+            _exam_inflight.pop(key, None)
+        _pipeline_slots.release()
+
+
+def _execute_query(payload: CredentialsRequest, request: Request, operation: str,
+                   scope: str, **kwargs: Any) -> Dict[str, Any]:
     account = hashlib.sha256(payload.username.strip().encode("utf-8")).hexdigest()
     if not _rate_limiter.allow(_client_identity(request)) or not _account_limiter.allow(account):
         raise ServiceError(429, "rate_limited", "请求过于频繁，请稍后再试")
-    key = (account, payload.year_term)
+    key = (account, operation, scope)
     with _active_queries_lock:
         if key in _active_queries:
-            raise ServiceError(409, "query_in_progress", "该账号学期正在查询，请稍后再试")
+            raise ServiceError(409, "query_in_progress", "该账号正在执行相同查询，请稍后再试")
         if not _pipeline_slots.acquire(blocking=False):
             raise ServiceError(503, "service_busy", "服务繁忙，请稍后再试")
         _active_queries.add(key)
@@ -651,9 +756,8 @@ def fetch_term_schedule_notices(
         result = run_pipeline_isolated(
             username=payload.username,
             encrypted_password=payload.encrypted_password,
-            year_term=payload.year_term,
-            env_name="prod",
-            headless=True,
+            operation=operation,
+            **kwargs,
         )
         return {"success": True, "data": result}
     finally:

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:cqut_helper/api/update/update_api.dart';
 import 'package:cqut_helper/manager/announcement_manager.dart';
+import 'package:cqut_helper/manager/exam_repository.dart';
+import 'package:cqut_helper/pages/Exams/exams_page.dart';
 import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
@@ -120,6 +122,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && !_isCheckingLogin) {
       _markActive();
+      if (_currentIndex == 1) unawaited(ExamRepository.instance.refresh());
       unawaited(ScheduleUpdateWorker.syncFromPreferences());
       unawaited(_onCourseReminderOpened());
       _scheduleStartupPrompt();
@@ -172,6 +175,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
           );
       _isCheckingLogin = false;
     });
+    if (_currentIndex == 1) unawaited(ExamRepository.instance.refresh());
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -323,6 +327,21 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       return;
     }
     _lastWidgetNavigationToken = navigation.token;
+    if (navigation.action == 'sync') {
+      unawaited(ExamRepository.instance.refresh(force: true));
+    }
+    if (navigation.itemKind == 'exam') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ExamsPage(initialExamKey: navigation.examKey),
+            ),
+          );
+        }
+      });
+      return;
+    }
     if (_currentIndex != 0) {
       setState(() {
         _currentIndex = 0;
@@ -454,6 +473,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
                     : colorScheme.surfaceContainer,
                 elevation: 0,
                 onDestinationSelected: (index) {
+                  if (index == 1) unawaited(ExamRepository.instance.refresh());
                   setState(() {
                     _currentIndex = index;
                   });

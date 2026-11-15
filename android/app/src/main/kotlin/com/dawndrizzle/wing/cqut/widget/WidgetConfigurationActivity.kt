@@ -326,7 +326,7 @@ class WidgetConfigurationActivity : Activity() {
       TodayListWidgetProvider::class.java.name -> "单日课程：以列表展示今天剩余课程或明天的课程"
       TodayAndNextWidgetProvider::class.java.name -> "近日课程：同时展示今天和明天"
       TodayCourseWidgetProvider::class.java.name -> "日视图：可在今天和明天之间快速切换"
-      TinyCourseWidgetProvider::class.java.name -> "超小课程：仅展示今天最近一节尚未开课的课程"
+      TinyCourseWidgetProvider::class.java.name -> "超小安排：优先展示进行中考试，其次展示今天下一项安排"
       VerticalScheduleWidgetProvider::class.java.name ->
         "垂直列表课表：以时间轴列表展示选定日期的课程"
       else -> "为这个小组件选择独立外观和显示内容"

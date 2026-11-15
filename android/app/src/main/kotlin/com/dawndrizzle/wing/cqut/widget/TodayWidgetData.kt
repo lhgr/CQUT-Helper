@@ -77,7 +77,87 @@ object TodayWidgetData {
     val startTime: String = "",
     val endTime: String = "",
     val startMinuteOfDay: Int? = null,
+    val kind: String = "course",
+    val examKey: String? = null,
+    val startAtMillis: Long? = null,
+    val endAtMillis: Long? = null,
+    val isOngoingExam: Boolean = false,
   )
+
+  internal data class ExamItem(
+    val key: String,
+    val name: String,
+    val timeText: String,
+    val campus: String,
+    val building: String,
+    val room: String,
+    val startAtMillis: Long,
+    val endAtMillis: Long,
+  )
+
+  private fun loadExams(context: Context): List<ExamItem> {
+    val snapshot = WidgetRenderSnapshot.current.get()
+    snapshot?.exams?.let { return it }
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val account = prefs.getString("${FLUTTER_PREFIX}account", null)?.trim().orEmpty()
+    val raw = if (account.isEmpty()) null else prefs.getString("${FLUTTER_PREFIX}exam_cache_v1_$account", null)
+    snapshot?.examCacheRaw = raw
+    val result = if (account.isEmpty()) emptyList() else try {
+      parseExams(raw)
+    } catch (_: Exception) { emptyList() }
+    snapshot?.exams = result
+    return result
+  }
+
+  internal fun parseExams(raw: String?): List<ExamItem> {
+    if (raw.isNullOrBlank()) return emptyList()
+    return try {
+      val root = JSONObject(raw)
+      if (!root.optBoolean("exams_complete", false)) return emptyList()
+      val rows = root.optJSONArray("exams") ?: return emptyList()
+      (0 until rows.length()).mapNotNull { index ->
+        val row = rows.optJSONObject(index) ?: return@mapNotNull null
+        val key = row.optString("key", "").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        val start = parseIso8601Millis(row.optString("start_at", "")) ?: return@mapNotNull null
+        val end = parseIso8601Millis(row.optString("end_at", "")) ?: return@mapNotNull null
+        if (end <= start) return@mapNotNull null
+        ExamItem(key, row.optString("course_name", "考试"), row.optString("time_text", ""),
+          row.optString("campus", ""), row.optString("building", ""), row.optString("room", ""), start, end)
+      }
+    } catch (_: Exception) { emptyList() }
+  }
+
+  private fun dateForExam(exam: ExamItem): String =
+    widgetDateFormat("yyyy-MM-dd").format(java.util.Date(exam.startAtMillis))
+
+  internal fun mergeArrangements(
+    courses: List<CourseItem>,
+    exams: List<ExamItem>,
+    date: String,
+    nowMillis: Long = WidgetRenderSnapshot.nowMillis(),
+  ): List<CourseItem> {
+    val dayStart = widgetDateFormat("yyyy-MM-dd").parse(date)?.time ?: return courses
+    val dayEnd = widgetCalendar(dayStart).apply { add(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
+    val examRows = exams.filter {
+      it.startAtMillis < dayEnd && it.endAtMillis > dayStart && it.endAtMillis > nowMillis
+    }.map { exam ->
+      val ongoing = exam.startAtMillis <= nowMillis && nowMillis < exam.endAtMillis
+      val start = widgetDateFormat("HH:mm").format(java.util.Date(exam.startAtMillis))
+      val end = widgetDateFormat("HH:mm").format(java.util.Date(exam.endAtMillis))
+      CourseItem(null, "exam:${exam.key}", exam.name, exam.campus,
+        listOf(exam.building, exam.room).filter { it.isNotBlank() }.distinct().joinToString(" · "),
+        "", "${if (ongoing) "考试中" else "考试"} · $start–$end", fallbackColorIndex(exam.name),
+        0, start, end, ((exam.startAtMillis - dayStart) / 60000).toInt(), "exam", exam.key,
+        exam.startAtMillis, exam.endAtMillis, ongoing)
+    }
+    return (courses + examRows).sortedWith(
+      compareBy<CourseItem> { it.startMinuteOfDay ?: Int.MAX_VALUE }
+        .thenBy { it.sortOrder }.thenBy { it.periods },
+    )
+  }
+
+  internal fun nextExamBoundary(exams: List<ExamItem>, nowMillis: Long): Long? =
+    exams.flatMap { listOf(it.startAtMillis, it.endAtMillis) }.filter { it > nowMillis }.minOrNull()
 
   internal data class CourseDay(
     val date: String,
@@ -88,6 +168,7 @@ object TodayWidgetData {
     fun navigationExtras(item: CourseItem): Map<String, Any> =
       WidgetNavigationPendingIntent.navigationExtras(
         dayOffset, date, eventName = item.name, eventId = item.eventId,
+        itemKind = item.kind, examKey = item.examKey,
       )
   }
 
@@ -154,7 +235,9 @@ object TodayWidgetData {
 
   internal fun loadCourseDay(context: Context, dayOffset: Int): CourseDay =
     WidgetRenderSnapshot.withSnapshot {
-      courseDayFor(dayOffset, loadUnfilteredCourses(context, dayOffset))
+      val day = courseDayFor(dayOffset, loadUnfilteredCourses(context, dayOffset))
+      day.copy(courses = mergeArrangements(day.courses, loadExams(context), day.date),
+        hadCourses = day.hadCourses || loadExams(context).any { dateForExam(it) == day.date })
     }
 
   internal fun courseDayFor(
@@ -387,42 +470,12 @@ object TodayWidgetData {
     )
   }
 
-  private fun parseIso8601Millis(raw: String): Long? {
-    return try {
-      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-        val hasOffset =
-          raw.endsWith("Z") || Regex("""[+-]\d{2}:\d{2}$""").containsMatchIn(raw)
-        if (hasOffset) {
-          java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli()
-        } else {
-          java.time.LocalDateTime
-            .parse(raw)
-            .atZone(java.time.ZoneId.of(WIDGET_TIME_ZONE_ID))
-            .toInstant()
-            .toEpochMilli()
-        }
-      } else {
-        val hasOffset =
-          raw.endsWith("Z") || Regex("""[+-]\d{2}:\d{2}$""").containsMatchIn(raw)
-        val normalized =
-          if (hasOffset) {
-            raw.replace("Z", "+0000")
-              .replace(Regex("""([+-]\d{2}):(\d{2})$"""), "$1$2")
-          } else {
-            raw
-          }
-        SimpleDateFormat(
-          if (hasOffset) "yyyy-MM-dd'T'HH:mm:ss.SSSZ" else "yyyy-MM-dd'T'HH:mm:ss.SSS",
-          Locale.US,
-        ).apply {
-          if (!hasOffset) timeZone = WIDGET_TIME_ZONE
-        }.parse(normalized)?.time
-      }
-    } catch (_: Exception) {
-      null
-    }
-  }
-
+  internal fun parseIso8601Millis(raw: String): Long? = try {
+    val hasOffset = raw.endsWith("Z") || Regex("""[+-]\d{2}:\d{2}$""").containsMatchIn(raw)
+    if (hasOffset) java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli()
+    else java.time.LocalDateTime.parse(raw)
+      .atZone(java.time.ZoneId.of(WIDGET_TIME_ZONE_ID)).toInstant().toEpochMilli()
+  } catch (_: Exception) { null }
   private fun migrateLegacyRefreshAt(
     context: Context,
     prefs: android.content.SharedPreferences,
@@ -567,6 +620,10 @@ object TodayWidgetData {
               course.startTime,
               course.endTime,
               course.startMinuteOfDay?.toString().orEmpty(),
+              course.kind,
+              course.examKey.orEmpty(),
+              course.startAtMillis?.toString().orEmpty(),
+              course.endAtMillis?.toString().orEmpty(),
             ).joinToString("\u0000")
           }
         "$dayOffset\u0003$coursePayload"
@@ -645,6 +702,8 @@ object TodayWidgetData {
   ): RefreshTarget? {
     WidgetRenderSnapshot.withSnapshot(nowMillis) {
       val candidates = mutableListOf<RefreshTarget>()
+      nextExamBoundary(loadExams(context), nowMillis)
+        ?.let { candidates.add(RefreshTarget(it, RefreshBoundaryKind.COURSE)) }
       candidates.add(
         RefreshTarget(nextDayRefreshAtMillis(nowMillis), RefreshBoundaryKind.MIDNIGHT),
       )
@@ -925,7 +984,11 @@ object TodayWidgetData {
   }
 
   internal fun selectNextCourse(courses: List<CourseItem>): CourseItem? {
-    return courses.minWithOrNull(compareBy<CourseItem> { it.sortOrder }.thenBy { it.periods })
+    return courses.firstOrNull { it.kind == "exam" && it.startAtMillis != null &&
+      it.startAtMillis <= WidgetRenderSnapshot.nowMillis() &&
+      (it.endAtMillis ?: 0L) > WidgetRenderSnapshot.nowMillis() }
+      ?: courses.minWithOrNull(compareBy<CourseItem> { it.startMinuteOfDay ?: Int.MAX_VALUE }
+        .thenBy { it.sortOrder }.thenBy { it.periods })
   }
 
   private data class TodayInfo(
@@ -1015,7 +1078,10 @@ object TodayWidgetData {
       } else {
         null
       }
-    return displayedScheduleFingerprint(account, term, week, scheduleJson)
+    loadExams(context)
+    val examJson = WidgetRenderSnapshot.current.get()?.examCacheRaw
+      ?: if (account.isNotBlank()) prefs.getString("${FLUTTER_PREFIX}exam_cache_v1_$account", null) else null
+    return sha256Hex(displayedScheduleFingerprint(account, term, week, scheduleJson) + "\u0000" + examJson.orEmpty())
   }
 
   internal fun displayedScheduleFingerprint(

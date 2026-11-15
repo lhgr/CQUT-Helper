@@ -34,7 +34,7 @@ void main() {
     );
   }
 
-  testWidgets('背景预览顶部有局部衬底而时间列与底栏保持透明', (tester) async {
+  testWidgets('背景预览顶部与时间列和底栏保持透明', (tester) async {
     final file = existingImage();
     expect(file.existsSync(), isTrue);
 
@@ -66,7 +66,7 @@ void main() {
     );
     expect(
       (header.decoration! as BoxDecoration).color,
-      Theme.of(tester.element(headerFinder)).colorScheme.surface.withAlpha(240),
+      Colors.transparent,
     );
     expect(timeColumn.color, Colors.transparent);
     expect((bottomBar.decoration! as BoxDecoration).color, Colors.transparent);

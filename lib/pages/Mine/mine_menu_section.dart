@@ -1,5 +1,6 @@
 import 'package:cqut_helper/pages/Settings/app_settings_page.dart';
 import 'package:cqut_helper/pages/MessageCenter/message_center_page.dart';
+import 'package:cqut_helper/pages/Exams/exams_page.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'mine_logout_dialog.dart';
@@ -17,6 +18,15 @@ class MineMenuSection extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
+              MineMenuItem(
+                icon: Icons.assignment_outlined,
+                title: '考试安排',
+                subtitle: '查看考试时间与地点',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const ExamsPage()),
+                ),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
               MineMenuItem(
                 icon: Icons.notifications_none_rounded,
                 title: '消息中心',
@@ -47,9 +57,9 @@ class MineMenuSection extends StatelessWidget {
             icon: const Icon(Icons.logout),
             label: const Text("退出登录"),
             style: OutlinedButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+              foregroundColor: Theme.of(context).colorScheme.error,
               side: BorderSide(
-                color: Theme.of(context).colorScheme.outlineVariant,
+                color: Theme.of(context).colorScheme.error.withAlpha(130),
               ),
             ),
           ),

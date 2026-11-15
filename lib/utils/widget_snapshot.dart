@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cqut_helper/manager/schedule_refresh_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cqut_helper/model/exam_model.dart';
 
 /// One account-scoped payload shared atomically with the iOS extension.
 class WidgetSnapshot {
@@ -46,10 +47,25 @@ class WidgetSnapshot {
             prefs.getString('schedule_course_color_map_v1_$userId|$term'),
           );
     final mode = themeMode ?? prefs.getString('theme_mode');
+    ExamSnapshot? examSnapshot;
+    if (userId.isNotEmpty) {
+      try {
+        final raw = _decodeMap(prefs.getString('exam_cache_v1_$userId'));
+        if (raw != null) examSnapshot = ExamSnapshot.fromJson(raw);
+      } catch (_) {}
+    }
     return jsonEncode({
       'schemaVersion': 1,
       'generatedAt': DateTime.now().millisecondsSinceEpoch,
       'activeUserId': userId,
+      'exams': [
+        for (final exam in examSnapshot?.exams ?? const <ExamRecord>[])
+          if (exam.hasValidTime) exam.toJson(),
+      ],
+      'examRefresh': {
+        'state': examSnapshot == null ? 'needs_sync' : 'normal',
+        'lastSuccessfulAt': examSnapshot?.fetchedAt.millisecondsSinceEpoch,
+      },
       'yearTerm': term,
       'pinnedWeek': ?week,
       'calendarProjection': validProjection,

@@ -11,6 +11,8 @@ class WidgetNavigationRequest {
   final String? eventId;
   final DateTime? date;
   final String action;
+  final String itemKind;
+  final String? examKey;
 
   const WidgetNavigationRequest({
     required this.token,
@@ -19,6 +21,8 @@ class WidgetNavigationRequest {
     this.eventId,
     this.date,
     this.action = 'open',
+    this.itemKind = 'course',
+    this.examKey,
   });
 
   DateTime targetDate({DateTime? now}) {
@@ -28,8 +32,9 @@ class WidgetNavigationRequest {
   }
 
   bool get hasCourse =>
-      (eventId?.trim().isNotEmpty ?? false) ||
-      (eventName?.trim().isNotEmpty ?? false);
+      itemKind != 'exam' &&
+      ((eventId?.trim().isNotEmpty ?? false) ||
+          (eventName?.trim().isNotEmpty ?? false));
 }
 
 class WidgetNavigation {
@@ -77,6 +82,8 @@ class WidgetNavigation {
       eventId: map['eventId']?.toString(),
       date: _parseDate(map['date']),
       action: map['action'] == 'sync' ? 'sync' : 'open',
+      itemKind: map['itemKind'] == 'exam' ? 'exam' : 'course',
+      examKey: map['examKey']?.toString(),
     );
   }
 

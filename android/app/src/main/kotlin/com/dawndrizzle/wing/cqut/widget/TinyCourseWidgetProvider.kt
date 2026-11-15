@@ -198,6 +198,8 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
             0,
             nextCourse.name,
             nextCourse.eventId,
+            itemKind = nextCourse.kind,
+            examKey = nextCourse.examKey,
           )
         } else {
           bindStatus(context, views, refresh)
@@ -250,7 +252,8 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
         } else {
           course.periods
         }
-      views.setTextViewText(R.id.tv_course_time, "$clock · ${courseProgressText(visibleCourseCount)}")
+      views.setTextViewText(R.id.tv_course_time,
+        "$clock · ${if (course.kind == "exam") (if (course.isOngoingExam) "考试中" else "考试") + " · " else ""}${courseProgressText(visibleCourseCount)}")
       val location =
         listOf(course.campus.trim(), course.classroom.trim())
           .filter { it.isNotEmpty() }
@@ -265,8 +268,7 @@ class TinyCourseWidgetProvider : AppWidgetProvider() {
     internal fun courseProgressText(visibleCourseCount: Int): String {
       return when {
         visibleCourseCount <= 0 -> ""
-        visibleCourseCount == 1 -> "今日最后一节"
-        else -> "后续${visibleCourseCount - 1}节"
+        else -> "剩余${visibleCourseCount}项"
       }
     }
 

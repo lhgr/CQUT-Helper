@@ -12,6 +12,26 @@ struct WidgetSnapshot: Decodable {
   let courseColorMap: [String: Int]
   let themeMode: String
   let refresh: Refresh
+  let exams: [Exam]?
+  let examRefresh: Refresh?
+
+  struct Exam: Decodable {
+    let key: String
+    let courseName: String
+    let timeText: String
+    let campus: String
+    let building: String
+    let room: String
+    let startAt: String?
+    let endAt: String?
+    enum CodingKeys: String, CodingKey {
+      case key, campus, building, room
+      case courseName = "course_name", timeText = "time_text"
+      case startAt = "start_at", endAt = "end_at"
+    }
+    var start: Date? { startAt.flatMap(WidgetClock.parseInstant) }
+    var end: Date? { endAt.flatMap(WidgetClock.parseInstant) }
+  }
 
   struct Refresh: Decodable {
     let state: String
@@ -118,17 +138,33 @@ struct WidgetSnapshot: Decodable {
   }
 
   func courses(on date: Date, now: Date) -> [WidgetCourse] {
-    guard !activeUserId.isEmpty, refresh.state != "credential_invalid",
-      let day = day(date), day.kind != "holiday", day.kind != "missing_source" else { return [] }
+    guard !activeUserId.isEmpty else { return [] }
     let today = WidgetClock.calendar.isDate(date, inSameDayAs: now)
     let minute = WidgetClock.calendar.component(.hour, from: now) * 60
       + WidgetClock.calendar.component(.minute, from: now)
-    return day.events.map(course).filter { !today || ($0.startMinute.map { minute < $0 } ?? true) }
-      .sorted {
-        let left = $0.event.sessions.min() ?? Int.max
-        let right = $1.event.sessions.min() ?? Int.max
-        return left == right ? $0.event.periods < $1.event.periods : left < right
-      }
+    let projected = day(date)
+    let events = refresh.state == "credential_invalid" || projected?.kind == "holiday" || projected?.kind == "missing_source" ? [] : (projected?.events ?? [])
+    let courses = events.map(course).filter { !today || ($0.startMinute.map { minute < $0 } ?? true) }
+    let dayStart = WidgetClock.calendar.startOfDay(for: date)
+    let dayEnd = WidgetClock.calendar.date(byAdding: .day, value: 1, to: dayStart)!
+    let examItems: [WidgetCourse] = (exams ?? []).compactMap { exam in
+      guard let start = exam.start, let end = exam.end, end > start, end > now,
+        start < dayEnd, end > dayStart else { return nil }
+      let ongoing = start <= now && now < end
+      let event = Event(eventName: exam.courseName, eventID: nil,
+        address: [exam.campus, exam.building, exam.room].filter { !$0.isEmpty }.joined(separator: " · "),
+        memberName: ongoing ? "考试中" : "考试", sessionStart: nil, sessionLast: nil,
+        sessionList: nil, colorIndex: nil)
+      return WidgetCourse(event: event,
+        startMinute: Int(start.timeIntervalSince(dayStart) / 60),
+        startTime: WidgetClock.format(start, "HH:mm"), endTime: WidgetClock.format(end, "HH:mm"),
+        colorIndex: Self.fallbackColor(exam.courseName), kind: "exam", examKey: exam.key,
+        isOngoing: ongoing)
+    }
+    return (courses + examItems).sorted {
+      let left = $0.startMinute ?? Int.max, right = $1.startMinute ?? Int.max
+      return left == right ? ($0.event.sessions.min() ?? Int.max) < ($1.event.sessions.min() ?? Int.max) : left < right
+    }
   }
 
   func presentation(now: Date, suggestionDays: Int) -> WidgetPresentation {
@@ -136,7 +172,12 @@ struct WidgetSnapshot: Decodable {
       return .init(state: "login", text: "请打开应用登录")
     }
     switch refresh.state {
-    case "credential_invalid": return .init(state: "login", text: "登录已失效，请打开应用")
+    case "credential_invalid":
+      let hasExams = (exams ?? []).contains { exam in
+        guard let start = exam.start, let end = exam.end else { return false }
+        return end > start && end > now
+      }
+      return .init(state: hasExams ? "failed" : "login", text: "课表登录已失效，请打开应用")
     case "loading":
       if now.timeIntervalSince1970 >= generatedAt / 1000 + 300 {
         return .init(state: "unconfirmed", text: "更新状态待确认，请打开应用")
@@ -151,6 +192,7 @@ struct WidgetSnapshot: Decodable {
     if let at = refresh.lastSuccessfulAt,
       now.timeIntervalSince1970 * 1000 - at >= Double(WidgetOptions.normalizeDays(suggestionDays)) * 86400000
     { return .init(state: "stale", text: "课表可能已过期") }
+    if examRefresh?.state == "needs_sync" { return .init(state: "needs_sync", text: "考试尚未同步，请打开应用") }
     return .init(state: "normal", text: "")
   }
 
@@ -162,9 +204,9 @@ struct WidgetSnapshot: Decodable {
         return label.isEmpty ? "放假" : "放假 · \(label)"
       }
       if WidgetClock.calendar.isDate(date, inSameDayAs: now) {
-        return day.events.isEmpty ? "今天没有课程" : "今日无待上课程"
+        return day.events.isEmpty ? "今天没有安排" : "今日安排已结束"
       }
-      return "明天没有课程"
+      return "明天没有安排"
     }
     return calendarProjection == nil ? "课表尚未同步" : "该日期课表未获取"
   }
@@ -182,6 +224,12 @@ struct WidgetCourse {
   let startTime: String
   let endTime: String
   let colorIndex: Int
+  var kind: String = "course"
+  var examKey: String? = nil
+  var isOngoing: Bool = false
+  var examDisplayText: String {
+    "\(isOngoing ? "考试中" : "考试") · \(startTime)–\(endTime)"
+  }
 }
 
 struct WidgetPresentation {
@@ -247,6 +295,13 @@ enum WidgetClock {
     guard let date = formatter.date(from: value), dateKey(date) == value else { return nil }
     return date
   }
+  static func parseInstant(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = formatter.date(from: value) { return date }
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: value)
+  }
   static func minute(_ value: String) -> Int? {
     let pattern = #"(\d{1,2})\s*[:：]\s*(\d{1,2})"#
     guard let regex = try? NSRegularExpression(pattern: pattern),
@@ -265,6 +320,11 @@ enum WidgetClock {
   static func timelineDates(snapshot: WidgetSnapshot?, now: Date, suggestionDays: Int) -> [Date] {
     let end = now.addingTimeInterval(48 * 3600)
     var dates: Set<Date> = [now, end]
+    for exam in snapshot?.exams ?? [] {
+      for boundary in [exam.start, exam.end].compactMap({ $0 }) where boundary > now && boundary <= end {
+        dates.insert(boundary)
+      }
+    }
     for offset in 1...3 {
       let midnight = day(now, offset: offset)
       if midnight <= end { dates.insert(midnight) }

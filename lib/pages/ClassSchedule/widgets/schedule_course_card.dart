@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -21,6 +23,8 @@ class ScheduleCourseCard extends StatelessWidget {
   final double borderRadius;
   final double textScale;
   final double cardOpacity;
+  final String? timeLabel;
+  final Key? timeLabelKey;
 
   const ScheduleCourseCard({
     super.key,
@@ -43,6 +47,8 @@ class ScheduleCourseCard extends StatelessWidget {
     this.borderRadius = 12,
     this.textScale = 1,
     this.cardOpacity = 1,
+    this.timeLabel,
+    this.timeLabelKey,
   });
 
   @override
@@ -145,7 +151,7 @@ class ScheduleCourseCard extends StatelessWidget {
                       Icon(
                         Icons.warning_amber_rounded,
                         size: compactWidth ? 9 : 10,
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                       const SizedBox(width: 1),
                       Text(
@@ -155,7 +161,7 @@ class ScheduleCourseCard extends StatelessWidget {
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           fontSize: compactWidth ? 8 : 9,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ],
@@ -276,10 +282,13 @@ class ScheduleCourseCard extends StatelessWidget {
     final lineHeight = titleProbe.height > detailProbe.height
         ? titleProbe.height
         : detailProbe.height;
+    final timeHeight = timeLabel == null
+        ? 0.0
+        : math.min(detailProbe.height, height / 2);
     titleProbe.dispose();
     detailProbe.dispose();
     // Reserve location before giving long names additional lines.
-    final budget = (height / lineHeight).floor().clamp(1, 7);
+    final budget = ((height - timeHeight) / lineHeight).floor().clamp(1, 7);
     final titleNeeded = titleMetrics.computeLineMetrics().length.clamp(1, 3);
     final addressNeeded = address.isEmpty
         ? 0
@@ -371,7 +380,7 @@ class ScheduleCourseCard extends StatelessWidget {
       textHeightBehavior: defaults.textHeightBehavior,
       overflow: TextOverflow.ellipsis,
     );
-    return ClipRect(
+    final content = ClipRect(
       child: OverflowBox(
         minHeight: 0,
         maxHeight: double.infinity,
@@ -396,6 +405,47 @@ class ScheduleCourseCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+    if (timeLabel == null) return content;
+    final contentLines =
+        titleLines +
+        addressLines +
+        (teacher.isNotEmpty && remaining > 0 ? 1 : 0);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableHeight = math.min(height, constraints.maxHeight);
+        final reservedTimeHeight = math.min(timeHeight, availableHeight / 2);
+        return SizedBox(
+          width: width,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: math.min(
+                  contentLines * lineHeight,
+                  availableHeight - reservedTimeHeight,
+                ),
+                child: content,
+              ),
+              SizedBox(
+                height: reservedTimeHeight,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: horizontalCenter
+                      ? Alignment.center
+                      : Alignment.centerLeft,
+                  child: Text(
+                    timeLabel!,
+                    key: timeLabelKey,
+                    style: detailStyle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

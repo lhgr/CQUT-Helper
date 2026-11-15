@@ -6,6 +6,8 @@ package com.dawndrizzle.wing.cqut.widget
 internal object WidgetRenderSnapshot {
   internal class Snapshot(val nowMillis: Long) {
     var sessionClocks: Map<Int, Pair<Int, Int>>? = null
+    var exams: List<TodayWidgetData.ExamItem>? = null
+    var examCacheRaw: String? = null
 
     private var projectionRaw: String? = null
     private var projection: TodayWidgetData.CalendarProjection? = null

@@ -3,6 +3,17 @@ import 'package:cqut_helper/utils/schedule_date.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('yearless leap day validates after resolving the nearest year', () {
+    expect(
+      ScheduleDate.tryParseWeekDate('02-29', reference: DateTime(2023, 12, 1)),
+      DateTime(2024, 2, 29),
+    );
+    expect(
+      ScheduleDate.tryParseWeekDate('02-29', reference: DateTime(2025, 1, 1)),
+      isNull,
+    );
+  });
+
   group('ScheduleDate.dataCoversDate', () {
     test(
       'stale today marker cannot make an old week cover the target date',

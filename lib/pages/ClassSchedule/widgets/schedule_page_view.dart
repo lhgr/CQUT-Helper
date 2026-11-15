@@ -9,6 +9,9 @@ import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_time_column.dar
 import 'package:cqut_helper/theme/schedule_course_card_theme.dart';
 import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 import 'package:cqut_helper/utils/schedule_date.dart';
+import 'package:cqut_helper/utils/exam_schedule_projection.dart';
+import 'package:cqut_helper/model/exam_model.dart';
+import 'package:cqut_helper/pages/Exams/exams_page.dart';
 import 'package:material_ui/material_ui.dart';
 
 class SchedulePageView extends StatefulWidget {
@@ -27,6 +30,9 @@ class SchedulePageView extends StatefulWidget {
   final Function(String) onBoundaryMessage;
   final int currentWeekIndex;
   final List<CampusTimeInfo>? timeInfoList;
+  final bool showTimeLabels;
+  final List<ExamRecord> exams;
+  final VoidCallback? onRestoreExamTimeAxis;
   final ScheduleLayoutSettings layoutSettings;
   final CourseDetailEventsResolver? resolveCourseDetailEvents;
   final Future<void> Function(EventItem event) onEditCourse;
@@ -53,6 +59,9 @@ class SchedulePageView extends StatefulWidget {
     required this.onBoundaryMessage,
     required this.currentWeekIndex,
     this.timeInfoList,
+    this.showTimeLabels = true,
+    this.exams = const [],
+    this.onRestoreExamTimeAxis,
     this.layoutSettings = const ScheduleLayoutSettings(),
     this.resolveCourseDetailEvents,
     required this.onEditCourse,
@@ -71,6 +80,10 @@ class _SchedulePageViewState extends State<SchedulePageView> {
         (Theme.of(context).brightness == Brightness.dark
             ? ScheduleCourseCardTheme.dark()
             : ScheduleCourseCardTheme.light());
+
+    final scheduleIndex = academicCalendarScheduleIndex(
+      widget.weekCache.values,
+    );
 
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
@@ -132,7 +145,7 @@ class _SchedulePageViewState extends State<SchedulePageView> {
           return RepaintBoundary(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final resolved = _resolveWeek(data);
+                final resolved = _resolveWeek(data, scheduleIndex);
                 final displayWeekdays = <EventItem, int>{};
                 final displaySources = <EventItem, EventItem>{};
                 final disabledDisplayEvents = <EventItem>{};
@@ -153,8 +166,22 @@ class _SchedulePageViewState extends State<SchedulePageView> {
                 final showMappedWeekend = resolved.values.any(
                   (day) => day.isTeachingDay && day.actualDate.weekday >= 6,
                 );
+                final weekExams = examsInScheduleWeek(data, widget.exams);
+                final axis = ExamTimeAxis.tryCreate(
+                  widget.timeInfoList,
+                  sessionHeight: widget.layoutSettings.gridCellHeight,
+                );
+                final examProjections = axis == null
+                    ? <ExamProjection>[]
+                    : [
+                        for (final exam in weekExams)
+                          axis.project(exam, exam.schoolStartAt!.weekday),
+                      ];
+                final showExamWeekend = weekExams.any(
+                  (exam) => exam.schoolStartAt!.weekday >= 6,
+                );
                 final effectiveShowWeekend =
-                    widget.showWeekend || showMappedWeekend;
+                    widget.showWeekend || showMappedWeekend || showExamWeekend;
                 final baseDayCount = effectiveShowWeekend ? 7 : 5;
                 final minimumDayWidth = ScheduleHeader.minimumDayWidth(
                   context,
@@ -166,7 +193,17 @@ class _SchedulePageViewState extends State<SchedulePageView> {
                 final gridWidth = math.max(
                   math.max(
                         widget.layoutSettings.gridCellWidth,
-                        minimumDayWidth,
+                        math.max(
+                          minimumDayWidth,
+                          ScheduleCourseGrid.minimumDayWidth(
+                            context,
+                            events: resolvedEvents,
+                            exams: examProjections,
+                            sessionHeight: widget.layoutSettings.gridCellHeight,
+                            displayWeekdays: displayWeekdays,
+                            textScale: widget.layoutSettings.textScale,
+                          ),
+                        ),
                       ) *
                       baseDayCount,
                   constraints.maxWidth - SchedulePageView._timeColumnWidth,
@@ -174,12 +211,57 @@ class _SchedulePageViewState extends State<SchedulePageView> {
                 final contentWidth =
                     SchedulePageView._timeColumnWidth + gridWidth;
 
+                final showMakeupNotice =
+                    !widget.showWeekend &&
+                    showMappedWeekend &&
+                    !widget.weekendNoticeDismissed;
+                final showExamNotice = !widget.showWeekend && showExamWeekend;
+                final notices = <Widget>[
+                  if (widget.exams.isNotEmpty &&
+                      scheduleExamWeekStart(data) == null)
+                    _buildNotice(
+                      context,
+                      '课表日期不完整，考试暂未显示在课表中',
+                      actions: [_examListAction(context)],
+                    ),
+                  if (weekExams.isNotEmpty && axis == null)
+                    _buildNotice(
+                      context,
+                      '作息信息不完整，考试暂未显示在课表中',
+                      actions: [
+                        TextButton(
+                          onPressed: widget.onRestoreExamTimeAxis,
+                          child: const Text('重新获取作息'),
+                        ),
+                        _examListAction(context),
+                      ],
+                    ),
+                  if (showMakeupNotice || showExamNotice)
+                    _buildNotice(
+                      context,
+                      showMakeupNotice && showExamNotice
+                          ? '本周有周末补课和考试，已临时显示周末课表'
+                          : showMakeupNotice
+                          ? '本周有周末补课，已临时显示周末课表'
+                          : '本周有周末考试，已临时显示周末',
+                      onDismiss: showMakeupNotice
+                          ? widget.onDismissWeekendNotice
+                          : null,
+                    ),
+                ];
                 return Column(
                   children: [
-                    if (!widget.showWeekend &&
-                        showMappedWeekend &&
-                        !widget.weekendNoticeDismissed)
-                      _buildWeekendNotice(context),
+                    if (notices.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: constraints.maxHeight * 0.5,
+                        ),
+                        child: Scrollbar(
+                          child: SingleChildScrollView(
+                            child: Column(children: notices),
+                          ),
+                        ),
+                      ),
                     Expanded(
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
@@ -215,7 +297,9 @@ class _SchedulePageViewState extends State<SchedulePageView> {
                                         sessionHeight: widget
                                             .layoutSettings
                                             .gridCellHeight,
-                                        timeInfoList: widget.timeInfoList,
+                                        timeInfoList: widget.showTimeLabels
+                                            ? widget.timeInfoList
+                                            : null,
                                         showGridLines:
                                             widget.layoutSettings.showGridLines,
                                         gridLineOpacity: widget
@@ -231,6 +315,7 @@ class _SchedulePageViewState extends State<SchedulePageView> {
                                         width: gridWidth,
                                         child: ScheduleCourseGrid(
                                           events: resolvedEvents,
+                                          exams: examProjections,
                                           displayWeekdays: displayWeekdays,
                                           disabledEvents: disabledDisplayEvents,
                                           yearTerm: data.yearTerm ?? '',
@@ -310,26 +395,47 @@ class _SchedulePageViewState extends State<SchedulePageView> {
     );
   }
 
-  Widget _buildWeekendNotice(BuildContext context) => Container(
+  Widget _examListAction(BuildContext context) => TextButton(
+    onPressed: () =>
+        Navigator.of(context)
+            .push(MaterialPageRoute<void>(builder: (_) => const ExamsPage())),
+    child: const Text('查看考试'),
+  );
+
+  Widget _buildNotice(
+    BuildContext context,
+    String message, {
+    List<Widget> actions = const [],
+    VoidCallback? onDismiss,
+  }) => Container(
     width: double.infinity,
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
     color: Theme.of(context).colorScheme.primaryContainer.withAlpha(150),
     child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Text(
-            '本周有周末补课，已临时显示周末课表',
-            style: Theme.of(context).textTheme.labelSmall,
-            textAlign: TextAlign.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(message, style: Theme.of(context).textTheme.labelSmall),
+              if (actions.isNotEmpty)
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: actions,
+                ),
+            ],
           ),
         ),
-        IconButton(
-          onPressed: widget.onDismissWeekendNotice,
-          icon: const Icon(Icons.close, size: 20),
-          tooltip: '关闭全部周末补课提示',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-        ),
+        if (onDismiss != null)
+          IconButton(
+            onPressed: onDismiss,
+            icon: const Icon(Icons.close, size: 20),
+            tooltip: '关闭全部周末补课提示',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+          ),
       ],
     ),
   );
@@ -342,18 +448,20 @@ class _SchedulePageViewState extends State<SchedulePageView> {
     Set<EventItem> disabledDisplayEvents, {
     required bool disabled,
   }) {
+    if (!resolved.isMapped) {
+      displayWeekdays[resolved.event] = actualWeekday;
+      if (disabled) disabledDisplayEvents.add(resolved.event);
+      return resolved.event;
+    }
     final originalNote = (resolved.event.note ?? '').trim();
-    final mappingNote = resolved.isMapped
-        ? '调休：原${academicCalendarDateKey(resolved.sourceDate)}课程'
-        : null;
+    final mappingNote = '调休：原${academicCalendarDateKey(resolved.sourceDate)}课程';
     final copy = EventItem.fromJson({
       ...resolved.event.toJson(),
       'weekDay': actualWeekday.toString(),
-      if (mappingNote != null)
-        'note': [
-          if (originalNote.isNotEmpty) originalNote,
-          mappingNote,
-        ].join(' · '),
+      'note': [
+        if (originalNote.isNotEmpty) originalNote,
+        mappingNote,
+      ].join(' · '),
     });
     displayWeekdays[copy] = actualWeekday;
     displaySources[copy] = resolved.event;
@@ -361,7 +469,10 @@ class _SchedulePageViewState extends State<SchedulePageView> {
     return copy;
   }
 
-  Map<String, AcademicCalendarResolvedDay> _resolveWeek(ScheduleData data) {
+  Map<String, AcademicCalendarResolvedDay> _resolveWeek(
+    ScheduleData data,
+    Map<DateTime, ScheduleData> scheduleIndex,
+  ) {
     final days = data.weekDayList ?? const <WeekDayItem>[];
     final schedules = widget.weekCache.values;
     final result = <String, AcademicCalendarResolvedDay>{};
@@ -371,6 +482,7 @@ class _SchedulePageViewState extends State<SchedulePageView> {
       final resolved = resolveAcademicCalendarDay(
         actualDate: date,
         schedules: schedules,
+        scheduleIndex: scheduleIndex,
         calendar: widget.academicCalendar,
         includeHolidayEvents: true,
       );

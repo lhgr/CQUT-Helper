@@ -299,8 +299,8 @@ class VerticalScheduleWidgetProvider : AppWidgetProvider() {
     internal fun courseCountText(dayOffset: Int, courseCount: Int): String {
       return when {
         courseCount <= 0 -> ""
-        WidgetInstanceConfigStore.normalizeDayOffset(dayOffset) == 0 -> "剩余${courseCount}节"
-        else -> "共${courseCount}节"
+        WidgetInstanceConfigStore.normalizeDayOffset(dayOffset) == 0 -> "剩余${courseCount}项"
+        else -> "共${courseCount}项"
       }
     }
   }

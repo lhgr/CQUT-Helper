@@ -11,6 +11,7 @@ import 'backup_restore_page.dart';
 import 'sync_diagnostics_page.dart';
 import 'settings_schedule_scope.dart';
 import 'settings_section_tile.dart';
+import 'query_service_settings_page.dart';
 
 enum AppSettingsSection {
   schedule,
@@ -20,6 +21,7 @@ enum AppSettingsSection {
   backup,
   storage,
   about,
+  queryService,
 }
 
 Future<void> openAppSettings(
@@ -41,6 +43,7 @@ Future<void> openAppSettings(
     AppSettingsSection.backup => const BackupRestorePage(),
     AppSettingsSection.storage => const ClearCachePage(),
     AppSettingsSection.about => const AboutSettingsPage(),
+    AppSettingsSection.queryService => const QueryServiceSettingsPage(),
     null => AppSettingsPage(initialScope: scope),
   };
   await Navigator.of(context)
@@ -115,6 +118,14 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                   _SettingsGroup(
                     title: '使用偏好',
                     children: [
+                      SettingsSectionTile(
+                        icon: Icons.dns_outlined,
+                        title: '教务查询服务',
+                        subtitle: '用于考试安排与调课通知',
+                        onTap: () =>
+                            _openSection(AppSettingsSection.queryService),
+                      ),
+                      const Divider(height: 1, indent: 56),
                       SettingsSectionTile(
                         icon: Icons.calendar_month_outlined,
                         title: '课表与课程',

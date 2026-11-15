@@ -1,10 +1,16 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart';
+
+import 'dart:math' as math;
+
 import 'package:cqut_helper/manager/course_color_assignment_manager.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/schedule_course_card.dart';
 import 'package:cqut_helper/pages/ClassSchedule/widgets/course_detail_dialog.dart';
 import 'package:cqut_helper/theme/schedule_grid_line_theme.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
+import 'package:cqut_helper/utils/exam_schedule_projection.dart';
+import 'package:cqut_helper/pages/Exams/exams_page.dart';
 
 typedef CourseDetailEventsResolver = Future<List<EventItem>> Function(
   EventItem event,
@@ -12,6 +18,7 @@ typedef CourseDetailEventsResolver = Future<List<EventItem>> Function(
 
 class ScheduleCourseGrid extends StatefulWidget {
   final List<EventItem> events;
+  final List<ExamProjection> exams;
 
   /// Actual column weekday for events copied from a teaching-day source.
   /// Keeping the original EventItem preserves customization/edit identity.
@@ -45,6 +52,7 @@ class ScheduleCourseGrid extends StatefulWidget {
   const ScheduleCourseGrid({
     super.key,
     required this.events,
+    this.exams = const [],
     this.displayWeekdays = const <EventItem, int>{},
     this.disabledEvents = const <EventItem>{},
     required this.yearTerm,
@@ -70,6 +78,63 @@ class ScheduleCourseGrid extends StatefulWidget {
     required this.onEditCourse,
     required this.onDeleteCourse,
   });
+
+  /// Keep exam labels readable using the same course groups and lanes as rendering.
+  static double minimumDayWidth(
+    BuildContext context, {
+    required List<EventItem> events,
+    required List<ExamProjection> exams,
+    required double sessionHeight,
+    Map<EventItem, int> displayWeekdays = const {},
+    double textScale = 1,
+  }) {
+    if (exams.isEmpty) return 0;
+    final lanes = _scheduleLanes(
+      _buildConflictGroups(events, displayWeekdays),
+      exams,
+      sessionHeight,
+    );
+    final theme = Theme.of(context).textTheme;
+    double measure(String text, TextStyle? style) {
+      final resolvedStyle = DefaultTextStyle.of(context).style.merge(style);
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: MediaQuery.boldTextOf(context)
+              ? resolvedStyle.copyWith(fontWeight: FontWeight.bold)
+              : resolvedStyle,
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        locale: Localizations.maybeLocaleOf(context),
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    String clock(DateTime date) =>
+        '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    final titleWidth = measure(
+      '考试',
+      theme.bodySmall?.copyWith(
+        fontSize: 10 * textScale,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    var width = 0.0;
+    for (final exam in exams) {
+      final time =
+          '${clock(exam.exam.schoolStartAt!)}–${clock(exam.exam.schoolEndAt!)}';
+      final timeWidth = measure(
+        time,
+        theme.labelSmall?.copyWith(fontSize: 9 * textScale),
+      );
+      final laneWidth = math.max(72.0, math.max(titleWidth, timeWidth) + 8);
+      width = math.max(width, laneWidth * (lanes[exam]?.count ?? 1));
+    }
+    return width;
+  }
 
   @override
   State<ScheduleCourseGrid> createState() => _ScheduleCourseGridState();
@@ -125,7 +190,9 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                 return weekDay >= 1 && weekDay <= 5;
               })
               .toList(growable: false);
-    _renderPlan = _buildRenderPlan(_buildConflictGroups(_visibleEvents));
+    _renderPlan = _buildRenderPlan(
+      _buildConflictGroups(_visibleEvents, widget.displayWeekdays),
+    );
     _sortedBorders = List<_BorderOverlay>.from(_renderPlan.borders)
       ..sort((a, b) {
         final byDay = a.weekDay.compareTo(b.weekDay);
@@ -190,7 +257,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
           courseKeys: keys,
           paletteSize: paletteSize,
         );
-    if (!mounted) return;
+    if (!mounted || mapEquals(_courseColorIndexMap, assigned)) return;
     setState(() {
       _courseColorIndexMap = assigned;
     });
@@ -334,86 +401,6 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
           ? (_) => widget.onDeleteCourse(event)
           : null,
     );
-  }
-
-  int _safeParsePositiveInt(String? raw, {int fallback = 1}) {
-    final value = int.tryParse((raw ?? '').trim());
-    if (value == null || value <= 0) return fallback;
-    return value;
-  }
-
-  _EventRange _eventRange(EventItem event) {
-    final start = _safeParsePositiveInt(event.sessionStart, fallback: 1);
-    var duration = _safeParsePositiveInt(event.sessionLast, fallback: 1);
-
-    if (duration <= 0) duration = 1;
-    var end = start + duration - 1;
-    if (end < start) end = start;
-    return _EventRange(start: start, end: end);
-  }
-
-  List<_ConflictGroup> _buildConflictGroups(List<EventItem> events) {
-    final byDay = <int, List<_EventWithRange>>{};
-    for (final event in events) {
-      final weekDay = _displayWeekday(event);
-      final range = _eventRange(event);
-      byDay
-          .putIfAbsent(weekDay, () => <_EventWithRange>[])
-          .add(_EventWithRange(event: event, range: range));
-    }
-
-    final groups = <_ConflictGroup>[];
-    for (final entry in byDay.entries) {
-      final dayEvents = entry.value;
-      dayEvents.sort((a, b) {
-        final byStart = a.range.start.compareTo(b.range.start);
-        if (byStart != 0) return byStart;
-        final byEnd = a.range.end.compareTo(b.range.end);
-        if (byEnd != 0) return byEnd;
-        return _buildCourseKey(a.event).compareTo(_buildCourseKey(b.event));
-      });
-      if (dayEvents.isEmpty) continue;
-
-      var currentEvents = <_EventWithRange>[dayEvents.first];
-      var currentEnd = dayEvents.first.range.end;
-
-      void flushCurrent() {
-        if (currentEvents.isEmpty) return;
-        groups.add(
-          _ConflictGroup(
-            weekDay: entry.key,
-            events: currentEvents.map((e) => e.event).toList(growable: false),
-          ),
-        );
-      }
-
-      for (int i = 1; i < dayEvents.length; i++) {
-        final item = dayEvents[i];
-        if (item.range.start <= currentEnd) {
-          currentEvents.add(item);
-          if (item.range.end > currentEnd) currentEnd = item.range.end;
-          continue;
-        }
-        flushCurrent();
-        currentEvents = <_EventWithRange>[item];
-        currentEnd = item.range.end;
-      }
-      flushCurrent();
-    }
-    return groups;
-  }
-
-  _EventRange _groupRange(_ConflictGroup group) {
-    var minStart = 999;
-    var maxEnd = 0;
-    for (final event in group.events) {
-      final range = _eventRange(event);
-      if (range.start < minStart) minStart = range.start;
-      if (range.end > maxEnd) maxEnd = range.end;
-    }
-    if (minStart == 999) minStart = 1;
-    if (maxEnd <= 0) maxEnd = minStart;
-    return _EventRange(start: minStart, end: maxEnd);
   }
 
   int _durationPriority(_EventWithRange item) {
@@ -675,6 +662,39 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
     );
   }
 
+  Widget _buildExamCard(BuildContext context, ExamProjection projection) {
+    final exam = projection.exam;
+    final courseKey = CourseColorAssignmentManager.buildCourseNameKey(
+      exam.courseName,
+    );
+    final colorIndex = _safeIndex(
+      _courseColorIndexMap[courseKey] ?? _fallbackIndexForKey(courseKey),
+    );
+    String clock(DateTime time) =>
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    return ScheduleCourseCard(
+      event: EventItem(
+        eventID: 'exam:${exam.key}',
+        eventName: '考试 · ${exam.courseName}',
+        address: exam.location,
+      ),
+      backgroundColor: widget.backgroundColors[colorIndex],
+      borderColor: widget.borderColors[colorIndex],
+      titleColor: widget.titleColors[colorIndex],
+      descriptionColor: widget.descriptionColors[colorIndex],
+      hideLocation: widget.hideLocation,
+      removeCampusPrefix: widget.removeCampusPrefix,
+      horizontalCenter: widget.horizontalCenter,
+      verticalCenter: widget.verticalCenter,
+      borderRadius: widget.cardRadius,
+      textScale: widget.textScale,
+      cardOpacity: widget.cardOpacity,
+      timeLabel: '${clock(exam.schoolStartAt!)}–${clock(exam.schoolEndAt!)}',
+      timeLabelKey: ValueKey('exam-time-${exam.key}'),
+      onTap: () => showExamDetails(context, exam),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -682,6 +702,36 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
         final int dayCount = widget.showWeekend ? 7 : 5;
         final double dayWidth = constraints.maxWidth / dayCount;
         final double totalHeight = widget.sessionHeight * widget.sessionCount;
+        final lanes = _scheduleLanes(
+          _renderPlan.cards.map((card) => card.group).toSet(),
+          widget.exams,
+          widget.sessionHeight,
+        );
+        Rect itemRect(
+          Object group,
+          int dayIndex,
+          int start,
+          int duration,
+          double inset,
+          double minimumHeight,
+        ) {
+          final lane = lanes[group] ?? (index: 0, count: 1);
+          final width = dayWidth / lane.count;
+          final horizontalInset = inset.clamp(
+            0.0,
+            math.max(0.0, (width - 1) / 2),
+          );
+          return Rect.fromLTWH(
+            dayIndex * dayWidth + lane.index * width + horizontalInset,
+            (start - 1) * widget.sessionHeight + inset,
+            math.max(1.0, width - horizontalInset * 2),
+            math.max(
+              minimumHeight,
+              duration * widget.sessionHeight - inset * 2,
+            ),
+          );
+        }
+
         return SizedBox(
           height: totalHeight,
           child: Stack(
@@ -731,7 +781,7 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                 }),
 
               // Events
-              if (_visibleEvents.isEmpty)
+              if (_visibleEvents.isEmpty && widget.exams.isEmpty)
                 Center(
                   child: Text(
                     "本周无课",
@@ -758,16 +808,20 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                   final safeIndex = _safeIndex(colorIndex);
                   final colors = _cardColors(event, safeIndex);
                   final inset = card.visualInset;
-                  final rawWidth = dayWidth - inset * 2;
-                  final rawHeight = duration * widget.sessionHeight - inset * 2;
-                  final cardWidth = rawWidth > 20 ? rawWidth : 20.0;
-                  final cardHeight = rawHeight > 16 ? rawHeight : 16.0;
+                  final rect = itemRect(
+                    card.group,
+                    dayIndex,
+                    start,
+                    duration,
+                    inset,
+                    16,
+                  );
 
                   return Positioned(
-                    left: dayIndex * dayWidth + inset,
-                    top: (start - 1) * widget.sessionHeight + inset,
-                    width: cardWidth,
-                    height: cardHeight,
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
                     child: ScheduleCourseCard(
                       event: event,
                       backgroundColor: colors.background,
@@ -840,16 +894,20 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                     (frameAlpha + 8).clamp(160, 250),
                   );
                   final inset = 1.0 + border.insetLevel * 2.0;
-                  final rawWidth = dayWidth - inset * 2;
-                  final rawHeight = duration * widget.sessionHeight - inset * 2;
-                  final borderWidth = rawWidth > 6 ? rawWidth : 6.0;
-                  final borderHeight = rawHeight > 6 ? rawHeight : 6.0;
+                  final rect = itemRect(
+                    border.group,
+                    dayIndex,
+                    start,
+                    duration,
+                    inset,
+                    6,
+                  );
 
                   return Positioned(
-                    left: dayIndex * dayWidth + inset,
-                    top: (start - 1) * widget.sessionHeight + inset,
-                    width: borderWidth,
-                    height: borderHeight,
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
                     child: IgnorePointer(
                       child: Container(
                         margin: EdgeInsets.zero,
@@ -886,16 +944,20 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                   final safeIndex = _safeIndex(colorIndex);
                   final colors = _cardColors(event, safeIndex);
                   final inset = card.visualInset;
-                  final rawWidth = dayWidth - inset * 2;
-                  final rawHeight = duration * widget.sessionHeight - inset * 2;
-                  final cardWidth = rawWidth > 20 ? rawWidth : 20.0;
-                  final cardHeight = rawHeight > 16 ? rawHeight : 16.0;
+                  final rect = itemRect(
+                    card.group,
+                    dayIndex,
+                    start,
+                    duration,
+                    inset,
+                    16,
+                  );
 
                   return Positioned(
-                    left: dayIndex * dayWidth + inset,
-                    top: (start - 1) * widget.sessionHeight + inset,
-                    width: cardWidth,
-                    height: cardHeight,
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
                     child: ScheduleCourseCard(
                       event: event,
                       backgroundColor: colors.background,
@@ -934,6 +996,19 @@ class _ScheduleCourseGridState extends State<ScheduleCourseGrid> {
                   );
                 }),
               ],
+              for (final exam in widget.exams)
+                Positioned(
+                  key: ValueKey('exam-card-${exam.exam.key}'),
+                  left:
+                      (exam.weekday - 1) * dayWidth +
+                      (lanes[exam]?.index ?? 0) *
+                          dayWidth /
+                          (lanes[exam]?.count ?? 1),
+                  top: exam.top,
+                  width: dayWidth / (lanes[exam]?.count ?? 1),
+                  height: exam.height,
+                  child: _buildExamCard(context, exam),
+                ),
             ],
           ),
         );
@@ -1027,3 +1102,106 @@ class _ConflictRenderPlan {
 
   const _ConflictRenderPlan({required this.cards, required this.borders});
 }
+
+int _safeParsePositiveInt(String? raw, {int fallback = 1}) {
+  final value = int.tryParse((raw ?? '').trim());
+  if (value == null || value <= 0) return fallback;
+  return value;
+}
+
+_EventRange _eventRange(EventItem event) {
+  final start = _safeParsePositiveInt(event.sessionStart, fallback: 1);
+  var duration = _safeParsePositiveInt(event.sessionLast, fallback: 1);
+
+  if (duration <= 0) duration = 1;
+  var end = start + duration - 1;
+  if (end < start) end = start;
+  return _EventRange(start: start, end: end);
+}
+
+List<_ConflictGroup> _buildConflictGroups(
+  List<EventItem> events,
+  Map<EventItem, int> displayWeekdays,
+) {
+  final byDay = <int, List<_EventWithRange>>{};
+  for (final event in events) {
+    final weekDay =
+        displayWeekdays[event] ?? int.tryParse(event.weekDay ?? '1') ?? 1;
+    final range = _eventRange(event);
+    byDay
+        .putIfAbsent(weekDay, () => <_EventWithRange>[])
+        .add(_EventWithRange(event: event, range: range));
+  }
+
+  final groups = <_ConflictGroup>[];
+  for (final entry in byDay.entries) {
+    final dayEvents = entry.value;
+    dayEvents.sort((a, b) {
+      final byStart = a.range.start.compareTo(b.range.start);
+      if (byStart != 0) return byStart;
+      final byEnd = a.range.end.compareTo(b.range.end);
+      if (byEnd != 0) return byEnd;
+      return CourseColorAssignmentManager.buildCourseNameKey(a.event.eventName)
+          .compareTo(
+            CourseColorAssignmentManager.buildCourseNameKey(b.event.eventName),
+          );
+    });
+    if (dayEvents.isEmpty) continue;
+
+    var currentEvents = <_EventWithRange>[dayEvents.first];
+    var currentEnd = dayEvents.first.range.end;
+
+    void flushCurrent() {
+      if (currentEvents.isEmpty) return;
+      groups.add(
+        _ConflictGroup(
+          weekDay: entry.key,
+          events: currentEvents.map((e) => e.event).toList(growable: false),
+        ),
+      );
+    }
+
+    for (int i = 1; i < dayEvents.length; i++) {
+      final item = dayEvents[i];
+      if (item.range.start <= currentEnd) {
+        currentEvents.add(item);
+        if (item.range.end > currentEnd) currentEnd = item.range.end;
+        continue;
+      }
+      flushCurrent();
+      currentEvents = <_EventWithRange>[item];
+      currentEnd = item.range.end;
+    }
+    flushCurrent();
+  }
+  return groups;
+}
+
+_EventRange _groupRange(_ConflictGroup group) {
+  var minStart = 999;
+  var maxEnd = 0;
+  for (final event in group.events) {
+    final range = _eventRange(event);
+    if (range.start < minStart) minStart = range.start;
+    if (range.end > maxEnd) maxEnd = range.end;
+  }
+  if (minStart == 999) minStart = 1;
+  if (maxEnd <= 0) maxEnd = minStart;
+  return _EventRange(start: minStart, end: maxEnd);
+}
+
+Map<Object, ({int index, int count})> _scheduleLanes(
+  Iterable<_ConflictGroup> groups,
+  List<ExamProjection> exams,
+  double sessionHeight,
+) => assignScheduleLanes([
+  for (final group in groups)
+    ScheduleLaneItem(
+      group,
+      group.weekDay,
+      (_groupRange(group).start - 1) * sessionHeight,
+      _groupRange(group).end * sessionHeight,
+    ),
+  for (final exam in exams)
+    ScheduleLaneItem(exam, exam.weekday, exam.top, exam.top + exam.height),
+]);

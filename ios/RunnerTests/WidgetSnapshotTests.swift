@@ -5,9 +5,9 @@ final class WidgetSnapshotTests: XCTestCase {
   private func snapshot(state: String = "normal", user: String = "student",
     lastSuccessfulAt: Double? = nil, kind: String = "normal",
     events: [[String: Any]] = [], clocks: [[String: Any]] = [], schema: Int = 1,
-    generatedAt: Double? = nil, label: String = ""
+    generatedAt: Double? = nil, label: String = "", exams: [[String: Any]] = [], projectionPresent: Bool = true
   ) throws -> WidgetSnapshot {
-    let json: [String: Any] = [
+    var json: [String: Any] = [
       "schemaVersion": schema,
       "generatedAt": generatedAt ?? WidgetClock.parseDate("2026-11-05")!.timeIntervalSince1970 * 1000,
       "activeUserId": user,
@@ -16,9 +16,11 @@ final class WidgetSnapshotTests: XCTestCase {
         ["date": "2026-11-05", "kind": kind, "label": label, "events": events]
       ]],
       "sessionClocks": clocks, "courseColorMap": ["高等数学": 7], "themeMode": "system",
+      "exams": exams, "examRefresh": ["state": "normal", "lastSuccessfulAt": NSNull()],
       "refresh": ["state": state, "lastSuccessfulAt": lastSuccessfulAt.map { $0 as Any } ?? NSNull(),
         "failure": NSNull()]
     ]
+    if !projectionPresent { json.removeValue(forKey: "calendarProjection") }
     return try WidgetSnapshot.decode(JSONSerialization.data(withJSONObject: json))
   }
 
@@ -32,6 +34,44 @@ final class WidgetSnapshotTests: XCTestCase {
     XCTAssertEqual(try snapshot(state: "needs_sync").presentation(now: now, suggestionDays: 3).state, "needs_sync")
     let successful = now.addingTimeInterval(-3 * 86400).timeIntervalSince1970 * 1000
     XCTAssertEqual(try snapshot(lastSuccessfulAt: successful).presentation(now: now, suggestionDays: 3).state, "stale")
+  }
+
+  func testIndependentExamsSurviveHolidayMissingCourseAndCourseCredentialFailureUntilEnd() throws {
+    let exam: [String: Any] = ["key": "exam-key", "course_name": "考试科目", "time_text": "考试时间",
+      "campus": "校区", "building": "楼栋", "room": "101",
+      "start_at": "2026-11-05T09:00:00+08:00", "end_at": "2026-11-05T03:00:00.000Z"]
+    let date = WidgetClock.parseDate("2026-11-05")!
+    let during = date.addingTimeInterval(10 * 3600)
+    for kind in ["holiday", "missing_source", "normal"] {
+      let data = try snapshot(state: "credential_invalid", kind: kind, exams: [exam])
+      let item = try XCTUnwrap(data.courses(on: date, now: during).first)
+      XCTAssertEqual(item.kind, "exam")
+      XCTAssertEqual(item.examKey, "exam-key")
+      XCTAssertTrue(item.isOngoing)
+      XCTAssertEqual(item.examDisplayText, "考试中 · 09:00–11:00")
+      XCTAssertNotEqual(data.presentation(now: during, suggestionDays: 3).state, "login")
+      XCTAssertTrue(data.courses(on: date, now: date.addingTimeInterval(11 * 3600)).isEmpty)
+      XCTAssertTrue(data.courses(on: date.addingTimeInterval(86400), now: during).isEmpty)
+      let dates = WidgetClock.timelineDates(snapshot: data, now: date, suggestionDays: 3)
+      XCTAssertTrue(dates.contains(date.addingTimeInterval(9 * 3600)))
+      XCTAssertTrue(dates.contains(date.addingTimeInterval(11 * 3600)))
+    }
+    XCTAssertTrue(try snapshot(user: "", exams: [exam]).courses(on: date, now: during).isEmpty)
+    XCTAssertEqual(try snapshot(exams: [exam], projectionPresent: false).courses(on: date, now: during).count, 1)
+    var overnight = exam
+    overnight["start_at"] = "2026-11-04T23:00:00+08:00"
+    overnight["end_at"] = "2026-11-05T01:00:00+08:00"
+    let overnightData = try snapshot(exams: [overnight])
+    XCTAssertEqual(overnightData.courses(on: date, now: date.addingTimeInterval(1800)).count, 1)
+    XCTAssertTrue(overnightData.courses(on: date, now: date.addingTimeInterval(3600)).isEmpty)
+  }
+
+  func testExamNavigationPreservesIndependentIdentity() throws {
+    let navigation = try XCTUnwrap(WidgetNavigation(url: URL(string:
+      "cqut://widget?date=2026-11-05&action=open&itemKind=exam&examKey=exam-key")!))
+    XCTAssertEqual(navigation.arguments()["itemKind"] as? String, "exam")
+    XCTAssertEqual(navigation.arguments()["examKey"] as? String, "exam-key")
+    XCTAssertNil(navigation.arguments()["eventId"])
   }
 
   func testStartedFilteringClockFallbackAndFinalColorPrecedence() throws {
@@ -67,7 +107,7 @@ final class WidgetSnapshotTests: XCTestCase {
     XCTAssertEqual(try snapshot(kind: "holiday").emptyText(on: date, now: date), "放假")
     XCTAssertEqual(try snapshot(kind: "holiday", label: " 校庆 ")
       .emptyText(on: date, now: date.addingTimeInterval(-86400)), "放假 · 校庆")
-    XCTAssertEqual(try snapshot().emptyText(on: date, now: date), "今天没有课程")
+    XCTAssertEqual(try snapshot().emptyText(on: date, now: date), "今天没有安排")
     XCTAssertEqual(try snapshot().emptyText(on: date.addingTimeInterval(86400), now: date), "该日期课表未获取")
   }
 

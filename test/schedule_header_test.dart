@@ -76,7 +76,7 @@ void main() {
     });
   }
 
-  testWidgets('图片上的月份与全部日期共享局部衬底且大字自然增高', (tester) async {
+  testWidgets('图片上的月份与全部日期背景透明且大字自然增高', (tester) async {
     final data = ScheduleData(
       nowMonth: '11',
       weekDayList: [
@@ -123,7 +123,7 @@ void main() {
     final surface = tester.widget<Container>(
       find.descendant(of: header, matching: find.byType(Container)).first,
     );
-    expect((surface.decoration! as BoxDecoration).color?.a, greaterThan(0.9));
+    expect((surface.decoration! as BoxDecoration).color, Colors.transparent);
     expect(tester.getSize(header).height, greaterThanOrEqualTo(50));
     for (final text in ['11\n月', '周1', '周7']) {
       expect(

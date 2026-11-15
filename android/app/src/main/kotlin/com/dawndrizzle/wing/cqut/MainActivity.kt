@@ -492,6 +492,8 @@ class MainActivity : FlutterActivity() {
         intent.getStringExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_NAME),
       "eventId" to
         intent.getStringExtra(WidgetNavigationPendingIntent.EXTRA_EVENT_ID),
+      "itemKind" to intent.getStringExtra(WidgetNavigationPendingIntent.EXTRA_ITEM_KIND),
+      "examKey" to intent.getStringExtra(WidgetNavigationPendingIntent.EXTRA_EXAM_KEY),
     )
   }
 }

@@ -13,6 +13,8 @@ object WidgetNavigationPendingIntent {
   const val EXTRA_DATE = "widgetDate"
   const val EXTRA_EVENT_NAME = "eventName"
   const val EXTRA_EVENT_ID = "eventId"
+  const val EXTRA_ITEM_KIND = "itemKind"
+  const val EXTRA_EXAM_KEY = "examKey"
 
   internal fun navigationExtras(
     dayOffset: Int,
@@ -20,6 +22,8 @@ object WidgetNavigationPendingIntent {
     mutableForCollection: Boolean = false,
     eventName: String? = null,
     eventId: String? = null,
+    itemKind: String = "course",
+    examKey: String? = null,
   ): Map<String, Any> = buildMap {
     put(EXTRA_OPEN_TODAY, true)
     put(EXTRA_DAY_OFFSET, dayOffset)
@@ -28,6 +32,8 @@ object WidgetNavigationPendingIntent {
     if (!mutableForCollection) put(EXTRA_DATE, date)
     eventName?.let { put(EXTRA_EVENT_NAME, it) }
     eventId?.let { put(EXTRA_EVENT_ID, it) }
+    if (!mutableForCollection) put(EXTRA_ITEM_KIND, itemKind)
+    examKey?.let { put(EXTRA_EXAM_KEY, it) }
   }
 
   internal fun dataUri(
@@ -89,12 +95,15 @@ object WidgetNavigationPendingIntent {
     eventName: String,
     eventId: String?,
     date: String = TodayWidgetData.dateForDayOffset(dayOffset),
+    itemKind: String = "course",
+    examKey: String? = null,
   ): PendingIntent? {
     val launchIntent =
       context.packageManager.getLaunchIntentForPackage(context.packageName)
         ?: return null
     launchIntent.apply {
-      putNavigationExtras(navigationExtras(dayOffset, date, eventName = eventName, eventId = eventId))
+      putNavigationExtras(navigationExtras(dayOffset, date, eventName = eventName, eventId = eventId,
+        itemKind = itemKind, examKey = examKey))
       putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
       data = Uri.parse(dataUri(appWidgetId, dayOffset, date, "tiny-course"))
     }
