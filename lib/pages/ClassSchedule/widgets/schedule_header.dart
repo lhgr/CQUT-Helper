@@ -143,9 +143,7 @@ class ScheduleHeader extends StatelessWidget {
     return Container(
       height: headerHeight,
       decoration: BoxDecoration(
-        color: transparentBackground
-            ? Colors.transparent
-            : colorScheme.surface,
+        color: transparentBackground ? Colors.transparent : colorScheme.surface,
         border: showGridLines
             ? Border(
                 bottom: BorderSide(

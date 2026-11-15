@@ -368,19 +368,17 @@ void main() {
     });
 
     test('detects added exams', () {
-      final message = ExamRepository.buildChangeMessage(
-        const [],
-        [_exam('math')],
-      );
+      final message = ExamRepository.buildChangeMessage(const [], [
+        _exam('math'),
+      ]);
       expect(message, contains('新增 1 门'));
       expect(message, contains('math'));
     });
 
     test('detects removed exams', () {
-      final message = ExamRepository.buildChangeMessage(
-        [_exam('math')],
-        const [],
-      );
+      final message = ExamRepository.buildChangeMessage([
+        _exam('math'),
+      ], const []);
       expect(message, contains('取消 1 门'));
       expect(message, contains('math'));
     });
@@ -418,62 +416,69 @@ void main() {
     });
   });
 
-  test('change detection fires a notification only when exams differ', () async {
-    final notifications = <(String, String)>[];
-    final api = _Api();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      ExamRepository.cacheKey('student'),
-      jsonEncode(_snapshot('old').toJson()),
-    );
-    final repo = ExamRepository(
-      api: api,
-      credentialStore: CredentialStore(secureStore: _Secrets()),
-      updateWidgets: () async {},
-      notifyExamChange: (title, body) async {
-        notifications.add((title, body));
-      },
-      prefsProvider: () async => prefs,
-    );
-    await repo.load();
+  test(
+    'change detection fires a notification only when exams differ',
+    () async {
+      final notifications = <(String, String)>[];
+      final api = _Api();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        ExamRepository.cacheKey('student'),
+        jsonEncode(_snapshot('old').toJson()),
+      );
+      final repo = ExamRepository(
+        api: api,
+        credentialStore: CredentialStore(secureStore: _Secrets()),
+        updateWidgets: () async {},
+        notifyExamChange: (title, body) async {
+          notifications.add((title, body));
+        },
+        prefsProvider: () async => prefs,
+      );
+      await repo.load();
 
-    // No change in exam list -> no notification.
-    final same = repo.refresh(force: true);
-    await _waitRequests(api, 1);
-    api.requests.single.complete(_snapshot('old'));
-    await same;
-    expect(notifications, isEmpty);
+      // No change in exam list -> no notification.
+      final same = repo.refresh(force: true);
+      await _waitRequests(api, 1);
+      api.requests.single.complete(_snapshot('old'));
+      await same;
+      expect(notifications, isEmpty);
 
-    // New exam key -> notification fires.
-    final changed = repo.refresh(force: true);
-    await _waitRequests(api, 2);
-    api.requests[1].complete(_snapshot('new'));
-    await changed;
-    expect(notifications, hasLength(1));
-    expect(notifications.single.$1, '考试安排更新');
-    expect(notifications.single.$2, contains('新增'));
-  });
+      // New exam key -> notification fires.
+      final changed = repo.refresh(force: true);
+      await _waitRequests(api, 2);
+      api.requests[1].complete(_snapshot('new'));
+      await changed;
+      expect(notifications, hasLength(1));
+      expect(notifications.single.$1, '考试安排更新');
+      expect(notifications.single.$2, contains('新增'));
+    },
+  );
 
-  test('notification failure does not turn successful data into a query failure', () async {
-    final api = _Api();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      ExamRepository.cacheKey('student'),
-      jsonEncode(_snapshot('old').toJson()),
-    );
-    final repo = ExamRepository(
-      api: api,
-      credentialStore: CredentialStore(secureStore: _Secrets()),
-      updateWidgets: () async {},
-      notifyExamChange: (title, body) async => throw StateError('notify failed'),
-      prefsProvider: () async => prefs,
-    );
-    await repo.load();
-    final request = repo.refresh(force: true);
-    await _waitRequests(api, 1);
-    api.requests.single.complete(_snapshot('new'));
-    await request;
-    expect(repo.error, isNull);
-    expect(repo.exams.single.key, 'new');
-  });
+  test(
+    'notification failure does not turn successful data into a query failure',
+    () async {
+      final api = _Api();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        ExamRepository.cacheKey('student'),
+        jsonEncode(_snapshot('old').toJson()),
+      );
+      final repo = ExamRepository(
+        api: api,
+        credentialStore: CredentialStore(secureStore: _Secrets()),
+        updateWidgets: () async {},
+        notifyExamChange: (title, body) async =>
+            throw StateError('notify failed'),
+        prefsProvider: () async => prefs,
+      );
+      await repo.load();
+      final request = repo.refresh(force: true);
+      await _waitRequests(api, 1);
+      api.requests.single.complete(_snapshot('new'));
+      await request;
+      expect(repo.error, isNull);
+      expect(repo.exams.single.key, 'new');
+    },
+  );
 }

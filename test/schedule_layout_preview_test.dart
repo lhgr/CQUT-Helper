@@ -64,10 +64,7 @@ void main() {
     final bottomBar = tester.widget<Container>(
       find.byKey(const ValueKey('schedule-layout-preview-bottom-bar')),
     );
-    expect(
-      (header.decoration! as BoxDecoration).color,
-      Colors.transparent,
-    );
+    expect((header.decoration! as BoxDecoration).color, Colors.transparent);
     expect(timeColumn.color, Colors.transparent);
     expect((bottomBar.decoration! as BoxDecoration).color, Colors.transparent);
     expect(Theme.of(tester.element(headerFinder)).brightness, Brightness.dark);

@@ -19,7 +19,7 @@ class ExamRepository extends ChangeNotifier {
     Future<void> Function()? updateWidgets,
     Future<void> Function(String title, String body)? notifyExamChange,
     Future<void> Function(String userId, List<ExamRecord> exams)?
-        rescheduleExams,
+    rescheduleExams,
     Future<SharedPreferences> Function()? prefsProvider,
   }) : _api = api ?? ExamApi(),
        _credentials = credentialStore ?? CredentialStore(),
@@ -48,7 +48,7 @@ class ExamRepository extends ChangeNotifier {
   final Future<void> Function() _updateWidgets;
   final Future<void> Function(String title, String body) _notifyExamChange;
   final Future<void> Function(String userId, List<ExamRecord> exams)
-      _rescheduleExams;
+  _rescheduleExams;
   String? _account;
   int _generation = 0;
   Future<ExamSnapshot?>? _pending;

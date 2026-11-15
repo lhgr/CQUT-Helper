@@ -5,6 +5,7 @@ import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
 import 'package:cqut_helper/utils/academic_calendar_resolver.dart';
 import 'package:cqut_helper/utils/widget_calendar_projection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Rebuilds every widget projection from the same verified, raw term cache.
@@ -13,7 +14,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 class WidgetCalendarProjectionStore {
   const WidgetCalendarProjectionStore._();
 
-  static Future<void> _pending = Future<void>.value();
+  /// Tail of the serialized rebuild queue; null while idle so a new rebuild
+  /// starts directly in the caller's zone instead of waiting on a completed
+  /// future that belongs to another zone.
+  static Future<void>? _pending;
+
+  /// Drops the serialization queue. Widget tests run each case in its own
+  /// fake-async zone, so a rebuild left pending by one case would otherwise
+  /// block every rebuild queued by the next case.
+  @visibleForTesting
+  static void debugReset() {
+    _pending = null;
+  }
 
   static String? pinnedValue(
     SharedPreferences prefs,
@@ -82,17 +94,21 @@ class WidgetCalendarProjectionStore {
     customizeSchedules,
     AcademicCalendarSnapshot? calendar,
   }) {
-    final result = _pending.then(
-      (_) => _rebuild(
-        prefs: prefs,
-        userId: userId,
-        yearTerm: yearTerm,
-        centerWeek: centerWeek,
-        customizeSchedules: customizeSchedules,
-        calendar: calendar,
-      ),
+    Future<bool> run() => _rebuild(
+      prefs: prefs,
+      userId: userId,
+      yearTerm: yearTerm,
+      centerWeek: centerWeek,
+      customizeSchedules: customizeSchedules,
+      calendar: calendar,
     );
-    _pending = result.then<void>((_) {}, onError: (Object _) {});
+    final previous = _pending;
+    final result = previous == null ? run() : previous.then((_) => run());
+    late final Future<void> tail;
+    tail = result.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
+      if (identical(_pending, tail)) _pending = null;
+    });
+    _pending = tail;
     return result;
   }
 

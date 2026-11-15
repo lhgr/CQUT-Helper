@@ -13,6 +13,7 @@ import 'package:cqut_helper/manager/schedule_update_intents.dart';
 import 'package:cqut_helper/manager/schedule_update_worker.dart';
 import 'package:cqut_helper/manager/schedule_settings_manager.dart';
 import 'package:cqut_helper/manager/onboarding_manager.dart';
+import 'package:cqut_helper/manager/widget_calendar_projection_store.dart';
 import 'package:cqut_helper/manager/theme_manager.dart';
 import 'package:cqut_helper/model/academic_calendar_model.dart';
 import 'package:cqut_helper/model/class_schedule_model.dart';
@@ -230,6 +231,7 @@ void main() {
   });
 
   setUp(() {
+    WidgetCalendarProjectionStore.debugReset();
     _scheduleAvailable = true;
     final now = DateTime.now();
     String clock(int minute) =>

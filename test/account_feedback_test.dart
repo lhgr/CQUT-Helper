@@ -301,6 +301,9 @@ void main() {
     );
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
+    // The retry button sits below the profile card; scroll back before checking
+    // that the cached profile is still shown.
+    await tester.scrollUntilVisible(find.text('缓存同学'), -200);
     expect(find.text('缓存同学'), findsOneWidget);
     expect(profiles.requests, 2);
   });
