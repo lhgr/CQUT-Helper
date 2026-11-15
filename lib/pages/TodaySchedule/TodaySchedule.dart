@@ -167,6 +167,7 @@ class _TodayScheduleViewState extends State<TodayScheduleView> {
 
   Future<void> _onWidgetNavigation() async {
     final navigation = WidgetNavigation.request.value;
+    if (navigation?.itemKind == 'exam') return;
     if (!mounted ||
         !widget.isActive ||
         _loading ||
@@ -1062,12 +1063,6 @@ class _EmptyState extends StatelessWidget {
     final theme = Theme.of(context);
     final color = theme.colorScheme.onSurfaceVariant;
     return Card(
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      color: theme.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1197,16 +1192,11 @@ class _NowNextCard extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    children: [
-                      if (moment.kind == _CourseMomentKind.ongoing)
-                        Text('距离下课', style: countdownStyle),
-                      Text(_countdownDuration, style: countdownStyle),
-                      if (moment.kind == _CourseMomentKind.next)
-                        Text('后开始', style: countdownStyle),
-                    ],
+                  Text(
+                    moment.kind == _CourseMomentKind.ongoing
+                        ? '距离下课 $_countdownDuration'
+                        : '$_countdownDuration 后开始',
+                    style: countdownStyle,
                   ),
                 ],
               ],

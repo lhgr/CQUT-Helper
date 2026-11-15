@@ -144,7 +144,7 @@ class ScheduleHeader extends StatelessWidget {
       height: headerHeight,
       decoration: BoxDecoration(
         color: transparentBackground
-            ? colorScheme.surface.withAlpha(240)
+            ? Colors.transparent
             : colorScheme.surface,
         border: showGridLines
             ? Border(
@@ -194,7 +194,7 @@ class ScheduleHeader extends StatelessWidget {
                   child: Container(
                     decoration: isToday
                         ? BoxDecoration(
-                            color: colorScheme.primaryContainer.withAlpha(77),
+                            color: colorScheme.primaryContainer.withAlpha(110),
                             borderRadius: BorderRadius.vertical(
                               top: Radius.circular(8),
                             ),
