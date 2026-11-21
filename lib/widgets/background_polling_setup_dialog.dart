@@ -4,6 +4,38 @@ import 'package:cqut_helper/utils/android_background_restrictions.dart';
 import 'package:cqut_helper/utils/app_logger.dart';
 import 'package:material_ui/material_ui.dart';
 
+Future<bool> showNoticeEnhancementConsentDialog(
+  BuildContext context, {
+  required bool isIOS,
+}) async {
+  final timing = isIOS ? '应用会在启动、返回前台和手动同步时检查调课通知。' : '应用会定期在后台检查调课通知。';
+  final permissions = isIOS ? '继续后会申请通知权限。' : '继续后会申请通知权限，并引导你设置电池优化和自启动。';
+  return await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          scrollable: true,
+          title: const Text('开启“调课通知增强”'),
+          content: Text(
+            '$timing'
+            '发现变更后会更新受影响的教学周。\n\n'
+            '查询时会向所选服务发送学号、统一认证加密密码和当前学期。风险说明见“设置 → 教务查询服务”。\n\n'
+            '$permissions',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('保持关闭'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('我已了解，继续'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+}
+
 Future<bool> showBackgroundPollingSetupDialog(BuildContext context) async {
   if (!Platform.isAndroid) return true;
   final ignored =

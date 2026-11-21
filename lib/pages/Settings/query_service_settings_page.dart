@@ -65,9 +65,7 @@ class _QueryServiceSettingsPageState extends State<QueryServiceSettingsPage> {
           builder: (dialogContext) => AlertDialog(
             scrollable: true,
             title: const Text('使用自定义服务'),
-            content: const Text(
-              '考试与调课查询将通过此服务进行，你的学号和登录验证信息会发送给该服务。使用不可信的服务可能导致账号信息泄露，请确认地址及服务提供方可信。',
-            ),
+            content: const Text('此服务将收到可用于登录教务系统的凭据。请确认你信任该 HTTPS 地址及其服务提供方。'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -114,6 +112,13 @@ class _QueryServiceSettingsPageState extends State<QueryServiceSettingsPage> {
             children: [
               const Text('用于考试安排与调课通知。调课通知可在“通知与提醒”中开启。'),
               const SizedBox(height: 16),
+              Text('风险说明', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              const Text(
+                '查询考试安排或调课通知时，应用会把学号和统一认证加密密码发送给所选服务（默认或自定义），由其代你登录教务系统。调课查询还会发送当前学期。\n\n'
+                '服务提供方可以接触这些信息，加密密码仍可用于登录。自定义时，请只选择你信任的 HTTPS 服务。',
+              ),
+              const SizedBox(height: 16),
               Card(
                 elevation: 0,
                 child: RadioGroup<_ServiceMode>(
@@ -129,7 +134,7 @@ class _QueryServiceSettingsPageState extends State<QueryServiceSettingsPage> {
                   child: Column(
                     children: [
                       RadioListTile<_ServiceMode>(
-                        title: const Text('官方服务'),
+                        title: const Text('默认服务'),
                         subtitle: const Text(
                           ScheduleSettingsManager.officialNoticeApiBaseUrl,
                         ),

@@ -188,34 +188,10 @@ class _ScheduleSettingsSheetState extends State<ScheduleSettingsSheet> {
 
   Future<bool> _runBackgroundPollingSetupFlow() async {
     if (!mounted) return false;
-    final proceed =
-        await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: const Text('开启“调课通知增强”'),
-              content: Text(
-                defaultTargetPlatform == TargetPlatform.iOS
-                    ? '开启后，应用会在启动、返回前台和手动同步时向所配置的调课服务发送学号、教务系统加密密码和当前学期，用于查询调课通知并更新受影响周。\n\n官方服务仅使用上述信息完成查询，不储存这些隐私数据。自定义服务的数据处理方式由服务提供者决定。继续后会申请通知权限。'
-                    : '开启后，应用会将你的学号、教务系统加密密码和当前学期发送到所配置的调课服务，用于代你查询调课通知，并在后台刷新受影响周。\n\n'
-                          'CQUT Helper 官方调课服务仅使用上述信息完成查询，不会储存你的学号、密码、学期等隐私数据；若使用自定义服务，其数据处理方式由服务提供者决定。\n\n'
-                          '普通课表和桌面小组件不依赖此服务；保持关闭或服务不可用时，仍可正常查看和手动刷新课表。\n\n'
-                          '继续后还会申请通知权限，并引导你设置电池优化和自启动。',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('保持关闭'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('我已了解，继续'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
+    final proceed = await showNoticeEnhancementConsentDialog(
+      context,
+      isIOS: defaultTargetPlatform == TargetPlatform.iOS,
+    );
     if (!proceed) return false;
     _noticePrivacyConsentAcceptedThisSession = true;
 

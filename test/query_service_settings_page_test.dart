@@ -29,7 +29,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'https://draft.example');
     for (final cancelWithButton in [true, false]) {
-      await tester.ensureVisible(find.text('保存地址'));
+      await tester.scrollUntilVisible(
+        find.text('保存地址'),
+        150,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       await tester.tap(find.text('保存地址'));
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsOneWidget);
@@ -121,9 +130,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('使用自定义服务'), findsOneWidget);
       expect(
-        find.text(
-          '考试与调课查询将通过此服务进行，你的学号和登录验证信息会发送给该服务。使用不可信的服务可能导致账号信息泄露，请确认地址及服务提供方可信。',
-        ),
+        find.text('此服务将收到可用于登录教务系统的凭据。请确认你信任该 HTTPS 地址及其服务提供方。'),
         findsOneWidget,
       );
       expect(
@@ -153,10 +160,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNothing);
+    expect(find.text('风险说明'), findsOneWidget);
     await tester.tap(find.text('自定义服务'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'https://draft.example/');
-    await tester.tap(find.text('官方服务'));
+    await tester.tap(find.text('默认服务'));
     await tester.pumpAndSettle();
     expect(
       await ScheduleSettingsManager.loadNoticeApiBaseUrl(),
@@ -170,7 +178,7 @@ void main() {
     await tester.tap(find.text('确认并保存'));
     await tester.pumpAndSettle();
     expect(find.text('https://draft.example'), findsOneWidget);
-    await tester.tap(find.text('官方服务'));
+    await tester.tap(find.text('默认服务'));
     await tester.pumpAndSettle();
     expect(
       await ScheduleSettingsManager.loadNoticeApiBaseUrl(),
