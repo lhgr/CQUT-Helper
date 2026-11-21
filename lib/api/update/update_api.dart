@@ -49,6 +49,7 @@ class UpdateApi {
   static final _releaseUri = Uri.parse(
     'https://api.github.com/repos/lhgr/CQUT-Helper/releases/latest',
   );
+  static final _releaseTag = RegExp(r'^v[0-9]+\.[0-9]+\.[0-9]+$');
 
   final Dio _dio;
   final Future<SharedPreferences> Function() _preferences;
@@ -75,6 +76,35 @@ class UpdateApi {
     });
   }
 
+  Future<String?> fetchChangelog(String tag) async {
+    if (_releaseTag.matchAsPrefix(tag)?.end != tag.length) return null;
+    final uri = Uri.parse(
+      'https://raw.githubusercontent.com/lhgr/CQUT-Helper/$tag/changelogs/$tag.md',
+    );
+    for (final (endpoint, budget) in [
+      (GithubProxy.proxyUriOf(uri), proxyBudget),
+      (uri, directBudget),
+    ]) {
+      try {
+        final response = await _request<String>(
+          endpoint,
+          null,
+          budget,
+          responseType: ResponseType.plain,
+        );
+        final markdown = response.data;
+        if (response.statusCode == 200 &&
+            markdown != null &&
+            markdown.trim().isNotEmpty) {
+          return markdown;
+        }
+      } on DioException {
+        continue;
+      }
+    }
+    return null;
+  }
+
   Future<UpdateFetchResult> _fetchLatest({required bool forceRefresh}) async {
     _ReleaseCache? cached;
     try {
@@ -97,7 +127,7 @@ class UpdateApi {
       for (var index = 0; index < endpoints.length; index++) {
         try {
           final uri = endpoints[index];
-          final response = await _request(
+          final response = await _request<dynamic>(
             uri,
             cached,
             index == 0 ? proxyBudget : directBudget,
@@ -152,18 +182,20 @@ class UpdateApi {
     }
   }
 
-  Future<Response<dynamic>> _request(
+  Future<Response<T>> _request<T>(
     Uri uri,
     _ReleaseCache? cached,
-    Duration budget,
-  ) async {
+    Duration budget, {
+    ResponseType? responseType,
+  }) async {
     final token = CancelToken();
     final timer = Timer(budget, () => token.cancel('发行版请求超时'));
     try {
-      return await _dio.getUri<dynamic>(
+      return await _dio.getUri<T>(
         uri,
         cancelToken: token,
         options: Options(
+          responseType: responseType,
           headers: {
             if (cached?.etagUri == uri.toString() &&
                 cached?.etag?.isNotEmpty == true)

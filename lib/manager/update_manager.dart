@@ -10,16 +10,20 @@ import 'package:cqut_helper/utils/github_proxy.dart';
 class UpdateManager {
   static final UpdateManager _instance = UpdateManager._internal();
   factory UpdateManager() => _instance;
-  UpdateManager._internal();
+  UpdateManager._internal()
+    : _fetchChangelog = ((String tag) =>
+          ApiService().update.fetchChangelog(tag));
 
   @visibleForTesting
   UpdateManager.forTesting({
     required this._fetchLatest,
     required this._currentVersion,
+    this._fetchChangelog,
   });
 
   Future<UpdateFetchResult> Function({bool forceRefresh})? _fetchLatest;
   Future<String> Function()? _currentVersion;
+  final Future<String?> Function(String tag)? _fetchChangelog;
   final Set<String> _shownVersions = <String>{};
 
   Future<UpdateFetchResult> fetchUpdate({bool forceRefresh = false}) {
@@ -136,6 +140,7 @@ class UpdateManager {
     DateTime? validatedAt,
   }) async {
     var closing = false;
+    final changelog = stale ? null : _fetchChangelog?.call(info.tagName);
     final title = stale
         ? '上次获取的版本日志 ${info.tagName}'
         : isNewVersion
@@ -166,13 +171,17 @@ class UpdateManager {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
-            if (info.body.trim().isEmpty)
-              const Text('暂无更新说明')
-            else
-              ReleaseNotesMarkdown(
-                data: info.body,
-                onTapLink: (href) => _launchExternalUrl(context, href),
-              ),
+            FutureBuilder<String?>(
+              future: changelog,
+              builder: (_, snapshot) {
+                final markdown = snapshot.data ?? info.body;
+                if (markdown.trim().isEmpty) return const Text('暂无更新说明');
+                return ReleaseNotesMarkdown(
+                  data: markdown,
+                  onTapLink: (href) => _launchExternalUrl(context, href),
+                );
+              },
+            ),
           ],
         ),
         actions: [

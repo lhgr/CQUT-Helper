@@ -12,6 +12,10 @@ final _rawUri = Uri.parse(
   'https://api.github.com/repos/lhgr/CQUT-Helper/releases/latest',
 );
 final _proxyUri = GithubProxy.proxyUriOf(_rawUri);
+final _changelogUri = Uri.parse(
+  'https://raw.githubusercontent.com/lhgr/CQUT-Helper/v1.3.0/changelogs/v1.3.0.md',
+);
+final _changelogProxyUri = GithubProxy.proxyUriOf(_changelogUri);
 final _time = DateTime(2026, 11, 5, 12);
 
 Map<String, dynamic> _release([String tag = 'v1.2.3']) => {
@@ -67,6 +71,40 @@ void main() {
     final dio = Dio()..httpClientAdapter = adapter;
     return UpdateApi(dio: dio, now: now ?? () => _time);
   }
+
+  test('loads Markdown as plain text at the exact release tag', () async {
+    const markdown = '# 更新日志\n\n- 更新内容';
+    final adapter = _Adapter((_, _) => ResponseBody.fromString(markdown, 200));
+    expect(await create(adapter).fetchChangelog('v1.3.0'), markdown);
+    expect(adapter.requests.single.uri, _changelogProxyUri);
+    expect(adapter.requests.single.responseType, ResponseType.plain);
+  });
+
+  test(
+    'empty proxy content and missing direct file preserve release cache',
+    () async {
+      final raw = _cache();
+      SharedPreferences.setMockInitialValues({UpdateApi.cacheKey: raw});
+      final adapter = _Adapter((options, _) {
+        expect(options.headers.containsKey('If-None-Match'), isFalse);
+        return options.uri == _changelogProxyUri
+            ? ResponseBody.fromString(' \n', 200)
+            : ResponseBody.fromString('404: Not Found', 404);
+      });
+      final api = create(adapter);
+      expect(await api.fetchChangelog('v1.3.0'), isNull);
+      expect(await api.fetchChangelog('v1.3.0/other'), isNull);
+      expect(adapter.requests.map((r) => r.uri), [
+        _changelogProxyUri,
+        _changelogUri,
+      ]);
+      expect((await api.fetchLatest()).info?.body, 'Release notes');
+      expect(
+        (await SharedPreferences.getInstance()).getString(UpdateApi.cacheKey),
+        raw,
+      );
+    },
+  );
 
   test(
     'persists raw release and serves a six-hour cache across API instances',

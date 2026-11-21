@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cqut_helper/api/update/update_api.dart';
 import 'package:cqut_helper/manager/update_manager.dart';
 import 'package:cqut_helper/model/update_model.dart';
+import 'package:cqut_helper/widgets/release_notes_markdown.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -106,10 +107,16 @@ void main() {
   testWidgets('读取当前版本期间路由被覆盖则延后且不消耗去重记录', (tester) async {
     await openPage(tester);
     final version = Completer<String>();
-    final result = _result();
+    final result = _result(body: '发行版正文');
+    final changelog = Completer<String?>();
+    final tags = <String>[];
     final manager = UpdateManager.forTesting(
       fetchLatest: ({bool forceRefresh = false}) async => result,
       currentVersion: () => version.future,
+      fetchChangelog: (tag) {
+        tags.add(tag);
+        return changelog.future;
+      },
     );
     final showing = manager.showFetchedUpdate(pageContext, result);
     unawaited(
@@ -122,11 +129,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(await showing, isFalse);
     expect(find.byType(AlertDialog), findsNothing);
+    expect(tags, isEmpty);
     Navigator.of(pageContext).pop();
     await tester.pumpAndSettle();
     final retry = manager.showFetchedUpdate(pageContext, result);
     await tester.pumpAndSettle();
     expect(find.text('发现新版本 v2.0.0'), findsOneWidget);
+    expect(tags, ['v2.0.0']);
+    final notes = find.byType(ReleaseNotesMarkdown);
+    expect(tester.widget<ReleaseNotesMarkdown>(notes).data, '发行版正文');
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '立即更新'))
+          .onPressed,
+      isNotNull,
+    );
+    changelog.complete('仓库文件正文');
+    await tester.pumpAndSettle();
+    expect(tester.widget<ReleaseNotesMarkdown>(notes).data, '仓库文件正文');
+    expect(tags, ['v2.0.0']);
     await tester.tap(find.text('稍后'));
     await tester.pumpAndSettle();
     expect(await retry, isTrue);
