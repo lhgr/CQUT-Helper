@@ -159,13 +159,15 @@ docker run -d --name cqut-notice --restart unless-stopped \
 
 ### 考试查询
 
-`POST /api/jwxt/exams` 请求为 `{"username":"学号","encrypted_password":"现有统一认证加密密码"}`，不需要开启调课通知。服务从学校移动门户获取通用 CAS 入口，在独立移动浏览器上下文中完成统一认证并接收官方原生桥 token，再依次调用 UIVx60、OAuth userInfo 和 GTR585 获取考试 SSO 地址；移动请求使用本次新建的独立会话。考试页在另一独立桌面浏览器上下文中执行，等待 `/home/GetData` 返回，不保存账号凭据、Cookie 或票据。考试浏览器禁用 HTTPS 自动升级以访问学校提供的 HTTP 地址，并关闭 Chromium 的 AutomationControlled 特性以完成学校页面校验；沙箱与 TLS 校验保持启用。
+`POST /api/jwxt/exams` 请求为 `{"username":"学号","encrypted_password":"现有统一认证加密密码"}`，不接收学期，也不需要开启调课通知。
 
-成功响应为 `{"success":true,"data":{"generated_at":"ISO 8601 时间","exams_complete":true,"exams":[]}}`。每项包含 `key`、`course_name`、`time_text`、`campus`、`building`、`room`、`start_at` 和 `end_at`。`key` 根据学校原始五字段规范化后生成稳定摘要；时间使用北京时间 `+08:00`。时间未安排、格式无法解析或区间无效时保留 `time_text`，起止时间均为 `null`。成功空数组表示当前无考试；响应失败或字段不完整不会返回完整结果。学校接口没有学期、分页和考试 ID，服务也不补造这些信息。
+桌面查询方案仅复用调课流程建立桌面教务 CAS 会话的方式，不调用调课查询。考试查询在本次请求建立的会话中打开教务考试页，使用页面自身选中的默认学期，按页面的正常查询和翻页流程收集全部结果，不使用移动 token。账号凭据、Cookie 和票据不持久化。
+
+成功响应为 `{"success":true,"data":{"generated_at":"ISO 8601 时间","exams_complete":true,"exams":[]}}`。每项包含 `key`、`course_name`、`time_text`、`campus`、`building`、`room`、`start_at` 和 `end_at`。桌面考试页提供 `kcmc`、`kssj`、`cdxqmc` 和 `cdmc` 四个字段，分别对应课程、时间、校区和场地。页面没有独立的教学楼字段，因此 `building` 为 `""`，`room` 保留原场地，不拆分教学楼和考场。`key` 依次按归一化后的课程、时间、校区、空教学楼和场地生成稳定摘要；时间使用北京时间 `+08:00`。时间未安排、格式无法解析或区间无效时保留 `time_text`，起止时间均为 `null`。成功空数组表示默认学期无考试；查询或翻页失败、字段不完整时，不将部分结果标记为完整。默认学期和翻页只用于服务内部查询，不改变 API 响应结构。
 
 考试和调课共用现有并发、限流、请求体和进程超时设置。同账号、同凭据的考试请求只在查询进行中共享同一个结果或错误，完成后不在服务端缓存结果；不同凭据不会合并。等待方沿用首个请求建立的共同截止时间，默认最多 105 秒（查询预算加 15 秒清理裕量），失败后释放查询表和进程槽。客户端离开页面或断开连接不阻止正在运行的查询完成清理。
 
-运行日志记录随机 `query_id`、`start/join/done/error`、耗时和 CAS 入口、浏览器登录、等待考试响应等阶段，不记录账号、凭据或带票据 URL。现有 `/api/jwxt(/.*)?` 代理规则包含考试接口。离线测试覆盖字段解析、认证入口、真实 Uvicorn HTTP 并发与进程隔离执行、共享错误和超时清理。
+运行日志由 `jwxt.query` 输出 JSON，包含 `operation: "exams"`、随机 `query_id`、`event` 和 `elapsed_ms`。生命周期事件为 `start`、`join`、`done`、`error`；阶段诊断使用 `event: "phase"` 和 `phase`，适用时附带 `status` 或 `error_code`。日志不记录账号、凭据或带票据 URL。现有 `/api/jwxt(/.*)?` 代理规则包含考试接口。离线测试覆盖字段解析、真实 Uvicorn HTTP 并发与进程隔离执行、共享错误和超时清理。
 
 ## 常见问题
 
